@@ -18,12 +18,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $contact = trim($_POST['contact_phone'] ?? '');
     $availability = $_POST['availability'] ?? 'available';
     $skills = trim($_POST['skills'] ?? '');
+    $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
+    $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
 
     if ($location === '' || $contact === '') {
         $error = 'Location and contact phone are required.';
     } else {
-        $stmt = $pdo->prepare('UPDATE worker_profiles SET bio = ?, location = ?, contact_phone = ?, availability = ?, updated_at = NOW() WHERE user_id = ?');
-        $stmt->execute([$bio, $location, $contact, $availability, $user['id']]);
+        $stmt = $pdo->prepare('UPDATE worker_profiles SET bio = ?, location = ?, latitude = ?, longitude = ?, contact_phone = ?, availability = ?, updated_at = NOW() WHERE user_id = ?');
+        $stmt->execute([$bio, $location, $latitude, $longitude, $contact, $availability, $user['id']]);
 
         $pdo->prepare('DELETE FROM worker_skills WHERE worker_profile_id = ?')->execute([$profile['id']]);
         $skillList = array_filter(array_map('trim', explode(',', $skills)));
@@ -81,6 +83,10 @@ $schedule = get_worker_schedule($profile['id']);
             <textarea name="bio" rows="4"><?php echo sanitize($profile['bio']); ?></textarea>
             <label>Location</label>
             <input type="text" name="location" value="<?php echo sanitize($profile['location']); ?>" required />
+            <input type="hidden" name="latitude" id="latitude" value="<?php echo $profile['latitude'] !== null ? sanitize($profile['latitude']) : ''; ?>" />
+            <input type="hidden" name="longitude" id="longitude" value="<?php echo $profile['longitude'] !== null ? sanitize($profile['longitude']) : ''; ?>" />
+            <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
+            <p class="meta" id="location-status"><?php echo $profile['latitude'] !== null ? 'Saved coordinates: ' . sanitize($profile['latitude']) . ', ' . sanitize($profile['longitude']) : 'No coordinates saved yet — sharing your location helps customers find you nearby.'; ?></p>
             <label>Contact phone</label>
             <input type="text" name="contact_phone" value="<?php echo sanitize($profile['contact_phone']); ?>" required placeholder="WhatsApp or phone" />
             <label>Skills</label>
@@ -110,5 +116,22 @@ $schedule = get_worker_schedule($profile['id']);
             <button type="submit" class="button button-primary">Save profile</button>
         </form>
     </main>
+    <script>
+        document.getElementById('use-my-location').addEventListener('click', function () {
+            var status = document.getElementById('location-status');
+            if (!navigator.geolocation) {
+                status.textContent = 'Geolocation is not supported by your browser.';
+                return;
+            }
+            status.textContent = 'Locating…';
+            navigator.geolocation.getCurrentPosition(function (position) {
+                document.getElementById('latitude').value = position.coords.latitude;
+                document.getElementById('longitude').value = position.coords.longitude;
+                status.textContent = 'Location captured: ' + position.coords.latitude.toFixed(5) + ', ' + position.coords.longitude.toFixed(5) + '. Click "Save profile" to store it.';
+            }, function () {
+                status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
+            });
+        });
+    </script>
 </body>
 </html>

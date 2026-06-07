@@ -58,6 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             user_id INT UNSIGNED NOT NULL,
             bio TEXT,
             location VARCHAR(140) NOT NULL,
+            latitude DECIMAL(10,7) DEFAULT NULL,
+            longitude DECIMAL(10,7) DEFAULT NULL,
             contact_phone VARCHAR(80) NOT NULL,
             availability ENUM('available','busy','offline') NOT NULL DEFAULT 'available',
             subscription_status ENUM('free','premium') NOT NULL DEFAULT 'free',
@@ -80,6 +82,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             title VARCHAR(180) NOT NULL,
             description TEXT NOT NULL,
             location VARCHAR(140) NOT NULL,
+            latitude DECIMAL(10,7) DEFAULT NULL,
+            longitude DECIMAL(10,7) DEFAULT NULL,
             budget VARCHAR(80) NOT NULL,
             contact_info VARCHAR(180) NOT NULL,
             completion_notes TEXT DEFAULT NULL,
@@ -223,6 +227,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             $completionColumn = $pdo->query("SHOW COLUMNS FROM service_requests LIKE 'completion_notes'")->fetch();
             if (!$completionColumn) {
                 $pdo->exec('ALTER TABLE service_requests ADD COLUMN completion_notes TEXT DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM service_requests LIKE 'latitude'")->fetch()) {
+                $pdo->exec('ALTER TABLE service_requests ADD COLUMN latitude DECIMAL(10,7) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM service_requests LIKE 'longitude'")->fetch()) {
+                $pdo->exec('ALTER TABLE service_requests ADD COLUMN longitude DECIMAL(10,7) DEFAULT NULL');
+            }
+        }
+        if (table_exists('worker_profiles')) {
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'latitude'")->fetch()) {
+                $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN latitude DECIMAL(10,7) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'longitude'")->fetch()) {
+                $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN longitude DECIMAL(10,7) DEFAULT NULL');
             }
         }
         $migrated = true;

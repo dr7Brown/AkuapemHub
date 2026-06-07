@@ -279,6 +279,26 @@ function get_trending_categories($limit = 5, $days = 30) {
     return $stmt->fetchAll();
 }
 
+function distance_km($lat1, $lon1, $lat2, $lon2) {
+    if ($lat1 === null || $lon1 === null || $lat2 === null || $lon2 === null) {
+        return null;
+    }
+    $earthRadiusKm = 6371;
+    $latDelta = deg2rad((float)$lat2 - (float)$lat1);
+    $lonDelta = deg2rad((float)$lon2 - (float)$lon1);
+    $a = sin($latDelta / 2) ** 2
+        + cos(deg2rad((float)$lat1)) * cos(deg2rad((float)$lat2)) * sin($lonDelta / 2) ** 2;
+    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+    return $earthRadiusKm * $c;
+}
+
+function format_distance($km) {
+    if ($km === null) {
+        return null;
+    }
+    return $km < 1 ? round($km * 1000) . ' m away' : number_format($km, 1) . ' km away';
+}
+
 function build_location_filter($location) {
     return trim($location);
 }

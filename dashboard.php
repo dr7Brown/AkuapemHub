@@ -146,6 +146,7 @@ if (is_worker()) {
                 <?php else: ?>
                     <?php foreach ($requests as $request): ?>
                         <?php if ($request['status'] !== 'open' && $request['assigned_worker_id'] !== $user['id']) continue; ?>
+                        <?php $jobDistance = distance_km($profile['latitude'] ?? null, $profile['longitude'] ?? null, $request['latitude'], $request['longitude']); ?>
                         <article class="request-card">
                             <div class="request-head">
                                 <div>
@@ -153,7 +154,12 @@ if (is_worker()) {
                                     <?php if ($request['featured']): ?>
                                         <span class="badge badge-featured">Featured</span>
                                     <?php endif; ?>
-                                    <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
+                                    <p class="meta">
+                                        <?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?>
+                                        <?php if ($jobDistance !== null): ?>
+                                            • <?php echo sanitize(format_distance($jobDistance)); ?>
+                                        <?php endif; ?>
+                                    </p>
                                 </div>
                                 <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
                             </div>

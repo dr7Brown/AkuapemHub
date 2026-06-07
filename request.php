@@ -14,12 +14,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $location = trim($_POST['location'] ?? '');
     $budget = trim($_POST['budget'] ?? '');
     $contactInfo = trim($_POST['contact_info'] ?? '');
+    $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
+    $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
 
     if ($title === '' || $description === '' || $categoryId === 0 || $location === '' || $budget === '' || $contactInfo === '') {
         $error = 'All fields are required.';
     } else {
-        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, budget, contact_info, status, payment_status, commission_percent, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
-        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $budget, $contactInfo, 'pending', 'unpaid', DEFAULT_COMMISSION, 0]);
+        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, status, payment_status, commission_percent, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, 'pending', 'unpaid', DEFAULT_COMMISSION, 0]);
 
         $categoryName = 'Unknown';
         foreach ($categories as $category) {
@@ -76,6 +78,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </select>
             <label>Location</label>
             <input type="text" name="location" required placeholder="City, neighbourhood" />
+            <input type="hidden" name="latitude" id="latitude" />
+            <input type="hidden" name="longitude" id="longitude" />
+            <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
+            <p class="meta" id="location-status">Sharing your location helps nearby workers find your job faster.</p>
             <label>Budget</label>
             <input type="text" name="budget" required placeholder="GH₵ 100 or Negotiable" />
             <label>Contact info</label>
@@ -83,5 +89,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit" class="button button-primary">Publish request</button>
         </form>
     </main>
+    <script>
+        document.getElementById('use-my-location').addEventListener('click', function () {
+            var status = document.getElementById('location-status');
+            if (!navigator.geolocation) {
+                status.textContent = 'Geolocation is not supported by your browser.';
+                return;
+            }
+            status.textContent = 'Locating…';
+            navigator.geolocation.getCurrentPosition(function (position) {
+                document.getElementById('latitude').value = position.coords.latitude;
+                document.getElementById('longitude').value = position.coords.longitude;
+                status.textContent = 'Location captured: ' + position.coords.latitude.toFixed(5) + ', ' + position.coords.longitude.toFixed(5) + '.';
+            }, function () {
+                status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
+            });
+        });
+    </script>
 </body>
 </html>

@@ -6,6 +6,8 @@ $searchQuery = trim($_GET['q'] ?? '');
 $locationFilter = trim($_GET['location'] ?? '');
 $skillFilter = trim($_GET['skill'] ?? '');
 $sortBy = $_GET['sort'] ?? 'rating';
+$userLat = ($_GET['lat'] ?? '') !== '' ? (float)$_GET['lat'] : null;
+$userLng = ($_GET['lng'] ?? '') !== '' ? (float)$_GET['lng'] : null;
 
 $where = ["u.role = 'worker'", "u.banned = 0", "w.id IS NOT NULL"];
 $params = [];
@@ -36,7 +38,7 @@ if ($sortBy === 'rating') {
     $orderBy = 'completed_jobs DESC';
 }
 
-$sql = "SELECT u.id, u.name, u.created_at, w.location, w.subscription_status, w.availability,
+$sql = "SELECT u.id, u.name, u.created_at, w.location, w.latitude, w.longitude, w.subscription_status, w.availability,
         COALESCE(COUNT(DISTINCT sr.id), 0) AS completed_jobs,
         COALESCE(AVG(r.score), 0) AS avg_rating,
         GROUP_CONCAT(DISTINCT ws.skill_name ORDER BY ws.skill_name SEPARATOR ', ') AS skills
@@ -46,13 +48,29 @@ $sql = "SELECT u.id, u.name, u.created_at, w.location, w.subscription_status, w.
         LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
         LEFT JOIN ratings r ON sr.id = r.request_id
         WHERE " . implode(' AND ', $where) . "
-        GROUP BY u.id, u.name, u.created_at, w.location, w.subscription_status, w.availability
+        GROUP BY u.id, u.name, u.created_at, w.location, w.latitude, w.longitude, w.subscription_status, w.availability
         ORDER BY " . $orderBy . "
         LIMIT 100";
 
 $stmt = $pdo->prepare($sql);
 $stmt->execute($params);
 $workers = $stmt->fetchAll();
+
+foreach ($workers as &$worker) {
+    $worker['distance_km'] = ($userLat !== null && $userLng !== null)
+        ? distance_km($userLat, $userLng, $worker['latitude'], $worker['longitude'])
+        : null;
+}
+unset($worker);
+
+if ($sortBy === 'distance' && $userLat !== null && $userLng !== null) {
+    usort($workers, function ($a, $b) {
+        if ($a['distance_km'] === null && $b['distance_km'] === null) return 0;
+        if ($a['distance_km'] === null) return 1;
+        if ($b['distance_km'] === null) return -1;
+        return $a['distance_km'] <=> $b['distance_km'];
+    });
+}
 
 $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY skill_name')->fetchAll();
 ?>
@@ -90,7 +108,12 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
                     <option value="rating" <?php echo $sortBy === 'rating' ? 'selected' : ''; ?>>Sort by rating</option>
                     <option value="completed" <?php echo $sortBy === 'completed' ? 'selected' : ''; ?>>Most completed</option>
                     <option value="newest" <?php echo $sortBy === 'newest' ? 'selected' : ''; ?>>Newest</option>
+                    <option value="distance" <?php echo $sortBy === 'distance' ? 'selected' : ''; ?>>Nearest to me</option>
                 </select>
+                <input type="hidden" name="lat" id="lat" value="<?php echo $userLat !== null ? sanitize($userLat) : ''; ?>" />
+                <input type="hidden" name="lng" id="lng" value="<?php echo $userLng !== null ? sanitize($userLng) : ''; ?>" />
+                <button type="button" id="find-near-me" class="button button-secondary">Find workers near me</button>
+                <p class="meta" id="near-me-status"><?php echo ($userLat !== null) ? 'Showing distances from your shared location.' : 'Tap "Find workers near me" to sort and show distances based on your current location.'; ?></p>
                 <button type="submit" class="button button-primary">Search</button>
             </form>
         </section>
@@ -104,7 +127,12 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
                         <div class="request-head">
                             <div>
                                 <h2><?php echo sanitize($worker['name']); ?></h2>
-                                <p class="meta"><?php echo sanitize($worker['location'] ?: 'Location not set'); ?> • <?php echo sanitize(ucfirst($worker['subscription_status'])); ?></p>
+                                <p class="meta">
+                                    <?php echo sanitize($worker['location'] ?: 'Location not set'); ?> • <?php echo sanitize(ucfirst($worker['subscription_status'])); ?>
+                                    <?php if ($worker['distance_km'] !== null): ?>
+                                        • <?php echo sanitize(format_distance($worker['distance_km'])); ?>
+                                    <?php endif; ?>
+                                </p>
                             </div>
                             <span class="status status-<?php echo $worker['availability']; ?>"><?php echo strtoupper($worker['availability']); ?></span>
                         </div>
@@ -123,5 +151,23 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
             <?php endif; ?>
         </section>
     </main>
+    <script>
+        document.getElementById('find-near-me').addEventListener('click', function () {
+            var status = document.getElementById('near-me-status');
+            if (!navigator.geolocation) {
+                status.textContent = 'Geolocation is not supported by your browser.';
+                return;
+            }
+            status.textContent = 'Locating…';
+            navigator.geolocation.getCurrentPosition(function (position) {
+                document.getElementById('lat').value = position.coords.latitude;
+                document.getElementById('lng').value = position.coords.longitude;
+                document.querySelector('select[name="sort"]').value = 'distance';
+                document.querySelector('.filter-form').submit();
+            }, function () {
+                status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
+            });
+        });
+    </script>
 </body>
 </html>
