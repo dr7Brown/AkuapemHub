@@ -57,6 +57,7 @@ foreach ($paymentHistory as $p) {
                                 <th>Status</th>
                                 <th>Note</th>
                                 <th>Date</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -65,9 +66,14 @@ foreach ($paymentHistory as $p) {
                                     <td><a href="request_detail.php?id=<?php echo $payment['request_id']; ?>" style="color: #0f766e; text-decoration: none;"><?php echo sanitize($payment['title']); ?></a></td>
                                     <td><?php echo sanitize($payment['worker_name'] ?: 'Not assigned'); ?></td>
                                     <td>GH₵ <?php echo sanitize($payment['amount']); ?></td>
-                                    <td><span class="status status-<?php echo sanitize($payment['status']); ?>"><?php echo strtoupper($payment['status']); ?></span></td>
+                                    <td><span class="status status-<?php echo $payment['status'] === 'paid' ? 'success' : 'warning'; ?>"><?php echo strtoupper($payment['status']); ?></span></td>
                                     <td><?php echo sanitize($payment['note'] ?: '—'); ?></td>
                                     <td><?php echo sanitize(date('M j, Y', strtotime($payment['created_at']))); ?></td>
+                                    <td>
+                                        <?php if ($payment['status'] === 'paid'): ?>
+                                            <a href="receipt.php?payment_id=<?php echo $payment['id']; ?>" class="button button-secondary button-small">Receipt</a>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

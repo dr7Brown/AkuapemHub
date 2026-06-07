@@ -171,7 +171,7 @@ function get_worker_job_history($workerId, $limit = 20) {
 
 function get_customer_payment_history($customerId, $limit = 20) {
     global $pdo;
-    $stmt = $pdo->prepare('SELECT p.*, sr.title, sr.budget, sr.status, w.name AS worker_name FROM payments p JOIN service_requests sr ON p.request_id = sr.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.customer_id = ? ORDER BY p.created_at DESC LIMIT ?');
+    $stmt = $pdo->prepare('SELECT p.*, sr.title, sr.budget, sr.status AS request_status, w.name AS worker_name FROM payments p JOIN service_requests sr ON p.request_id = sr.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.customer_id = ? ORDER BY p.created_at DESC LIMIT ?');
     $stmt->bindValue(1, $customerId, PDO::PARAM_INT);
     $stmt->bindValue(2, $limit, PDO::PARAM_INT);
     $stmt->execute();
@@ -272,6 +272,20 @@ function save_completion_photos($requestId, array $files) {
     }
 
     return $saved;
+}
+
+function get_payment_receipt($paymentId, $customerId) {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT p.*, sr.title, sr.description, sr.location, sr.budget, sr.commission_percent,
+        c.name AS customer_name, c.email AS customer_email,
+        w.name AS worker_name
+        FROM payments p
+        JOIN service_requests sr ON p.request_id = sr.id
+        JOIN users c ON sr.customer_id = c.id
+        LEFT JOIN users w ON sr.assigned_worker_id = w.id
+        WHERE p.id = ? AND sr.customer_id = ?');
+    $stmt->execute([$paymentId, $customerId]);
+    return $stmt->fetch();
 }
 
 function get_top_workers($limit = 10) {
