@@ -31,6 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach ($skillList as $skill) {
             $skillStmt->execute([$profile['id'], $skill]);
         }
+
+        save_worker_schedule($profile['id'], $_POST['schedule_day'] ?? [], $_POST['schedule_start'] ?? [], $_POST['schedule_end'] ?? []);
+
         $success = 'Profile updated.';
         $stmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
         $stmt->execute([$user['id']]);
@@ -41,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $skillRows = $pdo->prepare('SELECT skill_name FROM worker_skills WHERE worker_profile_id = ?');
 $skillRows->execute([$profile['id']]);
 $skills = implode(', ', array_column($skillRows->fetchAll(), 'skill_name'));
+
+$schedule = get_worker_schedule($profile['id']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -86,6 +91,22 @@ $skills = implode(', ', array_column($skillRows->fetchAll(), 'skill_name'));
                     <option value="<?php echo sanitize($key); ?>" <?php echo $profile['availability'] === $key ? 'selected' : ''; ?>><?php echo sanitize($label); ?></option>
                 <?php endforeach; ?>
             </select>
+            <label>Weekly availability schedule</label>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <?php foreach (get_weekday_names() as $dayNum => $dayName): ?>
+                    <?php $daySlot = $schedule[$dayNum][0] ?? null; ?>
+                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                        <label style="display: flex; align-items: center; gap: 6px; min-width: 110px;">
+                            <input type="checkbox" name="schedule_day[<?php echo $dayNum; ?>]" value="1" <?php echo $daySlot ? 'checked' : ''; ?> />
+                            <?php echo sanitize($dayName); ?>
+                        </label>
+                        <input type="time" name="schedule_start[<?php echo $dayNum; ?>]" value="<?php echo $daySlot ? sanitize(substr($daySlot['start_time'], 0, 5)) : ''; ?>" />
+                        <span>to</span>
+                        <input type="time" name="schedule_end[<?php echo $dayNum; ?>]" value="<?php echo $daySlot ? sanitize(substr($daySlot['end_time'], 0, 5)) : ''; ?>" />
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <p class="meta">Tick the days you're available and set your working hours. Customers will see this on your profile.</p>
             <button type="submit" class="button button-primary">Save profile</button>
         </form>
     </main>

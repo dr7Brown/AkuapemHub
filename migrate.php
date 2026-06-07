@@ -18,6 +18,7 @@ $requiredTables = [
     'worker_skills',
     'messages',
     'disputes',
+    'worker_availability_slots',
 ];
 
 function table_exists($tableName) {
@@ -184,6 +185,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE CASCADE,
             FOREIGN KEY (reported_by) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (reported_user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'worker_availability_slots' => "CREATE TABLE IF NOT EXISTS worker_availability_slots (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            worker_profile_id INT UNSIGNED NOT NULL,
+            day_of_week TINYINT UNSIGNED NOT NULL,
+            start_time TIME NOT NULL,
+            end_time TIME NOT NULL,
+            INDEX idx_worker_availability_worker_profile_id (worker_profile_id),
+            FOREIGN KEY (worker_profile_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
     ];
 

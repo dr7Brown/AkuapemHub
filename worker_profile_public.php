@@ -24,6 +24,8 @@ $stmt = $pdo->prepare('SELECT ws.skill_name FROM worker_skills ws WHERE ws.worke
 $stmt->execute([$worker['id']]);
 $skills = array_column($stmt->fetchAll(), 'skill_name');
 
+$schedule = get_worker_schedule($worker['id']);
+
 $stmt = $pdo->prepare('SELECT sr.*, c.name AS category_name, r.score AS rating_score FROM service_requests sr JOIN service_categories c ON sr.category_id = c.id LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = sr.assigned_worker_id WHERE sr.assigned_worker_id = ? AND sr.status = "completed" ORDER BY sr.updated_at DESC LIMIT 10');
 $stmt->execute([$workerId]);
 $recentJobs = $stmt->fetchAll();
@@ -73,6 +75,23 @@ $recentJobs = $stmt->fetchAll();
                 <div style="margin: 20px 0; padding: 16px; background: #f9fafb; border-radius: 12px;">
                     <h3 style="margin-top: 0;">Skills</h3>
                     <p><?php echo sanitize(implode(', ', $skills)); ?></p>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($schedule)): ?>
+                <div style="margin: 20px 0; padding: 16px; background: #f9fafb; border-radius: 12px;">
+                    <h3 style="margin-top: 0;">Weekly availability</h3>
+                    <ul style="margin: 0; padding-left: 20px;">
+                        <?php foreach (get_weekday_names() as $dayNum => $dayName): ?>
+                            <?php if (!empty($schedule[$dayNum])): ?>
+                                <li><strong><?php echo sanitize($dayName); ?>:</strong>
+                                    <?php echo sanitize(implode(', ', array_map(function ($slot) {
+                                        return format_time_range($slot['start_time'], $slot['end_time']);
+                                    }, $schedule[$dayNum]))); ?>
+                                </li>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    </ul>
                 </div>
             <?php endif; ?>
 

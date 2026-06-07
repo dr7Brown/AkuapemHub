@@ -249,6 +249,42 @@ function get_categories() {
     return $stmt->fetchAll();
 }
 
+function get_weekday_names() {
+    return [0 => 'Sunday', 1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday'];
+}
+
+function get_worker_schedule($workerProfileId) {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT * FROM worker_availability_slots WHERE worker_profile_id = ? ORDER BY day_of_week ASC, start_time ASC');
+    $stmt->execute([$workerProfileId]);
+    $slots = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $slots[(int)$row['day_of_week']][] = $row;
+    }
+    return $slots;
+}
+
+function save_worker_schedule($workerProfileId, array $days, array $startTimes, array $endTimes) {
+    global $pdo;
+    $pdo->prepare('DELETE FROM worker_availability_slots WHERE worker_profile_id = ?')->execute([$workerProfileId]);
+    $stmt = $pdo->prepare('INSERT INTO worker_availability_slots (worker_profile_id, day_of_week, start_time, end_time) VALUES (?, ?, ?, ?)');
+    foreach (array_keys(get_weekday_names()) as $day) {
+        if (empty($days[$day])) {
+            continue;
+        }
+        $start = $startTimes[$day] ?? '';
+        $end = $endTimes[$day] ?? '';
+        if ($start === '' || $end === '' || $start >= $end) {
+            continue;
+        }
+        $stmt->execute([$workerProfileId, $day, $start, $end]);
+    }
+}
+
+function format_time_range($start, $end) {
+    return date('g:i A', strtotime($start)) . ' – ' . date('g:i A', strtotime($end));
+}
+
 function get_availability_options() {
     return [
         'available' => 'Available',
