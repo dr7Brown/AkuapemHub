@@ -40,6 +40,7 @@ try {
     send_email_notification($request['customer_email'], 'Your AkuapemHub request is complete', $message);
     notify_user($request['customer_id'], 'Job completed', "Your request '{$request['title']}' has been completed.", 'success');
     notify_user($user['id'], 'Job completed', "You marked '{$request['title']}' as completed.", 'success');
+    send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been marked complete by the worker. Please review the work and confirm payment.", 'whatsapp');
 
     $pdo->commit();
     flash('Job marked as completed. Customer has been notified.');

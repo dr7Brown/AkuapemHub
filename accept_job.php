@@ -37,6 +37,7 @@ try {
                    "Thank you.";
         send_email_notification($customer['email'], 'Your AkuapemHub job has been accepted', $message);
         notify_user($customer['id'], 'Job accepted', "Your request '{$request['title']}' has been accepted by a worker.", 'success');
+        send_business_message($customer['id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been accepted by a worker and is now in progress. Login to view details.", 'whatsapp');
     }
 
     notify_user($user['id'], 'Job accepted', "You accepted the request '{$request['title']}' and it is now in progress.", 'success');

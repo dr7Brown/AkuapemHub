@@ -56,12 +56,12 @@ Create an admin by setting `role = 'admin'` in the `users` table for a registere
 - Users can view a notification center to see alerts from admin and system events.
 - Admin can view detailed analytics including user counts, request status breakdown, ratings, revenue, top workers, and popular categories.
 
-## Future enhancements
+## Recently shipped
 
-- Real geolocation distance matching
-- Dispute/refund handling system
-- Worker availability/schedule calendar
+- Real geolocation distance matching (browser geolocation capture + Haversine distance display/sorting)
+- Dispute/refund handling system (admin dispute queue with resolution workflow)
+- Worker availability/schedule calendar (weekly availability slots on worker profiles)
 - Job completion photo/evidence upload
-- SMS/WhatsApp business integration
+- SMS/WhatsApp business integration (key-event messages logged via `business_messages`, pluggable provider in `config.php`, admin log at `admin/business_messages.php`)
 - Worker leaderboard and trending jobs view
-- Invoice/receipt PDF export
+- Invoice/receipt PDF export (browser print-to-PDF receipts)

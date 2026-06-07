@@ -20,6 +20,7 @@ $requiredTables = [
     'disputes',
     'worker_availability_slots',
     'completion_photos',
+    'business_messages',
 ];
 
 function table_exists($tableName) {
@@ -209,6 +210,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_completion_photos_request_id (request_id),
             FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'business_messages' => "CREATE TABLE IF NOT EXISTS business_messages (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id INT UNSIGNED NULL,
+            phone VARCHAR(40) NOT NULL,
+            channel ENUM('sms','whatsapp') NOT NULL DEFAULT 'whatsapp',
+            message TEXT NOT NULL,
+            status ENUM('sent','failed','skipped') NOT NULL DEFAULT 'skipped',
+            response_excerpt VARCHAR(255) DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_business_messages_user_id (user_id),
+            INDEX idx_business_messages_status (status),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
     ];
 

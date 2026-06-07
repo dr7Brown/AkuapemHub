@@ -279,6 +279,56 @@ function get_trending_categories($limit = 5, $days = 30) {
     return $stmt->fetchAll();
 }
 
+function send_business_message($userId, $phone, $message, $channel = 'whatsapp') {
+    global $pdo;
+    $cleanPhone = preg_replace('/[^0-9+]/', '', (string)$phone);
+    if (!$cleanPhone) {
+        return false;
+    }
+
+    $providerUrl = $channel === 'sms' ? SMS_PROVIDER_URL : WHATSAPP_PROVIDER_URL;
+    $providerToken = $channel === 'sms' ? SMS_PROVIDER_TOKEN : WHATSAPP_PROVIDER_TOKEN;
+
+    $status = 'skipped';
+    $responseExcerpt = 'No provider configured — message logged only.';
+
+    if ($providerUrl !== '') {
+        $ch = curl_init($providerUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['to' => $cleanPhone, 'message' => $message, 'channel' => $channel]),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $providerToken],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 5,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($response !== false && $httpCode >= 200 && $httpCode < 300) {
+            $status = 'sent';
+            $responseExcerpt = substr((string)$response, 0, 255);
+        } else {
+            $status = 'failed';
+            $responseExcerpt = substr($curlError !== '' ? $curlError : ('HTTP ' . $httpCode . ': ' . (string)$response), 0, 255);
+        }
+    }
+
+    $pdo->prepare('INSERT INTO business_messages (user_id, phone, channel, message, status, response_excerpt, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())')
+        ->execute([$userId, $cleanPhone, $channel, $message, $status, $responseExcerpt]);
+
+    return $status === 'sent';
+}
+
+function get_business_message_log($limit = 50) {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT bm.*, u.name AS user_name FROM business_messages bm LEFT JOIN users u ON bm.user_id = u.id ORDER BY bm.created_at DESC LIMIT ?');
+    $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll();
+}
+
 function distance_km($lat1, $lon1, $lat2, $lon2) {
     if ($lat1 === null || $lon1 === null || $lat2 === null || $lon2 === null) {
         return null;
