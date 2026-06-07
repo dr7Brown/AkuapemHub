@@ -274,6 +274,39 @@ function save_completion_photos($requestId, array $files) {
     return $saved;
 }
 
+function get_top_workers($limit = 10) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT u.id, u.name, w.location, w.subscription_status,
+        COUNT(DISTINCT sr.id) AS completed_jobs,
+        COALESCE(AVG(r.score), 0) AS avg_rating
+        FROM users u
+        JOIN worker_profiles w ON u.id = w.user_id
+        LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
+        LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = u.id
+        WHERE u.role = 'worker' AND u.banned = 0
+        GROUP BY u.id, u.name, w.location, w.subscription_status
+        HAVING completed_jobs > 0
+        ORDER BY avg_rating DESC, completed_jobs DESC
+        LIMIT ?");
+    $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll();
+}
+
+function get_trending_categories($limit = 5, $days = 30) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT c.id, c.name, COUNT(sr.id) AS request_count
+        FROM service_categories c
+        LEFT JOIN service_requests sr ON sr.category_id = c.id AND sr.created_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        GROUP BY c.id, c.name
+        ORDER BY request_count DESC
+        LIMIT ?");
+    $stmt->bindValue(1, $days, PDO::PARAM_INT);
+    $stmt->bindValue(2, $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll();
+}
+
 function build_location_filter($location) {
     return trim($location);
 }

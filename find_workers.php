@@ -68,6 +68,7 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
     <header class="topbar">
         <a href="<?php echo current_user() ? 'dashboard.php' : 'index.php'; ?>" class="button button-secondary button-small">Back</a>
         <h1>Find workers</h1>
+        <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>
         <?php if (current_user()): ?>
             <a href="logout.php" class="button button-secondary button-small">Logout</a>
         <?php else: ?>
