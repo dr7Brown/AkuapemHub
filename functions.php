@@ -231,6 +231,49 @@ function mark_messages_read($requestId, $userId) {
     return $stmt->execute([$requestId, $userId]);
 }
 
+function get_completion_photos($requestId) {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT * FROM completion_photos WHERE request_id = ? ORDER BY uploaded_at ASC');
+    $stmt->execute([$requestId]);
+    return $stmt->fetchAll();
+}
+
+function save_completion_photos($requestId, array $files) {
+    global $pdo;
+    $allowedTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+    $maxSize = 5 * 1024 * 1024;
+    $uploadDir = __DIR__ . '/uploads/completions/' . $requestId;
+    $saved = [];
+
+    if (empty($files['name']) || !is_array($files['name'])) {
+        return $saved;
+    }
+
+    foreach ($files['name'] as $index => $name) {
+        if ($files['error'][$index] !== UPLOAD_ERR_OK) {
+            continue;
+        }
+        $tmpPath = $files['tmp_name'][$index];
+        $size = $files['size'][$index];
+        $mimeType = mime_content_type($tmpPath);
+        if (!isset($allowedTypes[$mimeType]) || $size > $maxSize) {
+            continue;
+        }
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        $fileName = bin2hex(random_bytes(8)) . '.' . $allowedTypes[$mimeType];
+        $destination = $uploadDir . '/' . $fileName;
+        if (move_uploaded_file($tmpPath, $destination)) {
+            $relativePath = 'uploads/completions/' . $requestId . '/' . $fileName;
+            $pdo->prepare('INSERT INTO completion_photos (request_id, file_path, uploaded_at) VALUES (?, ?, NOW())')->execute([$requestId, $relativePath]);
+            $saved[] = $relativePath;
+        }
+    }
+
+    return $saved;
+}
+
 function build_location_filter($location) {
     return trim($location);
 }

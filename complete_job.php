@@ -27,6 +27,10 @@ $pdo->beginTransaction();
 try {
     $pdo->prepare('UPDATE service_requests SET status = ?, completion_notes = ?, updated_at = NOW() WHERE id = ?')->execute(['completed', $completionNotes ?: null, $requestId]);
 
+    if (!empty($_FILES['completion_photos'])) {
+        save_completion_photos($requestId, $_FILES['completion_photos']);
+    }
+
     $message = "Hello {$request['customer_name']},\n\n" .
                "Your request titled '{$request['title']}' has been completed by the worker.\n" .
                (!empty($completionNotes) ? "Worker notes: {$completionNotes}\n\n" : '') .

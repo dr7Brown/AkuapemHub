@@ -1,0 +1,5 @@
+*
+!.gitignore
+!completions/
+completions/*
+!completions/.gitkeep

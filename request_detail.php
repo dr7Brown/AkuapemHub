@@ -37,6 +37,8 @@ if ($canRate) {
     $ratingExists = (bool)$ratingStmt->fetch();
 }
 
+$completionPhotos = get_completion_photos($requestId);
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -71,6 +73,18 @@ if ($canRate) {
             <?php if (!empty($request['completion_notes'])): ?>
                 <p><strong>Completion notes:</strong> <?php echo sanitize($request['completion_notes']); ?></p>
             <?php endif; ?>
+            <?php if (!empty($completionPhotos)): ?>
+                <div style="margin: 16px 0;">
+                    <strong>Completion photos:</strong>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+                        <?php foreach ($completionPhotos as $photo): ?>
+                            <a href="<?php echo sanitize($photo['file_path']); ?>" target="_blank">
+                                <img src="<?php echo sanitize($photo['file_path']); ?>" alt="Completion evidence" style="width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" />
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            <?php endif; ?>
             <p><strong>Featured:</strong> <?php echo $request['featured'] ? 'Yes' : 'No'; ?></p>
             <p><strong>Payment status:</strong> <?php echo strtoupper($request['payment_status']); ?></p>
             <div class="request-footer">
@@ -87,9 +101,11 @@ if ($canRate) {
                     </form>
                 <?php endif; ?>
                 <?php if ($canComplete): ?>
-                    <form method="post" action="complete_job.php" style="display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 480px;">
+                    <form method="post" action="complete_job.php" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 480px;">
                         <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                         <textarea name="completion_notes" rows="3" placeholder="Add completion notes or evidence summary..."></textarea>
+                        <label class="meta">Attach photo evidence (JPG/PNG/WebP, up to 5MB each)</label>
+                        <input type="file" name="completion_photos[]" accept="image/jpeg,image/png,image/webp" multiple />
                         <button type="submit" class="button button-primary">Mark completed</button>
                     </form>
                 <?php endif; ?>

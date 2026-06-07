@@ -19,6 +19,7 @@ $requiredTables = [
     'messages',
     'disputes',
     'worker_availability_slots',
+    'completion_photos',
 ];
 
 function table_exists($tableName) {
@@ -195,6 +196,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             end_time TIME NOT NULL,
             INDEX idx_worker_availability_worker_profile_id (worker_profile_id),
             FOREIGN KEY (worker_profile_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'completion_photos' => "CREATE TABLE IF NOT EXISTS completion_photos (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            request_id INT UNSIGNED NOT NULL,
+            file_path VARCHAR(255) NOT NULL,
+            uploaded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_completion_photos_request_id (request_id),
+            FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
     ];
 
