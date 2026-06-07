@@ -1,0 +1,214 @@
+<?php
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/functions.php';
+
+require_login();
+$user = current_user();
+$flash = get_flash();
+$categories = get_categories();
+$notificationCount = get_unread_notifications_count($user['id']);
+
+$categoryFilter = $_GET['category'] ?? '';
+$locationFilter = $_GET['location'] ?? '';
+$statusFilter = $_GET['status'] ?? '';
+
+$where = [];
+$params = [];
+
+if ($categoryFilter) {
+    $where[] = 'sr.category_id = ?';
+    $params[] = $categoryFilter;
+}
+if ($locationFilter) {
+    $where[] = 'sr.location LIKE ?';
+    $params[] = '%' . $locationFilter . '%';
+}
+if ($statusFilter) {
+    $where[] = 'sr.status = ?';
+    $params[] = $statusFilter;
+}
+
+if (is_worker()) {
+    $sql = 'SELECT sr.*, u.name AS customer_name, wc.name AS category_name, w.user_id AS worker_user_id 
+            FROM service_requests sr
+            JOIN users u ON sr.customer_id = u.id
+            JOIN service_categories wc ON sr.category_id = wc.id
+            LEFT JOIN worker_profiles w ON sr.assigned_worker_id = w.user_id';
+    if ($where) {
+        $sql .= ' WHERE ' . implode(' AND ', $where);
+    }
+    $sql .= ' ORDER BY sr.created_at DESC LIMIT 100';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $requests = $stmt->fetchAll();
+
+    $stmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
+    $stmt->execute([$user['id']]);
+    $profile = $stmt->fetch();
+
+} elseif (is_customer()) {
+    $stmt = $pdo->prepare('SELECT sr.*, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment 
+        FROM service_requests sr
+        JOIN service_categories wc ON sr.category_id = wc.id
+        LEFT JOIN users u ON sr.assigned_worker_id = u.id
+        LEFT JOIN ratings r ON sr.id = r.request_id AND r.customer_id = sr.customer_id
+        WHERE sr.customer_id = ?
+        ORDER BY sr.created_at DESC');
+    $stmt->execute([$user['id']]);
+    $requests = $stmt->fetchAll();
+
+} else {
+    header('Location: admin/index.php');
+    exit;
+}
+
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — AkuapemHub</title>
+    <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <strong><?php echo sanitize($user['name']); ?></strong>
+            <span class="badge"><?php echo strtoupper($user['role']); ?></span>
+        </div>
+        <div class="topbar-actions">
+            <?php if (is_worker()): ?>
+                <a href="worker_profile.php" class="button button-small">Profile</a>
+            <?php else: ?>
+                <a href="request.php" class="button button-small">New request</a>
+            <?php endif; ?>
+            <a href="notifications.php" class="button button-secondary button-small">Notifications<?php if ($notificationCount): ?> (<strong><?php echo $notificationCount; ?></strong>)<?php endif; ?></a>
+            <a href="logout.php" class="button button-secondary button-small">Logout</a>
+        </div>
+    </header>
+    <main class="page-shell">
+        <?php if ($flash): ?>
+            <div class="alert alert-<?php echo sanitize($flash['type']); ?>"><?php echo sanitize($flash['message']); ?></div>
+        <?php endif; ?>
+
+        <?php if (is_worker()): ?>
+            <section class="panel">
+                <div class="panel-header">
+                    <h1>Available jobs</h1>
+                    <form method="get" class="filter-form">
+                        <select name="category">
+                            <option value="">All categories</option>
+                            <?php foreach ($categories as $category): ?>
+                                <option value="<?php echo $category['id']; ?>" <?php echo $categoryFilter == $category['id'] ? 'selected' : ''; ?>><?php echo sanitize($category['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
+                        <button type="submit" class="button button-primary">Filter</button>
+                    </form>
+                </div>
+                <?php if (!$requests): ?>
+                    <div class="empty-state">No jobs match your filters.</div>
+                <?php else: ?>
+                    <?php foreach ($requests as $request): ?>
+                        <?php if ($request['status'] !== 'open' && $request['assigned_worker_id'] !== $user['id']) continue; ?>
+                        <article class="request-card">
+                            <div class="request-head">
+                                <div>
+                                    <h2><?php echo sanitize($request['title']); ?></h2>
+                                    <?php if ($request['featured']): ?>
+                                        <span class="badge badge-featured">Featured</span>
+                                    <?php endif; ?>
+                                    <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
+                                </div>
+                                <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                            </div>
+                            <p><?php echo sanitize($request['description']); ?></p>
+                            <div class="request-footer">
+                                <span>Budget: GH₵ <?php echo sanitize($request['budget']); ?></span>
+                                <div class="button-group">
+                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
+                                    <?php $contactUrl = whatsapp_contact_link($request['contact_info'], $request['title']); ?>
+                                    <?php if ($contactUrl): ?>
+                                        <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
+                                    <?php endif; ?>
+                                    <?php if ($request['status'] === 'open'): ?>
+                                        <form method="post" action="accept_job.php">
+                                            <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                            <button type="submit" class="button button-primary">Accept job</button>
+                                        </form>
+                                    <?php elseif ($request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id']): ?>
+                                        <form method="post" action="complete_job.php">
+                                            <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                            <button type="submit" class="button button-primary">Mark completed</button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </section>
+            <section class="panel">
+                <h2>Your worker profile</h2>
+                <p>Availability: <?php echo sanitize($profile['availability']); ?></p>
+                <p>Location: <?php echo sanitize($profile['location'] ?: 'Not set'); ?></p>
+            </section>
+        <?php else: ?>
+            <section class="panel">
+                <div class="panel-header">
+                    <h1>Your service requests</h1>
+                    <a href="request.php" class="button button-primary">Create request</a>
+                </div>
+                <?php if (!$requests): ?>
+                    <div class="empty-state">You have no service requests yet.</div>
+                <?php else: ?>
+                    <?php foreach ($requests as $request): ?>
+                        <article class="request-card">
+                            <div class="request-head">
+                                <div>
+                                    <h2><?php echo sanitize($request['title']); ?></h2>
+                                    <?php if ($request['featured']): ?>
+                                        <span class="badge badge-featured">Featured</span>
+                                    <?php endif; ?>
+                                    <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
+                                </div>
+                                <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                            </div>
+                            <p><?php echo sanitize($request['description']); ?></p>
+                            <div class="request-footer">
+                                <span>Budget: GH₵ <?php echo sanitize($request['budget']); ?></span>
+                                <span>Worker: <?php echo sanitize($request['assigned_worker_name'] ?: 'Not assigned'); ?></span>
+                                <span>Payment: <?php echo strtoupper($request['payment_status']); ?></span>
+                            </div>
+                            <div class="request-footer">
+                                <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
+                                <?php $contactUrl = whatsapp_contact_link($request['contact_info'], $request['title']); ?>
+                                <?php if ($contactUrl): ?>
+                                    <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
+                                <?php endif; ?>
+                            </div>
+                            <?php if ($request['status'] === 'completed'): ?>
+                                <div class="request-footer">
+                                    <?php if ($request['rating_score'] === null && $request['assigned_worker_id']): ?>
+                                        <a href="rate_job.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Rate worker</a>
+                                    <?php elseif ($request['rating_score'] !== null): ?>
+                                        <span>Rated: <?php echo sanitize($request['rating_score']); ?>/5</span>
+                                    <?php endif; ?>
+                                    <form method="post" action="toggle_payment.php" class="inline-form">
+                                        <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                        <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
+                                        <button type="submit" class="button button-primary button-small">
+                                            Mark as <?php echo $request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid'; ?>
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
+                        </article>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </section>
+        <?php endif; ?>
+    </main>
+</body>
+</html>

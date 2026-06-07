@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard - AkuapemHub</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">AkuapemHub</div>
+    <button id="logout-button" class="button button-secondary">Logout</button>
+  </header>
+  <main class="container dashboard">
+    <section class="panel">
+      <div class="section-header">
+        <h1>Community listings</h1>
+        <button id="refresh-button" class="button">Refresh</button>
+      </div>
+      <form id="search-form" class="search-form">
+        <input id="search-query" type="search" placeholder="Search by service, category, location" />
+        <select id="search-category"></select>
+        <button type="submit" class="button button-primary">Search</button>
+      </form>
+      <div id="listings" class="listings"></div>
+    </section>
+    <section class="panel card">
+      <h2>Post a listing</h2>
+      <form id="create-form">
+        <label>Title</label>
+        <input id="listing-title" type="text" required />
+        <label>Description</label>
+        <textarea id="listing-description" rows="4" required></textarea>
+        <label>Category</label>
+        <select id="listing-category" required></select>
+        <label>Location</label>
+        <input id="listing-location" type="text" required />
+        <label>Price / Rate</label>
+        <input id="listing-price" type="text" placeholder="Free or e.g. GH₵ 80" />
+        <button type="submit" class="button button-primary">Publish</button>
+        <p id="form-message" class="message"></p>
+      </form>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

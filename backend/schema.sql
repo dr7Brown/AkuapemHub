@@ -1,0 +1,39 @@
+CREATE DATABASE IF NOT EXISTS akuapemhub CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE akuapemhub;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(180) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role VARCHAR(30) NOT NULL DEFAULT 'user',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS categories (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL UNIQUE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS listings (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  category_id INT UNSIGNED NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  description TEXT NOT NULL,
+  location VARCHAR(140) NOT NULL,
+  price VARCHAR(80) NOT NULL DEFAULT 'Free',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO categories (name) VALUES
+('Home Services'),
+('Education'),
+('Transport'),
+('Food & Catering'),
+('Health & Wellness'),
+('Crafts & Artisans'),
+('Jobs & Gigs'),
+('Events & Entertainment');

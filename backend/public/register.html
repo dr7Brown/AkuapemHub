@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register - AkuapemHub</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container form-page">
+    <h1>Register</h1>
+    <form id="register-form" class="card">
+      <label>Name</label>
+      <input type="text" id="name" required />
+      <label>Email</label>
+      <input type="email" id="email" required />
+      <label>Password</label>
+      <input type="password" id="password" required minlength="6" />
+      <button type="submit" class="button button-primary">Create account</button>
+      <p class="small">Already have an account? <a href="login.html">Login</a></p>
+      <p id="form-message" class="message"></p>
+    </form>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
