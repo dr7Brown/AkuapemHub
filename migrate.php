@@ -80,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             location VARCHAR(140) NOT NULL,
             budget VARCHAR(80) NOT NULL,
             contact_info VARCHAR(180) NOT NULL,
+            completion_notes TEXT DEFAULT NULL,
             status ENUM('pending','open','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending',
             payment_status ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
             commission_percent INT UNSIGNED NOT NULL DEFAULT 10,
@@ -197,6 +198,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             $status[$tableName] = true;
         }
         $pdo->exec($initData);
+        if (table_exists('service_requests')) {
+            $completionColumn = $pdo->query("SHOW COLUMNS FROM service_requests LIKE 'completion_notes'")->fetch();
+            if (!$completionColumn) {
+                $pdo->exec('ALTER TABLE service_requests ADD COLUMN completion_notes TEXT DEFAULT NULL');
+            }
+        }
         $migrated = true;
     } catch (Exception $e) {
         $errors[] = $e->getMessage();

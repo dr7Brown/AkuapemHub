@@ -8,24 +8,49 @@ if (!is_admin()) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && !empty($_POST['request_id'])) {
-    $requestId = intval($_POST['request_id']);
-    $stmt = $pdo->prepare('SELECT sr.*, u.email AS customer_email, u.name AS customer_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE sr.id = ?');
-    $stmt->execute([$requestId]);
-    $request = $stmt->fetch();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
+    if ($_POST['action'] === 'bulk' && !empty($_POST['selected_requests']) && is_array($_POST['selected_requests'])) {
+        $requestIds = array_map('intval', $_POST['selected_requests']);
+        $bulkAction = $_POST['bulk_action'] ?? '';
+        $placeholders = implode(',', array_fill(0, count($requestIds), '?'));
+        $stmt = $pdo->prepare("SELECT sr.*, u.email AS customer_email, u.name AS customer_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE sr.id IN ($placeholders)");
+        $stmt->execute($requestIds);
+        $selectedRequests = $stmt->fetchAll();
 
-    if ($_POST['action'] === 'approve' && $request) {
-        $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $requestId]);
-        send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.");
-        notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
-    } elseif ($_POST['action'] === 'remove' && $request) {
-        $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$requestId]);
-        send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.");
-        notify_user($request['customer_id'], 'Request removed', "Your request '{$request['title']}' was removed by admin.", 'warning');
-    } elseif ($_POST['action'] === 'feature' && $request) {
-        $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$requestId]);
-        send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n");
-        notify_user($request['customer_id'], 'Request featured', "Your request '{$request['title']}' was marked as featured.", 'success');
+        foreach ($selectedRequests as $request) {
+            if ($bulkAction === 'approve') {
+                $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $request['id']]);
+                send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.");
+                notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
+            } elseif ($bulkAction === 'remove') {
+                $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$request['id']]);
+                send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.");
+                notify_user($request['customer_id'], 'Request removed', "Your request '{$request['title']}' was removed by admin.", 'warning');
+            } elseif ($bulkAction === 'feature') {
+                $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$request['id']]);
+                send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n");
+                notify_user($request['customer_id'], 'Request featured', "Your request '{$request['title']}' was marked as featured.", 'success');
+            }
+        }
+    } elseif (!empty($_POST['request_id'])) {
+        $requestId = intval($_POST['request_id']);
+        $stmt = $pdo->prepare('SELECT sr.*, u.email AS customer_email, u.name AS customer_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE sr.id = ?');
+        $stmt->execute([$requestId]);
+        $request = $stmt->fetch();
+
+        if ($_POST['action'] === 'approve' && $request) {
+            $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $requestId]);
+            send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.");
+            notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
+        } elseif ($_POST['action'] === 'remove' && $request) {
+            $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$requestId]);
+            send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.");
+            notify_user($request['customer_id'], 'Request removed', "Your request '{$request['title']}' was removed by admin.", 'warning');
+        } elseif ($_POST['action'] === 'feature' && $request) {
+            $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$requestId]);
+            send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n");
+            notify_user($request['customer_id'], 'Request featured', "Your request '{$request['title']}' was marked as featured.", 'success');
+        }
     }
     header('Location: requests.php');
     exit;
@@ -50,11 +75,28 @@ $requests = $stmt->fetchAll();
     </header>
     <main class="page-shell">
         <section class="panel">
+            <form id="bulk-requests" method="post" action="requests.php" class="filter-form" style="margin-bottom: 16px; gap: 8px; flex-wrap: wrap;">
+                <input type="hidden" name="action" value="bulk" />
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <span>Bulk action</span>
+                    <select name="bulk_action">
+                        <option value="approve">Approve selected</option>
+                        <option value="remove">Remove selected</option>
+                        <option value="feature">Feature selected</option>
+                    </select>
+                </label>
+                <button type="submit" class="button button-primary button-small">Apply</button>
+            </form>
+
             <?php if (!$requests): ?>
                 <div class="empty-state">No service requests available.</div>
             <?php else: ?>
                 <?php foreach ($requests as $request): ?>
                     <article class="request-card">
+                        <label style="display: block; margin-bottom: 8px; font-size: 0.95rem;">
+                            <input type="checkbox" name="selected_requests[]" value="<?php echo $request['id']; ?>" form="bulk-requests" />
+                            Select this request
+                        </label>
                         <div class="request-head">
                             <h2><?php echo sanitize($request['title']); ?></h2>
                             <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>

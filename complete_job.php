@@ -12,6 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id'])) {
 }
 
 $requestId = intval($_POST['request_id']);
+$completionNotes = trim($_POST['completion_notes'] ?? '');
 $stmt = $pdo->prepare('SELECT sr.*, u.email AS customer_email, u.name AS customer_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE sr.id = ? AND sr.assigned_worker_id = ? AND sr.status = ?');
 $stmt->execute([$requestId, $user['id'], 'in_progress']);
 $request = $stmt->fetch();
@@ -24,10 +25,11 @@ if (!$request) {
 
 $pdo->beginTransaction();
 try {
-    $pdo->prepare('UPDATE service_requests SET status = ?, updated_at = NOW() WHERE id = ?')->execute(['completed', $requestId]);
+    $pdo->prepare('UPDATE service_requests SET status = ?, completion_notes = ?, updated_at = NOW() WHERE id = ?')->execute(['completed', $completionNotes ?: null, $requestId]);
 
     $message = "Hello {$request['customer_name']},\n\n" .
                "Your request titled '{$request['title']}' has been completed by the worker.\n" .
+               (!empty($completionNotes) ? "Worker notes: {$completionNotes}\n\n" : '') .
                "Please review the work, leave a rating, and confirm payment if everything is good.\n\n" .
                "Thank you for using AkuapemHub.";
 

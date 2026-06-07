@@ -22,6 +22,11 @@ if ($locationFilter) {
     $params[] = '%' . $locationFilter . '%';
 }
 
+if ($skillFilter) {
+    $where[] = "EXISTS (SELECT 1 FROM worker_skills wss WHERE wss.worker_profile_id = w.id AND wss.skill_name LIKE ?)";
+    $params[] = '%' . $skillFilter . '%';
+}
+
 $orderBy = 'u.created_at DESC';
 if ($sortBy === 'rating') {
     $orderBy = 'avg_rating DESC, completed_jobs DESC';
@@ -33,13 +38,15 @@ if ($sortBy === 'rating') {
 
 $sql = "SELECT u.id, u.name, u.created_at, w.location, w.subscription_status, w.availability,
         COALESCE(COUNT(DISTINCT sr.id), 0) AS completed_jobs,
-        COALESCE(AVG(r.score), 0) AS avg_rating
+        COALESCE(AVG(r.score), 0) AS avg_rating,
+        GROUP_CONCAT(DISTINCT ws.skill_name ORDER BY ws.skill_name SEPARATOR ', ') AS skills
         FROM users u
         LEFT JOIN worker_profiles w ON u.id = w.user_id
+        LEFT JOIN worker_skills ws ON w.id = ws.worker_profile_id
         LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
         LEFT JOIN ratings r ON sr.id = r.request_id
         WHERE " . implode(' AND ', $where) . "
-        GROUP BY u.id
+        GROUP BY u.id, u.name, u.created_at, w.location, w.subscription_status, w.availability
         ORDER BY " . $orderBy . "
         LIMIT 100";
 
@@ -72,6 +79,12 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
             <form method="get" class="filter-form" style="flex-direction: column; gap: 14px;">
                 <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search by name or bio" />
                 <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
+                <select name="skill">
+                    <option value="">All skills</option>
+                    <?php foreach ($allSkills as $skillOption): ?>
+                        <option value="<?php echo sanitize($skillOption['skill_name']); ?>" <?php echo $skillFilter === $skillOption['skill_name'] ? 'selected' : ''; ?>><?php echo sanitize($skillOption['skill_name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
                 <select name="sort">
                     <option value="rating" <?php echo $sortBy === 'rating' ? 'selected' : ''; ?>>Sort by rating</option>
                     <option value="completed" <?php echo $sortBy === 'completed' ? 'selected' : ''; ?>>Most completed</option>
@@ -94,9 +107,14 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
                             </div>
                             <span class="status status-<?php echo $worker['availability']; ?>"><?php echo strtoupper($worker['availability']); ?></span>
                         </div>
-                        <div class="request-footer">
-                            <span><?php echo $worker['completed_jobs']; ?> jobs completed</span>
-                            <span><?php echo number_format($worker['avg_rating'], 1); ?>/5 rating</span>
+                        <div class="request-footer" style="flex-direction: column; gap: 8px; align-items: flex-start;">
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                <span><?php echo $worker['completed_jobs']; ?> jobs completed</span>
+                                <span><?php echo number_format($worker['avg_rating'], 1); ?>/5 rating</span>
+                            </div>
+                            <?php if (!empty($worker['skills'])): ?>
+                                <p style="margin: 0; font-size: 0.95rem; color: #333;">Skills: <?php echo sanitize($worker['skills']); ?></p>
+                            <?php endif; ?>
                             <a href="worker_profile_public.php?id=<?php echo $worker['id']; ?>" class="button button-primary button-small">View profile</a>
                         </div>
                     </article>

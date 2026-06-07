@@ -68,6 +68,9 @@ if ($canRate) {
             <?php if ($request['assigned_worker_id']): ?>
                 <p><strong>Assigned worker:</strong> <?php echo sanitize($request['worker_name'] ?: 'Worker'); ?></p>
             <?php endif; ?>
+            <?php if (!empty($request['completion_notes'])): ?>
+                <p><strong>Completion notes:</strong> <?php echo sanitize($request['completion_notes']); ?></p>
+            <?php endif; ?>
             <p><strong>Featured:</strong> <?php echo $request['featured'] ? 'Yes' : 'No'; ?></p>
             <p><strong>Payment status:</strong> <?php echo strtoupper($request['payment_status']); ?></p>
             <div class="request-footer">
@@ -84,8 +87,9 @@ if ($canRate) {
                     </form>
                 <?php endif; ?>
                 <?php if ($canComplete): ?>
-                    <form method="post" action="complete_job.php">
+                    <form method="post" action="complete_job.php" style="display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 480px;">
                         <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                        <textarea name="completion_notes" rows="3" placeholder="Add completion notes or evidence summary..."></textarea>
                         <button type="submit" class="button button-primary">Mark completed</button>
                     </form>
                 <?php endif; ?>

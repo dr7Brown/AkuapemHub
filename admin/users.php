@@ -8,12 +8,30 @@ if (!is_admin()) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && !empty($_POST['user_id'])) {
-    $userId = intval($_POST['user_id']);
-    if ($_POST['action'] === 'ban') {
-        $pdo->prepare('UPDATE users SET banned = 1 WHERE id = ?')->execute([$userId]);
-    } elseif ($_POST['action'] === 'unban') {
-        $pdo->prepare('UPDATE users SET banned = 0 WHERE id = ?')->execute([$userId]);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
+    if ($_POST['action'] === 'bulk' && !empty($_POST['selected_users']) && is_array($_POST['selected_users'])) {
+        $userIds = array_filter(array_map('intval', $_POST['selected_users']));
+        $bulkAction = $_POST['bulk_action'] ?? '';
+        if ($userIds) {
+            $placeholders = implode(',', array_fill(0, count($userIds), '?'));
+            $stmt = $pdo->prepare("SELECT id, role FROM users WHERE id IN ($placeholders) AND role != ?");
+            $stmt->execute([...$userIds, ADMIN_ROLE]);
+            $selectedUsers = $stmt->fetchAll();
+            foreach ($selectedUsers as $userItem) {
+                if ($bulkAction === 'ban') {
+                    $pdo->prepare('UPDATE users SET banned = 1 WHERE id = ?')->execute([$userItem['id']]);
+                } elseif ($bulkAction === 'unban') {
+                    $pdo->prepare('UPDATE users SET banned = 0 WHERE id = ?')->execute([$userItem['id']]);
+                }
+            }
+        }
+    } elseif (!empty($_POST['user_id'])) {
+        $userId = intval($_POST['user_id']);
+        if ($_POST['action'] === 'ban') {
+            $pdo->prepare('UPDATE users SET banned = 1 WHERE id = ?')->execute([$userId]);
+        } elseif ($_POST['action'] === 'unban') {
+            $pdo->prepare('UPDATE users SET banned = 0 WHERE id = ?')->execute([$userId]);
+        }
     }
     header('Location: users.php');
     exit;
@@ -38,10 +56,22 @@ $users = $stmt->fetchAll();
     </header>
     <main class="page-shell">
         <section class="panel">
+            <form id="bulk-users" method="post" action="users.php" class="filter-form" style="margin-bottom: 16px; gap: 8px; flex-wrap: wrap;">
+                <input type="hidden" name="action" value="bulk" />
+                <label style="display: flex; align-items: center; gap: 8px;">
+                    <span>Bulk user action</span>
+                    <select name="bulk_action">
+                        <option value="ban">Ban selected</option>
+                        <option value="unban">Unban selected</option>
+                    </select>
+                </label>
+                <button type="submit" class="button button-primary button-small">Apply</button>
+            </form>
             <div class="table-wrapper">
                 <table>
                     <thead>
                         <tr>
+                            <th></th>
                             <th>Name</th>
                             <th>Email</th>
                             <th>Role</th>
@@ -53,6 +83,11 @@ $users = $stmt->fetchAll();
                     <tbody>
                         <?php foreach ($users as $userItem): ?>
                             <tr>
+                                <td>
+                                    <?php if ($userItem['role'] !== ADMIN_ROLE): ?>
+                                        <input type="checkbox" name="selected_users[]" value="<?php echo $userItem['id']; ?>" form="bulk-users" />
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo sanitize($userItem['name']); ?></td>
                                 <td><?php echo sanitize($userItem['email']); ?></td>
                                 <td><?php echo sanitize($userItem['role']); ?></td>
