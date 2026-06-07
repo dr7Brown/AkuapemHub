@@ -27,7 +27,7 @@ try {
     $pdo->prepare('UPDATE service_requests SET assigned_worker_id = ?, status = ?, updated_at = NOW() WHERE id = ?')->execute([$user['id'], 'in_progress', $requestId]);
     $pdo->prepare('INSERT INTO applications (request_id, worker_id, status, applied_at) VALUES (?, ?, ?, NOW())')->execute([$requestId, $user['id'], 'accepted']);
 
-    $customerStmt = $pdo->prepare('SELECT email, name FROM users WHERE id = ?');
+    $customerStmt = $pdo->prepare('SELECT id, email, name FROM users WHERE id = ?');
     $customerStmt->execute([$request['customer_id']]);
     $customer = $customerStmt->fetch();
     if ($customer) {
