@@ -14,6 +14,11 @@ $requestStmt = $pdo->query('SELECT COUNT(*) FROM service_requests');
 $totalRequests = $requestStmt->fetchColumn();
 $openStmt = $pdo->query('SELECT COUNT(*) FROM service_requests WHERE status = "open"');
 $openRequests = $openStmt->fetchColumn();
+$pendingStmt = $pdo->query('SELECT COUNT(*) FROM service_requests WHERE status = "pending"');
+$pendingRequests = $pendingStmt->fetchColumn();
+$completedStmt = $pdo->query('SELECT COUNT(*) FROM service_requests WHERE status = "completed"');
+$completedRequests = $completedStmt->fetchColumn();
+$premiumWorkers = get_premium_worker_count();
 
 ?>
 <!DOCTYPE html>
@@ -30,6 +35,8 @@ $openRequests = $openStmt->fetchColumn();
         <div class="topbar-actions">
             <a href="users.php" class="button button-small">Users</a>
             <a href="requests.php" class="button button-small">Requests</a>
+            <a href="disputes.php" class="button button-small">Disputes</a>
+            <a href="analytics.php" class="button button-small">Analytics</a>
             <a href="../logout.php" class="button button-secondary button-small">Logout</a>
         </div>
     </header>
@@ -46,6 +53,18 @@ $openRequests = $openStmt->fetchColumn();
             <div class="stat-card">
                 <h2><?php echo $openRequests; ?></h2>
                 <p>Open requests</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $pendingRequests; ?></h2>
+                <p>Pending approval</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $completedRequests; ?></h2>
+                <p>Completed jobs</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $premiumWorkers; ?></h2>
+                <p>Premium workers</p>
             </div>
         </section>
     </main>

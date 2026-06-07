@@ -63,6 +63,14 @@ $skills = implode(', ', array_column($skillRows->fetchAll(), 'skill_name'));
         <?php if ($success): ?>
             <div class="alert alert-success"><?php echo sanitize($success); ?></div>
         <?php endif; ?>
+        <div class="panel" style="margin-bottom:16px;">
+            <p><strong>Subscription:</strong> <?php echo sanitize(ucfirst($profile['subscription_status'])); ?></p>
+            <?php if ($profile['subscription_status'] === 'free'): ?>
+                <a href="toggle_subscription.php" class="button button-primary">Upgrade to Premium</a>
+            <?php else: ?>
+                <a href="toggle_subscription.php" class="button button-secondary">Switch to Free</a>
+            <?php endif; ?>
+        </div>
         <form class="card form-card" method="post" action="worker_profile.php">
             <label>Bio</label>
             <textarea name="bio" rows="4"><?php echo sanitize($profile['bio']); ?></textarea>

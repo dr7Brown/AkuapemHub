@@ -11,6 +11,7 @@ $notificationCount = get_unread_notifications_count($user['id']);
 $categoryFilter = $_GET['category'] ?? '';
 $locationFilter = $_GET['location'] ?? '';
 $statusFilter = $_GET['status'] ?? '';
+$searchQuery = trim($_GET['q'] ?? '');
 
 $where = [];
 $params = [];
@@ -26,6 +27,13 @@ if ($locationFilter) {
 if ($statusFilter) {
     $where[] = 'sr.status = ?';
     $params[] = $statusFilter;
+}
+if ($searchQuery) {
+    $where[] = '(sr.title LIKE ? OR sr.description LIKE ? OR wc.name LIKE ? OR sr.location LIKE ?)';
+    $params[] = '%' . $searchQuery . '%';
+    $params[] = '%' . $searchQuery . '%';
+    $params[] = '%' . $searchQuery . '%';
+    $params[] = '%' . $searchQuery . '%';
 }
 
 if (is_worker()) {
@@ -45,6 +53,9 @@ if (is_worker()) {
     $stmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
     $stmt->execute([$user['id']]);
     $profile = $stmt->fetch();
+    $workerCounts = get_worker_request_counts($user['id']);
+    $availableJobs = get_open_jobs_count();
+    $workerEarnings = get_paid_total_by_worker($user['id']);
 
 } elseif (is_customer()) {
     $stmt = $pdo->prepare('SELECT sr.*, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment 
@@ -56,6 +67,8 @@ if (is_worker()) {
         ORDER BY sr.created_at DESC');
     $stmt->execute([$user['id']]);
     $requests = $stmt->fetchAll();
+    $customerCounts = get_request_status_counts($user['id']);
+    $customerSpent = get_customer_spending_total($user['id']);
 
 } else {
     header('Location: admin/index.php');
@@ -80,8 +93,10 @@ if (is_worker()) {
         <div class="topbar-actions">
             <?php if (is_worker()): ?>
                 <a href="worker_profile.php" class="button button-small">Profile</a>
+                <a href="worker_history.php" class="button button-small">History</a>
             <?php else: ?>
                 <a href="request.php" class="button button-small">New request</a>
+                <a href="customer_payments.php" class="button button-small">Payments</a>
             <?php endif; ?>
             <a href="notifications.php" class="button button-secondary button-small">Notifications<?php if ($notificationCount): ?> (<strong><?php echo $notificationCount; ?></strong>)<?php endif; ?></a>
             <a href="logout.php" class="button button-secondary button-small">Logout</a>
@@ -94,6 +109,24 @@ if (is_worker()) {
 
         <?php if (is_worker()): ?>
             <section class="panel">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h2><?php echo $availableJobs; ?></h2>
+                        <p>Jobs available</p>
+                    </div>
+                    <div class="stat-card">
+                        <h2><?php echo $workerCounts['in_progress']; ?></h2>
+                        <p>Jobs in progress</p>
+                    </div>
+                    <div class="stat-card">
+                        <h2><?php echo $workerCounts['completed']; ?></h2>
+                        <p>Completed jobs</p>
+                    </div>
+                    <div class="stat-card">
+                        <h2>GH₵ <?php echo number_format($workerEarnings, 2); ?></h2>
+                        <p>Paid earnings</p>
+                    </div>
+                </div>
                 <div class="panel-header">
                     <h1>Available jobs</h1>
                     <form method="get" class="filter-form">
@@ -103,6 +136,7 @@ if (is_worker()) {
                                 <option value="<?php echo $category['id']; ?>" <?php echo $categoryFilter == $category['id'] ? 'selected' : ''; ?>><?php echo sanitize($category['name']); ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search jobs" />
                         <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
                         <button type="submit" class="button button-primary">Filter</button>
                     </form>
@@ -132,6 +166,7 @@ if (is_worker()) {
                                     <?php if ($contactUrl): ?>
                                         <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
                                     <?php endif; ?>
+                                    <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
                                     <?php if ($request['status'] === 'open'): ?>
                                         <form method="post" action="accept_job.php">
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
@@ -156,6 +191,24 @@ if (is_worker()) {
             </section>
         <?php else: ?>
             <section class="panel">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h2><?php echo $customerCounts['pending']; ?></h2>
+                        <p>Pending approval</p>
+                    </div>
+                    <div class="stat-card">
+                        <h2><?php echo $customerCounts['open']; ?></h2>
+                        <p>Open requests</p>
+                    </div>
+                    <div class="stat-card">
+                        <h2><?php echo $customerCounts['in_progress']; ?></h2>
+                        <p>In progress</p>
+                    </div>
+                    <div class="stat-card">
+                        <h2>GH₵ <?php echo number_format($customerSpent, 2); ?></h2>
+                        <p>Paid amount</p>
+                    </div>
+                </div>
                 <div class="panel-header">
                     <h1>Your service requests</h1>
                     <a href="request.php" class="button button-primary">Create request</a>
@@ -187,6 +240,7 @@ if (is_worker()) {
                                 <?php if ($contactUrl): ?>
                                     <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
                                 <?php endif; ?>
+                                <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
                             </div>
                             <?php if ($request['status'] === 'completed'): ?>
                                 <div class="request-footer">

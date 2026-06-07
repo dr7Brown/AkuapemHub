@@ -22,6 +22,7 @@ if ($user) {
             <div class="hero-actions">
                 <a href="register.php" class="button button-primary">Create account</a>
                 <a href="login.php" class="button button-secondary">Sign in</a>
+                <a href="find_workers.php" class="button button-secondary">Find workers</a>
             </div>
         </section>
         <section class="info-grid">
