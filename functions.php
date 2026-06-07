@@ -89,6 +89,15 @@ function mark_notifications_read($userId) {
     return $stmt->execute([$userId]);
 }
 
+function notify_admins($title, $body, $type = 'info') {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT id FROM users WHERE role = ?');
+    $stmt->execute([ADMIN_ROLE]);
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $adminId) {
+        notify_user($adminId, $title, $body, $type);
+    }
+}
+
 function get_request_status_counts($customerId) {
     global $pdo;
     $stmt = $pdo->prepare('SELECT status, COUNT(*) AS total FROM service_requests WHERE customer_id = ? GROUP BY status');

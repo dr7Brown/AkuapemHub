@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$requestId, $user['id'], $reportedUserId, $disputeType, $description]);
             
             notify_user($reportedUserId, 'Dispute filed', "A dispute has been filed against you for request '{$request['title']}'.", 'warning');
-            notify_user(1, 'New dispute', "A new dispute has been filed for request '{$request['title']}'.", 'warning');
+            notify_admins('New dispute', "A new dispute has been filed for request '{$request['title']}'.", 'warning');
             
             send_email_notification(ADMIN_EMAIL, 'New dispute filed', "A dispute has been filed:\n\nRequest: {$request['title']}\nType: {$disputeType}\n\nDescription:\n{$description}");
             
