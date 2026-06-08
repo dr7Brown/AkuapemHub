@@ -552,6 +552,28 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+.job-action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.job-action-bar > .button,
+.job-action-bar > form > .button {
+  width: 100%;
+}
+
+.job-action-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.job-action-bar-row .button {
+  flex: 1 1 calc(50% - 5px);
+}
+
 /* Tables */
 
 .table-wrapper {

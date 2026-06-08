@@ -55,82 +55,135 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 </head>
 <body class="has-bottom-nav">
     <header class="app-topbar">
-        <span class="brand"><span class="brand-icon">🧰</span> Job Details</span>
-        <a href="logout.php" class="button button-secondary button-small">Logout</a>
+        <a href="javascript:history.back()" class="brand" style="text-decoration: none;">
+            <span class="brand-icon">‹</span> Job Details
+        </a>
     </header>
-    <main class="page-shell">
-        <section class="panel">
-            <div class="request-head">
-                <div>
-                    <h2><?php echo sanitize($request['title']); ?></h2>
-                    <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
-                </div>
+    <main class="page-shell small-shell">
+        <section class="card">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
+                <h1 style="margin: 0; font-size: 1.25rem;"><?php echo sanitize($request['title']); ?></h1>
                 <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
             </div>
-            <p><?php echo sanitize($request['description']); ?></p>
-            <p><strong>Budget:</strong> GH₵ <?php echo sanitize($request['budget']); ?></p>
-            <p><strong>Customer:</strong> <?php echo sanitize($request['customer_name']); ?> (<?php echo sanitize($request['customer_email']); ?>)</p>
-            <p><strong>Contact:</strong> <?php echo sanitize($request['contact_info']); ?></p>
-            <?php if ($request['assigned_worker_id']): ?>
-                <p><strong>Assigned worker:</strong> <?php echo sanitize($request['worker_name'] ?: 'Worker'); ?></p>
-            <?php endif; ?>
-            <?php if (!empty($request['completion_notes'])): ?>
-                <p><strong>Completion notes:</strong> <?php echo sanitize($request['completion_notes']); ?></p>
-            <?php endif; ?>
-            <?php if (!empty($completionPhotos)): ?>
-                <div style="margin: 16px 0;">
-                    <strong>Completion photos:</strong>
-                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
-                        <?php foreach ($completionPhotos as $photo): ?>
-                            <a href="<?php echo sanitize($photo['file_path']); ?>" target="_blank">
-                                <img src="<?php echo sanitize($photo['file_path']); ?>" alt="Completion evidence" style="width: 120px; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" />
-                            </a>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-            <?php endif; ?>
-            <p><strong>Featured:</strong> <?php echo $request['featured'] ? 'Yes' : 'No'; ?></p>
-            <p><strong>Payment status:</strong> <?php echo strtoupper($request['payment_status']); ?></p>
-            <div class="request-footer">
-                <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/request_detail.php?id=' . $request['id']); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
-                <?php $contactUrl = whatsapp_contact_link($request['contact_info'], $request['title']); ?>
-                <?php if ($contactUrl): ?>
-                    <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
-                <?php endif; ?>
-                <a href="messages.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Messages</a>
-                <?php if ($canAccept): ?>
-                    <form method="post" action="accept_job.php">
-                        <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                        <button type="submit" class="button button-primary">Accept job</button>
-                    </form>
-                <?php endif; ?>
-                <?php if ($canComplete): ?>
-                    <form method="post" action="complete_job.php" enctype="multipart/form-data" style="display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 480px;">
-                        <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                        <textarea name="completion_notes" rows="3" placeholder="Add completion notes or evidence summary..."></textarea>
-                        <label class="meta">Attach photo evidence (JPG/PNG/WebP, up to 5MB each)</label>
-                        <input type="file" name="completion_photos[]" accept="image/jpeg,image/png,image/webp" multiple />
-                        <button type="submit" class="button button-primary">Mark completed</button>
-                    </form>
-                <?php endif; ?>
-                <?php if ($canMarkPaid): ?>
-                    <form method="post" action="toggle_payment.php" class="inline-form">
-                        <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                        <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
-                        <button type="submit" class="button button-primary button-small">Mark as <?php echo $request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid'; ?></button>
-                    </form>
-                <?php endif; ?>
-                <?php if ($canRate && !$ratingExists): ?>
-                    <a href="rate_job.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Rate worker</a>
-                <?php endif; ?>
-                <?php if (is_customer() && $request['customer_id'] === $user['id'] && $request['status'] !== 'completed' && $request['status'] !== 'cancelled'): ?>
-                    <a href="cancel_request.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Cancel request</a>
-                    <a href="file_dispute.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">File dispute</a>
-                <?php elseif (is_worker() && $request['assigned_worker_id'] === $user['id'] && $request['status'] !== 'cancelled'): ?>
-                    <a href="file_dispute.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">File dispute</a>
+            <div style="margin-top: 8px;">
+                <span class="badge" style="margin-left: 0;"><?php echo sanitize($request['category_name']); ?></span>
+                <?php if ($request['featured']): ?>
+                    <span class="badge badge-featured">⭐ Featured</span>
                 <?php endif; ?>
             </div>
+
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 18px;">
+                <span class="avatar avatar-sm"><?php echo sanitize(strtoupper(substr($request['customer_name'], 0, 1))); ?></span>
+                <div>
+                    <p class="meta" style="margin: 0;">Posted by</p>
+                    <strong><?php echo sanitize($request['customer_name']); ?></strong>
+                </div>
+            </div>
+            <p class="meta" style="margin-top: 10px;">📍 <?php echo sanitize($request['location']); ?> · <?php echo sanitize(time_ago($request['created_at'])); ?></p>
+
+            <div class="info-grid" style="margin: 18px 0;">
+                <div>
+                    <p class="meta" style="margin: 0 0 2px;">Budget</p>
+                    <strong>GH₵ <?php echo sanitize($request['budget']); ?></strong>
+                </div>
+                <div>
+                    <p class="meta" style="margin: 0 0 2px;">Payment</p>
+                    <strong><?php echo strtoupper($request['payment_status']); ?></strong>
+                </div>
+            </div>
+
+            <h2 style="font-size: 1rem; margin-bottom: 6px;">Description</h2>
+            <p><?php echo nl2br(sanitize($request['description'])); ?></p>
+
+            <h2 style="font-size: 1rem; margin: 16px 0 6px;">Skills needed</h2>
+            <span class="badge" style="margin-left: 0;"><?php echo sanitize($request['category_name']); ?></span>
+
+            <h2 style="font-size: 1rem; margin: 16px 0 6px;">Location</h2>
+            <p style="margin: 0;"><?php echo sanitize($request['location']); ?></p>
+
+            <?php if ($request['assigned_worker_id']): ?>
+                <h2 style="font-size: 1rem; margin: 16px 0 6px;">Assigned worker</h2>
+                <p style="margin: 0;"><?php echo sanitize($request['worker_name'] ?: 'Worker'); ?></p>
+            <?php endif; ?>
+
+            <?php if (!empty($request['completion_notes'])): ?>
+                <h2 style="font-size: 1rem; margin: 16px 0 6px;">Completion notes</h2>
+                <p style="margin: 0;"><?php echo nl2br(sanitize($request['completion_notes'])); ?></p>
+            <?php endif; ?>
+
+            <?php if (!empty($completionPhotos)): ?>
+                <h2 style="font-size: 1rem; margin: 16px 0 6px;">Completion photos</h2>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                    <?php foreach ($completionPhotos as $photo): ?>
+                        <a href="<?php echo sanitize($photo['file_path']); ?>" target="_blank">
+                            <img src="<?php echo sanitize($photo['file_path']); ?>" alt="Completion evidence" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" />
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </section>
+
+        <?php if ($canComplete): ?>
+            <section class="card form-card">
+                <h2 style="margin-top: 0;">Mark this job as completed</h2>
+                <form method="post" action="complete_job.php" enctype="multipart/form-data">
+                    <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                    <textarea name="completion_notes" rows="3" placeholder="Add completion notes or evidence summary..."></textarea>
+                    <label class="meta">Attach photo evidence (JPG/PNG/WebP, up to 5MB each)</label>
+                    <input type="file" name="completion_photos[]" accept="image/jpeg,image/png,image/webp" multiple />
+                    <button type="submit" class="button button-primary">Mark completed</button>
+                </form>
+            </section>
+        <?php endif; ?>
+
+        <?php
+        $primaryAction = null;
+        if ($canAccept) {
+            $primaryAction = ['form', 'accept_job.php', 'Accept this job'];
+        } elseif ($canMarkPaid) {
+            $primaryAction = ['form_paid', null, 'Mark as ' . ($request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid')];
+        } elseif ($canRate && !$ratingExists) {
+            $primaryAction = ['link', 'rate_job.php?request_id=' . $request['id'], 'Rate worker'];
+        }
+
+        $secondaryActions = [];
+        $contactUrl = whatsapp_contact_link($request['contact_info'], $request['title']);
+        if ($contactUrl) {
+            $secondaryActions[] = ['link_external', $contactUrl, '💬 Chat on WhatsApp'];
+        }
+        $secondaryActions[] = ['link', 'messages.php?request_id=' . $request['id'], '✉️ Messages'];
+        if (is_customer() && $request['customer_id'] === $user['id'] && $request['status'] !== 'completed' && $request['status'] !== 'cancelled') {
+            $secondaryActions[] = ['link', 'cancel_request.php?request_id=' . $request['id'], 'Cancel request'];
+            $secondaryActions[] = ['link', 'file_dispute.php?request_id=' . $request['id'], 'File dispute'];
+        } elseif (is_worker() && $request['assigned_worker_id'] === $user['id'] && $request['status'] !== 'cancelled') {
+            $secondaryActions[] = ['link', 'file_dispute.php?request_id=' . $request['id'], 'File dispute'];
+        }
+        $secondaryActions[] = ['link_external', whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/request_detail.php?id=' . $request['id']), '🔗 Share'];
+        $secondaryActions = array_slice($secondaryActions, 0, $primaryAction ? 3 : 4);
+        ?>
+        <div class="job-action-bar">
+            <?php if ($primaryAction): ?>
+                <?php if ($primaryAction[0] === 'form'): ?>
+                    <form method="post" action="<?php echo sanitize($primaryAction[1]); ?>">
+                        <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                        <button type="submit" class="button button-primary"><?php echo sanitize($primaryAction[2]); ?></button>
+                    </form>
+                <?php elseif ($primaryAction[0] === 'form_paid'): ?>
+                    <form method="post" action="toggle_payment.php">
+                        <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                        <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
+                        <button type="submit" class="button button-primary"><?php echo sanitize($primaryAction[2]); ?></button>
+                    </form>
+                <?php else: ?>
+                    <a href="<?php echo sanitize($primaryAction[1]); ?>" class="button button-primary"><?php echo sanitize($primaryAction[2]); ?></a>
+                <?php endif; ?>
+            <?php endif; ?>
+            <div class="job-action-bar-row">
+                <?php foreach ($secondaryActions as $action): ?>
+                    <a href="<?php echo sanitize($action[1]); ?>" <?php echo $action[0] === 'link_external' ? 'target="_blank"' : ''; ?> class="button button-secondary button-small"><?php echo sanitize($action[2]); ?></a>
+                <?php endforeach; ?>
+            </div>
+        </div>
 
         <?php if ($recommendedWorkers): ?>
             <section class="panel">
