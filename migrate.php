@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             name VARCHAR(120) NOT NULL,
             email VARCHAR(180) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
-            role ENUM('customer','worker','admin') NOT NULL DEFAULT 'customer',
+            role ENUM('customer','worker','admin','manager') NOT NULL DEFAULT 'customer',
             phone VARCHAR(20) DEFAULT NULL,
             town_id INT UNSIGNED DEFAULT NULL,
             latitude DECIMAL(10,7) DEFAULT NULL,
@@ -391,6 +391,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             }
             if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'email_notifications_enabled'")->fetch()) {
                 $pdo->exec('ALTER TABLE users ADD COLUMN email_notifications_enabled TINYINT(1) NOT NULL DEFAULT 1');
+            }
+            $roleColumn = $pdo->query("SHOW COLUMNS FROM users LIKE 'role'")->fetch();
+            if ($roleColumn && strpos($roleColumn['Type'], "'manager'") === false) {
+                $pdo->exec("ALTER TABLE users MODIFY COLUMN role ENUM('customer','worker','admin','manager') NOT NULL DEFAULT 'customer'");
             }
         }
         if (table_exists('service_requests')) {

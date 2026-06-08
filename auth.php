@@ -44,3 +44,13 @@ function is_customer() {
     $user = current_user();
     return $user && $user['role'] === 'customer';
 }
+
+function is_manager() {
+    $user = current_user();
+    return $user && $user['role'] === 'manager';
+}
+
+function is_admin_or_manager() {
+    $user = current_user();
+    return $user && ($user['role'] === 'admin' || $user['role'] === 'manager');
+}

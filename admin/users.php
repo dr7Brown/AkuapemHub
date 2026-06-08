@@ -31,6 +31,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             $pdo->prepare('UPDATE users SET banned = 1 WHERE id = ?')->execute([$userId]);
         } elseif ($_POST['action'] === 'unban') {
             $pdo->prepare('UPDATE users SET banned = 0 WHERE id = ?')->execute([$userId]);
+        } elseif ($_POST['action'] === 'change_role') {
+            $newRole = $_POST['role'] ?? '';
+            if (in_array($newRole, ['customer', 'worker', 'manager'], true)) {
+                $pdo->prepare('UPDATE users SET role = ? WHERE id = ? AND role != ?')->execute([$newRole, $userId, ADMIN_ROLE]);
+            }
         }
     }
     header('Location: users.php');
@@ -90,7 +95,22 @@ $users = $stmt->fetchAll();
                                 </td>
                                 <td><?php echo sanitize($userItem['name']); ?></td>
                                 <td><?php echo sanitize($userItem['email']); ?></td>
-                                <td><?php echo sanitize($userItem['role']); ?></td>
+                                <td>
+                                    <?php if ($userItem['role'] === ADMIN_ROLE): ?>
+                                        <?php echo sanitize($userItem['role']); ?>
+                                    <?php else: ?>
+                                        <form method="post" class="inline-form" action="users.php" style="display: flex; gap: 6px; align-items: center;">
+                                            <input type="hidden" name="user_id" value="<?php echo $userItem['id']; ?>" />
+                                            <input type="hidden" name="action" value="change_role" />
+                                            <select name="role">
+                                                <option value="customer" <?php echo $userItem['role'] === 'customer' ? 'selected' : ''; ?>>Customer</option>
+                                                <option value="worker" <?php echo $userItem['role'] === 'worker' ? 'selected' : ''; ?>>Worker</option>
+                                                <option value="manager" <?php echo $userItem['role'] === 'manager' ? 'selected' : ''; ?>>Manager</option>
+                                            </select>
+                                            <button type="submit" class="button button-small button-secondary">Set</button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo $userItem['banned'] ? 'Banned' : 'Active'; ?></td>
                                 <td><?php echo sanitize($userItem['created_at']); ?></td>
                                 <td>
