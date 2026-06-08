@@ -21,10 +21,9 @@ foreach ($paymentHistory as $p) {
     <title>Payment History — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Payment History</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">💳</span> Payment History</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell">
@@ -82,5 +81,6 @@ foreach ($paymentHistory as $p) {
             <?php endif; ?>
         </section>
     </main>
+    <?php $activeNav = 'jobs'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

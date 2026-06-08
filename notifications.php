@@ -15,11 +15,9 @@ $notifications = get_notifications($user['id'], 20);
     <title>Notifications — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Notifications</h1>
-        <a href="logout.php" class="button button-secondary button-small">Logout</a>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🔔</span> Notifications</span>
     </header>
     <main class="page-shell">
         <section class="panel">
@@ -39,5 +37,6 @@ $notifications = get_notifications($user['id'], 20);
             <?php endif; ?>
         </section>
     </main>
+    <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

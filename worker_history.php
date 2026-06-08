@@ -19,10 +19,9 @@ $earnings = get_paid_total_by_worker($user['id']);
     <title>Job History — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Job History</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🧰</span> My Jobs</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell">
@@ -76,5 +75,6 @@ $earnings = get_paid_total_by_worker($user['id']);
             <?php endif; ?>
         </section>
     </main>
+    <?php $activeNav = 'jobs'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

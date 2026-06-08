@@ -59,10 +59,9 @@ $schedule = get_worker_schedule($profile['id']);
     <title>Worker Profile — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Worker profile</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">👤</span> Worker Profile</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
@@ -139,5 +138,6 @@ $schedule = get_worker_schedule($profile['id']);
             });
         });
     </script>
+    <?php $activeNav = 'profile'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

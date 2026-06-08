@@ -1,0 +1,40 @@
+<?php
+/**
+ * Shared bottom tab bar. Include after $user = current_user(); is set.
+ * Optional: set $activeNav to one of 'home','jobs','workers','messages','profile' to force the active tab.
+ */
+if (!isset($user) || !$user) {
+    return;
+}
+
+$navUnreadMessages = function_exists('get_unread_messages_count') ? get_unread_messages_count($user['id']) : 0;
+
+$profileHref = $user['role'] === 'worker' ? 'worker_profile.php' : 'settings.php';
+$jobsHref = $user['role'] === 'worker' ? 'worker_history.php' : 'dashboard.php';
+
+$navItems = [
+    'home' => ['href' => 'dashboard.php', 'icon' => '🏠', 'label' => 'Home'],
+    'jobs' => ['href' => $jobsHref, 'icon' => '🧰', 'label' => 'Jobs'],
+    'workers' => ['href' => 'find_workers.php', 'icon' => '🔍', 'label' => 'Workers'],
+    'messages' => ['href' => 'messages.php', 'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
+    'profile' => ['href' => $profileHref, 'icon' => '👤', 'label' => 'Profile'],
+];
+
+if (!isset($activeNav)) {
+    $currentScript = basename($_SERVER['SCRIPT_NAME']);
+    $activeNav = 'home';
+    foreach ($navItems as $key => $item) {
+        if (basename(parse_url($item['href'], PHP_URL_PATH)) === $currentScript) {
+            $activeNav = $key;
+        }
+    }
+}
+?>
+<nav class="bottom-nav">
+    <?php foreach ($navItems as $key => $item): ?>
+        <a href="<?php echo sanitize($item['href']); ?>" class="bottom-nav-item <?php echo $activeNav === $key ? 'active' : ''; ?>">
+            <span class="nav-icon<?php echo !empty($item['count']) ? ' nav-badge' : ''; ?>" <?php echo !empty($item['count']) ? 'data-count="' . (int)$item['count'] . '"' : ''; ?>><?php echo $item['icon']; ?></span>
+            <span><?php echo sanitize($item['label']); ?></span>
+        </a>
+    <?php endforeach; ?>
+</nav>

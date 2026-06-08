@@ -50,10 +50,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Rate Worker — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Rate worker</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">⭐</span> Rate Worker</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
@@ -75,5 +74,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit" class="button button-primary">Send rating</button>
         </form>
     </main>
+    <?php $activeNav = 'jobs'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

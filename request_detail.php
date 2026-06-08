@@ -53,10 +53,9 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
     <title>Request details — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Request details</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🧰</span> Job Details</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell">
@@ -170,5 +169,6 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             </section>
         <?php endif; ?>
     </main>
+    <?php $activeNav = 'jobs'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

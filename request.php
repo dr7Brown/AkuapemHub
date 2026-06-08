@@ -56,10 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>New Request — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>New request</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">📝</span> Post a Job</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
@@ -191,5 +190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             suggestionTimer = setTimeout(fetchBudgetSuggestion, 500);
         });
     </script>
+    <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

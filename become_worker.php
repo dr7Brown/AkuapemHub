@@ -96,10 +96,9 @@ $skillCategories = get_skill_categories_with_skills();
     <title>Become a worker — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="settings.php" class="button button-secondary button-small">Back</a>
-        <h1>Become a worker</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🧰</span> Become a Worker</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
@@ -333,5 +332,6 @@ $skillCategories = get_skill_categories_with_skills();
         });
     </script>
     <?php endif; ?>
+    <?php $activeNav = 'profile'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

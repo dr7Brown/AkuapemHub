@@ -38,14 +38,13 @@ $recentJobs = $stmt->fetchAll();
     <title><?php echo sanitize($worker['name']); ?> — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="<?php echo current_user() ? 'dashboard.php' : 'index.php'; ?>" class="button button-secondary button-small">Back</a>
-        <h1>Worker profile</h1>
+<body class="<?php echo current_user() ? 'has-bottom-nav' : ''; ?>">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">👤</span> Worker Profile</span>
         <?php if (current_user()): ?>
             <a href="logout.php" class="button button-secondary button-small">Logout</a>
         <?php else: ?>
-            <a href="login.php" class="button button-secondary button-small">Login</a>
+            <a href="login.php" class="button button-primary button-small">Login</a>
         <?php endif; ?>
     </header>
     <main class="page-shell">
@@ -133,5 +132,8 @@ $recentJobs = $stmt->fetchAll();
             <?php endif; ?>
         </section>
     </main>
+    <?php $user = current_user(); if ($user): ?>
+        <?php $activeNav = 'workers'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <?php endif; ?>
 </body>
 </html>

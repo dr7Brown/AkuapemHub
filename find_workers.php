@@ -73,6 +73,7 @@ if ($sortBy === 'distance' && $userLat !== null && $userLng !== null) {
 }
 
 $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY skill_name')->fetchAll();
+$user = current_user();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -82,16 +83,15 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
     <title>Find Workers — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="<?php echo current_user() ? 'dashboard.php' : 'index.php'; ?>" class="button button-secondary button-small">Back</a>
-        <h1>Find workers</h1>
-        <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>
-        <?php if (current_user()): ?>
-            <a href="logout.php" class="button button-secondary button-small">Logout</a>
-        <?php else: ?>
-            <a href="login.php" class="button button-secondary button-small">Login</a>
-        <?php endif; ?>
+<body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🔍</span> Find Workers</span>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>
+            <?php if (!$user): ?>
+                <a href="login.php" class="button button-primary button-small">Login</a>
+            <?php endif; ?>
+        </div>
     </header>
     <main class="page-shell">
         <section class="panel">
@@ -151,6 +151,9 @@ $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY
             <?php endif; ?>
         </section>
     </main>
+    <?php if ($user): ?>
+        <?php $activeNav = 'workers'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <?php endif; ?>
     <script>
         document.getElementById('find-near-me').addEventListener('click', function () {
             var status = document.getElementById('near-me-status');

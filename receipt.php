@@ -43,11 +43,10 @@ $receiptNumber = 'AKH-' . str_pad($receipt['id'], 6, '0', STR_PAD_LEFT);
         }
     </style>
 </head>
-<body>
-    <header class="topbar no-print">
+<body class="has-bottom-nav">
+    <header class="app-topbar no-print">
+        <span class="brand"><span class="brand-icon">🧾</span> Receipt</span>
         <a href="customer_payments.php" class="button button-secondary button-small">Back</a>
-        <h1>Receipt</h1>
-        <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
         <div class="no-print" style="margin-bottom: 16px; text-align: right;">
@@ -92,5 +91,8 @@ $receiptNumber = 'AKH-' . str_pad($receipt['id'], 6, '0', STR_PAD_LEFT);
             <p class="meta" style="margin-top: 24px;">Thank you for using <?php echo sanitize(APP_NAME); ?>. This receipt was generated automatically and reflects the payment status recorded in the system.</p>
         </div>
     </main>
+    <div class="no-print">
+        <?php $activeNav = 'jobs'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    </div>
 </body>
 </html>

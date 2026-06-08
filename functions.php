@@ -200,6 +200,57 @@ function mark_messages_read($requestId, $userId) {
     return $stmt->execute([$requestId, $userId]);
 }
 
+function get_user_conversations($userId, $limit = 30) {
+    global $pdo;
+    $stmt = $pdo->prepare(
+        'SELECT m.request_id, IF(m.sender_id = ?, m.recipient_id, m.sender_id) AS other_user_id, MAX(m.created_at) AS last_at
+         FROM messages m
+         WHERE m.sender_id = ? OR m.recipient_id = ?
+         GROUP BY m.request_id, other_user_id
+         ORDER BY last_at DESC
+         LIMIT ?'
+    );
+    $stmt->bindValue(1, $userId, PDO::PARAM_INT);
+    $stmt->bindValue(2, $userId, PDO::PARAM_INT);
+    $stmt->bindValue(3, $userId, PDO::PARAM_INT);
+    $stmt->bindValue(4, $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    $conversations = [];
+    foreach ($rows as $row) {
+        $otherStmt = $pdo->prepare('SELECT name, profile_photo FROM users WHERE id = ?');
+        $otherStmt->execute([$row['other_user_id']]);
+        $other = $otherStmt->fetch();
+
+        $requestStmt = $pdo->prepare('SELECT title FROM service_requests WHERE id = ?');
+        $requestStmt->execute([$row['request_id']]);
+        $request = $requestStmt->fetch();
+
+        if (!$other || !$request) {
+            continue;
+        }
+
+        $lastMsgStmt = $pdo->prepare('SELECT content, created_at FROM messages WHERE request_id = ? AND ((sender_id = ? AND recipient_id = ?) OR (sender_id = ? AND recipient_id = ?)) ORDER BY created_at DESC LIMIT 1');
+        $lastMsgStmt->execute([$row['request_id'], $userId, $row['other_user_id'], $row['other_user_id'], $userId]);
+        $lastMessage = $lastMsgStmt->fetch();
+
+        $unreadStmt = $pdo->prepare('SELECT COUNT(*) FROM messages WHERE request_id = ? AND recipient_id = ? AND sender_id = ? AND is_read = 0');
+        $unreadStmt->execute([$row['request_id'], $userId, $row['other_user_id']]);
+
+        $conversations[] = [
+            'request_id' => $row['request_id'],
+            'request_title' => $request['title'],
+            'other_user_name' => $other['name'],
+            'other_user_photo' => $other['profile_photo'],
+            'last_message' => $lastMessage['content'] ?? '',
+            'last_at' => $row['last_at'],
+            'unread_count' => (int)$unreadStmt->fetchColumn(),
+        ];
+    }
+    return $conversations;
+}
+
 function get_completion_photos($requestId) {
     global $pdo;
     $stmt = $pdo->prepare('SELECT * FROM completion_photos WHERE request_id = ? ORDER BY uploaded_at ASC');
@@ -692,6 +743,30 @@ function get_categories() {
     global $pdo;
     $stmt = $pdo->query('SELECT id, name FROM service_categories ORDER BY id');
     return $stmt->fetchAll();
+}
+
+function category_icon($categoryName) {
+    $name = strtolower($categoryName);
+    $icons = [
+        'errand' => '🏃',
+        'skilled' => '🛠️',
+        'micro' => '⚡',
+        'clean' => '🧹',
+        'plumb' => '🔧',
+        'electric' => '💡',
+        'carpen' => '🪚',
+        'paint' => '🎨',
+        'auto' => '🚗',
+        'tutor' => '🎓',
+        'event' => '🎉',
+        'weld' => '🔩',
+    ];
+    foreach ($icons as $keyword => $icon) {
+        if (strpos($name, $keyword) !== false) {
+            return $icon;
+        }
+    }
+    return '🧰';
 }
 
 function get_towns() {

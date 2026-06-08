@@ -72,10 +72,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Cancel request — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Cancel request</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🚫</span> Cancel Request</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
@@ -97,5 +96,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit" class="button button-primary" style="margin-top: 16px;">Cancel request</button>
         </form>
     </main>
+    <?php $activeNav = 'jobs'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

@@ -14,14 +14,13 @@ $trendingCategories = get_trending_categories(5, 30);
     <title>Leaderboard — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="<?php echo $user ? 'dashboard.php' : 'index.php'; ?>" class="button button-secondary button-small">Back</a>
-        <h1>Leaderboard</h1>
+<body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🏆</span> Leaderboard</span>
         <?php if ($user): ?>
             <a href="logout.php" class="button button-secondary button-small">Logout</a>
         <?php else: ?>
-            <a href="login.php" class="button button-secondary button-small">Login</a>
+            <a href="login.php" class="button button-primary button-small">Login</a>
         <?php endif; ?>
     </header>
     <main class="page-shell">
@@ -74,5 +73,8 @@ $trendingCategories = get_trending_categories(5, 30);
             <?php endif; ?>
         </section>
     </main>
+    <?php if ($user): ?>
+        <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <?php endif; ?>
 </body>
 </html>

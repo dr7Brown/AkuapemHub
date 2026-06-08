@@ -89,10 +89,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
     <title>Settings — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Settings</h1>
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">⚙️</span> Settings</span>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
@@ -186,6 +185,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
             </form>
         </section>
     </main>
+    <?php $activeNav = 'profile'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <script>
         document.getElementById('use-my-location').addEventListener('click', function () {
             var status = document.getElementById('location-status');
