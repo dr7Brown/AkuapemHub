@@ -103,7 +103,13 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             <p><?php echo nl2br(sanitize($request['description'])); ?></p>
 
             <h2 style="font-size: 1rem; margin: 16px 0 6px;">Skills needed</h2>
-            <span class="badge" style="margin-left: 0;"><?php echo sanitize($request['category_name']); ?></span>
+            <?php if (!empty($request['skills_needed'])): ?>
+                <?php foreach (array_filter(array_map('trim', explode(',', $request['skills_needed']))) as $skillName): ?>
+                    <span class="badge" style="margin-left: 0; margin-right: 6px;"><?php echo sanitize($skillName); ?></span>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <span class="badge" style="margin-left: 0;"><?php echo sanitize($request['category_name']); ?></span>
+            <?php endif; ?>
 
             <h2 style="font-size: 1rem; margin: 16px 0 6px;">Location</h2>
             <p style="margin: 0;"><?php echo sanitize($request['location']); ?></p>

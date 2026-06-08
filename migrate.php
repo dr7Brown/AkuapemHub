@@ -111,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             longitude DECIMAL(10,7) DEFAULT NULL,
             budget VARCHAR(80) NOT NULL,
             contact_info VARCHAR(180) NOT NULL,
+            skills_needed VARCHAR(255) DEFAULT NULL,
             completion_notes TEXT DEFAULT NULL,
             status ENUM('pending','open','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending',
             payment_status ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
@@ -407,6 +408,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             }
             if (!$pdo->query("SHOW COLUMNS FROM service_requests LIKE 'longitude'")->fetch()) {
                 $pdo->exec('ALTER TABLE service_requests ADD COLUMN longitude DECIMAL(10,7) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM service_requests LIKE 'skills_needed'")->fetch()) {
+                $pdo->exec('ALTER TABLE service_requests ADD COLUMN skills_needed VARCHAR(255) DEFAULT NULL');
             }
         }
         if (table_exists('worker_profiles')) {

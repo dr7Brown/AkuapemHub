@@ -16,14 +16,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $contactInfo = trim($user['phone'] ?? '');
     $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
+    $skillsNeeded = trim($_POST['skills_needed'] ?? '');
 
     if ($title === '' || $description === '' || $categoryId === 0 || $location === '' || $budget === '') {
         $error = 'All fields are required.';
     } elseif ($contactInfo === '') {
         $error = 'Add a phone number to your account on your profile before posting a request.';
     } else {
-        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, status, payment_status, commission_percent, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
-        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, 'pending', 'unpaid', DEFAULT_COMMISSION, 0]);
+        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, skills_needed, status, payment_status, commission_percent, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, $skillsNeeded !== '' ? $skillsNeeded : null, 'pending', 'unpaid', DEFAULT_COMMISSION, 0]);
 
         $categoryName = 'Unknown';
         foreach ($categories as $category) {
@@ -78,6 +79,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endforeach; ?>
             </select>
             <p class="meta" id="category-suggestion-note"></p>
+
+            <label>Skills needed <span class="meta">(optional — helps us match the right workers)</span></label>
+            <select id="skill-category-select">
+                <option value="">Select a skill category</option>
+                <?php foreach (get_skill_taxonomy() as $skillCategoryName => $skillNames): ?>
+                    <option value="<?php echo sanitize($skillCategoryName); ?>"><?php echo sanitize($skillCategoryName); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <select id="skill-name-select" disabled>
+                <option value="">Select a category first</option>
+            </select>
+            <button type="button" id="add-skill-button" class="button button-secondary button-small">+ Add skill</button>
+            <ul id="skill-list" style="list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 8px;"></ul>
+            <input type="hidden" name="skills_needed" id="skills-needed-input" />
+
             <label>Location</label>
             <input type="text" name="location" required placeholder="City, neighbourhood" />
             <input type="hidden" name="latitude" id="latitude" />
@@ -183,6 +199,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 })
                 .catch(function () { budgetSuggestion.textContent = ''; });
         }
+
+        var skillTaxonomy = <?php echo json_encode(get_skill_taxonomy()); ?>;
+        var skillCategorySelect = document.getElementById('skill-category-select');
+        var skillNameSelect = document.getElementById('skill-name-select');
+        var addSkillButton = document.getElementById('add-skill-button');
+        var skillList = document.getElementById('skill-list');
+        var skillsNeededInput = document.getElementById('skills-needed-input');
+        var selectedSkills = [];
+
+        skillCategorySelect.addEventListener('change', function () {
+            var skills = skillTaxonomy[this.value] || [];
+            skillNameSelect.innerHTML = '';
+            if (!skills.length) {
+                skillNameSelect.innerHTML = '<option value="">Select a category first</option>';
+                skillNameSelect.disabled = true;
+                return;
+            }
+            skillNameSelect.disabled = false;
+            var placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select a skill';
+            skillNameSelect.appendChild(placeholder);
+            skills.forEach(function (skillName) {
+                var option = document.createElement('option');
+                option.value = skillName;
+                option.textContent = skillName;
+                skillNameSelect.appendChild(option);
+            });
+        });
+
+        function renderSkillList() {
+            skillList.innerHTML = '';
+            selectedSkills.forEach(function (skillName, index) {
+                var li = document.createElement('li');
+                li.className = 'badge';
+                li.style.display = 'inline-flex';
+                li.style.alignItems = 'center';
+                li.style.gap = '6px';
+                li.textContent = skillName;
+                var removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.textContent = '×';
+                removeBtn.setAttribute('aria-label', 'Remove ' + skillName);
+                removeBtn.style.border = 'none';
+                removeBtn.style.background = 'transparent';
+                removeBtn.style.cursor = 'pointer';
+                removeBtn.addEventListener('click', function () {
+                    selectedSkills.splice(index, 1);
+                    renderSkillList();
+                });
+                li.appendChild(removeBtn);
+                skillList.appendChild(li);
+            });
+            skillsNeededInput.value = selectedSkills.join(', ');
+        }
+
+        addSkillButton.addEventListener('click', function () {
+            var skillName = skillNameSelect.value;
+            if (!skillName || selectedSkills.indexOf(skillName) !== -1) {
+                return;
+            }
+            selectedSkills.push(skillName);
+            renderSkillList();
+            skillNameSelect.value = '';
+        });
 
         categorySelect.addEventListener('change', fetchBudgetSuggestion);
         locationInput.addEventListener('input', function () {

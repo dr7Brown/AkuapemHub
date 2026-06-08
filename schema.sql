@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS service_requests (
   location VARCHAR(140) NOT NULL,
   budget VARCHAR(80) NOT NULL,
   contact_info VARCHAR(180) NOT NULL,
+  skills_needed VARCHAR(255) DEFAULT NULL,
   status ENUM('pending','open','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending',
   payment_status ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
   commission_percent INT UNSIGNED NOT NULL DEFAULT 10,
