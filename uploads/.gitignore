@@ -3,3 +3,9 @@
 !completions/
 completions/*
 !completions/.gitkeep
+!profiles/
+profiles/*
+!profiles/.gitkeep
+!worker_ids/
+worker_ids/*
+!worker_ids/.gitkeep

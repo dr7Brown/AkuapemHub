@@ -62,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             town_id INT UNSIGNED DEFAULT NULL,
             latitude DECIMAL(10,7) DEFAULT NULL,
             longitude DECIMAL(10,7) DEFAULT NULL,
+            profile_photo VARCHAR(255) DEFAULT NULL,
             banned TINYINT(1) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_users_town_id (town_id)
@@ -75,6 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             latitude DECIMAL(10,7) DEFAULT NULL,
             longitude DECIMAL(10,7) DEFAULT NULL,
             contact_phone VARCHAR(80) NOT NULL,
+            id_type ENUM('ghana_card','passport') DEFAULT NULL,
+            id_number VARCHAR(50) DEFAULT NULL,
+            id_document_path VARCHAR(255) DEFAULT NULL,
             availability ENUM('available','busy','offline') NOT NULL DEFAULT 'available',
             subscription_status ENUM('free','premium') NOT NULL DEFAULT 'free',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -303,6 +307,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'longitude'")->fetch()) {
                 $pdo->exec('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) DEFAULT NULL');
             }
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'profile_photo'")->fetch()) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255) DEFAULT NULL');
+            }
         }
         if (table_exists('service_requests')) {
             $completionColumn = $pdo->query("SHOW COLUMNS FROM service_requests LIKE 'completion_notes'")->fetch();
@@ -322,6 +329,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             }
             if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'longitude'")->fetch()) {
                 $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN longitude DECIMAL(10,7) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'id_type'")->fetch()) {
+                $pdo->exec("ALTER TABLE worker_profiles ADD COLUMN id_type ENUM('ghana_card','passport') DEFAULT NULL");
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'id_number'")->fetch()) {
+                $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN id_number VARCHAR(50) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'id_document_path'")->fetch()) {
+                $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN id_document_path VARCHAR(255) DEFAULT NULL');
             }
         }
         $migrated = true;

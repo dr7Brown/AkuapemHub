@@ -58,6 +58,7 @@ Create an admin by setting `role = 'admin'` in the `users` table for a registere
 
 ## Recently shipped
 
+- Worker ID verification + profile pictures at registration (workers must provide a Ghana Card or Passport type, ID number, and a photo of the card to register; all users may optionally upload a profile picture, shown on the dashboard)
 - Account settings page (settings.php — edit name, email, registered phone, town, GPS location, and change password from a dedicated "Settings" link in the dashboard/admin topbar)
 - Town selection + registered phone/GPS at signup (curated Akuapem North/South/Okere District town list, phone number captured once at registration and reused everywhere — request contact info and worker contact phone auto-fill from it instead of asking again)
 - Spam/fraud signals (admin request review now flags rapid-fire postings, contact info shared across accounts, and repeated very-low-budget requests)

@@ -18,11 +18,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $townId = intval($_POST['town_id'] ?? 0) ?: null;
     $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
+    $idType = $_POST['id_type'] ?? '';
+    $idNumber = trim($_POST['id_number'] ?? '');
+
+    $workerIdError = '';
+    if ($role === 'worker') {
+        if (!in_array($idType, ['ghana_card', 'passport'], true) || $idNumber === '') {
+            $workerIdError = 'Select an ID type (Ghana Card or Passport) and enter your ID card number.';
+        } elseif (empty($_FILES['id_document']['name'])) {
+            $workerIdError = 'Upload a clear photo of your Ghana Card or Passport.';
+        } elseif (!is_valid_image_upload($_FILES['id_document'])) {
+            $workerIdError = 'ID card photo must be a JPEG, PNG, or WEBP image under 5MB.';
+        }
+    }
 
     if ($name === '' || $email === '' || $password === '' || $phone === '' || !$townId) {
         $error = 'All fields are required, including phone number and town.';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Please use a valid email address.';
+    } elseif ($workerIdError !== '') {
+        $error = $workerIdError;
+    } elseif (!empty($_FILES['profile_photo']['name']) && !is_valid_image_upload($_FILES['profile_photo'])) {
+        $error = 'Profile picture must be a JPEG, PNG, or WEBP image under 5MB.';
     } else {
         $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
         $stmt->execute([$email]);
@@ -34,13 +51,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$name, $email, $passwordHash, $role, $phone, $townId, $latitude, $longitude]);
             $userId = $pdo->lastInsertId();
 
-            $townName = get_town_name($townId) ?: '';
-            if ($role === 'worker') {
-                $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, availability, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())');
-                $stmt->execute([$userId, '', $townName, $latitude, $longitude, $phone, 'available']);
+            if (!empty($_FILES['profile_photo']['name'])) {
+                $profilePhotoPath = save_uploaded_image($_FILES['profile_photo'], 'uploads/profiles/' . $userId);
+                if ($profilePhotoPath) {
+                    $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $userId]);
+                }
             }
 
-            $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, banned FROM users WHERE id = ?');
+            $townName = get_town_name($townId) ?: '';
+            if ($role === 'worker') {
+                $idDocumentPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $userId);
+                $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_number, id_document_path, availability, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+                $stmt->execute([$userId, '', $townName, $latitude, $longitude, $phone, $idType, $idNumber, $idDocumentPath, 'available']);
+            }
+
+            $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, banned FROM users WHERE id = ?');
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
             login_user($user);
@@ -60,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <main class="page-shell small-shell">
-        <form class="card form-card" method="post" action="register.php">
+        <form class="card form-card" method="post" action="register.php" enctype="multipart/form-data">
             <h1>Create account</h1>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
@@ -88,11 +113,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php endforeach; ?>
                 <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
             </select>
+            <label>Profile picture <span class="meta">(optional)</span></label>
+            <input type="file" name="profile_photo" accept="image/jpeg,image/png,image/webp" />
+            <p class="small-note" style="text-align: left; margin-top: 4px;">Shown on your dashboard. JPEG, PNG, or WEBP, up to 5MB.</p>
             <label>Role</label>
-            <select name="role" required>
+            <select name="role" id="role-select" required>
                 <option value="customer">Customer</option>
                 <option value="worker">Worker</option>
             </select>
+            <div id="worker-id-section" style="display: none;">
+                <label>ID type</label>
+                <select name="id_type" id="id-type-select">
+                    <option value="">Select ID type</option>
+                    <option value="ghana_card">Ghana Card</option>
+                    <option value="passport">Passport</option>
+                </select>
+                <label>ID card number</label>
+                <input type="text" name="id_number" id="id-number-input" placeholder="e.g. GHA-000000000-0" />
+                <label>Photo of ID card</label>
+                <input type="file" name="id_document" id="id-document-input" accept="image/jpeg,image/png,image/webp" />
+                <p class="small-note" style="text-align: left; margin-top: 4px;">Required for workers — Ghana Card or Passport, with both the ID number and a clear photo of the card. Used for verification only.</p>
+            </div>
             <input type="hidden" name="latitude" id="latitude" />
             <input type="hidden" name="longitude" id="longitude" />
             <button type="button" id="use-my-location" class="button button-secondary button-small">Share my GPS location</button>
@@ -102,6 +143,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
     </main>
     <script>
+        var roleSelect = document.getElementById('role-select');
+        var workerIdSection = document.getElementById('worker-id-section');
+        var idTypeSelect = document.getElementById('id-type-select');
+        var idNumberInput = document.getElementById('id-number-input');
+
+        function toggleWorkerIdSection() {
+            var isWorker = roleSelect.value === 'worker';
+            workerIdSection.style.display = isWorker ? 'block' : 'none';
+            idTypeSelect.required = isWorker;
+            idNumberInput.required = isWorker;
+        }
+        roleSelect.addEventListener('change', toggleWorkerIdSection);
+        toggleWorkerIdSection();
+
         document.getElementById('use-my-location').addEventListener('click', function () {
             var status = document.getElementById('location-status');
             if (!navigator.geolocation) {

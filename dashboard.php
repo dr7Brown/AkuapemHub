@@ -109,9 +109,16 @@ if (is_worker()) {
 </head>
 <body>
     <header class="topbar">
-        <div>
-            <strong><?php echo sanitize($user['name']); ?></strong>
-            <span class="badge"><?php echo strtoupper($user['role']); ?></span>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <?php if (!empty($user['profile_photo'])): ?>
+                <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile picture" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;" />
+            <?php else: ?>
+                <span class="badge" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;"><?php echo sanitize(strtoupper(substr($user['name'], 0, 1))); ?></span>
+            <?php endif; ?>
+            <div>
+                <strong><?php echo sanitize($user['name']); ?></strong>
+                <span class="badge"><?php echo strtoupper($user['role']); ?></span>
+            </div>
         </div>
         <div class="topbar-actions">
             <?php if (is_worker()): ?>

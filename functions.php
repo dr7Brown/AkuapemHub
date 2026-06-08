@@ -232,6 +232,39 @@ function save_completion_photos($requestId, array $files) {
     return $saved;
 }
 
+function save_uploaded_image(array $file, $relativeDir) {
+    $allowedTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+    $maxSize = 5 * 1024 * 1024;
+
+    if (empty($file['name']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+    $mimeType = mime_content_type($file['tmp_name']);
+    if (!isset($allowedTypes[$mimeType]) || $file['size'] > $maxSize) {
+        return null;
+    }
+
+    $uploadDir = __DIR__ . '/' . $relativeDir;
+    if (!is_dir($uploadDir)) {
+        mkdir($uploadDir, 0755, true);
+    }
+    $fileName = bin2hex(random_bytes(8)) . '.' . $allowedTypes[$mimeType];
+    if (move_uploaded_file($file['tmp_name'], $uploadDir . '/' . $fileName)) {
+        return $relativeDir . '/' . $fileName;
+    }
+    return null;
+}
+
+function is_valid_image_upload(array $file) {
+    $allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    $maxSize = 5 * 1024 * 1024;
+
+    if (empty($file['name']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return false;
+    }
+    return in_array(mime_content_type($file['tmp_name']), $allowedTypes, true) && $file['size'] <= $maxSize;
+}
+
 function get_payment_receipt($paymentId, $customerId) {
     global $pdo;
     $stmt = $pdo->prepare('SELECT p.*, sr.title, sr.description, sr.location, sr.budget, sr.commission_percent,
