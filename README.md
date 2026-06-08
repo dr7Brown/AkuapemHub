@@ -58,6 +58,7 @@ Create an admin by setting `role = 'admin'` in the `users` table for a registere
 
 ## Recently shipped
 
+- Spam/fraud signals (admin request review now flags rapid-fire postings, contact info shared across accounts, and repeated very-low-budget requests)
 - Auto-category suggestion (keyword matching on the request title/description pre-selects the most likely category as the customer types, with an option to override)
 - Auto-suggested budgets (live "similar jobs typically went for GH₵X–Y" hint while posting a request, based on category + location history)
 - Smart worker matching (multi-factor scoring on skill overlap, distance, rating, availability and track record — ranks open jobs for workers and recommends best-fit workers to customers on request pages)

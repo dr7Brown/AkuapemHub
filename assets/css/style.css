@@ -438,6 +438,12 @@ textarea {
 
 .alert-error { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
 .alert-success { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+.alert-warning { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+
+.alert ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
 
 /* Filter & inline forms */
 

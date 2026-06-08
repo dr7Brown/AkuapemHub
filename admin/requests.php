@@ -94,6 +94,7 @@ $requests = $stmt->fetchAll();
                 <div class="empty-state">No service requests available.</div>
             <?php else: ?>
                 <?php foreach ($requests as $request): ?>
+                    <?php $riskSignals = get_request_risk_signals($request); ?>
                     <article class="request-card">
                         <label style="display: block; margin-bottom: 8px; font-size: 0.95rem;">
                             <input type="checkbox" name="selected_requests[]" value="<?php echo $request['id']; ?>" form="bulk-requests" />
@@ -103,6 +104,16 @@ $requests = $stmt->fetchAll();
                             <h2><?php echo sanitize($request['title']); ?></h2>
                             <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
                         </div>
+                        <?php if ($riskSignals): ?>
+                            <div class="alert alert-warning">
+                                ⚠ Possible spam/fraud signals — review before approving:
+                                <ul>
+                                    <?php foreach ($riskSignals as $signal): ?>
+                                        <li><?php echo sanitize($signal); ?></li>
+                                    <?php endforeach; ?>
+                                </ul>
+                            </div>
+                        <?php endif; ?>
                         <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?> • GH₵ <?php echo sanitize($request['budget']); ?></p>
                         <p><?php echo sanitize($request['description']); ?></p>
                         <p>Customer: <?php echo sanitize($request['customer_name']); ?> • Contact: <?php echo sanitize($request['contact_info']); ?></p>

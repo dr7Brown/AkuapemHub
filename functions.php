@@ -592,6 +592,46 @@ function guess_category_for_text($title, $description, array $categories) {
     return null;
 }
 
+function get_request_risk_signals(array $request) {
+    global $pdo;
+    $signals = [];
+
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM service_requests WHERE customer_id = ? AND created_at >= (NOW() - INTERVAL 24 HOUR)');
+    $stmt->execute([$request['customer_id']]);
+    $recentCount = (int)$stmt->fetchColumn();
+    if ($recentCount >= 3) {
+        $signals[] = "Posted {$recentCount} requests in the last 24 hours (rapid-fire posting)";
+    }
+
+    $contact = trim((string)$request['contact_info']);
+    if ($contact !== '') {
+        $stmt = $pdo->prepare('SELECT COUNT(DISTINCT customer_id) FROM service_requests WHERE contact_info = ? AND customer_id != ?');
+        $stmt->execute([$contact, $request['customer_id']]);
+        $otherAccounts = (int)$stmt->fetchColumn();
+        if ($otherAccounts > 0) {
+            $signals[] = "Contact info '{$contact}' is also used by {$otherAccounts} other account(s)";
+        }
+    }
+
+    $amount = extract_numeric_amount($request['budget']);
+    if ($amount !== null && $amount <= 20) {
+        $stmt = $pdo->prepare('SELECT budget FROM service_requests WHERE customer_id = ? AND id != ?');
+        $stmt->execute([$request['customer_id'], $request['id']]);
+        $lowBudgetCount = 0;
+        foreach ($stmt->fetchAll() as $row) {
+            $otherAmount = extract_numeric_amount($row['budget']);
+            if ($otherAmount !== null && $otherAmount <= 20) {
+                $lowBudgetCount++;
+            }
+        }
+        if ($lowBudgetCount >= 2) {
+            $signals[] = "Repeated very low budget postings (this one GH₵{$amount}, plus {$lowBudgetCount} others ≤ GH₵20)";
+        }
+    }
+
+    return $signals;
+}
+
 function build_location_filter($location) {
     return trim($location);
 }
