@@ -111,8 +111,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <main class="page-shell small-shell">
+        <div style="text-align: center; margin-bottom: var(--space-4);">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; font-size: 28px; border-radius: 50%; background: var(--primary-soft); margin-bottom: 10px;">🏠</span>
+            <h1 style="margin: 0;">Create your account</h1>
+            <p class="meta">Join AkuapemHub to find work or get jobs done</p>
+        </div>
         <form class="card form-card" method="post" action="register.php" enctype="multipart/form-data" id="register-form">
-            <h1>Create account</h1>
             <p class="meta" id="step-indicator">Step 1 of 1</p>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>

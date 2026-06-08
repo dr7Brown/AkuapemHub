@@ -39,8 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <main class="page-shell small-shell">
+        <div style="text-align: center; margin-bottom: var(--space-4);">
+            <span style="display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; font-size: 28px; border-radius: 50%; background: var(--primary-soft); margin-bottom: 10px;">🏠</span>
+            <h1 style="margin: 0;">Welcome back</h1>
+            <p class="meta">Sign in to AkuapemHub</p>
+        </div>
         <form class="card form-card" method="post" action="login.php">
-            <h1>Sign in</h1>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
             <?php endif; ?>
