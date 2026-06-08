@@ -8,6 +8,7 @@ if (current_user()) {
 }
 
 $towns = get_towns();
+$skillCategories = get_skill_categories_with_skills();
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
@@ -21,14 +22,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $idType = $_POST['id_type'] ?? '';
     $idNumber = trim($_POST['id_number'] ?? '');
 
-    $workerIdError = '';
+    $skills = [];
+    if ($role === 'worker') {
+        $decodedSkills = json_decode($_POST['skills_json'] ?? '', true);
+        if (is_array($decodedSkills)) {
+            foreach ($decodedSkills as $entry) {
+                if (!is_array($entry)) {
+                    continue;
+                }
+                $skillName = trim((string)($entry['skill_name'] ?? ''));
+                $categoryId = intval($entry['category_id'] ?? 0) ?: null;
+                if ($skillName !== '') {
+                    $skills[] = ['category_id' => $categoryId, 'skill_name' => $skillName];
+                }
+            }
+        }
+    }
+
+    $workerError = '';
     if ($role === 'worker') {
         if (!in_array($idType, ['ghana_card', 'passport'], true) || $idNumber === '') {
-            $workerIdError = 'Select an ID type (Ghana Card or Passport) and enter your ID card number.';
+            $workerError = 'Select an ID type (Ghana Card or Passport) and enter your ID card number.';
         } elseif (empty($_FILES['id_document']['name'])) {
-            $workerIdError = 'Upload a clear photo of your Ghana Card or Passport.';
+            $workerError = 'Upload a clear photo of your Ghana Card or Passport.';
         } elseif (!is_valid_image_upload($_FILES['id_document'])) {
-            $workerIdError = 'ID card photo must be a JPEG, PNG, or WEBP image under 5MB.';
+            $workerError = 'ID card photo must be a JPEG, PNG, or WEBP image under 5MB.';
+        } elseif (empty($skills)) {
+            $workerError = 'Select at least one skill you offer.';
         }
     }
 
@@ -36,8 +56,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'All fields are required, including phone number and town.';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Please use a valid email address.';
-    } elseif ($workerIdError !== '') {
-        $error = $workerIdError;
+    } elseif ($workerError !== '') {
+        $error = $workerError;
     } elseif (!empty($_FILES['profile_photo']['name']) && !is_valid_image_upload($_FILES['profile_photo'])) {
         $error = 'Profile picture must be a JPEG, PNG, or WEBP image under 5MB.';
     } else {
@@ -63,6 +83,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $idDocumentPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $userId);
                 $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_number, id_document_path, availability, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
                 $stmt->execute([$userId, '', $townName, $latitude, $longitude, $phone, $idType, $idNumber, $idDocumentPath, 'available']);
+                $profileId = $pdo->lastInsertId();
+
+                $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id, category_id, skill_name) VALUES (?, ?, ?)');
+                foreach ($skills as $skill) {
+                    $skillStmt->execute([$profileId, $skill['category_id'], $skill['skill_name']]);
+                }
             }
 
             $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, banned FROM users WHERE id = ?');
@@ -85,43 +111,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body>
     <main class="page-shell small-shell">
-        <form class="card form-card" method="post" action="register.php" enctype="multipart/form-data">
+        <form class="card form-card" method="post" action="register.php" enctype="multipart/form-data" id="register-form">
             <h1>Create account</h1>
+            <p class="meta" id="step-indicator">Step 1 of 1</p>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
             <?php endif; ?>
-            <label>Name</label>
-            <input type="text" name="name" required />
-            <label>Email</label>
-            <input type="email" name="email" required />
-            <label>Password</label>
-            <input type="password" name="password" required minlength="6" />
-            <label>Phone number</label>
-            <input type="text" name="phone" required placeholder="e.g. 0244000000" value="<?php echo sanitize($_POST['phone'] ?? ''); ?>" />
-            <p class="small-note" style="text-align: left; margin-top: 4px;">We'll use this number for WhatsApp/SMS updates and as your contact info across the app — no need to retype it later.</p>
-            <label>Town</label>
-            <select name="town_id" required>
-                <option value="">Select your town</option>
-                <?php $currentDistrict = null; ?>
-                <?php foreach ($towns as $town): ?>
-                    <?php if ($town['district'] !== $currentDistrict): ?>
-                        <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
-                        <optgroup label="<?php echo sanitize($town['district']); ?>">
-                        <?php $currentDistrict = $town['district']; ?>
-                    <?php endif; ?>
-                    <option value="<?php echo $town['id']; ?>" <?php echo (isset($_POST['town_id']) && $_POST['town_id'] == $town['id']) ? 'selected' : ''; ?>><?php echo sanitize($town['name']); ?></option>
-                <?php endforeach; ?>
-                <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
-            </select>
-            <label>Profile picture <span class="meta">(optional)</span></label>
-            <input type="file" name="profile_photo" accept="image/jpeg,image/png,image/webp" />
-            <p class="small-note" style="text-align: left; margin-top: 4px;">Shown on your dashboard. JPEG, PNG, or WEBP, up to 5MB.</p>
-            <label>Role</label>
-            <select name="role" id="role-select" required>
-                <option value="customer">Customer</option>
-                <option value="worker">Worker</option>
-            </select>
-            <div id="worker-id-section" style="display: none;">
+
+            <div class="wizard-step" data-step="1">
+                <label>Name</label>
+                <input type="text" name="name" required value="<?php echo sanitize($_POST['name'] ?? ''); ?>" />
+                <label>Email</label>
+                <input type="email" name="email" required value="<?php echo sanitize($_POST['email'] ?? ''); ?>" />
+                <label>Password</label>
+                <input type="password" name="password" required minlength="6" />
+                <label>Phone number</label>
+                <input type="text" name="phone" required placeholder="e.g. 0244000000" value="<?php echo sanitize($_POST['phone'] ?? ''); ?>" />
+                <p class="small-note" style="text-align: left; margin-top: 4px;">We'll use this number for WhatsApp/SMS updates and as your contact info across the app — no need to retype it later.</p>
+                <label>Town</label>
+                <select name="town_id" required>
+                    <option value="">Select your town</option>
+                    <?php $currentDistrict = null; ?>
+                    <?php foreach ($towns as $town): ?>
+                        <?php if ($town['district'] !== $currentDistrict): ?>
+                            <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
+                            <optgroup label="<?php echo sanitize($town['district']); ?>">
+                            <?php $currentDistrict = $town['district']; ?>
+                        <?php endif; ?>
+                        <option value="<?php echo $town['id']; ?>" <?php echo (isset($_POST['town_id']) && $_POST['town_id'] == $town['id']) ? 'selected' : ''; ?>><?php echo sanitize($town['name']); ?></option>
+                    <?php endforeach; ?>
+                    <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
+                </select>
+                <label>Profile picture <span class="meta">(optional)</span></label>
+                <input type="file" name="profile_photo" accept="image/jpeg,image/png,image/webp" />
+                <p class="small-note" style="text-align: left; margin-top: 4px;">Shown on your dashboard. JPEG, PNG, or WEBP, up to 5MB.</p>
+                <label>I am registering as a</label>
+                <select name="role" id="role-select" required>
+                    <option value="customer">Customer</option>
+                    <option value="worker">Worker</option>
+                </select>
+                <input type="hidden" name="latitude" id="latitude" />
+                <input type="hidden" name="longitude" id="longitude" />
+                <button type="button" id="use-my-location" class="button button-secondary button-small">Share my GPS location</button>
+                <p class="meta" id="location-status">Sharing your location helps us match you with nearby jobs and workers.</p>
+            </div>
+
+            <div class="wizard-step" data-step="2" style="display: none;">
+                <h2>Identity verification</h2>
+                <p class="meta">Workers must verify their identity with a Ghana Card or Passport before they can accept jobs. This is for trust &amp; safety only — it is not shared publicly.</p>
                 <label>ID type</label>
                 <select name="id_type" id="id-type-select">
                     <option value="">Select ID type</option>
@@ -132,30 +169,232 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="text" name="id_number" id="id-number-input" placeholder="e.g. GHA-000000000-0" />
                 <label>Photo of ID card</label>
                 <input type="file" name="id_document" id="id-document-input" accept="image/jpeg,image/png,image/webp" />
-                <p class="small-note" style="text-align: left; margin-top: 4px;">Required for workers — Ghana Card or Passport, with both the ID number and a clear photo of the card. Used for verification only.</p>
+                <p class="small-note" style="text-align: left; margin-top: 4px;">Ghana Card or Passport — a clear photo of the card, JPEG/PNG/WEBP up to 5MB.</p>
             </div>
-            <input type="hidden" name="latitude" id="latitude" />
-            <input type="hidden" name="longitude" id="longitude" />
-            <button type="button" id="use-my-location" class="button button-secondary button-small">Share my GPS location</button>
-            <p class="meta" id="location-status">Sharing your location helps us match you with nearby jobs and workers.</p>
-            <button type="submit" class="button button-primary">Register</button>
+
+            <div class="wizard-step" data-step="3" style="display: none;">
+                <h2>Your skills</h2>
+                <p class="meta">Pick the skills you offer so customers and our matching system can find you. Choose a category, then a skill, and add it to your list. You can add as many as you like.</p>
+                <label>Skill category</label>
+                <select id="skill-category-select">
+                    <option value="">Select a category</option>
+                    <?php foreach ($skillCategories as $category): ?>
+                        <option value="<?php echo $category['id']; ?>"><?php echo sanitize($category['name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <label>Skill</label>
+                <select id="skill-select" disabled>
+                    <option value="">Select a category first</option>
+                </select>
+                <div id="other-skill-wrap" style="display: none;">
+                    <label>Specify your skill</label>
+                    <input type="text" id="other-skill-input" placeholder="e.g. Borehole drilling" />
+                </div>
+                <button type="button" id="add-skill-button" class="button button-secondary button-small">+ Add skill</button>
+                <p class="meta" id="skill-list-empty">No skills added yet — add at least one to continue.</p>
+                <ul id="skill-list" style="list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 8px;"></ul>
+                <input type="hidden" name="skills_json" id="skills-json" value="[]" />
+            </div>
+
+            <div class="wizard-nav" style="display: flex; justify-content: space-between; gap: 10px; margin-top: 12px;">
+                <button type="button" id="wizard-back" class="button button-secondary" style="display: none;">Back</button>
+                <button type="button" id="wizard-next" class="button button-primary" style="display: none;">Next</button>
+                <button type="submit" id="wizard-submit" class="button button-primary">Create account</button>
+            </div>
             <p class="small-note">Already registered? <a href="login.php">Sign in</a></p>
         </form>
     </main>
     <script>
+        var skillTaxonomy = <?php echo json_encode($skillCategories); ?>;
+
         var roleSelect = document.getElementById('role-select');
-        var workerIdSection = document.getElementById('worker-id-section');
         var idTypeSelect = document.getElementById('id-type-select');
         var idNumberInput = document.getElementById('id-number-input');
+        var idDocumentInput = document.getElementById('id-document-input');
 
-        function toggleWorkerIdSection() {
-            var isWorker = roleSelect.value === 'worker';
-            workerIdSection.style.display = isWorker ? 'block' : 'none';
-            idTypeSelect.required = isWorker;
-            idNumberInput.required = isWorker;
+        var stepIndicator = document.getElementById('step-indicator');
+        var backButton = document.getElementById('wizard-back');
+        var nextButton = document.getElementById('wizard-next');
+        var submitButton = document.getElementById('wizard-submit');
+        var stepEls = {};
+        document.querySelectorAll('.wizard-step').forEach(function (el) {
+            stepEls[el.getAttribute('data-step')] = el;
+        });
+        var currentStepIndex = 0;
+
+        function visibleSteps() {
+            return roleSelect.value === 'worker' ? ['1', '2', '3'] : ['1'];
         }
-        roleSelect.addEventListener('change', toggleWorkerIdSection);
-        toggleWorkerIdSection();
+
+        function setRequiredForStep(step, required) {
+            if (step === '2') {
+                idTypeSelect.required = required;
+                idNumberInput.required = required;
+                idDocumentInput.required = required;
+            }
+        }
+
+        function showStep(index) {
+            var steps = visibleSteps();
+            currentStepIndex = Math.max(0, Math.min(index, steps.length - 1));
+            steps.forEach(function (stepKey, i) {
+                var isVisible = i === currentStepIndex;
+                stepEls[stepKey].style.display = isVisible ? 'block' : 'none';
+                if (stepKey !== '1') {
+                    setRequiredForStep(stepKey, isVisible);
+                }
+            });
+            stepIndicator.textContent = 'Step ' + (currentStepIndex + 1) + ' of ' + steps.length;
+            backButton.style.display = currentStepIndex > 0 ? 'inline-flex' : 'none';
+            var isLastStep = currentStepIndex === steps.length - 1;
+            nextButton.style.display = isLastStep ? 'none' : 'inline-flex';
+            submitButton.style.display = isLastStep ? 'inline-flex' : 'none';
+        }
+
+        roleSelect.addEventListener('change', function () {
+            showStep(0);
+        });
+
+        backButton.addEventListener('click', function () {
+            showStep(currentStepIndex - 1);
+        });
+
+        nextButton.addEventListener('click', function () {
+            var steps = visibleSteps();
+            var currentEl = stepEls[steps[currentStepIndex]];
+            var fields = currentEl.querySelectorAll('input, select, textarea');
+            for (var i = 0; i < fields.length; i++) {
+                if (!fields[i].reportValidity()) {
+                    return;
+                }
+            }
+            showStep(currentStepIndex + 1);
+        });
+
+        showStep(0);
+
+        // Skills picker (step 3)
+        var categorySelect = document.getElementById('skill-category-select');
+        var skillSelect = document.getElementById('skill-select');
+        var otherWrap = document.getElementById('other-skill-wrap');
+        var otherInput = document.getElementById('other-skill-input');
+        var addSkillButton = document.getElementById('add-skill-button');
+        var skillList = document.getElementById('skill-list');
+        var skillListEmpty = document.getElementById('skill-list-empty');
+        var skillsJsonInput = document.getElementById('skills-json');
+        var selectedSkills = [];
+
+        function findCategory(categoryId) {
+            for (var i = 0; i < skillTaxonomy.length; i++) {
+                if (String(skillTaxonomy[i].id) === String(categoryId)) {
+                    return skillTaxonomy[i];
+                }
+            }
+            return null;
+        }
+
+        categorySelect.addEventListener('change', function () {
+            var category = findCategory(categorySelect.value);
+            skillSelect.innerHTML = '';
+            otherWrap.style.display = 'none';
+            otherInput.value = '';
+            if (!category) {
+                skillSelect.disabled = true;
+                skillSelect.innerHTML = '<option value="">Select a category first</option>';
+                return;
+            }
+            skillSelect.disabled = false;
+            var blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = 'Select a skill';
+            skillSelect.appendChild(blank);
+            category.skills.forEach(function (skillName) {
+                var opt = document.createElement('option');
+                opt.value = skillName;
+                opt.textContent = skillName;
+                skillSelect.appendChild(opt);
+            });
+            var otherOpt = document.createElement('option');
+            otherOpt.value = '__other__';
+            otherOpt.textContent = 'Other (specify)';
+            skillSelect.appendChild(otherOpt);
+        });
+
+        skillSelect.addEventListener('change', function () {
+            otherWrap.style.display = skillSelect.value === '__other__' ? 'block' : 'none';
+        });
+
+        function renderSkillList() {
+            skillList.innerHTML = '';
+            skillListEmpty.style.display = selectedSkills.length === 0 ? 'block' : 'none';
+            selectedSkills.forEach(function (skill, index) {
+                var li = document.createElement('li');
+                li.className = 'badge';
+                li.style.display = 'inline-flex';
+                li.style.alignItems = 'center';
+                li.style.gap = '6px';
+                li.textContent = skill.category_name + ': ' + skill.skill_name;
+                var removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.textContent = '×';
+                removeBtn.setAttribute('aria-label', 'Remove ' + skill.skill_name);
+                removeBtn.style.border = 'none';
+                removeBtn.style.background = 'transparent';
+                removeBtn.style.cursor = 'pointer';
+                removeBtn.style.fontWeight = 'bold';
+                removeBtn.addEventListener('click', function () {
+                    selectedSkills.splice(index, 1);
+                    renderSkillList();
+                });
+                li.appendChild(removeBtn);
+                skillList.appendChild(li);
+            });
+            skillsJsonInput.value = JSON.stringify(selectedSkills);
+        }
+
+        addSkillButton.addEventListener('click', function () {
+            var category = findCategory(categorySelect.value);
+            if (!category) {
+                categorySelect.reportValidity ? categorySelect.focus() : null;
+                return;
+            }
+            var skillName = '';
+            if (skillSelect.value === '__other__') {
+                skillName = otherInput.value.trim();
+                if (skillName === '') {
+                    otherInput.focus();
+                    return;
+                }
+            } else {
+                skillName = skillSelect.value;
+                if (skillName === '') {
+                    skillSelect.focus();
+                    return;
+                }
+            }
+            var exists = selectedSkills.some(function (s) {
+                return s.category_id === category.id && s.skill_name.toLowerCase() === skillName.toLowerCase();
+            });
+            if (exists) {
+                return;
+            }
+            selectedSkills.push({ category_id: category.id, category_name: category.name, skill_name: skillName });
+            renderSkillList();
+            otherInput.value = '';
+            otherWrap.style.display = 'none';
+            skillSelect.value = '';
+        });
+
+        renderSkillList();
+
+        document.getElementById('register-form').addEventListener('submit', function (e) {
+            if (roleSelect.value === 'worker' && selectedSkills.length === 0) {
+                e.preventDefault();
+                showStep(visibleSteps().indexOf('3'));
+                skillListEmpty.textContent = 'Add at least one skill before creating your account.';
+                skillListEmpty.style.display = 'block';
+            }
+        });
 
         document.getElementById('use-my-location').addEventListener('click', function () {
             var status = document.getElementById('location-status');

@@ -58,6 +58,7 @@ Create an admin by setting `role = 'admin'` in the `users` table for a registere
 
 ## Recently shipped
 
+- Multi-step worker registration with curated skill picker (workers complete a 3-step wizard — account details, ID verification, then skill selection from a curated 12-category/70+ skill taxonomy with category → skill grouping and an "Other, specify" option; skills are stored with their category for better search/matching later)
 - Worker ID verification + profile pictures at registration (workers must provide a Ghana Card or Passport type, ID number, and a photo of the card to register; all users may optionally upload a profile picture, shown on the dashboard)
 - Account settings page (settings.php — edit name, email, registered phone, town, GPS location, and change password from a dedicated "Settings" link in the dashboard/admin topbar)
 - Town selection + registered phone/GPS at signup (curated Akuapem North/South/Okere District town list, phone number captured once at registration and reused everywhere — request contact info and worker contact phone auto-fill from it instead of asking again)

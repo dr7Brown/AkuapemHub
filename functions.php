@@ -708,6 +708,42 @@ function get_town_name($townId) {
     return $name !== false ? $name : null;
 }
 
+function get_skill_categories() {
+    global $pdo;
+    $stmt = $pdo->query('SELECT id, name FROM skill_categories ORDER BY id');
+    return $stmt->fetchAll();
+}
+
+function get_skill_taxonomy() {
+    return [
+        'Electrical & Technical Skills' => ['Electrical wiring', 'House wiring repair', 'Fault finding', 'Solar installation', 'Generator repair', 'Appliance repair (TV, fridge, fan)'],
+        'Plumbing Skills' => ['Pipe fitting', 'Tap fixing', 'Toilet repairs', 'Water pump installation', 'Leak repairs', 'Bathroom installation'],
+        'Construction & Building Skills' => ['Masonry (block laying)', 'Bricklaying', 'Plastering', 'Tiling', 'Roofing', 'Concrete work', 'Painting (building painting)'],
+        'Welding & Metal Works' => ['Welding (general)', 'Gate fabrication', 'Metal fabrication', 'Burglar proof installation', 'Aluminium works'],
+        'Vehicle & Mechanical Skills' => ['Car mechanics', 'Motorcycle repair', 'Auto diagnostics', 'Tyre fixing', 'Battery servicing', 'Car electrical repair'],
+        'Cleaning & Domestic Services' => ['House cleaning', 'Compound cleaning', 'Laundry services', 'Deep cleaning', 'Post-construction cleaning'],
+        'Errand & Support Services' => ['Delivery service', 'Shopping assistance', 'Moving assistance', 'Loading/unloading', 'Event setup assistance'],
+        'Personal Care Services' => ['Barbering', 'Hairdressing', 'Braiding', 'Makeup artistry', 'Nail care'],
+        'Education & Tutoring' => ['Primary school tutoring', 'JHS tutoring', 'SHS tutoring', 'Maths tutor', 'English tutor', 'Science tutor'],
+        'Digital & Tech Skills' => ['Basic computer repair', 'Phone repair', 'Typing / data entry', 'Graphic design', 'Social media management', 'Website development'],
+        'Event Services' => ['MC (Master of Ceremony)', 'DJ services', 'Event decoration', 'Sound system setup', 'Photography', 'Videography'],
+        'Agriculture & Local Work' => ['Farm labour', 'Cocoa farm maintenance', 'Harvesting support', 'Agro spraying', 'Animal care'],
+    ];
+}
+
+function get_skill_categories_with_skills() {
+    $taxonomy = get_skill_taxonomy();
+    $grouped = [];
+    foreach (get_skill_categories() as $category) {
+        $grouped[] = [
+            'id' => $category['id'],
+            'name' => $category['name'],
+            'skills' => $taxonomy[$category['name']] ?? [],
+        ];
+    }
+    return $grouped;
+}
+
 function get_weekday_names() {
     return [0 => 'Sunday', 1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday'];
 }

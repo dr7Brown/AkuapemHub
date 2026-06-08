@@ -8,6 +8,7 @@ $status = [];
 
 $requiredTables = [
     'towns',
+    'skill_categories',
     'users',
     'worker_profiles',
     'service_categories',
@@ -50,6 +51,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             name VARCHAR(80) NOT NULL,
             district VARCHAR(80) NOT NULL,
             UNIQUE KEY uniq_towns_name_district (name, district)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'skill_categories' => "CREATE TABLE IF NOT EXISTS skill_categories (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(80) NOT NULL UNIQUE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
         'users' => "CREATE TABLE IF NOT EXISTS users (
@@ -169,8 +175,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         'worker_skills' => "CREATE TABLE IF NOT EXISTS worker_skills (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             worker_profile_id INT UNSIGNED NOT NULL,
+            category_id INT UNSIGNED DEFAULT NULL,
             skill_name VARCHAR(120) NOT NULL,
             INDEX idx_worker_skills_skill_name (skill_name),
+            INDEX idx_worker_skills_category_id (category_id),
             FOREIGN KEY (worker_profile_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         
@@ -287,6 +295,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         ('Kwadako', 'Okere District'),
         ('Nkyenoa', 'Okere District')";
 
+    $skillCategoriesData = "INSERT IGNORE INTO skill_categories (name) VALUES
+        ('Electrical & Technical Skills'),
+        ('Plumbing Skills'),
+        ('Construction & Building Skills'),
+        ('Welding & Metal Works'),
+        ('Vehicle & Mechanical Skills'),
+        ('Cleaning & Domestic Services'),
+        ('Errand & Support Services'),
+        ('Personal Care Services'),
+        ('Education & Tutoring'),
+        ('Digital & Tech Skills'),
+        ('Event Services'),
+        ('Agriculture & Local Work')";
+
     try {
         foreach ($migrations as $tableName => $sql) {
             $pdo->exec($sql);
@@ -294,6 +316,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         }
         $pdo->exec($initData);
         $pdo->exec($townsData);
+        $pdo->exec($skillCategoriesData);
         if (table_exists('users')) {
             if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'phone'")->fetch()) {
                 $pdo->exec('ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT NULL');
@@ -338,6 +361,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             }
             if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'id_document_path'")->fetch()) {
                 $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN id_document_path VARCHAR(255) DEFAULT NULL');
+            }
+        }
+        if (table_exists('worker_skills')) {
+            if (!$pdo->query("SHOW COLUMNS FROM worker_skills LIKE 'category_id'")->fetch()) {
+                $pdo->exec('ALTER TABLE worker_skills ADD COLUMN category_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_worker_skills_category_id (category_id)');
             }
         }
         $migrated = true;
