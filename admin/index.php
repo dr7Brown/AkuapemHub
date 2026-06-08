@@ -37,6 +37,7 @@ $premiumWorkers = get_premium_worker_count();
                 <a href="users.php" class="button button-small">Users</a>
             <?php endif; ?>
             <a href="requests.php" class="button button-small">Requests</a>
+            <a href="applications.php" class="button button-small">Applications</a>
             <?php if (is_admin()): ?>
                 <a href="disputes.php" class="button button-small">Disputes</a>
                 <a href="business_messages.php" class="button button-small">Messages</a>

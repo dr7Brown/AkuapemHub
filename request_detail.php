@@ -25,7 +25,14 @@ if (!$canView) {
     exit;
 }
 
-$canAccept = is_worker() && $request['status'] === 'open';
+$myApplicationStatus = null;
+if (is_worker()) {
+    $appStmt = $pdo->prepare('SELECT status FROM applications WHERE request_id = ? AND worker_id = ? ORDER BY applied_at DESC LIMIT 1');
+    $appStmt->execute([$requestId, $user['id']]);
+    $myApplication = $appStmt->fetch();
+    $myApplicationStatus = $myApplication['status'] ?? null;
+}
+$canApply = is_worker() && $request['status'] === 'open' && !in_array($myApplicationStatus, ['pending', 'accepted'], true);
 $canComplete = is_worker() && $request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id'];
 $canMarkPaid = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
 $canRate = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
@@ -138,8 +145,12 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 
         <?php
         $primaryAction = null;
-        if ($canAccept) {
-            $primaryAction = ['form', 'accept_job.php', 'Accept this job'];
+        if ($canApply) {
+            $primaryAction = ['form', 'apply_job.php', 'Apply for this job'];
+        } elseif (is_worker() && $myApplicationStatus === 'pending') {
+            $primaryAction = ['info', null, 'Application pending review'];
+        } elseif (is_worker() && $myApplicationStatus === 'declined') {
+            $primaryAction = ['info', null, 'Application declined'];
         } elseif ($canMarkPaid) {
             $primaryAction = ['form_paid', null, 'Mark as ' . ($request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid')];
         } elseif ($canRate && !$ratingExists) {
@@ -168,6 +179,8 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                         <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                         <button type="submit" class="button button-primary"><?php echo sanitize($primaryAction[2]); ?></button>
                     </form>
+                <?php elseif ($primaryAction[0] === 'info'): ?>
+                    <span class="button button-secondary" style="text-align: center; opacity: 0.7; cursor: default;"><?php echo sanitize($primaryAction[2]); ?></span>
                 <?php elseif ($primaryAction[0] === 'form_paid'): ?>
                     <form method="post" action="toggle_payment.php">
                         <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />

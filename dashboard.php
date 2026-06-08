@@ -80,6 +80,13 @@ if (is_worker()) {
     }
     $openJobs = rank_jobs_for_worker($openJobs, $matchContext);
 
+    $myApplicationStatuses = [];
+    $appStmt = $pdo->prepare('SELECT request_id, status FROM applications WHERE worker_id = ? ORDER BY applied_at ASC');
+    $appStmt->execute([$user['id']]);
+    foreach ($appStmt->fetchAll() as $appRow) {
+        $myApplicationStatuses[$appRow['request_id']] = $appRow['status'];
+    }
+
 } elseif (is_customer()) {
     $stmt = $pdo->prepare('SELECT sr.*, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment 
         FROM service_requests sr
@@ -223,10 +230,17 @@ if (is_worker()) {
                                     <?php endif; ?>
                                     <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
                                     <?php if ($request['status'] === 'open'): ?>
-                                        <form method="post" action="accept_job.php">
-                                            <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                                            <button type="submit" class="button button-primary">Accept job</button>
-                                        </form>
+                                        <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
+                                        <?php if ($myAppStatus === 'pending'): ?>
+                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Application pending review</span>
+                                        <?php elseif ($myAppStatus === 'declined'): ?>
+                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Application declined</span>
+                                        <?php else: ?>
+                                            <form method="post" action="apply_job.php">
+                                                <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                                <button type="submit" class="button button-primary">Apply for this job</button>
+                                            </form>
+                                        <?php endif; ?>
                                     <?php elseif ($request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id']): ?>
                                         <form method="post" action="complete_job.php">
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />

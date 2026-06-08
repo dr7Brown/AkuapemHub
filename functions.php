@@ -90,6 +90,14 @@ function notify_admins($title, $body, $type = 'info') {
     }
 }
 
+function notify_admins_and_managers($title, $body, $type = 'info') {
+    global $pdo;
+    $stmt = $pdo->query("SELECT id FROM users WHERE role IN ('admin', 'manager')");
+    foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $userId) {
+        notify_user($userId, $title, $body, $type);
+    }
+}
+
 function get_request_status_counts($customerId) {
     global $pdo;
     $stmt = $pdo->prepare('SELECT status, COUNT(*) AS total FROM service_requests WHERE customer_id = ? GROUP BY status');
