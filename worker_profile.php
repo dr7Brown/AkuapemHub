@@ -149,6 +149,6 @@ $schedule = get_worker_schedule($profile['id']);
             });
         });
     </script>
-    <?php $activeNav = 'profile'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

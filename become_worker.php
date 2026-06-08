@@ -332,6 +332,6 @@ $skillCategories = get_skill_categories_with_skills();
         });
     </script>
     <?php endif; ?>
-    <?php $activeNav = 'profile'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

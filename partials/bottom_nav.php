@@ -1,7 +1,7 @@
 <?php
 /**
  * Shared bottom tab bar. Include after $user = current_user(); is set.
- * Optional: set $activeNav to one of 'home','jobs','workers','messages','profile' to force the active tab.
+ * Optional: set $activeNav to one of 'home','jobs','workers','messages','settings' to force the active tab.
  */
 if (!isset($user) || !$user) {
     return;
@@ -9,7 +9,6 @@ if (!isset($user) || !$user) {
 
 $navUnreadMessages = function_exists('get_unread_messages_count') ? get_unread_messages_count($user['id']) : 0;
 
-$profileHref = $user['role'] === 'worker' ? 'worker_profile.php' : 'settings.php';
 $jobsHref = $user['role'] === 'worker' ? 'worker_history.php' : 'dashboard.php';
 
 $navItems = [
@@ -17,7 +16,7 @@ $navItems = [
     'jobs' => ['href' => $jobsHref, 'icon' => '🧰', 'label' => 'Jobs'],
     'workers' => ['href' => 'find_workers.php', 'icon' => '🔍', 'label' => 'Workers'],
     'messages' => ['href' => 'messages.php', 'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
-    'profile' => ['href' => $profileHref, 'icon' => '👤', 'label' => 'Profile'],
+    'settings' => ['href' => 'settings.php', 'icon' => '⚙️', 'label' => 'Settings'],
 ];
 
 if (!isset($activeNav)) {
