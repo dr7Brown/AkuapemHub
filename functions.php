@@ -349,6 +349,151 @@ function format_distance($km) {
     return $km < 1 ? round($km * 1000) . ' m away' : number_format($km, 1) . ' km away';
 }
 
+function count_relevant_skill_matches($skillsCsv, $category, $title, $description) {
+    $skillsCsv = strtolower(trim((string)$skillsCsv));
+    if ($skillsCsv === '') {
+        return 0;
+    }
+    $haystack = strtolower($category . ' ' . $title . ' ' . $description);
+    $matches = 0;
+    foreach (array_filter(array_map('trim', explode(',', $skillsCsv))) as $skill) {
+        if ($skill !== '' && strpos($haystack, $skill) !== false) {
+            $matches++;
+        }
+    }
+    return $matches;
+}
+
+function score_worker_for_request(array $worker, array $request) {
+    $score = 0;
+    $reasons = [];
+
+    $skillMatches = count_relevant_skill_matches($worker['skills'] ?? '', $request['category_name'] ?? '', $request['title'] ?? '', $request['description'] ?? '');
+    if ($skillMatches > 0) {
+        $score += min(40, 21 + $skillMatches * 9);
+        $reasons[] = $skillMatches > 1 ? 'Multiple matching skills' : 'Matching skill';
+    }
+
+    $distanceKm = distance_km($worker['latitude'] ?? null, $worker['longitude'] ?? null, $request['latitude'] ?? null, $request['longitude'] ?? null);
+    if ($distanceKm !== null) {
+        if ($distanceKm <= 5) { $score += 25; $reasons[] = 'Very close to the job'; }
+        elseif ($distanceKm <= 15) { $score += 18; $reasons[] = 'Nearby'; }
+        elseif ($distanceKm <= 40) { $score += 10; }
+        else { $score += 3; }
+    } else {
+        $score += 8;
+    }
+
+    $rating = (float)($worker['avg_rating'] ?? 0);
+    $score += (int)round(($rating / 5) * 20);
+    if ($rating >= 4.5) {
+        $reasons[] = 'Top-rated worker';
+    }
+
+    if (($worker['availability'] ?? '') === 'available') {
+        $score += 10;
+        $reasons[] = 'Available now';
+    } elseif (($worker['availability'] ?? '') === 'busy') {
+        $score += 3;
+    }
+
+    $score += min(5, (int)($worker['completed_jobs'] ?? 0));
+
+    return [
+        'score' => (int)min(100, $score),
+        'reasons' => $reasons,
+        'distance_km' => $distanceKm,
+    ];
+}
+
+function get_recommended_workers_for_request($request, $limit = 5) {
+    global $pdo;
+    $stmt = $pdo->query("SELECT u.id, u.name, w.id AS profile_id, w.location, w.latitude, w.longitude, w.availability, w.subscription_status,
+        COALESCE(AVG(r.score), 0) AS avg_rating,
+        COALESCE(COUNT(DISTINCT sr.id), 0) AS completed_jobs,
+        GROUP_CONCAT(DISTINCT ws.skill_name ORDER BY ws.skill_name SEPARATOR ', ') AS skills
+        FROM users u
+        JOIN worker_profiles w ON u.id = w.user_id
+        LEFT JOIN worker_skills ws ON w.id = ws.worker_profile_id
+        LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
+        LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = u.id
+        WHERE u.role = 'worker'
+        GROUP BY u.id, u.name, w.id, w.location, w.latitude, w.longitude, w.availability, w.subscription_status");
+    $workers = $stmt->fetchAll();
+
+    foreach ($workers as &$worker) {
+        $match = score_worker_for_request($worker, $request);
+        $worker['match_score'] = $match['score'];
+        $worker['match_reasons'] = $match['reasons'];
+        $worker['distance_km'] = $match['distance_km'];
+    }
+    unset($worker);
+
+    usort($workers, function ($a, $b) {
+        return $b['match_score'] <=> $a['match_score'];
+    });
+
+    return array_slice($workers, 0, $limit);
+}
+
+function score_job_for_worker(array $job, array $worker) {
+    $score = 0;
+    $reasons = [];
+
+    $skillMatches = count_relevant_skill_matches($worker['skills'] ?? '', $job['category_name'] ?? '', $job['title'] ?? '', $job['description'] ?? '');
+    if ($skillMatches > 0) {
+        $score += min(45, 24 + $skillMatches * 10);
+        $reasons[] = 'Matches your skills';
+    }
+
+    $distanceKm = distance_km($worker['latitude'] ?? null, $worker['longitude'] ?? null, $job['latitude'] ?? null, $job['longitude'] ?? null);
+    if ($distanceKm !== null) {
+        if ($distanceKm <= 5) { $score += 30; $reasons[] = 'Close to you'; }
+        elseif ($distanceKm <= 15) { $score += 20; $reasons[] = 'Nearby'; }
+        elseif ($distanceKm <= 40) { $score += 10; }
+        else { $score += 2; }
+    } else {
+        $score += 8;
+    }
+
+    if (!empty($job['featured'])) {
+        $score += 10;
+        $reasons[] = 'Featured job';
+    }
+
+    $hoursOld = (strtotime('now') - strtotime($job['created_at'])) / 3600;
+    if ($hoursOld <= 24) {
+        $score += 15;
+        $reasons[] = 'Posted recently';
+    } elseif ($hoursOld <= 72) {
+        $score += 8;
+    } else {
+        $score += 2;
+    }
+
+    return [
+        'score' => (int)min(100, $score),
+        'reasons' => $reasons,
+        'distance_km' => $distanceKm,
+    ];
+}
+
+function rank_jobs_for_worker(array $jobs, array $worker) {
+    foreach ($jobs as &$job) {
+        $match = score_job_for_worker($job, $worker);
+        $job['match_score'] = $match['score'];
+        $job['match_reasons'] = $match['reasons'];
+        $job['match_distance_km'] = $match['distance_km'];
+    }
+    unset($job);
+
+    usort($jobs, function ($a, $b) {
+        return $b['match_score'] <=> $a['match_score'];
+    });
+
+    return $jobs;
+}
+
 function build_location_filter($location) {
     return trim($location);
 }

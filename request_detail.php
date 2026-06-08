@@ -39,6 +39,11 @@ if ($canRate) {
 
 $completionPhotos = get_completion_photos($requestId);
 
+$recommendedWorkers = [];
+if (is_customer() && $request['customer_id'] === $user['id'] && in_array($request['status'], ['pending', 'open'], true)) {
+    $recommendedWorkers = get_recommended_workers_for_request($request, 5);
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -127,6 +132,43 @@ $completionPhotos = get_completion_photos($requestId);
                 <?php endif; ?>
             </div>
         </section>
+
+        <?php if ($recommendedWorkers): ?>
+            <section class="panel">
+                <h1>🎯 Recommended workers for this job</h1>
+                <p class="meta">Ranked by skill match, distance, rating, availability, and track record.</p>
+                <?php foreach ($recommendedWorkers as $worker): ?>
+                    <div class="match-card">
+                        <div class="match-card-head">
+                            <div>
+                                <strong><?php echo sanitize($worker['name']); ?></strong>
+                                <?php if ($worker['subscription_status'] === 'premium'): ?>
+                                    <span class="badge">PREMIUM</span>
+                                <?php endif; ?>
+                            </div>
+                            <span class="match-score-pill"><?php echo (int)$worker['match_score']; ?>% match</span>
+                        </div>
+                        <p class="meta">
+                            <?php echo sanitize(rating_stars(round($worker['avg_rating']))); ?> (<?php echo number_format($worker['avg_rating'], 1); ?>)
+                            • <?php echo (int)$worker['completed_jobs']; ?> jobs completed
+                            • <span class="status status-<?php echo sanitize($worker['availability']); ?>"><?php echo strtoupper($worker['availability']); ?></span>
+                            <?php if ($worker['distance_km'] !== null): ?>
+                                • <?php echo sanitize(format_distance($worker['distance_km'])); ?>
+                            <?php endif; ?>
+                        </p>
+                        <?php if (!empty($worker['skills'])): ?>
+                            <p class="meta">Skills: <?php echo sanitize($worker['skills']); ?></p>
+                        <?php endif; ?>
+                        <?php if (!empty($worker['match_reasons'])): ?>
+                            <p class="match-meta">Why this match: <?php echo sanitize(implode(' • ', $worker['match_reasons'])); ?></p>
+                        <?php endif; ?>
+                        <div class="button-group">
+                            <a href="worker_profile_public.php?id=<?php echo $worker['id']; ?>" class="button button-secondary button-small">View profile</a>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </section>
+        <?php endif; ?>
     </main>
 </body>
 </html>

@@ -58,6 +58,7 @@ Create an admin by setting `role = 'admin'` in the `users` table for a registere
 
 ## Recently shipped
 
+- Smart worker matching (multi-factor scoring on skill overlap, distance, rating, availability and track record — ranks open jobs for workers and recommends best-fit workers to customers on request pages)
 - Real geolocation distance matching (browser geolocation capture + Haversine distance display/sorting)
 - Dispute/refund handling system (admin dispute queue with resolution workflow)
 - Worker availability/schedule calendar (weekly availability slots on worker profiles)

@@ -57,6 +57,29 @@ if (is_worker()) {
     $availableJobs = get_open_jobs_count();
     $workerEarnings = get_paid_total_by_worker($user['id']);
 
+    $workerSkillsCsv = '';
+    if ($profile) {
+        $skillRows = $pdo->prepare('SELECT skill_name FROM worker_skills WHERE worker_profile_id = ?');
+        $skillRows->execute([$profile['id']]);
+        $workerSkillsCsv = implode(', ', array_column($skillRows->fetchAll(), 'skill_name'));
+    }
+    $matchContext = [
+        'latitude' => $profile['latitude'] ?? null,
+        'longitude' => $profile['longitude'] ?? null,
+        'skills' => $workerSkillsCsv,
+    ];
+
+    $openJobs = [];
+    $myJobs = [];
+    foreach ($requests as $request) {
+        if ($request['status'] === 'open') {
+            $openJobs[] = $request;
+        } elseif ($request['assigned_worker_id'] === $user['id']) {
+            $myJobs[] = $request;
+        }
+    }
+    $openJobs = rank_jobs_for_worker($openJobs, $matchContext);
+
 } elseif (is_customer()) {
     $stmt = $pdo->prepare('SELECT sr.*, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment 
         FROM service_requests sr
@@ -128,7 +151,7 @@ if (is_worker()) {
                     </div>
                 </div>
                 <div class="panel-header">
-                    <h1>Available jobs</h1>
+                    <h1>Jobs for you</h1>
                     <form method="get" class="filter-form">
                         <select name="category">
                             <option value="">All categories</option>
@@ -141,12 +164,15 @@ if (is_worker()) {
                         <button type="submit" class="button button-primary">Filter</button>
                     </form>
                 </div>
-                <?php if (!$requests): ?>
+                <?php if ($openJobs): ?>
+                    <p class="small-note" style="text-align: left; margin-bottom: 14px;">🎯 Open jobs are ranked by how well they match your skills, location, and recent activity.</p>
+                <?php endif; ?>
+                <?php $displayJobs = array_merge($openJobs, $myJobs); ?>
+                <?php if (!$displayJobs): ?>
                     <div class="empty-state">No jobs match your filters.</div>
                 <?php else: ?>
-                    <?php foreach ($requests as $request): ?>
-                        <?php if ($request['status'] !== 'open' && $request['assigned_worker_id'] !== $user['id']) continue; ?>
-                        <?php $jobDistance = distance_km($profile['latitude'] ?? null, $profile['longitude'] ?? null, $request['latitude'], $request['longitude']); ?>
+                    <?php foreach ($displayJobs as $request): ?>
+                        <?php $jobDistance = $request['match_distance_km'] ?? distance_km($profile['latitude'] ?? null, $profile['longitude'] ?? null, $request['latitude'], $request['longitude']); ?>
                         <article class="request-card">
                             <div class="request-head">
                                 <div>
@@ -160,6 +186,9 @@ if (is_worker()) {
                                             • <?php echo sanitize(format_distance($jobDistance)); ?>
                                         <?php endif; ?>
                                     </p>
+                                    <?php if (isset($request['match_score'])): ?>
+                                        <p class="meta match-meta">🎯 <?php echo (int)$request['match_score']; ?>% match for you<?php if (!empty($request['match_reasons'])): ?> — <?php echo sanitize(implode(' • ', $request['match_reasons'])); ?><?php endif; ?></p>
+                                    <?php endif; ?>
                                 </div>
                                 <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
                             </div>
