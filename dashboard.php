@@ -138,14 +138,17 @@ if (is_worker()) {
         </section>
 
         <h2 style="margin: 0 0 12px;">Popular categories</h2>
-        <div class="chip-row" style="margin-bottom: var(--space-4);">
-            <?php foreach ($categories as $category): ?>
-                <a href="<?php echo is_worker() ? 'dashboard.php?category=' . $category['id'] : 'find_workers.php?category=' . $category['id']; ?>" class="chip-pick">
+        <div class="category-grid" id="category-grid">
+            <?php foreach ($categories as $index => $category): ?>
+                <a href="<?php echo is_worker() ? 'dashboard.php?category=' . $category['id'] : 'find_workers.php?category=' . $category['id']; ?>" class="chip-pick<?php echo $index >= 5 ? ' category-extra' : ''; ?>"<?php echo $index >= 5 ? ' hidden' : ''; ?>>
                     <span class="chip-icon"><?php echo category_icon($category['name']); ?></span>
                     <span><?php echo sanitize($category['name']); ?></span>
                 </a>
             <?php endforeach; ?>
         </div>
+        <?php if (count($categories) > 5): ?>
+            <button type="button" id="toggle-categories" class="button button-secondary button-small" style="margin-bottom: var(--space-4);" data-expanded="0">View all categories</button>
+        <?php endif; ?>
 
         <?php if (is_worker()): ?>
             <section class="panel" id="open-jobs">
@@ -317,5 +320,18 @@ if (is_worker()) {
         <?php endif; ?>
     </main>
     <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <script>
+        var toggleCategories = document.getElementById('toggle-categories');
+        if (toggleCategories) {
+            toggleCategories.addEventListener('click', function () {
+                var expanded = this.dataset.expanded === '1';
+                document.querySelectorAll('.category-extra').forEach(function (el) {
+                    el.hidden = expanded;
+                });
+                this.textContent = expanded ? 'View all categories' : 'Show fewer categories';
+                this.dataset.expanded = expanded ? '0' : '1';
+            });
+        }
+    </script>
 </body>
 </html>

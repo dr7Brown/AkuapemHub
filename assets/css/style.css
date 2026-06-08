@@ -900,6 +900,13 @@ body.has-bottom-nav {
   -webkit-overflow-scrolling: touch;
 }
 
+.category-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: var(--space-4);
+}
+
 .chip-row::-webkit-scrollbar {
   display: none;
 }
