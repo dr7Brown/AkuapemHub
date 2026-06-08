@@ -494,6 +494,59 @@ function rank_jobs_for_worker(array $jobs, array $worker) {
     return $jobs;
 }
 
+function extract_numeric_amount($text) {
+    if (preg_match('/[\d,]+(?:\.\d+)?/', (string)$text, $matches)) {
+        $value = (float)str_replace(',', '', $matches[0]);
+        return $value > 0 ? $value : null;
+    }
+    return null;
+}
+
+function get_suggested_budget_range($categoryId, $location = '', $sampleLimit = 60) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT budget, location FROM service_requests
+        WHERE category_id = ? AND status IN ('completed', 'in_progress', 'open')
+        ORDER BY created_at DESC LIMIT ?");
+    $stmt->bindValue(1, $categoryId, PDO::PARAM_INT);
+    $stmt->bindValue(2, $sampleLimit, PDO::PARAM_INT);
+    $stmt->execute();
+    $rows = $stmt->fetchAll();
+
+    $location = trim($location);
+    $nearbyAmounts = [];
+    $allAmounts = [];
+    foreach ($rows as $row) {
+        $amount = extract_numeric_amount($row['budget']);
+        if ($amount === null) {
+            continue;
+        }
+        $allAmounts[] = $amount;
+        if ($location !== '' && stripos($row['location'], $location) !== false) {
+            $nearbyAmounts[] = $amount;
+        }
+    }
+
+    if (count($nearbyAmounts) >= 3) {
+        $amounts = $nearbyAmounts;
+        $scope = 'nearby';
+    } else {
+        $amounts = $allAmounts;
+        $scope = 'platform';
+    }
+
+    if (count($amounts) < 2) {
+        return null;
+    }
+
+    return [
+        'min' => min($amounts),
+        'max' => max($amounts),
+        'avg' => array_sum($amounts) / count($amounts),
+        'count' => count($amounts),
+        'scope' => $scope,
+    ];
+}
+
 function build_location_filter($location) {
     return trim($location);
 }

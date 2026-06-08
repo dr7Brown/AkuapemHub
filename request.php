@@ -84,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="meta" id="location-status">Sharing your location helps nearby workers find your job faster.</p>
             <label>Budget</label>
             <input type="text" name="budget" required placeholder="GH₵ 100 or Negotiable" />
+            <p class="meta" id="budget-suggestion"></p>
             <label>Contact info</label>
             <input type="text" name="contact_info" required placeholder="Phone or WhatsApp" />
             <button type="submit" class="button button-primary">Publish request</button>
@@ -104,6 +105,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }, function () {
                 status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
             });
+        });
+
+        var categorySelect = document.querySelector('select[name="category_id"]');
+        var locationInput = document.querySelector('input[name="location"]');
+        var budgetSuggestion = document.getElementById('budget-suggestion');
+        var suggestionTimer = null;
+
+        function fetchBudgetSuggestion() {
+            var categoryId = categorySelect.value;
+            if (!categoryId) {
+                budgetSuggestion.textContent = '';
+                return;
+            }
+            var url = 'suggest_budget.php?category_id=' + encodeURIComponent(categoryId) + '&location=' + encodeURIComponent(locationInput.value);
+            fetch(url)
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (!data.suggestion) {
+                        budgetSuggestion.textContent = '';
+                        return;
+                    }
+                    var s = data.suggestion;
+                    var scopeText = s.scope === 'nearby' ? 'Similar jobs near this location' : 'Similar jobs across AkuapemHub';
+                    budgetSuggestion.textContent = '💡 ' + scopeText + ' typically went for GH₵ ' + Math.round(s.min) + '–' + Math.round(s.max) +
+                        ' (avg GH₵ ' + Math.round(s.avg) + ') based on ' + s.count + ' job' + (s.count === 1 ? '' : 's') + '.';
+                })
+                .catch(function () { budgetSuggestion.textContent = ''; });
+        }
+
+        categorySelect.addEventListener('change', fetchBudgetSuggestion);
+        locationInput.addEventListener('input', function () {
+            clearTimeout(suggestionTimer);
+            suggestionTimer = setTimeout(fetchBudgetSuggestion, 500);
         });
     </script>
 </body>
