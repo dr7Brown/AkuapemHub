@@ -547,6 +547,51 @@ function get_suggested_budget_range($categoryId, $location = '', $sampleLimit = 
     ];
 }
 
+function get_category_keyword_map() {
+    return [
+        'Errand' => ['errand', 'delivery', 'deliver', 'pickup', 'pick up', 'shopping', 'shop for', 'grocery', 'groceries', 'laundry', 'wash clothes', 'dry cleaning', 'queue', 'drop off', 'courier', 'send a package', 'market run', 'fetch', 'collect'],
+        'Skilled Work' => ['electrician', 'electrical', 'wiring', 'plumber', 'plumbing', 'carpenter', 'carpentry', 'mason', 'masonry', 'painter', 'painting', 'mechanic', 'repair', 'fix', 'installation', 'install', 'tiling', 'welding', 'roofing', 'renovation', 'construction', 'ac repair', 'fridge repair', 'generator', 'tailor', 'sewing', 'hairdresser', 'barber', 'makeup', 'catering', 'cook', 'chef', 'cleaner', 'cleaning service', 'gardener', 'landscaping'],
+        'Micro Job' => ['data entry', 'typing', 'transcription', 'graphic design', 'logo', 'flyer design', 'content writing', 'copywriting', 'translation', 'social media', 'virtual assistant', 'tutor', 'tutoring', 'lesson', 'website', 'web design', 'app development', 'programming', 'coding', 'video editing', 'photo editing', 'voice over', 'proofreading'],
+    ];
+}
+
+function guess_category_for_text($title, $description, array $categories) {
+    $haystack = strtolower(trim($title . ' ' . $description));
+    if ($haystack === '') {
+        return null;
+    }
+
+    $bestCategoryName = null;
+    $bestMatches = [];
+    foreach (get_category_keyword_map() as $categoryName => $keywords) {
+        $matched = [];
+        foreach ($keywords as $keyword) {
+            if (strpos($haystack, $keyword) !== false) {
+                $matched[] = $keyword;
+            }
+        }
+        if (count($matched) > count($bestMatches)) {
+            $bestCategoryName = $categoryName;
+            $bestMatches = $matched;
+        }
+    }
+
+    if ($bestCategoryName === null) {
+        return null;
+    }
+
+    foreach ($categories as $category) {
+        if ($category['name'] === $bestCategoryName) {
+            return [
+                'category_id' => $category['id'],
+                'category_name' => $category['name'],
+                'matched_keywords' => $bestMatches,
+            ];
+        }
+    }
+    return null;
+}
+
 function build_location_filter($location) {
     return trim($location);
 }

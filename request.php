@@ -76,6 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <option value="<?php echo $category['id']; ?>"><?php echo sanitize($category['name']); ?></option>
                 <?php endforeach; ?>
             </select>
+            <p class="meta" id="category-suggestion-note"></p>
             <label>Location</label>
             <input type="text" name="location" required placeholder="City, neighbourhood" />
             <input type="hidden" name="latitude" id="latitude" />
@@ -111,6 +112,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         var locationInput = document.querySelector('input[name="location"]');
         var budgetSuggestion = document.getElementById('budget-suggestion');
         var suggestionTimer = null;
+
+        var titleInput = document.querySelector('input[name="title"]');
+        var descriptionInput = document.querySelector('textarea[name="description"]');
+        var categoryNote = document.getElementById('category-suggestion-note');
+        var categoryManuallyChanged = false;
+        var categoryTimer = null;
+
+        categorySelect.addEventListener('change', function () {
+            categoryManuallyChanged = true;
+            categoryNote.textContent = '';
+        });
+
+        function fetchCategorySuggestion() {
+            if (categoryManuallyChanged) {
+                return;
+            }
+            var title = titleInput.value.trim();
+            var description = descriptionInput.value.trim();
+            if (title === '' && description === '') {
+                categoryNote.textContent = '';
+                return;
+            }
+            var url = 'suggest_category.php?title=' + encodeURIComponent(title) + '&description=' + encodeURIComponent(description);
+            fetch(url)
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (categoryManuallyChanged || !data.suggestion) {
+                        return;
+                    }
+                    var s = data.suggestion;
+                    categorySelect.value = String(s.category_id);
+                    categoryNote.textContent = '✨ We pre-selected "' + s.category_name + '" based on your description. Change it if that\'s not right.';
+                })
+                .catch(function () {});
+        }
+
+        titleInput.addEventListener('input', function () {
+            clearTimeout(categoryTimer);
+            categoryTimer = setTimeout(fetchCategorySuggestion, 600);
+        });
+        descriptionInput.addEventListener('input', function () {
+            clearTimeout(categoryTimer);
+            categoryTimer = setTimeout(fetchCategorySuggestion, 600);
+        });
 
         function fetchBudgetSuggestion() {
             var categoryId = categorySelect.value;
