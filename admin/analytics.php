@@ -1,10 +1,10 @@
 <?php
-require_once __DIR__ . '/auth.php';
-require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/../auth.php';
+require_once __DIR__ . '/../functions.php';
 
 require_login();
 if (!is_admin()) {
-    header('Location: dashboard.php');
+    header('Location: ../dashboard.php');
     exit;
 }
 
@@ -27,7 +27,9 @@ $totalRatings = $pdo->query('SELECT COUNT(*) FROM ratings')->fetchColumn();
 $avgRating = $pdo->query('SELECT COALESCE(AVG(score), 0) FROM ratings')->fetchColumn();
 
 $totalPaidTransactions = $pdo->query('SELECT COUNT(*) FROM payments WHERE status = "paid"')->fetchColumn();
-$totalPaidAmount = $pdo->query('SELECT COALESCE(SUM(CAST(amount AS DECIMAL(10,2))), 0) FROM payments WHERE status = "paid" AND amount REGEXP ?', ['^[0-9]+(\.[0-9]{1,2})?$']);
+$paidAmountStmt = $pdo->prepare('SELECT COALESCE(SUM(CAST(amount AS DECIMAL(10,2))), 0) FROM payments WHERE status = "paid" AND amount REGEXP ?');
+$paidAmountStmt->execute(['^[0-9]+(\.[0-9]{1,2})?$']);
+$totalPaidAmount = $paidAmountStmt->fetchColumn();
 if (!$totalPaidAmount) {
     $totalPaidAmount = $pdo->query('SELECT COALESCE(SUM(CAST(amount AS DECIMAL(10,2))), 0) FROM payments WHERE status = "paid"')->fetchColumn();
 }
@@ -42,13 +44,13 @@ $topCategories = $pdo->query('SELECT c.name, COUNT(sr.id) AS job_count FROM serv
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Analytics — AkuapemHub</title>
-    <link rel="stylesheet" href="assets/css/style.css" />
+    <link rel="stylesheet" href="../assets/css/style.css" />
 </head>
 <body>
     <header class="topbar">
-        <a href="admin/index.php" class="button button-secondary button-small">Admin Panel</a>
+        <a href="index.php" class="button button-secondary button-small">Back</a>
         <h1>Analytics</h1>
-        <a href="logout.php" class="button button-secondary button-small">Logout</a>
+        <a href="../logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell">
         <h2 style="margin-bottom: 16px;">Users</h2>
