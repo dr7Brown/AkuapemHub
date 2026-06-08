@@ -104,33 +104,21 @@ if (is_worker()) {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dashboard — AkuapemHub</title>
+    <title>Home — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body>
-    <header class="topbar">
+<body class="has-bottom-nav">
+    <header class="app-topbar">
+        <span class="brand"><span class="brand-icon">🏠</span> AkuapemHub</span>
         <div style="display: flex; align-items: center; gap: 10px;">
+            <a href="notifications.php" class="bottom-nav-item" style="flex: none; flex-direction: row; gap: 6px; color: var(--text);">
+                <span class="nav-icon<?php echo $notificationCount ? ' nav-badge' : ''; ?>" <?php echo $notificationCount ? 'data-count="' . (int)$notificationCount . '"' : ''; ?>>🔔</span>
+            </a>
             <?php if (!empty($user['profile_photo'])): ?>
-                <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile picture" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;" />
+                <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile picture" class="avatar" />
             <?php else: ?>
-                <span class="badge" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center;"><?php echo sanitize(strtoupper(substr($user['name'], 0, 1))); ?></span>
+                <span class="avatar"><?php echo sanitize(strtoupper(substr($user['name'], 0, 1))); ?></span>
             <?php endif; ?>
-            <div>
-                <strong><?php echo sanitize($user['name']); ?></strong>
-                <span class="badge"><?php echo strtoupper($user['role']); ?></span>
-            </div>
-        </div>
-        <div class="topbar-actions">
-            <?php if (is_worker()): ?>
-                <a href="worker_profile.php" class="button button-small">Profile</a>
-                <a href="worker_history.php" class="button button-small">History</a>
-            <?php else: ?>
-                <a href="request.php" class="button button-small">New request</a>
-                <a href="customer_payments.php" class="button button-small">Payments</a>
-            <?php endif; ?>
-            <a href="notifications.php" class="button button-secondary button-small">Notifications<?php if ($notificationCount): ?> (<strong><?php echo $notificationCount; ?></strong>)<?php endif; ?></a>
-            <a href="settings.php" class="button button-secondary button-small">Settings</a>
-            <a href="logout.php" class="button button-secondary button-small">Logout</a>
         </div>
     </header>
     <main class="page-shell">
@@ -138,8 +126,29 @@ if (is_worker()) {
             <div class="alert alert-<?php echo sanitize($flash['type']); ?>"><?php echo sanitize($flash['message']); ?></div>
         <?php endif; ?>
 
+        <section class="hero-card">
+            <p class="meta" style="color: rgba(255,255,255,0.85); margin-bottom: 4px;">👋 Hello, <?php echo sanitize($user['name']); ?></p>
+            <?php if (is_worker()): ?>
+                <h1>Find trusted jobs near you in Akuapem</h1>
+                <a href="#open-jobs" class="button button-primary">Browse open jobs</a>
+            <?php else: ?>
+                <h1>Find trusted workers for any job in Akuapem</h1>
+                <a href="request.php" class="button button-primary">Post a Job</a>
+            <?php endif; ?>
+        </section>
+
+        <h2 style="margin: 0 0 12px;">Popular categories</h2>
+        <div class="chip-row" style="margin-bottom: var(--space-4);">
+            <?php foreach ($categories as $category): ?>
+                <a href="<?php echo is_worker() ? 'dashboard.php?category=' . $category['id'] : 'find_workers.php?category=' . $category['id']; ?>" class="chip-pick">
+                    <span class="chip-icon"><?php echo category_icon($category['name']); ?></span>
+                    <span><?php echo sanitize($category['name']); ?></span>
+                </a>
+            <?php endforeach; ?>
+        </div>
+
         <?php if (is_worker()): ?>
-            <section class="panel">
+            <section class="panel" id="open-jobs">
                 <div class="stats-grid">
                     <div class="stat-card">
                         <h2><?php echo $availableJobs; ?></h2>
@@ -307,5 +316,6 @@ if (is_worker()) {
             </section>
         <?php endif; ?>
     </main>
+    <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>
