@@ -103,25 +103,36 @@ $schedule = get_worker_schedule($profile['id']);
                 <?php endforeach; ?>
             </select>
             <label>Weekly availability schedule</label>
-            <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div class="schedule-list">
                 <?php foreach (get_weekday_names() as $dayNum => $dayName): ?>
                     <?php $daySlot = $schedule[$dayNum][0] ?? null; ?>
-                    <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                        <label style="display: flex; align-items: center; gap: 6px; min-width: 110px;">
-                            <input type="checkbox" name="schedule_day[<?php echo $dayNum; ?>]" value="1" <?php echo $daySlot ? 'checked' : ''; ?> />
+                    <div class="schedule-row<?php echo $daySlot ? ' is-active' : ''; ?>" data-schedule-row>
+                        <span class="schedule-day">
+                            <span class="day-switch">
+                                <input type="checkbox" name="schedule_day[<?php echo $dayNum; ?>]" value="1" <?php echo $daySlot ? 'checked' : ''; ?> data-schedule-toggle />
+                                <span class="switch-track"></span>
+                            </span>
                             <?php echo sanitize($dayName); ?>
-                        </label>
-                        <input type="time" name="schedule_start[<?php echo $dayNum; ?>]" value="<?php echo $daySlot ? sanitize(substr($daySlot['start_time'], 0, 5)) : ''; ?>" />
-                        <span>to</span>
-                        <input type="time" name="schedule_end[<?php echo $dayNum; ?>]" value="<?php echo $daySlot ? sanitize(substr($daySlot['end_time'], 0, 5)) : ''; ?>" />
+                        </span>
+                        <span class="schedule-time-range">
+                            <input type="time" name="schedule_start[<?php echo $dayNum; ?>]" value="<?php echo $daySlot ? sanitize(substr($daySlot['start_time'], 0, 5)) : '08:00'; ?>" />
+                            <span>to</span>
+                            <input type="time" name="schedule_end[<?php echo $dayNum; ?>]" value="<?php echo $daySlot ? sanitize(substr($daySlot['end_time'], 0, 5)) : '17:00'; ?>" />
+                        </span>
                     </div>
                 <?php endforeach; ?>
             </div>
-            <p class="meta">Tick the days you're available and set your working hours. Customers will see this on your profile.</p>
+            <p class="meta">Toggle the days you're available and set your working hours. Customers will see this on your profile.</p>
             <button type="submit" class="button button-primary">Save profile</button>
         </form>
     </main>
     <script>
+        document.querySelectorAll('[data-schedule-toggle]').forEach(function (toggle) {
+            toggle.addEventListener('change', function () {
+                toggle.closest('[data-schedule-row]').classList.toggle('is-active', toggle.checked);
+            });
+        });
+
         document.getElementById('use-my-location').addEventListener('click', function () {
             var status = document.getElementById('location-status');
             if (!navigator.geolocation) {

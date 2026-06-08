@@ -44,34 +44,23 @@ $earnings = get_paid_total_by_worker($user['id']);
             <?php if (!$jobHistory): ?>
                 <div class="empty-state">No jobs yet.</div>
             <?php else: ?>
-                <div class="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Job title</th>
-                                <th>Customer</th>
-                                <th>Category</th>
-                                <th>Budget</th>
-                                <th>Status</th>
-                                <th>Rating</th>
-                                <th>Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($jobHistory as $job): ?>
-                                <tr>
-                                    <td><a href="request_detail.php?id=<?php echo $job['id']; ?>" style="color: #0f766e; text-decoration: none;"><?php echo sanitize($job['title']); ?></a></td>
-                                    <td><?php echo sanitize($job['customer_name']); ?></td>
-                                    <td><?php echo sanitize($job['category_name']); ?></td>
-                                    <td>GH₵ <?php echo sanitize($job['budget']); ?></td>
-                                    <td><span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span></td>
-                                    <td><?php echo $job['rating_score'] ? sanitize($job['rating_score']) . '/5' : '—'; ?></td>
-                                    <td><?php echo sanitize(date('M j, Y', strtotime($job['updated_at']))); ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
+                <?php foreach ($jobHistory as $job): ?>
+                    <a href="request_detail.php?id=<?php echo $job['id']; ?>" class="job-timeline-card">
+                        <div class="job-timeline-head">
+                            <h3><?php echo sanitize($job['title']); ?></h3>
+                            <span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span>
+                        </div>
+                        <div class="job-timeline-meta">
+                            <span><?php echo category_icon($job['category_name']); ?> <?php echo sanitize($job['category_name']); ?></span>
+                            <span>👤 <?php echo sanitize($job['customer_name']); ?></span>
+                            <span>💵 GH₵ <?php echo sanitize($job['budget']); ?></span>
+                            <?php if ($job['rating_score']): ?>
+                                <span class="rating-pill">⭐ <?php echo sanitize($job['rating_score']); ?>/5</span>
+                            <?php endif; ?>
+                            <span>📅 <?php echo sanitize(date('M j, Y', strtotime($job['updated_at']))); ?></span>
+                        </div>
+                    </a>
+                <?php endforeach; ?>
             <?php endif; ?>
         </section>
     </main>

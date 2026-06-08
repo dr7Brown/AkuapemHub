@@ -1015,3 +1015,147 @@ body.has-bottom-nav {
   font-weight: 700;
   margin-top: 4px;
 }
+
+/* Weekly availability schedule */
+
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.schedule-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.schedule-row.is-active {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.schedule-day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 130px;
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+
+.day-switch {
+  position: relative;
+  display: inline-block;
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.day-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.day-switch .switch-track {
+  position: absolute;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 999px;
+  transition: background 0.15s ease;
+}
+
+.day-switch .switch-track::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.day-switch input:checked + .switch-track {
+  background: var(--primary);
+}
+
+.day-switch input:checked + .switch-track::before {
+  transform: translateX(18px);
+}
+
+.schedule-time-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+  color: var(--muted);
+}
+
+.schedule-time-range input[type="time"] {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 0.88rem;
+}
+
+.schedule-row:not(.is-active) .schedule-time-range {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* Worker job timeline cards */
+
+.job-timeline-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  margin-bottom: 10px;
+  text-decoration: none !important;
+  color: var(--text);
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.job-timeline-card:hover {
+  border-color: var(--primary);
+  transform: translateY(-1px);
+}
+
+.job-timeline-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.job-timeline-head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.job-timeline-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.job-timeline-meta .rating-pill {
+  color: #92400e;
+  font-weight: 700;
+}
