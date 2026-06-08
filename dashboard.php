@@ -122,6 +122,7 @@ if (is_worker()) {
                 <a href="customer_payments.php" class="button button-small">Payments</a>
             <?php endif; ?>
             <a href="notifications.php" class="button button-secondary button-small">Notifications<?php if ($notificationCount): ?> (<strong><?php echo $notificationCount; ?></strong>)<?php endif; ?></a>
+            <a href="settings.php" class="button button-secondary button-small">Settings</a>
             <a href="logout.php" class="button button-secondary button-small">Logout</a>
         </div>
     </header>

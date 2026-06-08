@@ -38,6 +38,7 @@ $premiumWorkers = get_premium_worker_count();
             <a href="disputes.php" class="button button-small">Disputes</a>
             <a href="business_messages.php" class="button button-small">Messages</a>
             <a href="analytics.php" class="button button-small">Analytics</a>
+            <a href="../settings.php" class="button button-secondary button-small">Settings</a>
             <a href="../logout.php" class="button button-secondary button-small">Logout</a>
         </div>
     </header>

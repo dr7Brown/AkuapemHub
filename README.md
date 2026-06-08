@@ -58,6 +58,7 @@ Create an admin by setting `role = 'admin'` in the `users` table for a registere
 
 ## Recently shipped
 
+- Account settings page (settings.php — edit name, email, registered phone, town, GPS location, and change password from a dedicated "Settings" link in the dashboard/admin topbar)
 - Town selection + registered phone/GPS at signup (curated Akuapem North/South/Okere District town list, phone number captured once at registration and reused everywhere — request contact info and worker contact phone auto-fill from it instead of asking again)
 - Spam/fraud signals (admin request review now flags rapid-fire postings, contact info shared across accounts, and repeated very-low-budget requests)
 - Auto-category suggestion (keyword matching on the request title/description pre-selects the most likely category as the customer types, with an option to override)
