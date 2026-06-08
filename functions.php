@@ -18,8 +18,19 @@ function sanitize($value) {
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
-function send_email_notification($to, $subject, $message) {
+function user_wants_email_notifications($userId) {
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT email_notifications_enabled FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $value = $stmt->fetchColumn();
+    return $value === false ? true : (bool)$value;
+}
+
+function send_email_notification($to, $subject, $message, $userId = null) {
     if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+    if ($userId !== null && !user_wants_email_notifications($userId)) {
         return false;
     }
     $headers = 'From: ' . MAIL_FROM . "\r\n" .

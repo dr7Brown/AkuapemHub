@@ -37,7 +37,7 @@ try {
                "Please review the work, leave a rating, and confirm payment if everything is good.\n\n" .
                "Thank you for using AkuapemHub.";
 
-    send_email_notification($request['customer_email'], 'Your AkuapemHub request is complete', $message);
+    send_email_notification($request['customer_email'], 'Your AkuapemHub request is complete', $message, $request['customer_id']);
     notify_user($request['customer_id'], 'Job completed', "Your request '{$request['title']}' has been completed.", 'success');
     notify_user($user['id'], 'Job completed', "You marked '{$request['title']}' as completed.", 'success');
     send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been marked complete by the worker. Please review the work and confirm payment.", 'whatsapp');

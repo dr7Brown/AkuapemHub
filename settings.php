@@ -8,7 +8,16 @@ $towns = get_towns();
 $error = '';
 $success = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notifications') {
+    $emailNotifications = isset($_POST['email_notifications_enabled']) ? 1 : 0;
+    $pdo->prepare('UPDATE users SET email_notifications_enabled = ? WHERE id = ?')->execute([$emailNotifications, $user['id']]);
+
+    $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+    $stmt->execute([$user['id']]);
+    $user = $stmt->fetch();
+    $_SESSION['user'] = $user;
+    $success = 'Notification preferences updated.';
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'profile') {
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
@@ -22,6 +31,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Name, email, phone and town are required.';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Please use a valid email address.';
+    } elseif (!empty($_FILES['profile_photo']['name']) && !is_valid_image_upload($_FILES['profile_photo'])) {
+        $error = 'Profile picture must be a JPEG, PNG, or WEBP image under 5MB.';
     } else {
         $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
         $stmt->execute([$email, $user['id']]);
@@ -43,6 +54,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             if ($error === '') {
+                $profilePhotoPath = null;
+                if (!empty($_FILES['profile_photo']['name'])) {
+                    $profilePhotoPath = save_uploaded_image($_FILES['profile_photo'], 'uploads/profiles/' . $user['id']);
+                }
+
                 if ($passwordHash !== null) {
                     $stmt = $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ?, town_id = ?, latitude = ?, longitude = ?, password_hash = ? WHERE id = ?');
                     $stmt->execute([$name, $email, $phone, $townId, $latitude, $longitude, $passwordHash, $user['id']]);
@@ -51,7 +67,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmt->execute([$name, $email, $phone, $townId, $latitude, $longitude, $user['id']]);
                 }
 
-                $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, banned FROM users WHERE id = ?');
+                if ($profilePhotoPath !== null) {
+                    $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $user['id']]);
+                }
+
+                $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
                 $stmt->execute([$user['id']]);
                 $user = $stmt->fetch();
                 $_SESSION['user'] = $user;
@@ -72,7 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
     <header class="topbar">
         <a href="dashboard.php" class="button button-secondary button-small">Back</a>
-        <h1>Account settings</h1>
+        <h1>Settings</h1>
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
@@ -82,7 +102,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if ($success): ?>
             <div class="alert alert-success"><?php echo sanitize($success); ?></div>
         <?php endif; ?>
-        <form class="card form-card" method="post" action="settings.php">
+
+        <form class="card form-card" method="post" action="settings.php" enctype="multipart/form-data">
+            <input type="hidden" name="form" value="profile" />
+            <h2>Account</h2>
+            <?php if (!empty($user['profile_photo'])): ?>
+                <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile photo" style="width: 72px; height: 72px; border-radius: 50%; object-fit: cover; margin-bottom: 8px;" />
+            <?php endif; ?>
+            <label>Profile picture</label>
+            <input type="file" name="profile_photo" accept="image/jpeg,image/png,image/webp" />
+            <p class="meta">JPEG, PNG, or WEBP, up to 5MB. Leave blank to keep your current picture.</p>
             <label>Name</label>
             <input type="text" name="name" value="<?php echo sanitize($user['name']); ?>" required />
             <label>Email</label>
@@ -90,6 +119,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label>Phone number</label>
             <input type="text" name="phone" value="<?php echo sanitize($user['phone'] ?? ''); ?>" required placeholder="e.g. 0244000000" />
             <p class="meta">This number is used as your contact info across the app — requests, worker contact, and notifications all use it.</p>
+
+            <h2>Location</h2>
             <label>Town</label>
             <select name="town_id" required>
                 <option value="">Select your town</option>
@@ -118,6 +149,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <button type="submit" class="button button-primary">Save settings</button>
         </form>
+
+        <form class="card form-card" method="post" action="settings.php">
+            <input type="hidden" name="form" value="notifications" />
+            <h2>Notifications</h2>
+            <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
+                <input type="checkbox" name="email_notifications_enabled" <?php echo !empty($user['email_notifications_enabled']) ? 'checked' : ''; ?> />
+                Email me about job updates, requests, and account activity
+            </label>
+            <p class="meta">In-app notifications always continue regardless of this setting.</p>
+            <button type="submit" class="button button-primary">Save preferences</button>
+        </form>
+
+        <section class="card form-card">
+            <h2>Role</h2>
+            <?php if ($user['role'] === 'customer'): ?>
+                <p class="meta">You're registered as a customer. Want to offer services on AkuapemHub?</p>
+                <a href="become_worker.php" class="button button-primary">Become a worker</a>
+            <?php elseif ($user['role'] === 'worker'): ?>
+                <p class="meta">You're registered as a worker. Manage your skills, availability, and bio from your worker profile.</p>
+                <a href="worker_profile.php" class="button button-secondary" style="margin-bottom: 12px;">Manage worker profile</a>
+                <p class="meta">Switching to customer mode hides your worker profile from job matching. Your worker profile and skills are kept, so you can switch back any time.</p>
+                <form method="post" action="switch_to_customer.php" onsubmit="return confirm('Switch to customer mode? Your worker profile will be kept and you can switch back later.');">
+                    <button type="submit" class="button button-secondary">Switch to customer mode</button>
+                </form>
+            <?php endif; ?>
+        </section>
+
+        <section class="card form-card">
+            <h2>Close account</h2>
+            <p class="meta">This deactivates your account and signs you out. Contact support if you'd like it reactivated.</p>
+            <form method="post" action="delete_account.php" onsubmit="return confirm('Are you sure you want to close your account? You will be signed out immediately.');">
+                <label>Confirm your password</label>
+                <input type="password" name="current_password" required placeholder="Enter your password to confirm" />
+                <button type="submit" class="button button-secondary" style="color: #c0392b; border-color: #c0392b;">Close my account</button>
+            </form>
+        </section>
     </main>
     <script>
         document.getElementById('use-my-location').addEventListener('click', function () {

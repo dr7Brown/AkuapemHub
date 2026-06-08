@@ -69,6 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             latitude DECIMAL(10,7) DEFAULT NULL,
             longitude DECIMAL(10,7) DEFAULT NULL,
             profile_photo VARCHAR(255) DEFAULT NULL,
+            email_notifications_enabled TINYINT(1) NOT NULL DEFAULT 1,
             banned TINYINT(1) NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_users_town_id (town_id)
@@ -332,6 +333,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             }
             if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'profile_photo'")->fetch()) {
                 $pdo->exec('ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'email_notifications_enabled'")->fetch()) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN email_notifications_enabled TINYINT(1) NOT NULL DEFAULT 1');
             }
         }
         if (table_exists('service_requests')) {

@@ -20,16 +20,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         foreach ($selectedRequests as $request) {
             if ($bulkAction === 'approve') {
                 $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $request['id']]);
-                send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.");
+                send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.", $request['customer_id']);
                 notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
                 send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
             } elseif ($bulkAction === 'remove') {
                 $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$request['id']]);
-                send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.");
+                send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
                 notify_user($request['customer_id'], 'Request removed', "Your request '{$request['title']}' was removed by admin.", 'warning');
             } elseif ($bulkAction === 'feature') {
                 $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$request['id']]);
-                send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n");
+                send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n", $request['customer_id']);
                 notify_user($request['customer_id'], 'Request featured', "Your request '{$request['title']}' was marked as featured.", 'success');
             }
         }
@@ -41,16 +41,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 
         if ($_POST['action'] === 'approve' && $request) {
             $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $requestId]);
-            send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.");
+            send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.", $request['customer_id']);
             notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
             send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
         } elseif ($_POST['action'] === 'remove' && $request) {
             $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$requestId]);
-            send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.");
+            send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
             notify_user($request['customer_id'], 'Request removed', "Your request '{$request['title']}' was removed by admin.", 'warning');
         } elseif ($_POST['action'] === 'feature' && $request) {
             $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$requestId]);
-            send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n");
+            send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n", $request['customer_id']);
             notify_user($request['customer_id'], 'Request featured', "Your request '{$request['title']}' was marked as featured.", 'success');
         }
     }

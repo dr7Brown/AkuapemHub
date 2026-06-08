@@ -47,7 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                            "The request '{$request['title']}' has been cancelled by the customer.\n\n" .
                            "Reason: {$reason}\n\n" .
                            "Thank you.";
-                send_email_notification($request['assigned_worker_email'], 'Request cancelled', $message);
+                send_email_notification($request['assigned_worker_email'], 'Request cancelled', $message, $request['assigned_worker_id']);
                 notify_user($request['assigned_worker_id'], 'Request cancelled', "The request '{$request['title']}' has been cancelled by customer.", 'warning');
             }
             
