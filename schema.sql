@@ -111,5 +111,11 @@ CREATE TABLE IF NOT EXISTS worker_skills (
 
 INSERT IGNORE INTO service_categories (name) VALUES
 ('Errand'),
-('Skilled Work'),
+('Electrical & Technical Skills'),
+('Plumbing Skills'),
+('Construction & Building Skills'),
+('Welding & Metal Works'),
+('Vehicle & Mechanical Skills'),
+('Cleaning & Domestic Services'),
+('Personal Care Services'),
 ('Micro Job');

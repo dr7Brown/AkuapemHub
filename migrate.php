@@ -255,8 +255,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
 
     $initData = "INSERT IGNORE INTO service_categories (name) VALUES
         ('Errand'),
-        ('Skilled Work'),
+        ('Electrical & Technical Skills'),
+        ('Plumbing Skills'),
+        ('Construction & Building Skills'),
+        ('Welding & Metal Works'),
+        ('Vehicle & Mechanical Skills'),
+        ('Cleaning & Domestic Services'),
+        ('Personal Care Services'),
         ('Micro Job')";
+
+    $skilledWorkSubcategories = [
+        'Electrical & Technical Skills' => ['electrician', 'electrical', 'wiring', 'ac repair', 'air conditioner', 'fridge repair', 'refrigerator repair', 'generator', 'appliance repair', 'solar installation'],
+        'Plumbing Skills' => ['plumber', 'plumbing', 'pipe fitting', 'pipe', 'tap fixing', 'tap repair', 'toilet repair', 'water pump', 'leak repair', 'bathroom installation'],
+        'Construction & Building Skills' => ['carpenter', 'carpentry', 'mason', 'masonry', 'bricklaying', 'plastering', 'painter', 'painting', 'tiling', 'roofing', 'renovation', 'construction', 'concrete', 'building'],
+        'Welding & Metal Works' => ['welding', 'welder', 'gate fabrication', 'metal fabrication', 'burglar proof', 'aluminium works', 'aluminum works'],
+        'Vehicle & Mechanical Skills' => ['mechanic', 'auto repair', 'car repair', 'motorcycle repair', 'tyre fixing', 'tire repair', 'battery servicing', 'car electrical', 'auto diagnostics', 'vehicle repair'],
+        'Cleaning & Domestic Services' => ['cleaner', 'cleaning service', 'house cleaning', 'compound cleaning', 'laundry', 'deep cleaning', 'gardener', 'landscaping', 'post-construction cleaning'],
+        'Personal Care Services' => ['hairdresser', 'barber', 'barbering', 'braiding', 'makeup', 'nail care', 'tailor', 'sewing'],
+    ];
+    $skilledWorkFallback = 'Construction & Building Skills';
 
     $townsData = "INSERT IGNORE INTO towns (name, district) VALUES
         ('Akropong', 'Akuapem North'),
@@ -316,6 +333,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             $status[$tableName] = true;
         }
         $pdo->exec($initData);
+
+        $skilledWorkId = $pdo->query("SELECT id FROM service_categories WHERE name = 'Skilled Work'")->fetchColumn();
+        if ($skilledWorkId) {
+            $subCategoryIds = [];
+            foreach (array_keys($skilledWorkSubcategories) as $subName) {
+                $stmt = $pdo->prepare('SELECT id FROM service_categories WHERE name = ?');
+                $stmt->execute([$subName]);
+                $subCategoryIds[$subName] = (int)$stmt->fetchColumn();
+            }
+
+            $stmt = $pdo->prepare('SELECT id, title, description FROM service_requests WHERE category_id = ?');
+            $stmt->execute([$skilledWorkId]);
+            foreach ($stmt->fetchAll() as $request) {
+                $haystack = strtolower($request['title'] . ' ' . $request['description']);
+                $bestName = $skilledWorkFallback;
+                $bestMatches = 0;
+                foreach ($skilledWorkSubcategories as $subName => $keywords) {
+                    $matches = 0;
+                    foreach ($keywords as $keyword) {
+                        if (strpos($haystack, $keyword) !== false) {
+                            $matches++;
+                        }
+                    }
+                    if ($matches > $bestMatches) {
+                        $bestMatches = $matches;
+                        $bestName = $subName;
+                    }
+                }
+                $pdo->prepare('UPDATE service_requests SET category_id = ? WHERE id = ?')->execute([$subCategoryIds[$bestName], $request['id']]);
+            }
+
+            $pdo->prepare('DELETE FROM service_categories WHERE id = ?')->execute([$skilledWorkId]);
+        }
+
         $pdo->exec($townsData);
         $pdo->exec($skillCategoriesData);
         if (table_exists('users')) {

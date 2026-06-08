@@ -677,7 +677,13 @@ function get_suggested_budget_range($categoryId, $location = '', $sampleLimit = 
 function get_category_keyword_map() {
     return [
         'Errand' => ['errand', 'delivery', 'deliver', 'pickup', 'pick up', 'shopping', 'shop for', 'grocery', 'groceries', 'laundry', 'wash clothes', 'dry cleaning', 'queue', 'drop off', 'courier', 'send a package', 'market run', 'fetch', 'collect'],
-        'Skilled Work' => ['electrician', 'electrical', 'wiring', 'plumber', 'plumbing', 'carpenter', 'carpentry', 'mason', 'masonry', 'painter', 'painting', 'mechanic', 'repair', 'fix', 'installation', 'install', 'tiling', 'welding', 'roofing', 'renovation', 'construction', 'ac repair', 'fridge repair', 'generator', 'tailor', 'sewing', 'hairdresser', 'barber', 'makeup', 'catering', 'cook', 'chef', 'cleaner', 'cleaning service', 'gardener', 'landscaping'],
+        'Electrical & Technical Skills' => ['electrician', 'electrical', 'wiring', 'ac repair', 'air conditioner', 'fridge repair', 'refrigerator repair', 'generator', 'appliance repair', 'solar installation'],
+        'Plumbing Skills' => ['plumber', 'plumbing', 'pipe fitting', 'pipe', 'tap fixing', 'tap repair', 'toilet repair', 'water pump', 'leak repair', 'bathroom installation'],
+        'Construction & Building Skills' => ['carpenter', 'carpentry', 'mason', 'masonry', 'bricklaying', 'plastering', 'painter', 'painting', 'tiling', 'roofing', 'renovation', 'construction', 'concrete', 'building'],
+        'Welding & Metal Works' => ['welding', 'welder', 'gate fabrication', 'metal fabrication', 'burglar proof', 'aluminium works', 'aluminum works'],
+        'Vehicle & Mechanical Skills' => ['mechanic', 'auto repair', 'car repair', 'motorcycle repair', 'tyre fixing', 'tire repair', 'battery servicing', 'car electrical', 'auto diagnostics', 'vehicle repair'],
+        'Cleaning & Domestic Services' => ['cleaner', 'cleaning service', 'house cleaning', 'compound cleaning', 'laundry', 'deep cleaning', 'gardener', 'landscaping', 'post-construction cleaning'],
+        'Personal Care Services' => ['hairdresser', 'barber', 'barbering', 'braiding', 'makeup', 'nail care', 'tailor', 'sewing'],
         'Micro Job' => ['data entry', 'typing', 'transcription', 'graphic design', 'logo', 'flyer design', 'content writing', 'copywriting', 'translation', 'social media', 'virtual assistant', 'tutor', 'tutoring', 'lesson', 'website', 'web design', 'app development', 'programming', 'coding', 'video editing', 'photo editing', 'voice over', 'proofreading'],
     ];
 }
@@ -781,14 +787,16 @@ function category_icon($categoryName) {
     $name = strtolower($categoryName);
     $icons = [
         'errand' => '🏃',
-        'skilled' => '🛠️',
         'micro' => '⚡',
         'clean' => '🧹',
         'plumb' => '🔧',
         'electric' => '💡',
+        'construction' => '🏗️',
         'carpen' => '🪚',
         'paint' => '🎨',
+        'vehicle' => '🚗',
         'auto' => '🚗',
+        'personal care' => '💇',
         'tutor' => '🎓',
         'event' => '🎉',
         'weld' => '🔩',
