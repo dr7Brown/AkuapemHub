@@ -907,6 +907,10 @@ body.has-bottom-nav {
   margin-bottom: var(--space-4);
 }
 
+.category-grid .chip-pick[hidden] {
+  display: none;
+}
+
 .chip-row::-webkit-scrollbar {
   display: none;
 }
