@@ -650,6 +650,31 @@ function get_categories() {
     return $stmt->fetchAll();
 }
 
+function get_towns() {
+    global $pdo;
+    $stmt = $pdo->query('SELECT id, name, district FROM towns ORDER BY district, name');
+    return $stmt->fetchAll();
+}
+
+function get_towns_grouped_by_district() {
+    $grouped = [];
+    foreach (get_towns() as $town) {
+        $grouped[$town['district']][] = $town;
+    }
+    return $grouped;
+}
+
+function get_town_name($townId) {
+    global $pdo;
+    if (!$townId) {
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT name FROM towns WHERE id = ?');
+    $stmt->execute([$townId]);
+    $name = $stmt->fetchColumn();
+    return $name !== false ? $name : null;
+}
+
 function get_weekday_names() {
     return [0 => 'Sunday', 1 => 'Monday', 2 => 'Tuesday', 3 => 'Wednesday', 4 => 'Thursday', 5 => 'Friday', 6 => 'Saturday'];
 }

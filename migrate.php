@@ -7,6 +7,7 @@ $errors = [];
 $status = [];
 
 $requiredTables = [
+    'towns',
     'users',
     'worker_profiles',
     'service_categories',
@@ -44,14 +45,26 @@ function get_table_status() {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST['action'] === 'migrate') {
     $migrations = [
+        'towns' => "CREATE TABLE IF NOT EXISTS towns (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(80) NOT NULL,
+            district VARCHAR(80) NOT NULL,
+            UNIQUE KEY uniq_towns_name_district (name, district)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
         'users' => "CREATE TABLE IF NOT EXISTS users (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(120) NOT NULL,
             email VARCHAR(180) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
             role ENUM('customer','worker','admin') NOT NULL DEFAULT 'customer',
+            phone VARCHAR(20) DEFAULT NULL,
+            town_id INT UNSIGNED DEFAULT NULL,
+            latitude DECIMAL(10,7) DEFAULT NULL,
+            longitude DECIMAL(10,7) DEFAULT NULL,
             banned TINYINT(1) NOT NULL DEFAULT 0,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_users_town_id (town_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         
         'worker_profiles' => "CREATE TABLE IF NOT EXISTS worker_profiles (
@@ -232,12 +245,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         ('Skilled Work'),
         ('Micro Job')";
 
+    $townsData = "INSERT IGNORE INTO towns (name, district) VALUES
+        ('Akropong', 'Akuapem North'),
+        ('Mamfe', 'Akuapem North'),
+        ('Mampong', 'Akuapem North'),
+        ('Larteh', 'Akuapem North'),
+        ('Tutu', 'Akuapem North'),
+        ('Obosomase', 'Akuapem North'),
+        ('Amanokrom', 'Akuapem North'),
+        ('Adawso', 'Akuapem North'),
+        ('Kwamoso', 'Akuapem North'),
+        ('Tinkong', 'Akuapem North'),
+        ('Okorase', 'Akuapem North'),
+        ('New Mangoase', 'Akuapem North'),
+        ('Larteh Ahenease', 'Akuapem North'),
+        ('Larteh Kubease', 'Akuapem North'),
+        ('Okra Kwadwo', 'Akuapem North'),
+        ('Aburi', 'Akuapem South'),
+        ('Ahwerase', 'Akuapem South'),
+        ('Berekuso', 'Akuapem South'),
+        ('Atweaase', 'Akuapem South'),
+        ('Adukrom', 'Okere District'),
+        ('Abiriw', 'Okere District'),
+        ('Awukugua', 'Okere District'),
+        ('Dawu', 'Okere District'),
+        ('Apirede', 'Okere District'),
+        ('Aseseeso', 'Okere District'),
+        ('Abonse', 'Okere District'),
+        ('Asenema', 'Okere District'),
+        ('Amanfro', 'Okere District'),
+        ('Nsutam', 'Okere District'),
+        ('Kobokobo', 'Okere District'),
+        ('Nyamebekyere', 'Okere District'),
+        ('Okrakwadjo', 'Okere District'),
+        ('Mile 14', 'Okere District'),
+        ('Sanfo', 'Okere District'),
+        ('Kwadako', 'Okere District'),
+        ('Nkyenoa', 'Okere District')";
+
     try {
         foreach ($migrations as $tableName => $sql) {
             $pdo->exec($sql);
             $status[$tableName] = true;
         }
         $pdo->exec($initData);
+        $pdo->exec($townsData);
+        if (table_exists('users')) {
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'phone'")->fetch()) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN phone VARCHAR(20) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'town_id'")->fetch()) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN town_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_users_town_id (town_id)');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'latitude'")->fetch()) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN latitude DECIMAL(10,7) DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'longitude'")->fetch()) {
+                $pdo->exec('ALTER TABLE users ADD COLUMN longitude DECIMAL(10,7) DEFAULT NULL');
+            }
+        }
         if (table_exists('service_requests')) {
             $completionColumn = $pdo->query("SHOW COLUMNS FROM service_requests LIKE 'completion_notes'")->fetch();
             if (!$completionColumn) {

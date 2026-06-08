@@ -58,6 +58,7 @@ Create an admin by setting `role = 'admin'` in the `users` table for a registere
 
 ## Recently shipped
 
+- Town selection + registered phone/GPS at signup (curated Akuapem North/South/Okere District town list, phone number captured once at registration and reused everywhere — request contact info and worker contact phone auto-fill from it instead of asking again)
 - Spam/fraud signals (admin request review now flags rapid-fire postings, contact info shared across accounts, and repeated very-low-budget requests)
 - Auto-category suggestion (keyword matching on the request title/description pre-selects the most likely category as the customer types, with an option to override)
 - Auto-suggested budgets (live "similar jobs typically went for GH₵X–Y" hint while posting a request, based on category + location history)

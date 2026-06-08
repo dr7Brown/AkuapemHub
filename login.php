@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($email === '' || $password === '') {
         $error = 'Email and password are required.';
     } else {
-        $stmt = $pdo->prepare('SELECT id, name, email, password_hash, role, banned FROM users WHERE email = ?');
+        $stmt = $pdo->prepare('SELECT id, name, email, password_hash, role, phone, town_id, latitude, longitude, banned FROM users WHERE email = ?');
         $stmt->execute([$email]);
         $user = $stmt->fetch();
 

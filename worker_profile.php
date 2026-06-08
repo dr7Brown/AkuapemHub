@@ -15,14 +15,16 @@ $success = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bio = trim($_POST['bio'] ?? '');
     $location = trim($_POST['location'] ?? '');
-    $contact = trim($_POST['contact_phone'] ?? '');
+    $contact = trim($user['phone'] ?? '');
     $availability = $_POST['availability'] ?? 'available';
     $skills = trim($_POST['skills'] ?? '');
     $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
 
-    if ($location === '' || $contact === '') {
-        $error = 'Location and contact phone are required.';
+    if ($location === '') {
+        $error = 'Location is required.';
+    } elseif ($contact === '') {
+        $error = 'Add a phone number to your account before updating your profile.';
     } else {
         $stmt = $pdo->prepare('UPDATE worker_profiles SET bio = ?, location = ?, latitude = ?, longitude = ?, contact_phone = ?, availability = ?, updated_at = NOW() WHERE user_id = ?');
         $stmt->execute([$bio, $location, $latitude, $longitude, $contact, $availability, $user['id']]);
@@ -88,7 +90,11 @@ $schedule = get_worker_schedule($profile['id']);
             <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
             <p class="meta" id="location-status"><?php echo $profile['latitude'] !== null ? 'Saved coordinates: ' . sanitize($profile['latitude']) . ', ' . sanitize($profile['longitude']) : 'No coordinates saved yet — sharing your location helps customers find you nearby.'; ?></p>
             <label>Contact phone</label>
-            <input type="text" name="contact_phone" value="<?php echo sanitize($profile['contact_phone']); ?>" required placeholder="WhatsApp or phone" />
+            <?php if (!empty($user['phone'])): ?>
+                <p class="meta">📱 Customers will reach you on your registered number: <strong><?php echo sanitize($user['phone']); ?></strong></p>
+            <?php else: ?>
+                <p class="alert alert-error">No phone number on file. Please contact support to add one before saving your profile.</p>
+            <?php endif; ?>
             <label>Skills</label>
             <input type="text" name="skills" value="<?php echo sanitize($skills); ?>" placeholder="e.g. electrician, plumber, welder" />
             <label>Availability</label>

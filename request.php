@@ -13,12 +13,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $categoryId = intval($_POST['category_id'] ?? 0);
     $location = trim($_POST['location'] ?? '');
     $budget = trim($_POST['budget'] ?? '');
-    $contactInfo = trim($_POST['contact_info'] ?? '');
+    $contactInfo = trim($user['phone'] ?? '');
     $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
 
-    if ($title === '' || $description === '' || $categoryId === 0 || $location === '' || $budget === '' || $contactInfo === '') {
+    if ($title === '' || $description === '' || $categoryId === 0 || $location === '' || $budget === '') {
         $error = 'All fields are required.';
+    } elseif ($contactInfo === '') {
+        $error = 'Add a phone number to your account on your profile before posting a request.';
     } else {
         $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, status, payment_status, commission_percent, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
         $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, 'pending', 'unpaid', DEFAULT_COMMISSION, 0]);
@@ -87,8 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="text" name="budget" required placeholder="GH₵ 100 or Negotiable" />
             <p class="meta" id="budget-suggestion"></p>
             <label>Contact info</label>
-            <input type="text" name="contact_info" required placeholder="Phone or WhatsApp" />
-            <button type="submit" class="button button-primary">Publish request</button>
+            <?php if (!empty($user['phone'])): ?>
+                <p class="meta">📱 Workers will reach you on your registered number: <strong><?php echo sanitize($user['phone']); ?></strong></p>
+            <?php else: ?>
+                <p class="alert alert-error">No phone number on file. Please add one to your account before posting — contact support to update it.</p>
+            <?php endif; ?>
+            <button type="submit" class="button button-primary" <?php echo empty($user['phone']) ? 'disabled' : ''; ?>>Publish request</button>
         </form>
     </main>
     <script>
