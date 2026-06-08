@@ -118,4 +118,8 @@ INSERT IGNORE INTO service_categories (name) VALUES
 ('Vehicle & Mechanical Skills'),
 ('Cleaning & Domestic Services'),
 ('Personal Care Services'),
+('Education & Tutoring'),
+('Digital & Tech Skills'),
+('Event Services'),
+('Agriculture & Local Work'),
 ('Micro Job');

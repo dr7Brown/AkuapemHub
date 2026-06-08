@@ -684,7 +684,11 @@ function get_category_keyword_map() {
         'Vehicle & Mechanical Skills' => ['mechanic', 'auto repair', 'car repair', 'motorcycle repair', 'tyre fixing', 'tire repair', 'battery servicing', 'car electrical', 'auto diagnostics', 'vehicle repair'],
         'Cleaning & Domestic Services' => ['cleaner', 'cleaning service', 'house cleaning', 'compound cleaning', 'laundry', 'deep cleaning', 'gardener', 'landscaping', 'post-construction cleaning'],
         'Personal Care Services' => ['hairdresser', 'barber', 'barbering', 'braiding', 'makeup', 'nail care', 'tailor', 'sewing'],
-        'Micro Job' => ['data entry', 'typing', 'transcription', 'graphic design', 'logo', 'flyer design', 'content writing', 'copywriting', 'translation', 'social media', 'virtual assistant', 'tutor', 'tutoring', 'lesson', 'website', 'web design', 'app development', 'programming', 'coding', 'video editing', 'photo editing', 'voice over', 'proofreading'],
+        'Education & Tutoring' => ['tutor', 'tutoring', 'lesson', 'homework help', 'exam prep', 'maths tutor', 'english tutor', 'science tutor', 'private lessons'],
+        'Digital & Tech Skills' => ['graphic design', 'logo design', 'flyer design', 'website', 'web design', 'app development', 'programming', 'coding', 'video editing', 'photo editing', 'social media', 'computer repair', 'phone repair', 'data entry', 'typing'],
+        'Event Services' => ['mc service', 'master of ceremony', 'dj service', 'event decoration', 'sound system', 'photography', 'videography', 'event planning', 'catering', 'event setup'],
+        'Agriculture & Local Work' => ['farm labour', 'farm work', 'cocoa farm', 'harvesting', 'agro spraying', 'animal care', 'weeding', 'planting'],
+        'Micro Job' => ['transcription', 'content writing', 'copywriting', 'translation', 'virtual assistant', 'voice over', 'proofreading', 'freelance', 'remote task'],
     ];
 }
 
@@ -798,7 +802,12 @@ function category_icon($categoryName) {
         'auto' => '🚗',
         'personal care' => '💇',
         'tutor' => '🎓',
+        'education' => '🎓',
+        'digital' => '💻',
+        'tech' => '💻',
         'event' => '🎉',
+        'agri' => '🌾',
+        'farm' => '🌾',
         'weld' => '🔩',
     ];
     foreach ($icons as $keyword => $icon) {

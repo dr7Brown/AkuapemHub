@@ -262,6 +262,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         ('Vehicle & Mechanical Skills'),
         ('Cleaning & Domestic Services'),
         ('Personal Care Services'),
+        ('Education & Tutoring'),
+        ('Digital & Tech Skills'),
+        ('Event Services'),
+        ('Agriculture & Local Work'),
         ('Micro Job')";
 
     $skilledWorkSubcategories = [
