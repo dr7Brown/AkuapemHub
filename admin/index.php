@@ -3,7 +3,7 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
 require_login();
-if (!is_admin()) {
+if (!is_admin_or_manager()) {
     header('Location: ../dashboard.php');
     exit;
 }
@@ -31,13 +31,17 @@ $premiumWorkers = get_premium_worker_count();
 </head>
 <body>
     <header class="topbar">
-        <h1>Admin panel</h1>
+        <h1><?php echo is_admin() ? 'Admin panel' : 'Manager panel'; ?></h1>
         <div class="topbar-actions">
-            <a href="users.php" class="button button-small">Users</a>
+            <?php if (is_admin()): ?>
+                <a href="users.php" class="button button-small">Users</a>
+            <?php endif; ?>
             <a href="requests.php" class="button button-small">Requests</a>
-            <a href="disputes.php" class="button button-small">Disputes</a>
-            <a href="business_messages.php" class="button button-small">Messages</a>
-            <a href="analytics.php" class="button button-small">Analytics</a>
+            <?php if (is_admin()): ?>
+                <a href="disputes.php" class="button button-small">Disputes</a>
+                <a href="business_messages.php" class="button button-small">Messages</a>
+                <a href="analytics.php" class="button button-small">Analytics</a>
+            <?php endif; ?>
             <a href="../settings.php" class="button button-secondary button-small">Settings</a>
             <a href="../logout.php" class="button button-secondary button-small">Logout</a>
         </div>

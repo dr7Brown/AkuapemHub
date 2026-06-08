@@ -3,7 +3,7 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
 require_login();
-if (!is_admin()) {
+if (!is_admin_or_manager()) {
     header('Location: ../dashboard.php');
     exit;
 }
