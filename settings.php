@@ -102,9 +102,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
             <div class="alert alert-success"><?php echo sanitize($success); ?></div>
         <?php endif; ?>
 
-        <form class="card form-card" method="post" action="settings.php" enctype="multipart/form-data">
+        <section class="card" style="display: flex; align-items: center; gap: 14px;">
+            <?php if (!empty($user['profile_photo'])): ?>
+                <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile photo" class="avatar avatar-lg" />
+            <?php else: ?>
+                <span class="avatar avatar-lg"><?php echo sanitize(strtoupper(substr($user['name'], 0, 1))); ?></span>
+            <?php endif; ?>
+            <div>
+                <strong style="font-size: 1.05rem;"><?php echo sanitize($user['name']); ?></strong>
+                <p class="meta" style="margin: 2px 0 0;"><?php echo sanitize($user['phone'] ?? 'No phone on file'); ?></p>
+            </div>
+        </section>
+
+        <section class="card" style="padding: 6px 18px;">
+            <a href="#account" class="list-row">
+                <span class="menu-icon">✏️</span>
+                <span class="list-row-body"><strong>Edit Profile</strong><p>Name, email, phone, photo</p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="#location" class="list-row">
+                <span class="menu-icon">📍</span>
+                <span class="list-row-body"><strong>Location</strong><p><?php echo sanitize(get_town_name((int)($user['town_id'] ?? 0)) ?: 'Not set'); ?></p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="#password" class="list-row">
+                <span class="menu-icon">🔑</span>
+                <span class="list-row-body"><strong>Account Settings</strong><p>Change your password</p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="#notifications" class="list-row">
+                <span class="menu-icon">🔔</span>
+                <span class="list-row-body"><strong>Notifications</strong><p>Email alerts for job activity</p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="#role" class="list-row">
+                <span class="menu-icon">🧰</span>
+                <span class="list-row-body"><strong>Role</strong><p><?php echo $user['role'] === 'worker' ? 'Worker — manage your offering' : 'Customer — start offering services'; ?></p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="#privacy" class="list-row">
+                <span class="menu-icon">🔒</span>
+                <span class="list-row-body"><strong>Privacy &amp; Security</strong><p>Close or deactivate your account</p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="#help" class="list-row">
+                <span class="menu-icon">❓</span>
+                <span class="list-row-body"><strong>Help &amp; Support</strong><p>Get in touch with our team</p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="#about" class="list-row">
+                <span class="menu-icon">ℹ️</span>
+                <span class="list-row-body"><strong>About AkuapemHub</strong><p>Version, mission &amp; legal</p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+            <a href="logout.php" class="list-row">
+                <span class="menu-icon">🚪</span>
+                <span class="list-row-body"><strong style="color: #c0392b;">Logout</strong><p>Sign out of your account</p></span>
+                <span class="list-row-meta">›</span>
+            </a>
+        </section>
+
+        <form class="card form-card" method="post" action="settings.php#account" enctype="multipart/form-data">
             <input type="hidden" name="form" value="profile" />
-            <h2>Account</h2>
+
+            <h2 id="account">Edit profile</h2>
             <?php if (!empty($user['profile_photo'])): ?>
                 <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile photo" style="width: 72px; height: 72px; border-radius: 50%; object-fit: cover; margin-bottom: 8px;" />
             <?php endif; ?>
@@ -119,7 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
             <input type="text" name="phone" value="<?php echo sanitize($user['phone'] ?? ''); ?>" required placeholder="e.g. 0244000000" />
             <p class="meta">This number is used as your contact info across the app — requests, worker contact, and notifications all use it.</p>
 
-            <h2>Location</h2>
+            <h2 id="location">Location</h2>
             <label>Town</label>
             <select name="town_id" required>
                 <option value="">Select your town</option>
@@ -139,7 +200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
             <button type="button" id="use-my-location" class="button button-secondary button-small">Update my GPS location</button>
             <p class="meta" id="location-status"><?php echo $user['latitude'] !== null ? 'Saved coordinates: ' . sanitize($user['latitude']) . ', ' . sanitize($user['longitude']) : 'No coordinates saved yet — sharing your location helps with nearby matching.'; ?></p>
 
-            <h2>Change password</h2>
+            <h2 id="password">Account settings — change password</h2>
             <p class="meta">Leave blank to keep your current password.</p>
             <label>Current password</label>
             <input type="password" name="current_password" placeholder="Required only if setting a new password" />
@@ -149,9 +210,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
             <button type="submit" class="button button-primary">Save settings</button>
         </form>
 
-        <form class="card form-card" method="post" action="settings.php">
+        <form class="card form-card" method="post" action="settings.php#notifications">
             <input type="hidden" name="form" value="notifications" />
-            <h2>Notifications</h2>
+            <h2 id="notifications">Notifications</h2>
             <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
                 <input type="checkbox" name="email_notifications_enabled" <?php echo !empty($user['email_notifications_enabled']) ? 'checked' : ''; ?> />
                 Email me about job updates, requests, and account activity
@@ -161,7 +222,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
         </form>
 
         <section class="card form-card">
-            <h2>Role</h2>
+            <h2 id="role">Role</h2>
             <?php if ($user['role'] === 'customer'): ?>
                 <p class="meta">You're registered as a customer. Want to offer services on AkuapemHub?</p>
                 <a href="become_worker.php" class="button button-primary">Become a worker</a>
@@ -176,13 +237,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notific
         </section>
 
         <section class="card form-card">
-            <h2>Close account</h2>
-            <p class="meta">This deactivates your account and signs you out. Contact support if you'd like it reactivated.</p>
+            <h2 id="privacy">Privacy &amp; Security</h2>
+            <p class="meta">Your account details are only shared with the customers and workers you transact with. Closing your account deactivates it and signs you out immediately.</p>
             <form method="post" action="delete_account.php" onsubmit="return confirm('Are you sure you want to close your account? You will be signed out immediately.');">
                 <label>Confirm your password</label>
                 <input type="password" name="current_password" required placeholder="Enter your password to confirm" />
                 <button type="submit" class="button button-secondary" style="color: #c0392b; border-color: #c0392b;">Close my account</button>
             </form>
+        </section>
+
+        <section class="card form-card">
+            <h2 id="help">Help &amp; Support</h2>
+            <p class="meta">Have a question, found a bug, or need help with a job or payment? Reach out and our team will get back to you.</p>
+            <a href="mailto:<?php echo sanitize(ADMIN_EMAIL); ?>" class="button button-secondary">Email support</a>
+        </section>
+
+        <section class="card form-card">
+            <h2 id="about">About <?php echo sanitize(APP_NAME); ?></h2>
+            <p class="meta">AkuapemHub connects people in Akuapem with trusted workers and services — post errands, skilled work, and micro jobs, or find verified workers nearby.</p>
+            <p class="meta">Version 1.0 · Made for the Akuapem community.</p>
         </section>
     </main>
     <?php $activeNav = 'profile'; require __DIR__ . '/partials/bottom_nav.php'; ?>

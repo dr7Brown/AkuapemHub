@@ -927,6 +927,18 @@ body.has-bottom-nav {
   background: var(--primary-soft);
 }
 
+.menu-icon {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  background: var(--primary-soft);
+}
+
 .chip-pick span {
   font-size: 0.74rem;
   font-weight: 600;

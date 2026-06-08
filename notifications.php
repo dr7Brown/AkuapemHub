@@ -19,20 +19,20 @@ $notifications = get_notifications($user['id'], 20);
     <header class="app-topbar">
         <span class="brand"><span class="brand-icon">🔔</span> Notifications</span>
     </header>
-    <main class="page-shell">
-        <section class="panel">
+    <main class="page-shell small-shell">
+        <section class="card">
             <?php if (!$notifications): ?>
                 <div class="empty-state">No notifications yet.</div>
             <?php else: ?>
                 <?php foreach ($notifications as $notification): ?>
-                    <article class="request-card">
-                        <div class="request-head">
-                            <h2><?php echo sanitize($notification['title']); ?></h2>
-                            <span class="status status-<?php echo sanitize($notification['type']); ?>"><?php echo strtoupper($notification['type']); ?></span>
-                        </div>
-                        <p><?php echo nl2br(sanitize($notification['body'])); ?></p>
-                        <p class="meta"><?php echo sanitize($notification['created_at']); ?></p>
-                    </article>
+                    <div class="list-row">
+                        <span class="menu-icon"><?php echo notification_icon($notification['type']); ?></span>
+                        <span class="list-row-body">
+                            <strong><?php echo sanitize($notification['title']); ?></strong>
+                            <p><?php echo sanitize($notification['body']); ?></p>
+                        </span>
+                        <span class="list-row-meta"><?php echo sanitize(time_ago($notification['created_at'])); ?></span>
+                    </div>
                 <?php endforeach; ?>
             <?php endif; ?>
         </section>

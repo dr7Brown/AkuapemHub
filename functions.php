@@ -444,6 +444,38 @@ function format_distance($km) {
     return $km < 1 ? round($km * 1000) . ' m away' : number_format($km, 1) . ' km away';
 }
 
+function time_ago($datetime) {
+    $diff = max(0, time() - strtotime($datetime));
+    if ($diff < 60) {
+        return 'Just now';
+    }
+    $units = [
+        31536000 => 'y',
+        2592000 => 'mo',
+        604800 => 'w',
+        86400 => 'd',
+        3600 => 'h',
+        60 => 'm',
+    ];
+    foreach ($units as $seconds => $label) {
+        $value = (int) floor($diff / $seconds);
+        if ($value >= 1) {
+            return $value . $label . ' ago';
+        }
+    }
+    return 'Just now';
+}
+
+function notification_icon($type) {
+    $icons = [
+        'success' => '✅',
+        'warning' => '⚠️',
+        'error' => '❌',
+        'info' => '🔔',
+    ];
+    return $icons[$type] ?? '🔔';
+}
+
 function count_relevant_skill_matches($skillsCsv, $category, $title, $description) {
     $skillsCsv = strtolower(trim((string)$skillsCsv));
     if ($skillsCsv === '') {
