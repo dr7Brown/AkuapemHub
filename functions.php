@@ -499,6 +499,23 @@ function count_relevant_skill_matches($skillsCsv, $category, $title, $descriptio
     return $matches;
 }
 
+function notify_workers_of_matching_job(array $request) {
+    global $pdo;
+    $stmt = $pdo->query("SELECT u.id, u.name, GROUP_CONCAT(DISTINCT ws.skill_name SEPARATOR ', ') AS skills_csv
+        FROM users u
+        JOIN worker_profiles w ON w.user_id = u.id
+        JOIN worker_skills ws ON ws.worker_profile_id = w.id
+        WHERE u.role = 'worker' AND u.banned = 0
+        GROUP BY u.id, u.name");
+
+    $extraContext = trim(($request['category_name'] ?? '') . ' ' . ($request['skills_needed'] ?? ''));
+    foreach ($stmt->fetchAll() as $worker) {
+        if (count_relevant_skill_matches($worker['skills_csv'], $extraContext, $request['title'], $request['description']) > 0) {
+            notify_user($worker['id'], 'New job matches your skills', "A new job '{$request['title']}' was posted that matches your skills. Take a look before someone else does!", 'info');
+        }
+    }
+}
+
 function score_worker_for_request(array $worker, array $request) {
     $score = 0;
     $reasons = [];

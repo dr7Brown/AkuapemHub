@@ -23,6 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.", $request['customer_id']);
                 notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
                 send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
+                notify_workers_of_matching_job($request);
             } elseif ($bulkAction === 'remove') {
                 $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$request['id']]);
                 send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
@@ -44,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.", $request['customer_id']);
             notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
             send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
+            notify_workers_of_matching_job($request);
         } elseif ($_POST['action'] === 'remove' && $request) {
             $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$requestId]);
             send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
