@@ -81,12 +81,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="meta" id="category-suggestion-note"></p>
 
             <label>Skills needed <span class="meta">(optional — helps us match the right workers)</span></label>
-            <select id="skill-category-select">
-                <option value="">Select a skill category</option>
-                <?php foreach (get_skill_taxonomy() as $skillCategoryName => $skillNames): ?>
-                    <option value="<?php echo sanitize($skillCategoryName); ?>"><?php echo sanitize($skillCategoryName); ?></option>
-                <?php endforeach; ?>
-            </select>
             <select id="skill-name-select" disabled>
                 <option value="">Select a category first</option>
             </select>
@@ -95,7 +89,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <input type="hidden" name="skills_needed" id="skills-needed-input" />
 
             <label>Location</label>
-            <input type="text" name="location" required placeholder="City, neighbourhood" />
+            <select id="town-select">
+                <option value="">Select your town</option>
+                <?php $currentDistrict = null; ?>
+                <?php foreach (get_towns() as $town): ?>
+                    <?php if ($town['district'] !== $currentDistrict): ?>
+                        <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
+                        <optgroup label="<?php echo sanitize($town['district']); ?>">
+                        <?php $currentDistrict = $town['district']; ?>
+                    <?php endif; ?>
+                    <option value="<?php echo sanitize($town['name']); ?>"><?php echo sanitize($town['name']); ?></option>
+                <?php endforeach; ?>
+                <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
+                <option value="__other__">Other (specify)</option>
+            </select>
+            <input type="text" name="location" id="location-input" required placeholder="City, neighbourhood" readonly />
             <input type="hidden" name="latitude" id="latitude" />
             <input type="hidden" name="longitude" id="longitude" />
             <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
@@ -127,6 +135,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }, function () {
                 status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
             });
+        });
+
+        var townSelect = document.getElementById('town-select');
+        var locationInputEl = document.getElementById('location-input');
+        townSelect.addEventListener('change', function () {
+            if (this.value === '__other__') {
+                locationInputEl.value = '';
+                locationInputEl.readOnly = false;
+                locationInputEl.placeholder = 'Enter your location';
+                locationInputEl.focus();
+            } else if (this.value) {
+                locationInputEl.value = this.value;
+                locationInputEl.readOnly = true;
+            } else {
+                locationInputEl.value = '';
+                locationInputEl.readOnly = true;
+                locationInputEl.placeholder = 'City, neighbourhood';
+            }
+            locationInputEl.dispatchEvent(new Event('input'));
         });
 
         var categorySelect = document.querySelector('select[name="category_id"]');
@@ -200,19 +227,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 .catch(function () { budgetSuggestion.textContent = ''; });
         }
 
-        var skillTaxonomy = <?php echo json_encode(get_skill_taxonomy()); ?>;
-        var skillCategorySelect = document.getElementById('skill-category-select');
+        var categorySkillMap = <?php
+            $skillTaxonomy = get_skill_taxonomy();
+            $categoryTaxonomyOverrides = ['Errand' => 'Errand & Support Services'];
+            $categorySkillMap = [];
+            foreach ($categories as $category) {
+                $taxonomyKey = $categoryTaxonomyOverrides[$category['name']] ?? $category['name'];
+                $categorySkillMap[$category['id']] = $skillTaxonomy[$taxonomyKey] ?? [];
+            }
+            echo json_encode($categorySkillMap);
+        ?>;
         var skillNameSelect = document.getElementById('skill-name-select');
         var addSkillButton = document.getElementById('add-skill-button');
         var skillList = document.getElementById('skill-list');
         var skillsNeededInput = document.getElementById('skills-needed-input');
         var selectedSkills = [];
 
-        skillCategorySelect.addEventListener('change', function () {
-            var skills = skillTaxonomy[this.value] || [];
+        function refreshSkillOptions() {
+            var skills = categorySkillMap[categorySelect.value] || [];
             skillNameSelect.innerHTML = '';
+            selectedSkills = [];
+            renderSkillList();
             if (!skills.length) {
-                skillNameSelect.innerHTML = '<option value="">Select a category first</option>';
+                skillNameSelect.innerHTML = '<option value="">No specific skills for this category</option>';
                 skillNameSelect.disabled = true;
                 return;
             }
@@ -227,7 +264,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 option.textContent = skillName;
                 skillNameSelect.appendChild(option);
             });
-        });
+        }
+
+        categorySelect.addEventListener('change', refreshSkillOptions);
 
         function renderSkillList() {
             skillList.innerHTML = '';

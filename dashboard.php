@@ -88,14 +88,17 @@ if (is_worker()) {
     }
 
 } elseif (is_customer()) {
-    $stmt = $pdo->prepare('SELECT sr.*, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment 
+    $customerWhere = array_merge(['sr.customer_id = ?'], $where);
+    $customerParams = array_merge([$user['id']], $params);
+    $sql = 'SELECT sr.*, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment
         FROM service_requests sr
         JOIN service_categories wc ON sr.category_id = wc.id
         LEFT JOIN users u ON sr.assigned_worker_id = u.id
         LEFT JOIN ratings r ON sr.id = r.request_id AND r.customer_id = sr.customer_id
-        WHERE sr.customer_id = ?
-        ORDER BY sr.created_at DESC');
-    $stmt->execute([$user['id']]);
+        WHERE ' . implode(' AND ', $customerWhere) . '
+        ORDER BY sr.created_at DESC';
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($customerParams);
     $requests = $stmt->fetchAll();
     $customerCounts = get_request_status_counts($user['id']);
     $customerSpent = get_customer_spending_total($user['id']);
@@ -137,10 +140,13 @@ if (is_worker()) {
             <p class="meta" style="color: rgba(255,255,255,0.85); margin-bottom: 4px;">👋 Hello, <?php echo sanitize($user['name']); ?></p>
             <?php if (is_worker()): ?>
                 <h1>Find trusted jobs near you in Akuapem</h1>
-                <a href="#open-jobs" class="button button-primary">Browse open jobs</a>
+                <div class="button-group">
+                    <a href="#open-jobs" class="button button-primary">Browse open jobs</a>
+                    <a href="request.php" class="button button-secondary">➕ Post Job</a>
+                </div>
             <?php else: ?>
                 <h1>Find trusted workers for any job in Akuapem</h1>
-                <a href="request.php" class="button button-primary">Post a Job</a>
+                <a href="request.php" class="button button-primary">➕ Post Job</a>
             <?php endif; ?>
         </section>
 
@@ -282,6 +288,23 @@ if (is_worker()) {
                     <h1>Your service requests</h1>
                     <a href="request.php" class="button button-primary">Create request</a>
                 </div>
+                <form method="get" class="filter-form">
+                    <select name="category">
+                        <option value="">All categories</option>
+                        <?php foreach ($categories as $category): ?>
+                            <option value="<?php echo $category['id']; ?>" <?php echo $categoryFilter == $category['id'] ? 'selected' : ''; ?>><?php echo sanitize($category['name']); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select name="status">
+                        <option value="">All statuses</option>
+                        <?php foreach (['pending', 'open', 'in_progress', 'completed', 'cancelled'] as $statusOption): ?>
+                            <option value="<?php echo $statusOption; ?>" <?php echo $statusFilter === $statusOption ? 'selected' : ''; ?>><?php echo strtoupper(str_replace('_', ' ', $statusOption)); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search requests" />
+                    <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
+                    <button type="submit" class="button button-primary">Filter</button>
+                </form>
                 <?php if (!$requests): ?>
                     <div class="empty-state">You have no service requests yet.</div>
                 <?php else: ?>
