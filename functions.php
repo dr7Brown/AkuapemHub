@@ -213,7 +213,7 @@ function mark_messages_read($requestId, $userId) {
     return $stmt->execute([$requestId, $userId]);
 }
 
-function get_user_conversations($userId, $limit = 30) {
+function get_legacy_message_conversations($userId, $limit = 30) {
     global $pdo;
     $stmt = $pdo->prepare(
         'SELECT m.request_id, IF(m.sender_id = ?, m.recipient_id, m.sender_id) AS other_user_id, MAX(m.created_at) AS last_at

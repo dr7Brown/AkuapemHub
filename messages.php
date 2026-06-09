@@ -8,7 +8,7 @@ $user = current_user();
 $requestId = intval($_GET['request_id'] ?? 0);
 
 if ($requestId <= 0) {
-    $conversations = get_user_conversations($user['id']);
+    $conversations = get_legacy_message_conversations($user['id']);
     $activeNav = 'messages';
     ?>
     <!DOCTYPE html>
