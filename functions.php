@@ -1040,7 +1040,7 @@ function is_feature_paid($featureKey) {
 function log_audit_action($adminId, $action, $description) {
     global $pdo;
     $pdo->prepare('INSERT INTO audit_logs (admin_id, action, description, created_at) VALUES (?, ?, ?, NOW())')
-        ->execute([$adminId, $action, $description]);
+        ->execute([$adminId ?: null, $action, $description]);
 }
 
 function get_active_packages($table) {

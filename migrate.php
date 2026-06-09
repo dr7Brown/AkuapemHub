@@ -336,12 +336,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
 
         'audit_logs' => "CREATE TABLE IF NOT EXISTS audit_logs (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-            admin_id INT UNSIGNED NOT NULL,
+            admin_id INT UNSIGNED NULL DEFAULT NULL,
             action VARCHAR(80) NOT NULL,
             description TEXT NOT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             INDEX idx_audit_logs_admin_id (admin_id),
-            FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+            FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
         'business_messages' => "CREATE TABLE IF NOT EXISTS business_messages (
@@ -592,6 +592,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             if (!$pdo->query("SHOW COLUMNS FROM platform_payments LIKE 'paystack_reference'")->fetch()) {
                 $pdo->exec("ALTER TABLE platform_payments ADD COLUMN paystack_reference VARCHAR(100) DEFAULT NULL, ADD COLUMN paystack_transaction_id BIGINT UNSIGNED DEFAULT NULL, ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'GHS', ADD COLUMN gateway VARCHAR(20) NOT NULL DEFAULT 'manual'");
                 $pdo->exec("ALTER TABLE platform_payments ADD INDEX idx_platform_payments_paystack_ref (paystack_reference)");
+            }
+        }
+        // Make audit_logs.admin_id nullable so system actions (admin_id=0/null) are allowed
+        if (table_exists('audit_logs')) {
+            $adminIdCol = $pdo->query("SHOW COLUMNS FROM audit_logs LIKE 'admin_id'")->fetch();
+            if ($adminIdCol && stripos($adminIdCol['Null'], 'NO') !== false) {
+                // Drop old FK, alter column to nullable, re-add FK with SET NULL
+                try { $pdo->exec("ALTER TABLE audit_logs DROP FOREIGN KEY audit_logs_ibfk_1"); } catch (Exception $e) {}
+                $pdo->exec("ALTER TABLE audit_logs MODIFY COLUMN admin_id INT UNSIGNED NULL DEFAULT NULL");
+                try {
+                    $pdo->exec("ALTER TABLE audit_logs ADD CONSTRAINT audit_logs_ibfk_1 FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE SET NULL");
+                } catch (Exception $e) {}
             }
         }
         // Seed platform_settings defaults
