@@ -23,6 +23,12 @@ $requiredTables = [
     'worker_availability_slots',
     'completion_photos',
     'business_messages',
+    'platform_settings',
+    'featured_job_packages',
+    'worker_promotion_packages',
+    'verification_packages',
+    'platform_payments',
+    'audit_logs',
 ];
 
 function table_exists($tableName) {
@@ -239,6 +245,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
+        'platform_settings' => "CREATE TABLE IF NOT EXISTS platform_settings (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            setting_key VARCHAR(80) NOT NULL UNIQUE,
+            setting_value VARCHAR(255) NOT NULL DEFAULT '',
+            description VARCHAR(255) DEFAULT NULL,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'featured_job_packages' => "CREATE TABLE IF NOT EXISTS featured_job_packages (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(80) NOT NULL,
+            duration_days TINYINT UNSIGNED NOT NULL,
+            price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'worker_promotion_packages' => "CREATE TABLE IF NOT EXISTS worker_promotion_packages (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(80) NOT NULL,
+            duration_days TINYINT UNSIGNED NOT NULL,
+            price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'verification_packages' => "CREATE TABLE IF NOT EXISTS verification_packages (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(80) NOT NULL,
+            price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'platform_payments' => "CREATE TABLE IF NOT EXISTS platform_payments (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id INT UNSIGNED NOT NULL,
+            payment_type ENUM('featured_job','featured_worker','verification') NOT NULL,
+            reference_id INT UNSIGNED DEFAULT NULL,
+            package_id INT UNSIGNED DEFAULT NULL,
+            amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
+            reference_code VARCHAR(64) DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            paid_at DATETIME DEFAULT NULL,
+            INDEX idx_platform_payments_user_id (user_id),
+            INDEX idx_platform_payments_status (status),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'audit_logs' => "CREATE TABLE IF NOT EXISTS audit_logs (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            admin_id INT UNSIGNED NOT NULL,
+            action VARCHAR(80) NOT NULL,
+            description TEXT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_audit_logs_admin_id (admin_id),
+            FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
         'business_messages' => "CREATE TABLE IF NOT EXISTS business_messages (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             user_id INT UNSIGNED NULL,
@@ -435,6 +498,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
                 $pdo->exec('ALTER TABLE worker_skills ADD COLUMN category_id INT UNSIGNED DEFAULT NULL, ADD INDEX idx_worker_skills_category_id (category_id)');
             }
         }
+        if (table_exists('users')) {
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'username'")->fetch()) {
+                $pdo->exec("ALTER TABLE users ADD COLUMN username VARCHAR(30) DEFAULT NULL AFTER name, ADD UNIQUE KEY uniq_users_username (username)");
+            }
+        }
+        if (table_exists('service_requests')) {
+            if (!$pdo->query("SHOW COLUMNS FROM service_requests LIKE 'featured_start_date'")->fetch()) {
+                $pdo->exec('ALTER TABLE service_requests ADD COLUMN featured_start_date DATE DEFAULT NULL, ADD COLUMN featured_end_date DATE DEFAULT NULL');
+            }
+        }
+        if (table_exists('worker_profiles')) {
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'is_featured'")->fetch()) {
+                $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN is_featured TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN featured_start_date DATE DEFAULT NULL, ADD COLUMN featured_end_date DATE DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'is_verified'")->fetch()) {
+                $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN is_verified TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN verification_date DATE DEFAULT NULL, ADD COLUMN verification_expiry DATE DEFAULT NULL');
+            }
+        }
+        // Seed platform_settings defaults
+        $pdo->exec("INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+            ('monetization_mode', 'free', 'Global monetization mode: free, hybrid, or paid'),
+            ('enable_paid_featured_jobs', '0', 'Charge for featured job posts (0=free, 1=paid)'),
+            ('enable_paid_featured_workers', '0', 'Charge workers to feature profiles (0=free, 1=paid)'),
+            ('enable_paid_verification_badges', '0', 'Charge for verification badges (0=free, 1=paid)')");
+        // Seed default packages
+        $pdo->exec("INSERT IGNORE INTO featured_job_packages (name, duration_days, price, status) VALUES
+            ('7 Days', 7, 0.00, 'active'),
+            ('14 Days', 14, 0.00, 'active'),
+            ('30 Days', 30, 0.00, 'active')");
+        $pdo->exec("INSERT IGNORE INTO worker_promotion_packages (name, duration_days, price, status) VALUES
+            ('7 Days', 7, 0.00, 'active'),
+            ('30 Days', 30, 0.00, 'active'),
+            ('90 Days', 90, 0.00, 'active')");
+        $pdo->exec("INSERT IGNORE INTO verification_packages (name, price, status) VALUES
+            ('Verified Worker Badge', 0.00, 'active')");
         $migrated = true;
     } catch (Exception $e) {
         $errors[] = $e->getMessage();

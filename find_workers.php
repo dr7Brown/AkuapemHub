@@ -38,7 +38,8 @@ if ($sortBy === 'rating') {
     $orderBy = 'completed_jobs DESC';
 }
 
-$sql = "SELECT u.id, u.name, u.created_at, w.location, w.latitude, w.longitude, w.subscription_status, w.availability,
+$sql = "SELECT u.id, u.name, u.username, u.created_at, w.location, w.latitude, w.longitude, w.subscription_status, w.availability,
+        w.is_featured, w.featured_end_date, w.is_verified,
         COALESCE(COUNT(DISTINCT sr.id), 0) AS completed_jobs,
         COALESCE(AVG(r.score), 0) AS avg_rating,
         GROUP_CONCAT(DISTINCT ws.skill_name ORDER BY ws.skill_name SEPARATOR ', ') AS skills
@@ -48,8 +49,8 @@ $sql = "SELECT u.id, u.name, u.created_at, w.location, w.latitude, w.longitude, 
         LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
         LEFT JOIN ratings r ON sr.id = r.request_id
         WHERE " . implode(' AND ', $where) . "
-        GROUP BY u.id, u.name, u.created_at, w.location, w.latitude, w.longitude, w.subscription_status, w.availability
-        ORDER BY " . $orderBy . "
+        GROUP BY u.id, u.name, u.username, u.created_at, w.location, w.latitude, w.longitude, w.subscription_status, w.availability, w.is_featured, w.featured_end_date, w.is_verified
+        ORDER BY (w.is_featured = 1 AND (w.featured_end_date IS NULL OR w.featured_end_date >= CURDATE())) DESC, " . $orderBy . "
         LIMIT 100";
 
 $stmt = $pdo->prepare($sql);
@@ -126,9 +127,17 @@ $user = current_user();
                     <article class="request-card">
                         <div class="request-head">
                             <div>
-                                <h2><?php echo sanitize($worker['name']); ?></h2>
+                                <h2>
+                                    <?php echo sanitize(display_name($worker)); ?>
+                                    <?php if ($worker['is_verified']): ?>
+                                        <span title="Verified worker" style="color:var(--primary);">✓</span>
+                                    <?php endif; ?>
+                                    <?php if ($worker['is_featured'] && (!$worker['featured_end_date'] || $worker['featured_end_date'] >= date('Y-m-d'))): ?>
+                                        <span class="badge" style="background:var(--primary);color:#fff;font-size:0.75rem;padding:2px 7px;">Featured</span>
+                                    <?php endif; ?>
+                                </h2>
                                 <p class="meta">
-                                    <?php echo sanitize($worker['location'] ?: 'Location not set'); ?> • <?php echo sanitize(ucfirst($worker['subscription_status'])); ?>
+                                    <?php echo sanitize($worker['location'] ?: 'Location not set'); ?>
                                     <?php if ($worker['distance_km'] !== null): ?>
                                         • <?php echo sanitize(format_distance($worker['distance_km'])); ?>
                                     <?php endif; ?>

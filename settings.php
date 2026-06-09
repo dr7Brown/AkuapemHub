@@ -10,7 +10,7 @@ $success = '';
 $section = $_GET['section'] ?? '';
 
 function settings_refresh_user(PDO $pdo, $userId) {
-    $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT id, name, username, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $fresh = $stmt->fetch();
     $_SESSION['user'] = $fresh;
@@ -19,22 +19,29 @@ function settings_refresh_user(PDO $pdo, $userId) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_profile') {
     $name = trim($_POST['name'] ?? '');
+    $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $phone = trim($_POST['phone'] ?? '');
 
-    if ($name === '' || $email === '' || $phone === '') {
-        $error = 'Name, email and phone are required.';
+    if ($name === '' || $username === '' || $email === '' || $phone === '') {
+        $error = 'Name, username, email and phone are required.';
+    } elseif (!preg_match('/^[a-zA-Z0-9_]{3,30}$/', $username)) {
+        $error = 'Username must be 3–30 characters: letters, numbers, underscores only.';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Please use a valid email address.';
     } elseif (!empty($_FILES['profile_photo']['name']) && !is_valid_image_upload($_FILES['profile_photo'])) {
         $error = 'Profile picture must be a JPEG, PNG, or WEBP image under 5MB.';
     } else {
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
-        $stmt->execute([$email, $user['id']]);
-        if ($stmt->fetch()) {
+        $stmtEmail = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
+        $stmtEmail->execute([$email, $user['id']]);
+        $stmtUser = $pdo->prepare('SELECT id FROM users WHERE username = ? AND id != ?');
+        $stmtUser->execute([$username, $user['id']]);
+        if ($stmtEmail->fetch()) {
             $error = 'Another account already uses this email address.';
+        } elseif ($stmtUser->fetch()) {
+            $error = 'This username is already taken.';
         } else {
-            $pdo->prepare('UPDATE users SET name = ?, email = ?, phone = ? WHERE id = ?')->execute([$name, $email, $phone, $user['id']]);
+            $pdo->prepare('UPDATE users SET name = ?, username = ?, email = ?, phone = ? WHERE id = ?')->execute([$name, $username, $email, $phone, $user['id']]);
             if (!empty($_FILES['profile_photo']['name'])) {
                 $profilePhotoPath = save_uploaded_image($_FILES['profile_photo'], 'uploads/profiles/' . $user['id']);
                 $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $user['id']]);
@@ -189,8 +196,11 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                 <label>Profile picture</label>
                 <input type="file" name="profile_photo" accept="image/jpeg,image/png,image/webp" />
                 <p class="meta">JPEG, PNG, or WEBP, up to 5MB. Leave blank to keep your current picture.</p>
-                <label>Name</label>
+                <label>Full name</label>
                 <input type="text" name="name" value="<?php echo sanitize($user['name']); ?>" required />
+                <label>Username</label>
+                <input type="text" name="username" value="<?php echo sanitize($user['username'] ?? ''); ?>" required pattern="[a-zA-Z0-9_]{3,30}" title="3–30 characters: letters, numbers, underscores" placeholder="e.g. kwame_builds" />
+                <p class="meta" style="margin-top: 4px;">Shown to other users instead of your real name.</p>
                 <label>Email</label>
                 <input type="email" name="email" value="<?php echo sanitize($user['email']); ?>" required />
                 <label>Phone number</label>

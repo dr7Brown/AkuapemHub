@@ -78,6 +78,21 @@ $schedule = get_worker_schedule($profile['id']);
             <?php else: ?>
                 <a href="toggle_subscription.php" class="button button-secondary">Switch to Free</a>
             <?php endif; ?>
+            <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                <?php if ($profile['is_featured'] && (!empty($profile['featured_end_date']) && $profile['featured_end_date'] >= date('Y-m-d'))): ?>
+                    <span class="badge" style="background:var(--primary);color:#fff;">Featured until <?php echo sanitize($profile['featured_end_date']); ?></span>
+                <?php else: ?>
+                    <a href="feature_worker.php" class="button button-secondary button-small">Feature my profile</a>
+                <?php endif; ?>
+                <?php if ($profile['is_verified']): ?>
+                    <span class="badge" style="background:#22a06b;color:#fff;">Verified ✓</span>
+                    <?php if ($profile['verification_expiry']): ?>
+                        <span class="meta">expires <?php echo sanitize($profile['verification_expiry']); ?></span>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <span class="meta" style="font-size:0.9rem;">Not verified — admin can grant verification from the admin panel.</span>
+                <?php endif; ?>
+            </div>
         </div>
         <form class="card form-card" method="post" action="worker_profile.php">
             <label>Bio</label>

@@ -227,7 +227,7 @@ function get_user_conversations($userId, $limit = 30) {
 
     $conversations = [];
     foreach ($rows as $row) {
-        $otherStmt = $pdo->prepare('SELECT name, profile_photo FROM users WHERE id = ?');
+        $otherStmt = $pdo->prepare('SELECT name, username, profile_photo FROM users WHERE id = ?');
         $otherStmt->execute([$row['other_user_id']]);
         $other = $otherStmt->fetch();
 
@@ -249,7 +249,7 @@ function get_user_conversations($userId, $limit = 30) {
         $conversations[] = [
             'request_id' => $row['request_id'],
             'request_title' => $request['title'],
-            'other_user_name' => $other['name'],
+            'other_user_name' => display_name($other),
             'other_user_photo' => $other['profile_photo'],
             'last_message' => $lastMessage['content'] ?? '',
             'last_at' => $row['last_at'],
@@ -349,24 +349,6 @@ function get_payment_receipt($paymentId, $customerId) {
     return $stmt->fetch();
 }
 
-function get_top_workers($limit = 10) {
-    global $pdo;
-    $stmt = $pdo->prepare("SELECT u.id, u.name, w.location, w.subscription_status,
-        COUNT(DISTINCT sr.id) AS completed_jobs,
-        COALESCE(AVG(r.score), 0) AS avg_rating
-        FROM users u
-        JOIN worker_profiles w ON u.id = w.user_id
-        LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
-        LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = u.id
-        WHERE u.role = 'worker' AND u.banned = 0
-        GROUP BY u.id, u.name, w.location, w.subscription_status
-        HAVING completed_jobs > 0
-        ORDER BY avg_rating DESC, completed_jobs DESC
-        LIMIT ?");
-    $stmt->bindValue(1, $limit, PDO::PARAM_INT);
-    $stmt->execute();
-    return $stmt->fetchAll();
-}
 
 function get_trending_categories($limit = 5, $days = 30) {
     global $pdo;
@@ -956,4 +938,67 @@ function get_status_options() {
         'completed' => 'Completed',
         'cancelled' => 'Cancelled',
     ];
+}
+
+function display_name($user) {
+    return !empty($user['username']) ? $user['username'] : $user['name'];
+}
+
+function get_platform_setting($key, $default = null) {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare('SELECT setting_value FROM platform_settings WHERE setting_key = ?');
+        $stmt->execute([$key]);
+        $value = $stmt->fetchColumn();
+        return $value !== false ? $value : $default;
+    } catch (Exception $e) {
+        return $default;
+    }
+}
+
+function set_platform_setting($key, $value) {
+    global $pdo;
+    $pdo->prepare('INSERT INTO platform_settings (setting_key, setting_value, updated_at) VALUES (?, ?, NOW())
+        ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW()')
+        ->execute([$key, $value]);
+}
+
+function is_feature_paid($featureKey) {
+    $mode = get_platform_setting('monetization_mode', 'free');
+    if ($mode === 'free') return false;
+    if ($mode === 'paid') return true;
+    return (bool)get_platform_setting($featureKey, 0);
+}
+
+function log_audit_action($adminId, $action, $description) {
+    global $pdo;
+    $pdo->prepare('INSERT INTO audit_logs (admin_id, action, description, created_at) VALUES (?, ?, ?, NOW())')
+        ->execute([$adminId, $action, $description]);
+}
+
+function get_active_packages($table) {
+    global $pdo;
+    static $allowed = ['featured_job_packages', 'worker_promotion_packages', 'verification_packages'];
+    if (!in_array($table, $allowed, true)) return [];
+    $stmt = $pdo->query("SELECT * FROM $table WHERE status = 'active' ORDER BY price ASC");
+    return $stmt->fetchAll();
+}
+
+function get_top_workers($limit = 10) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT u.id, u.name, u.username, w.location, w.subscription_status, w.is_featured, w.is_verified,
+        COUNT(DISTINCT sr.id) AS completed_jobs,
+        COALESCE(AVG(r.score), 0) AS avg_rating
+        FROM users u
+        JOIN worker_profiles w ON u.id = w.user_id
+        LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
+        LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = u.id
+        WHERE u.role = 'worker' AND u.banned = 0
+        GROUP BY u.id, u.name, u.username, w.location, w.subscription_status, w.is_featured, w.is_verified
+        HAVING completed_jobs > 0
+        ORDER BY avg_rating DESC, completed_jobs DESC
+        LIMIT ?");
+    $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+    $stmt->execute();
+    return $stmt->fetchAll();
 }

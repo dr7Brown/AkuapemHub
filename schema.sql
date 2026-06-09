@@ -4,11 +4,20 @@ USE akuapemhub;
 CREATE TABLE IF NOT EXISTS users (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
+  username VARCHAR(30) DEFAULT NULL,
   email VARCHAR(180) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('customer','worker','admin','manager') NOT NULL DEFAULT 'customer',
+  phone VARCHAR(20) DEFAULT NULL,
+  town_id INT UNSIGNED DEFAULT NULL,
+  latitude DECIMAL(10,7) DEFAULT NULL,
+  longitude DECIMAL(10,7) DEFAULT NULL,
+  profile_photo VARCHAR(255) DEFAULT NULL,
+  email_notifications_enabled TINYINT(1) NOT NULL DEFAULT 1,
   banned TINYINT(1) NOT NULL DEFAULT 0,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_users_username (username),
+  INDEX idx_users_town_id (town_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS worker_profiles (
@@ -16,9 +25,20 @@ CREATE TABLE IF NOT EXISTS worker_profiles (
   user_id INT UNSIGNED NOT NULL,
   bio TEXT,
   location VARCHAR(140) NOT NULL,
+  latitude DECIMAL(10,7) DEFAULT NULL,
+  longitude DECIMAL(10,7) DEFAULT NULL,
   contact_phone VARCHAR(80) NOT NULL,
+  id_type ENUM('ghana_card','passport') DEFAULT NULL,
+  id_number VARCHAR(50) DEFAULT NULL,
+  id_document_path VARCHAR(255) DEFAULT NULL,
   availability ENUM('available','busy','offline') NOT NULL DEFAULT 'available',
   subscription_status ENUM('free','premium') NOT NULL DEFAULT 'free',
+  is_featured TINYINT(1) NOT NULL DEFAULT 0,
+  featured_start_date DATE DEFAULT NULL,
+  featured_end_date DATE DEFAULT NULL,
+  is_verified TINYINT(1) NOT NULL DEFAULT 0,
+  verification_date DATE DEFAULT NULL,
+  verification_expiry DATE DEFAULT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NULL,
   INDEX idx_worker_profiles_availability (availability),
@@ -41,6 +61,8 @@ CREATE TABLE IF NOT EXISTS service_requests (
   budget VARCHAR(80) NOT NULL,
   contact_info VARCHAR(180) NOT NULL,
   skills_needed VARCHAR(255) DEFAULT NULL,
+  featured_start_date DATE DEFAULT NULL,
+  featured_end_date DATE DEFAULT NULL,
   status ENUM('pending','open','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending',
   payment_status ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
   commission_percent INT UNSIGNED NOT NULL DEFAULT 10,
@@ -109,6 +131,82 @@ CREATE TABLE IF NOT EXISTS worker_skills (
   INDEX idx_worker_skills_skill_name (skill_name),
   FOREIGN KEY (worker_profile_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS platform_settings (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  setting_key VARCHAR(80) NOT NULL UNIQUE,
+  setting_value VARCHAR(255) NOT NULL DEFAULT '',
+  description VARCHAR(255) DEFAULT NULL,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS featured_job_packages (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  duration_days TINYINT UNSIGNED NOT NULL,
+  price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS worker_promotion_packages (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  duration_days TINYINT UNSIGNED NOT NULL,
+  price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS verification_packages (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(80) NOT NULL,
+  price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS platform_payments (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  payment_type ENUM('featured_job','featured_worker','verification') NOT NULL,
+  reference_id INT UNSIGNED DEFAULT NULL,
+  package_id INT UNSIGNED DEFAULT NULL,
+  amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  status ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
+  reference_code VARCHAR(64) DEFAULT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  paid_at DATETIME DEFAULT NULL,
+  INDEX idx_platform_payments_user_id (user_id),
+  INDEX idx_platform_payments_status (status),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  admin_id INT UNSIGNED NOT NULL,
+  action VARCHAR(80) NOT NULL,
+  description TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_audit_logs_admin_id (admin_id),
+  FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+('monetization_mode', 'free', 'Global monetization mode: free, hybrid, or paid'),
+('enable_paid_featured_jobs', '0', 'Charge for featured job posts (0=free, 1=paid)'),
+('enable_paid_featured_workers', '0', 'Charge workers to feature profiles (0=free, 1=paid)'),
+('enable_paid_verification_badges', '0', 'Charge for verification badges (0=free, 1=paid)');
+
+INSERT IGNORE INTO featured_job_packages (name, duration_days, price, status) VALUES
+('7 Days', 7, 0.00, 'active'),
+('14 Days', 14, 0.00, 'active'),
+('30 Days', 30, 0.00, 'active');
+
+INSERT IGNORE INTO worker_promotion_packages (name, duration_days, price, status) VALUES
+('7 Days', 7, 0.00, 'active'),
+('30 Days', 30, 0.00, 'active'),
+('90 Days', 90, 0.00, 'active');
+
+INSERT IGNORE INTO verification_packages (name, price, status) VALUES
+('Verified Worker Badge', 0.00, 'active');
 
 INSERT IGNORE INTO service_categories (name) VALUES
 ('Errand'),

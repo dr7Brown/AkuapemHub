@@ -12,6 +12,7 @@ $skillCategories = get_skill_categories_with_skills();
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
+    $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     $role = $_POST['role'] === 'worker' ? 'worker' : 'customer';
@@ -52,8 +53,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if ($name === '' || $email === '' || $password === '' || $phone === '' || !$townId) {
-        $error = 'All fields are required, including phone number and town.';
+    if ($name === '' || $username === '' || $email === '' || $password === '' || $phone === '' || !$townId) {
+        $error = 'All fields are required, including username, phone number and town.';
+    } elseif (!preg_match('/^[a-zA-Z0-9_]{3,30}$/', $username)) {
+        $error = 'Username must be 3–30 characters and can only contain letters, numbers, and underscores.';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Please use a valid email address.';
     } elseif ($workerError !== '') {
@@ -61,14 +64,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (!empty($_FILES['profile_photo']['name']) && !is_valid_image_upload($_FILES['profile_photo'])) {
         $error = 'Profile picture must be a JPEG, PNG, or WEBP image under 5MB.';
     } else {
-        $stmt = $pdo->prepare('SELECT id FROM users WHERE email = ?');
-        $stmt->execute([$email]);
-        if ($stmt->fetch()) {
+        $stmtEmail = $pdo->prepare('SELECT id FROM users WHERE email = ?');
+        $stmtEmail->execute([$email]);
+        $stmtUser = $pdo->prepare('SELECT id FROM users WHERE username = ?');
+        $stmtUser->execute([$username]);
+        if ($stmtEmail->fetch()) {
             $error = 'This email is already registered.';
+        } elseif ($stmtUser->fetch()) {
+            $error = 'This username is already taken. Please choose another.';
         } else {
             $passwordHash = password_hash($password, PASSWORD_BCRYPT);
-            $stmt = $pdo->prepare('INSERT INTO users (name, email, password_hash, role, phone, town_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([$name, $email, $passwordHash, $role, $phone, $townId, $latitude, $longitude]);
+            $stmt = $pdo->prepare('INSERT INTO users (name, username, email, password_hash, role, phone, town_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+            $stmt->execute([$name, $username, $email, $passwordHash, $role, $phone, $townId, $latitude, $longitude]);
             $userId = $pdo->lastInsertId();
 
             if (!empty($_FILES['profile_photo']['name'])) {
@@ -91,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, banned FROM users WHERE id = ?');
+            $stmt = $pdo->prepare('SELECT id, name, username, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
             login_user($user);
@@ -123,8 +130,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php endif; ?>
 
             <div class="wizard-step" data-step="1">
-                <label>Name</label>
+                <label>Full name</label>
                 <input type="text" name="name" required value="<?php echo sanitize($_POST['name'] ?? ''); ?>" />
+                <label>Username</label>
+                <input type="text" name="username" required pattern="[a-zA-Z0-9_]{3,30}" title="3–30 characters: letters, numbers, underscores only" value="<?php echo sanitize($_POST['username'] ?? ''); ?>" placeholder="e.g. kwame_builds" />
+                <p class="small-note" style="text-align: left; margin-top: 4px;">This is what other users see instead of your real name. 3–30 characters, letters/numbers/underscores.</p>
                 <label>Email</label>
                 <input type="email" name="email" required value="<?php echo sanitize($_POST['email'] ?? ''); ?>" />
                 <label>Password</label>

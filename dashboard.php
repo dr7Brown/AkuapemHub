@@ -127,7 +127,7 @@ if (is_worker()) {
             <?php if (!empty($user['profile_photo'])): ?>
                 <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile picture" class="avatar" />
             <?php else: ?>
-                <span class="avatar"><?php echo sanitize(strtoupper(substr($user['name'], 0, 1))); ?></span>
+                <span class="avatar"><?php echo sanitize(strtoupper(substr(display_name($user), 0, 1))); ?></span>
             <?php endif; ?>
         </div>
     </header>
@@ -137,7 +137,7 @@ if (is_worker()) {
         <?php endif; ?>
 
         <section class="hero-card">
-            <p class="meta" style="color: rgba(255,255,255,0.85); margin-bottom: 4px;">👋 Hello, <?php echo sanitize($user['name']); ?></p>
+            <p class="meta" style="color: rgba(255,255,255,0.85); margin-bottom: 4px;">👋 Hello, <?php echo sanitize(display_name($user)); ?></p>
             <?php if (is_worker()): ?>
                 <h1>Find trusted jobs near you in Akuapem</h1>
                 <div class="button-group">
@@ -333,6 +333,9 @@ if (is_worker()) {
                                     <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
                                 <?php endif; ?>
                                 <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
+                                <?php if (!$request['featured'] && in_array($request['status'], ['pending', 'open'], true)): ?>
+                                    <a href="feature_job.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Feature job</a>
+                                <?php endif; ?>
                             </div>
                             <?php if ($request['status'] === 'completed'): ?>
                                 <div class="request-footer">
