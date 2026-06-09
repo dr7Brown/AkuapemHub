@@ -209,6 +209,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $msgFlash = $_GET['msg'] ?? '';
 $errFlash = $_GET['err'] ?? '';
 
+// Revenue filter params (GET, only affect the payments tab)
+$filterFrom   = trim($_GET['filter_from'] ?? '');
+$filterTo     = trim($_GET['filter_to'] ?? '');
+$filterType   = trim($_GET['filter_type'] ?? '');
+$filterSearch = trim($_GET['filter_search'] ?? '');
+
 $monetizationMode = get_platform_setting('monetization_mode', 'free');
 $enableFeaturedJobs = get_platform_setting('enable_paid_featured_jobs', '0');
 $enableFeaturedWorkers = get_platform_setting('enable_paid_featured_workers', '0');
@@ -248,18 +254,25 @@ $pendingPayments = $pdo->query("
     ORDER BY pp.created_at DESC
 ")->fetchAll();
 
-// Full payment history (paid + failed)
-$paymentHistory = $pdo->query("
-    SELECT pp.*, u.name AS user_name, u.username, sr.title AS job_title
-    FROM platform_payments pp
-    JOIN users u ON pp.user_id = u.id
-    LEFT JOIN service_requests sr ON pp.payment_type IN ('featured_job','job_post') AND sr.id = pp.reference_id
-    WHERE pp.status IN ('paid', 'failed')
-    ORDER BY pp.created_at DESC LIMIT 100
-")->fetchAll();
+// Build filterable WHERE conditions (apply to revenue summary and payment history)
+$revWhere  = [];
+$revParams = [];
+if ($filterFrom)   { $revWhere[] = "DATE(pp.created_at) >= ?"; $revParams[] = $filterFrom; }
+if ($filterTo)     { $revWhere[] = "DATE(pp.created_at) <= ?"; $revParams[] = $filterTo; }
+if ($filterType)   { $revWhere[] = "pp.payment_type = ?";      $revParams[] = $filterType; }
+if ($filterSearch) { $revWhere[] = "(u.name LIKE ? OR u.username LIKE ? OR pp.reference_code LIKE ?)"; $revParams[] = "%{$filterSearch}%"; $revParams[] = "%{$filterSearch}%"; $revParams[] = "%{$filterSearch}%"; }
+$revWhereSQL = $revWhere ? 'AND ' . implode(' AND ', $revWhere) : '';
 
-// Revenue summary
-$revenueSummary = $pdo->query("
+// Revenue summary (filtered; pending counts excluded when a type filter is active since we want just that type's pending too)
+$revSumParams = array_filter([$filterFrom ?: null, $filterFrom ? $filterFrom : null], fn($v) => $v !== null);
+$revSumWhere  = [];
+$revSumParams = [];
+if ($filterFrom) { $revSumWhere[] = "DATE(created_at) >= ?"; $revSumParams[] = $filterFrom; }
+if ($filterTo)   { $revSumWhere[] = "DATE(created_at) <= ?"; $revSumParams[] = $filterTo; }
+if ($filterType) { $revSumWhere[] = "payment_type = ?";      $revSumParams[] = $filterType; }
+$revSumWhereSQL = $revSumWhere ? 'WHERE ' . implode(' AND ', $revSumWhere) : '';
+
+$revStmt = $pdo->prepare("
     SELECT
         COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) AS total_paid,
         COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) AS total_pending,
@@ -270,8 +283,22 @@ $revenueSummary = $pdo->query("
         COALESCE(SUM(CASE WHEN payment_type = 'verification' AND status = 'paid' THEN amount ELSE 0 END), 0) AS verification_revenue,
         COALESCE(SUM(CASE WHEN payment_type = 'job_post' AND status = 'paid' THEN amount ELSE 0 END), 0) AS job_post_revenue,
         COALESCE(SUM(CASE WHEN payment_type = 'worker_service' AND status = 'paid' THEN amount ELSE 0 END), 0) AS worker_service_revenue
-    FROM platform_payments
-")->fetch();
+    FROM platform_payments $revSumWhereSQL
+");
+$revStmt->execute($revSumParams);
+$revenueSummary = $revStmt->fetch();
+
+// Full payment history (paid + failed, with filters)
+$histStmt = $pdo->prepare("
+    SELECT pp.*, u.name AS user_name, u.username, sr.title AS job_title
+    FROM platform_payments pp
+    JOIN users u ON pp.user_id = u.id
+    LEFT JOIN service_requests sr ON pp.payment_type IN ('featured_job','job_post') AND sr.id = pp.reference_id
+    WHERE pp.status IN ('paid', 'failed') {$revWhereSQL}
+    ORDER BY pp.created_at DESC LIMIT 200
+");
+$histStmt->execute($revParams);
+$paymentHistory = $histStmt->fetchAll();
 
 // Currently active featured jobs
 $activeFeaturedJobs = $pdo->query("
@@ -757,15 +784,59 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
         <!-- PENDING PAYMENTS TAB -->
         <div class="tab-panel <?php echo $tab === 'payments' ? 'active' : ''; ?>" id="tab-payments">
 
+            <!-- Revenue filters -->
+            <?php $filtersActive = $filterFrom || $filterTo || $filterType || $filterSearch; ?>
+            <section class="panel" style="margin-bottom:12px;padding:14px 16px;">
+                <form method="get" action="monetization.php" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
+                    <input type="hidden" name="tab" value="payments" />
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                        <label style="font-size:0.82rem;font-weight:600;">From</label>
+                        <input type="date" name="filter_from" value="<?php echo sanitize($filterFrom); ?>" style="padding:6px 10px;font-size:0.9rem;" />
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                        <label style="font-size:0.82rem;font-weight:600;">To</label>
+                        <input type="date" name="filter_to" value="<?php echo sanitize($filterTo); ?>" style="padding:6px 10px;font-size:0.9rem;" />
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                        <label style="font-size:0.82rem;font-weight:600;">Type</label>
+                        <select name="filter_type" style="padding:6px 10px;font-size:0.9rem;">
+                            <option value="">All types</option>
+                            <option value="featured_job"   <?php echo $filterType === 'featured_job'    ? 'selected' : ''; ?>>Featured Job</option>
+                            <option value="featured_worker"<?php echo $filterType === 'featured_worker' ? 'selected' : ''; ?>>Featured Worker</option>
+                            <option value="verification"   <?php echo $filterType === 'verification'    ? 'selected' : ''; ?>>Verification</option>
+                            <option value="job_post"       <?php echo $filterType === 'job_post'        ? 'selected' : ''; ?>>Job Posting</option>
+                            <option value="worker_service" <?php echo $filterType === 'worker_service'  ? 'selected' : ''; ?>>Service Listing</option>
+                        </select>
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:4px;">
+                        <label style="font-size:0.82rem;font-weight:600;">Search user / ref</label>
+                        <input type="text" name="filter_search" value="<?php echo sanitize($filterSearch); ?>" placeholder="name, username, or ref code" style="padding:6px 10px;font-size:0.9rem;min-width:190px;" />
+                    </div>
+                    <button type="submit" class="button button-primary button-small">Apply</button>
+                    <?php if ($filtersActive): ?>
+                        <a href="monetization.php?tab=payments" class="button button-secondary button-small">Clear</a>
+                    <?php endif; ?>
+                </form>
+                <?php if ($filtersActive): ?>
+                    <p class="meta" style="margin-top:8px;">
+                        Showing filtered results
+                        <?php if ($filterFrom || $filterTo): ?>— <?php echo $filterFrom ?: '…'; ?> to <?php echo $filterTo ?: 'now'; ?><?php endif; ?>
+                        <?php if ($filterType): ?>— type: <strong><?php echo sanitize(ucwords(str_replace('_', ' ', $filterType))); ?></strong><?php endif; ?>
+                        <?php if ($filterSearch): ?>— search: <strong><?php echo sanitize($filterSearch); ?></strong><?php endif; ?>
+                    </p>
+                <?php endif; ?>
+            </section>
+
             <!-- Revenue summary -->
             <section class="panel" style="margin-bottom:16px;">
-                <h2 style="margin-top:0;">Revenue Overview</h2>
+                <h2 style="margin-top:0;">Revenue Overview<?php if ($filtersActive): ?> <span class="meta" style="font-size:0.85rem;">(filtered)</span><?php endif; ?></h2>
                 <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
                     <div class="stat-card"><h2>GH₵ <?php echo number_format($revenueSummary['total_paid'], 2); ?></h2><p>Total confirmed</p></div>
                     <div class="stat-card"><h2>GH₵ <?php echo number_format($revenueSummary['total_pending'], 2); ?></h2><p>Awaiting confirmation</p></div>
                     <div class="stat-card"><h2><?php echo (int)$revenueSummary['count_paid']; ?></h2><p>Paid transactions</p></div>
                     <div class="stat-card"><h2><?php echo (int)$revenueSummary['count_pending']; ?></h2><p>Pending</p></div>
                 </div>
+                <?php if (!$filterType): ?>
                 <table class="pkg-table">
                     <thead><tr><th>Feature</th><th>Confirmed Revenue</th></tr></thead>
                     <tbody>
@@ -776,6 +847,7 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                         <tr><td>Worker Service Listings</td><td>GH₵ <?php echo number_format($revenueSummary['worker_service_revenue'], 2); ?></td></tr>
                     </tbody>
                 </table>
+                <?php endif; ?>
             </section>
 
             <!-- Pending payments -->
@@ -822,7 +894,7 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
 
             <!-- Payment history -->
             <section class="panel">
-                <h2 style="margin-top:0;">Payment History <span class="meta">(last 100)</span></h2>
+                <h2 style="margin-top:0;">Payment History <span class="meta">(<?php echo $filtersActive ? count($paymentHistory) . ' results' : 'last 200'; ?>)</span></h2>
                 <?php if (empty($paymentHistory)): ?>
                     <div class="empty-state">No completed or failed payments yet.</div>
                 <?php else: ?>
