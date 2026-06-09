@@ -21,12 +21,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $psMode   = in_array($_POST['paystack_mode'] ?? '', ['test', 'live'], true) ? $_POST['paystack_mode'] : 'test';
         $psPub    = trim($_POST['paystack_public_key'] ?? '');
         $psSecret = trim($_POST['paystack_secret_key'] ?? '');
-        $psWebhook= trim($_POST['paystack_webhook_secret'] ?? '');
         set_platform_setting('paystack_mode', $psMode);
         set_platform_setting('paystack_public_key', $psPub);
         // Only update secret if non-empty (prevents blanking it if field left empty)
         if ($psSecret !== '') set_platform_setting('paystack_secret_key', $psSecret);
-        if ($psWebhook !== '') set_platform_setting('paystack_webhook_secret', $psWebhook);
         log_audit_action($user['id'], 'paystack_settings_updated', "Paystack settings updated — mode: {$psMode}");
         $success = 'Paystack settings saved.';
         $tab = 'settings';
@@ -133,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pkg = $pdo->prepare('SELECT duration_days FROM featured_job_packages WHERE id = ?');
                 $pkg->execute([$payment['package_id']]);
                 $pkg = $pkg->fetch();
-                $days = $pkg ? $pkg['duration_days'] : 7;
+                $days = $pkg ? $pkg['duration_days'] : 30;
                 $pdo->prepare('UPDATE service_requests SET featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE id = ?')
                     ->execute([$days, $payment['reference_id']]);
                 notify_user($payment['user_id'], 'Job featured', 'Your job has been featured and will appear at the top of listings.', 'success');
@@ -142,7 +140,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pkg = $pdo->prepare('SELECT duration_days FROM worker_promotion_packages WHERE id = ?');
                 $pkg->execute([$payment['package_id']]);
                 $pkg = $pkg->fetch();
-                $days = $pkg ? $pkg['duration_days'] : 7;
+                $days = $pkg ? $pkg['duration_days'] : 30;
                 $pdo->prepare('UPDATE worker_profiles SET is_featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE user_id = ?')
                     ->execute([$days, $payment['user_id']]);
                 notify_user($payment['user_id'], 'Profile featured', 'Your worker profile is now featured in search results.', 'success');
@@ -210,35 +208,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $tab = 'verification';
 
+    } elseif ($action === 'approve_verification') {
+        $workerUserId = intval($_POST['worker_user_id'] ?? 0);
+        if ($workerUserId > 0) {
+            $pdo->prepare("UPDATE worker_profiles SET is_verified = 1, verification_status = 'approved', verification_date = CURDATE(), verification_expiry = DATE_ADD(CURDATE(), INTERVAL 365 DAY), verification_rejection_reason = NULL WHERE user_id = ?")
+                ->execute([$workerUserId]);
+            notify_user($workerUserId, 'Verification approved', 'Your worker profile is now verified. The ✓erified badge will appear on your profile and search results.', 'success');
+            log_audit_action($user['id'] ?? 0, 'worker_verified', "Verified worker user ID {$workerUserId} (admin approved)");
+            $success = 'Worker verified.';
+        }
+        $tab = 'verification';
+
     } elseif ($action === 'reject_verification') {
-        $paymentId = intval($_POST['payment_id'] ?? 0);
-        $reason    = trim($_POST['rejection_reason'] ?? '');
-        $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ? AND payment_type = ?');
-        $stmt->execute([$paymentId, 'pending', 'verification']);
-        $payment = $stmt->fetch();
-        if ($payment) {
-            $pdo->prepare('UPDATE platform_payments SET status = ? WHERE id = ?')->execute(['failed', $paymentId]);
+        $workerUserId = intval($_POST['worker_user_id'] ?? 0);
+        $reason       = trim($_POST['rejection_reason'] ?? '');
+        if ($workerUserId > 0) {
             $pdo->prepare("UPDATE worker_profiles SET verification_status = 'rejected', verification_rejection_reason = ? WHERE user_id = ?")
-                ->execute([$reason ?: null, $payment['user_id']]);
+                ->execute([$reason ?: null, $workerUserId]);
             $msg = 'Your verification request was not approved.' . ($reason ? ' Reason: ' . $reason : ' Please contact support for details.');
-            notify_user($payment['user_id'], 'Verification request rejected', $msg, 'warning');
-            log_audit_action($user['id'] ?? 0, 'verification_rejected', "Rejected verification payment ref {$payment['reference_code']} for user ID {$payment['user_id']}" . ($reason ? " — reason: {$reason}" : ''));
+            notify_user($workerUserId, 'Verification request rejected', $msg, 'warning');
+            log_audit_action($user['id'] ?? 0, 'verification_rejected', "Rejected verification for user ID {$workerUserId}" . ($reason ? " — reason: {$reason}" : ''));
             $success = 'Verification request rejected.';
         }
         $tab = 'verification';
 
     } elseif ($action === 'request_resubmission') {
-        $paymentId = intval($_POST['payment_id'] ?? 0);
-        $reason    = trim($_POST['rejection_reason'] ?? '');
-        $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ? AND payment_type = ?');
-        $stmt->execute([$paymentId, 'pending', 'verification']);
-        $payment = $stmt->fetch();
-        if ($payment) {
+        $workerUserId = intval($_POST['worker_user_id'] ?? 0);
+        $reason       = trim($_POST['rejection_reason'] ?? '');
+        if ($workerUserId > 0) {
             $pdo->prepare("UPDATE worker_profiles SET verification_status = 'resubmission_requested', verification_rejection_reason = ? WHERE user_id = ?")
-                ->execute([$reason ?: null, $payment['user_id']]);
+                ->execute([$reason ?: null, $workerUserId]);
             $msg = 'Your verification documents need updating before we can approve your badge.' . ($reason ? ' Notes: ' . $reason : '') . ' Please resubmit via your profile.';
-            notify_user($payment['user_id'], 'Verification — resubmission requested', $msg, 'warning');
-            log_audit_action($user['id'] ?? 0, 'verification_resubmission_requested', "Requested resubmission for verification payment ref {$payment['reference_code']} user ID {$payment['user_id']}" . ($reason ? " — notes: {$reason}" : ''));
+            notify_user($workerUserId, 'Verification — resubmission requested', $msg, 'warning');
+            log_audit_action($user['id'] ?? 0, 'verification_resubmission_requested', "Requested resubmission for verification user ID {$workerUserId}" . ($reason ? " — notes: {$reason}" : ''));
             $success = 'Resubmission requested. Worker notified.';
         }
         $tab = 'verification';
@@ -388,7 +390,28 @@ $activeFeaturedWorkers = $pdo->query("
 
 $allWorkers = $pdo->query("SELECT u.id, u.name, u.username, wp.is_verified, wp.verification_status, wp.verification_date, wp.verification_expiry, wp.verification_rejection_reason FROM users u JOIN worker_profiles wp ON u.id = wp.user_id WHERE u.role = 'worker' AND u.banned = 0 ORDER BY wp.is_verified ASC, u.name ASC")->fetchAll();
 
-$pendingVerificationPayments = $pdo->query("SELECT pp.*, u.name AS user_name, u.username, wp.id_type, wp.id_number, wp.id_document_path, wp.contact_phone FROM platform_payments pp JOIN users u ON pp.user_id = u.id LEFT JOIN worker_profiles wp ON u.id = wp.user_id WHERE pp.payment_type = 'verification' AND pp.status = 'pending' ORDER BY pp.created_at ASC")->fetchAll();
+$pendingVerificationPayments = $pdo->query("
+    SELECT
+        wp.user_id,
+        u.name AS user_name, u.username,
+        wp.id_type, wp.id_number, wp.id_document_path, wp.contact_phone,
+        pp.id AS payment_id,
+        pp.amount,
+        pp.reference_code,
+        pp.created_at,
+        COALESCE(pp.gateway, 'manual') AS gateway
+    FROM worker_profiles wp
+    JOIN users u ON wp.user_id = u.id
+    LEFT JOIN platform_payments pp ON pp.id = (
+        SELECT pp2.id FROM platform_payments pp2
+        WHERE pp2.user_id = wp.user_id
+          AND pp2.payment_type = 'verification'
+          AND pp2.status IN ('paid', 'pending')
+        ORDER BY pp2.id DESC LIMIT 1
+    )
+    WHERE wp.verification_status = 'pending'
+    ORDER BY COALESCE(pp.created_at, NOW()) ASC
+")->fetchAll();
 $pendingVerificationUserIds = array_column($pendingVerificationPayments, 'user_id');
 
 $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name FROM audit_logs al LEFT JOIN users u ON al.admin_id = u.id ORDER BY al.created_at DESC LIMIT 50")->fetchAll();
@@ -542,8 +565,6 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                     <input type="text" name="paystack_public_key" value="<?php echo sanitize($psPubKey); ?>" placeholder="pk_test_xxxxxxxxxxxxxxxx" autocomplete="off" />
                     <label>Secret key <span class="meta">(leave blank to keep existing)</span></label>
                     <input type="password" name="paystack_secret_key" placeholder="sk_test_xxxxxxxxxxxxxxxx — leave blank to keep current" autocomplete="new-password" />
-                    <label>Webhook secret <span class="meta">(leave blank to keep existing)</span></label>
-                    <input type="password" name="paystack_webhook_secret" placeholder="Leave blank to keep current" autocomplete="new-password" />
                     <button type="submit" class="button button-primary" style="margin-top:12px;">Save Paystack settings</button>
                 </form>
             </section>
@@ -735,9 +756,16 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
                                 <div>
                                     <strong><?php echo sanitize(display_name($vp)); ?></strong>
-                                    <span class="meta" style="margin-left:8px;">Ref: <code><?php echo sanitize($vp['reference_code'] ?: '—'); ?></code></span>
-                                    <span class="meta" style="margin-left:8px;">GH₵ <?php echo number_format($vp['amount'], 2); ?></span>
-                                    <span class="meta" style="margin-left:8px;"><?php echo sanitize($vp['created_at']); ?></span>
+                                    <?php if (!empty($vp['reference_code'])): ?>
+                                        <span class="meta" style="margin-left:8px;">Ref: <code><?php echo sanitize($vp['reference_code']); ?></code></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($vp['amount'])): ?>
+                                        <span class="meta" style="margin-left:8px;">GH₵ <?php echo number_format($vp['amount'], 2); ?></span>
+                                    <?php endif; ?>
+                                    <?php if (!empty($vp['gateway']) && $vp['gateway'] === 'paystack'): ?>
+                                        <span class="badge" style="margin-left:6px;background:#0ba4db;color:#fff;font-size:0.75rem;padding:2px 7px;border-radius:20px;">🔒 Paystack</span>
+                                    <?php endif; ?>
+                                    <span class="meta" style="margin-left:8px;"><?php echo sanitize($vp['created_at'] ?? ''); ?></span>
                                 </div>
                                 <?php if ($vp['contact_phone']): ?>
                                     <span class="meta">📞 <?php echo sanitize($vp['contact_phone']); ?></span>
@@ -763,19 +791,19 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                             </div>
                             <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
                                 <form method="post" class="inline-form">
-                                    <input type="hidden" name="action" value="confirm_payment" />
-                                    <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
+                                    <input type="hidden" name="action" value="approve_verification" />
+                                    <input type="hidden" name="worker_user_id" value="<?php echo $vp['user_id']; ?>" />
                                     <button type="submit" class="button button-small button-primary">✓ Approve + verify</button>
                                 </form>
                                 <form method="post" class="inline-form" style="display:flex;gap:6px;align-items:flex-end;">
                                     <input type="hidden" name="action" value="reject_verification" />
-                                    <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
+                                    <input type="hidden" name="worker_user_id" value="<?php echo $vp['user_id']; ?>" />
                                     <input type="text" name="rejection_reason" placeholder="Rejection reason (optional)" style="font-size:0.85rem;padding:5px 8px;border:1px solid var(--border);border-radius:6px;width:220px;" />
                                     <button type="submit" class="button button-small button-secondary" onclick="return confirm('Reject this verification request?')">✗ Reject</button>
                                 </form>
                                 <form method="post" class="inline-form" style="display:flex;gap:6px;align-items:flex-end;">
                                     <input type="hidden" name="action" value="request_resubmission" />
-                                    <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
+                                    <input type="hidden" name="worker_user_id" value="<?php echo $vp['user_id']; ?>" />
                                     <input type="text" name="rejection_reason" placeholder="What to fix (optional)" style="font-size:0.85rem;padding:5px 8px;border:1px solid var(--border);border-radius:6px;width:220px;" />
                                     <button type="submit" class="button button-small button-secondary">↩ Request resubmission</button>
                                 </form>

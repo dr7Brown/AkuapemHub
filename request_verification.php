@@ -33,7 +33,22 @@ if ($vStatus === 'pending') {
 
 $isPaid = is_feature_paid('enable_paid_verification_badges');
 
+// Check if there's an existing paid verification payment (used for free resubmission)
+$paidVerifStmt = $pdo->prepare("SELECT id FROM platform_payments WHERE user_id = ? AND payment_type = 'verification' AND status = 'paid' LIMIT 1");
+$paidVerifStmt->execute([$user['id']]);
+$hasPaidVerif = (bool)$paidVerifStmt->fetch();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Resubmission when admin requested updated docs — free if already paid once
+    if ($vStatus === 'resubmission_requested' && $hasPaidVerif) {
+        $pdo->prepare("UPDATE worker_profiles SET verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
+            ->execute([$user['id']]);
+        log_audit_action($user['id'], 'verification_resubmitted', "Worker user ID {$user['id']} resubmitted verification documents");
+        flash('Your updated verification request has been submitted. An admin will review your documents shortly.', 'success');
+        header('Location: worker_profile.php');
+        exit;
+    }
+
     if (!$isPaid) {
         flash('Verification is granted by an admin. Please contact support.', 'info');
         header('Location: worker_profile.php');
@@ -123,7 +138,12 @@ $packages = get_active_packages('verification_packages');
                     Your verification badge has expired. Renew it below to restore your ✓erified status.
                 </div>
             <?php endif; ?>
-            <?php if (!$isPaid): ?>
+            <?php if ($vStatus === 'resubmission_requested' && $hasPaidVerif): ?>
+                <form method="post" action="request_verification.php">
+                    <p>You've already paid for verification. Simply resubmit to put your profile back in the admin review queue — no additional payment required.</p>
+                    <button type="submit" class="button button-primary">Resubmit for review</button>
+                </form>
+            <?php elseif (!$isPaid): ?>
                 <div class="alert alert-info">Verification is granted by an admin. There is no payment required at this time. If you believe you qualify, please contact our team.</div>
             <?php elseif (empty($packages)): ?>
                 <div class="alert alert-error">No verification packages are available right now. Check back later.</div>

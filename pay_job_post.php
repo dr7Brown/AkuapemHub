@@ -38,7 +38,7 @@ if (!is_feature_paid('enable_paid_job_posting')) {
 }
 
 // Check for existing pending payment to prevent duplicates
-$existingStmt = $pdo->prepare("SELECT id, reference_code FROM platform_payments WHERE user_id = ? AND payment_type = 'job_post' AND reference_id = ? AND status = 'pending'");
+$existingStmt = $pdo->prepare("SELECT id, reference_code, COALESCE(gateway,'manual') AS gateway FROM platform_payments WHERE user_id = ? AND payment_type = 'job_post' AND reference_id = ? AND status = 'pending'");
 $existingStmt->execute([$user['id'], $jobId]);
 $existingPayment = $existingStmt->fetch();
 
@@ -122,7 +122,11 @@ $packages = get_active_packages('job_posting_packages');
 
             <?php if ($existingPayment): ?>
                 <div class="alert alert-info">
-                    You already have a pending payment (ref <strong><?php echo sanitize($existingPayment['reference_code']); ?></strong>) for this job. Waiting for admin confirmation.
+                    <?php if (!empty($existingPayment['gateway']) && $existingPayment['gateway'] === 'paystack'): ?>
+                        🔒 A Paystack payment is in progress for this job's posting fee. Complete or wait for it to resolve.
+                    <?php else: ?>
+                        You already have a pending payment (ref <strong><?php echo sanitize($existingPayment['reference_code']); ?></strong>) for this job. Waiting for admin confirmation.
+                    <?php endif; ?>
                     <br><a href="my_payments.php" style="color:var(--primary);">Track your payment →</a>
                 </div>
             <?php elseif (empty($packages)): ?>
