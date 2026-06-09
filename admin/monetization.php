@@ -8,6 +8,7 @@ if (!is_admin()) {
     exit;
 }
 
+$user = current_user();
 $success = '';
 $error = '';
 $tab = $_GET['tab'] ?? 'settings';
@@ -148,7 +149,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-$user = current_user();
 $msgFlash = $_GET['msg'] ?? '';
 $errFlash = $_GET['err'] ?? '';
 
