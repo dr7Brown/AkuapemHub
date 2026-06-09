@@ -96,6 +96,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             id_document_path VARCHAR(255) DEFAULT NULL,
             availability ENUM('available','busy','offline') NOT NULL DEFAULT 'available',
             subscription_status ENUM('free','premium') NOT NULL DEFAULT 'free',
+            is_verified TINYINT(1) NOT NULL DEFAULT 0,
+            verification_status ENUM('none','pending','approved','rejected','resubmission_requested','expired') NOT NULL DEFAULT 'none',
+            verification_date DATE DEFAULT NULL,
+            verification_expiry DATE DEFAULT NULL,
+            verification_rejection_reason TEXT DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME NULL,
             INDEX idx_worker_profiles_availability (availability),
@@ -532,6 +537,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             }
             if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'is_verified'")->fetch()) {
                 $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN is_verified TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN verification_date DATE DEFAULT NULL, ADD COLUMN verification_expiry DATE DEFAULT NULL');
+            }
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'verification_status'")->fetch()) {
+                $pdo->exec("ALTER TABLE worker_profiles ADD COLUMN verification_status ENUM('none','pending','approved','rejected','resubmission_requested','expired') NOT NULL DEFAULT 'none', ADD COLUMN verification_rejection_reason TEXT DEFAULT NULL");
+                // Back-fill status for rows already verified
+                $pdo->exec("UPDATE worker_profiles SET verification_status = 'approved' WHERE is_verified = 1");
             }
         }
         // New columns for paid posting/service features

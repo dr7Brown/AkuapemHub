@@ -131,9 +131,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 notify_user($payment['user_id'], 'Profile featured', 'Your worker profile is now featured in search results.', 'success');
                 log_audit_action($user['id'], 'payment_confirmed', "Confirmed featured_worker payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}");
             } elseif ($payment['payment_type'] === 'verification') {
-                $pdo->prepare('UPDATE worker_profiles SET is_verified = 1, verification_date = CURDATE(), verification_expiry = DATE_ADD(CURDATE(), INTERVAL 365 DAY) WHERE user_id = ?')
+                $pdo->prepare("UPDATE worker_profiles SET is_verified = 1, verification_status = 'approved', verification_date = CURDATE(), verification_expiry = DATE_ADD(CURDATE(), INTERVAL 365 DAY), verification_rejection_reason = NULL WHERE user_id = ?")
                     ->execute([$payment['user_id']]);
-                notify_user($payment['user_id'], 'Verification approved', 'Your worker profile is now verified. The badge will appear on your profile and search results.', 'success');
+                notify_user($payment['user_id'], 'Verification approved', 'Your worker profile is now verified. The ✓erified badge will appear on your profile and search results.', 'success');
                 log_audit_action($user['id'], 'payment_confirmed', "Confirmed verification payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}");
             } elseif ($payment['payment_type'] === 'job_post' && $payment['reference_id']) {
                 $pdo->prepare("UPDATE service_requests SET posting_fee_status = 'paid' WHERE id = ?")
@@ -172,11 +172,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'verify_worker_free') {
         $workerId = intval($_POST['worker_user_id'] ?? 0);
         if ($workerId > 0) {
-            $pdo->prepare('UPDATE worker_profiles SET is_verified = 1, verification_date = CURDATE(), verification_expiry = DATE_ADD(CURDATE(), INTERVAL 365 DAY) WHERE user_id = ?')
+            $pdo->prepare("UPDATE worker_profiles SET is_verified = 1, verification_status = 'approved', verification_date = CURDATE(), verification_expiry = DATE_ADD(CURDATE(), INTERVAL 365 DAY), verification_rejection_reason = NULL WHERE user_id = ?")
                 ->execute([$workerId]);
-            notify_user($workerId, 'Verification approved', 'Your worker profile is now verified. The badge will appear on your profile and search results.', 'success');
+            notify_user($workerId, 'Verification approved', 'Your worker profile is now verified. The ✓erified badge will appear on your profile and search results.', 'success');
             log_audit_action($user['id'] ?? 0, 'worker_verified', "Verified worker user ID {$workerId}");
             $success = 'Worker verified.';
+        }
+        $tab = 'verification';
+
+    } elseif ($action === 'reject_verification') {
+        $paymentId = intval($_POST['payment_id'] ?? 0);
+        $reason    = trim($_POST['rejection_reason'] ?? '');
+        $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ? AND payment_type = ?');
+        $stmt->execute([$paymentId, 'pending', 'verification']);
+        $payment = $stmt->fetch();
+        if ($payment) {
+            $pdo->prepare('UPDATE platform_payments SET status = ? WHERE id = ?')->execute(['failed', $paymentId]);
+            $pdo->prepare("UPDATE worker_profiles SET verification_status = 'rejected', verification_rejection_reason = ? WHERE user_id = ?")
+                ->execute([$reason ?: null, $payment['user_id']]);
+            $msg = 'Your verification request was not approved.' . ($reason ? ' Reason: ' . $reason : ' Please contact support for details.');
+            notify_user($payment['user_id'], 'Verification request rejected', $msg, 'warning');
+            log_audit_action($user['id'] ?? 0, 'verification_rejected', "Rejected verification payment ref {$payment['reference_code']} for user ID {$payment['user_id']}" . ($reason ? " — reason: {$reason}" : ''));
+            $success = 'Verification request rejected.';
+        }
+        $tab = 'verification';
+
+    } elseif ($action === 'request_resubmission') {
+        $paymentId = intval($_POST['payment_id'] ?? 0);
+        $reason    = trim($_POST['rejection_reason'] ?? '');
+        $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ? AND payment_type = ?');
+        $stmt->execute([$paymentId, 'pending', 'verification']);
+        $payment = $stmt->fetch();
+        if ($payment) {
+            $pdo->prepare("UPDATE worker_profiles SET verification_status = 'resubmission_requested', verification_rejection_reason = ? WHERE user_id = ?")
+                ->execute([$reason ?: null, $payment['user_id']]);
+            $msg = 'Your verification documents need updating before we can approve your badge.' . ($reason ? ' Notes: ' . $reason : '') . ' Please resubmit via your profile.';
+            notify_user($payment['user_id'], 'Verification — resubmission requested', $msg, 'warning');
+            log_audit_action($user['id'] ?? 0, 'verification_resubmission_requested', "Requested resubmission for verification payment ref {$payment['reference_code']} user ID {$payment['user_id']}" . ($reason ? " — notes: {$reason}" : ''));
+            $success = 'Resubmission requested. Worker notified.';
         }
         $tab = 'verification';
 
@@ -193,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'revoke_verification') {
         $workerId = intval($_POST['worker_user_id'] ?? 0);
         if ($workerId > 0) {
-            $pdo->prepare('UPDATE worker_profiles SET is_verified = 0, verification_date = NULL, verification_expiry = NULL WHERE user_id = ?')
+            $pdo->prepare("UPDATE worker_profiles SET is_verified = 0, verification_status = 'none', verification_date = NULL, verification_expiry = NULL, verification_rejection_reason = NULL WHERE user_id = ?")
                 ->execute([$workerId]);
             notify_user($workerId, 'Verification revoked', 'Your worker verification badge has been revoked. Contact support for more information.', 'warning');
             log_audit_action($user['id'] ?? 0, 'verification_revoked', "Revoked verification for worker user ID {$workerId}");
@@ -318,9 +351,9 @@ $activeFeaturedWorkers = $pdo->query("
     ORDER BY wp.featured_end_date ASC
 ")->fetchAll();
 
-$allWorkers = $pdo->query("SELECT u.id, u.name, u.username, wp.is_verified, wp.verification_date, wp.verification_expiry FROM users u JOIN worker_profiles wp ON u.id = wp.user_id WHERE u.role = 'worker' AND u.banned = 0 ORDER BY wp.is_verified ASC, u.name ASC")->fetchAll();
+$allWorkers = $pdo->query("SELECT u.id, u.name, u.username, wp.is_verified, wp.verification_status, wp.verification_date, wp.verification_expiry, wp.verification_rejection_reason FROM users u JOIN worker_profiles wp ON u.id = wp.user_id WHERE u.role = 'worker' AND u.banned = 0 ORDER BY wp.is_verified ASC, u.name ASC")->fetchAll();
 
-$pendingVerificationPayments = $pdo->query("SELECT pp.*, u.name AS user_name, u.username FROM platform_payments pp JOIN users u ON pp.user_id = u.id WHERE pp.payment_type = 'verification' AND pp.status = 'pending' ORDER BY pp.created_at ASC")->fetchAll();
+$pendingVerificationPayments = $pdo->query("SELECT pp.*, u.name AS user_name, u.username, wp.id_type, wp.id_number, wp.id_document_path, wp.contact_phone FROM platform_payments pp JOIN users u ON pp.user_id = u.id LEFT JOIN worker_profiles wp ON u.id = wp.user_id WHERE pp.payment_type = 'verification' AND pp.status = 'pending' ORDER BY pp.created_at ASC")->fetchAll();
 $pendingVerificationUserIds = array_column($pendingVerificationPayments, 'user_id');
 
 $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al JOIN users u ON al.admin_id = u.id ORDER BY al.created_at DESC LIMIT 50")->fetchAll();
@@ -626,35 +659,72 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                     </div>
                 </form>
                 <?php if (!empty($pendingVerificationPayments)): ?>
-                    <h3 style="margin-top: 24px;">Pending Verification Payments <span class="badge" style="background:var(--primary);color:#fff;"><?php echo count($pendingVerificationPayments); ?></span></h3>
-                    <p class="meta">These workers have submitted a verification payment request. Confirm their payment below to grant the badge.</p>
-                    <table class="pkg-table">
-                        <thead><tr><th>Worker</th><th>Amount</th><th>Reference</th><th>Requested</th><th>Action</th></tr></thead>
-                        <tbody>
-                            <?php foreach ($pendingVerificationPayments as $vp): ?>
-                                <tr>
-                                    <td><?php echo sanitize(display_name($vp)); ?></td>
-                                    <td>GH₵ <?php echo number_format($vp['amount'], 2); ?></td>
-                                    <td><code><?php echo sanitize($vp['reference_code'] ?: '—'); ?></code></td>
-                                    <td><?php echo sanitize($vp['created_at']); ?></td>
-                                    <td>
-                                        <form method="post" class="inline-form">
-                                            <input type="hidden" name="action" value="confirm_payment" />
-                                            <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
-                                            <button type="submit" class="button button-small button-primary">Confirm paid + verify</button>
-                                        </form>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
+                    <h3 style="margin-top: 24px;">Pending Verification Requests <span class="badge" style="background:var(--primary);color:#fff;"><?php echo count($pendingVerificationPayments); ?></span></h3>
+                    <p class="meta">Review each worker's ID documents, then approve, reject, or request resubmission.</p>
+                    <?php foreach ($pendingVerificationPayments as $vp): ?>
+                        <div class="panel" style="border:1px solid var(--border);margin-bottom:16px;padding:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+                                <div>
+                                    <strong><?php echo sanitize(display_name($vp)); ?></strong>
+                                    <span class="meta" style="margin-left:8px;">Ref: <code><?php echo sanitize($vp['reference_code'] ?: '—'); ?></code></span>
+                                    <span class="meta" style="margin-left:8px;">GH₵ <?php echo number_format($vp['amount'], 2); ?></span>
+                                    <span class="meta" style="margin-left:8px;"><?php echo sanitize($vp['created_at']); ?></span>
+                                </div>
+                                <?php if ($vp['contact_phone']): ?>
+                                    <span class="meta">📞 <?php echo sanitize($vp['contact_phone']); ?></span>
+                                <?php endif; ?>
+                            </div>
+                            <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;">
+                                <div>
+                                    <p class="meta" style="margin:0 0 4px;">ID Type</p>
+                                    <strong><?php echo sanitize($vp['id_type'] ? strtoupper(str_replace('_', ' ', $vp['id_type'])) : '—'); ?></strong>
+                                </div>
+                                <div>
+                                    <p class="meta" style="margin:0 0 4px;">ID Number</p>
+                                    <strong><?php echo sanitize($vp['id_number'] ?: '—'); ?></strong>
+                                </div>
+                                <?php if ($vp['id_document_path']): ?>
+                                    <div>
+                                        <p class="meta" style="margin:0 0 4px;">Document</p>
+                                        <a href="../<?php echo sanitize($vp['id_document_path']); ?>" target="_blank">
+                                            <img src="../<?php echo sanitize($vp['id_document_path']); ?>" alt="ID Document" style="height:80px;width:auto;border-radius:6px;border:1px solid var(--border);object-fit:cover;" />
+                                        </a>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                            <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+                                <form method="post" class="inline-form">
+                                    <input type="hidden" name="action" value="confirm_payment" />
+                                    <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
+                                    <button type="submit" class="button button-small button-primary">✓ Approve + verify</button>
+                                </form>
+                                <form method="post" class="inline-form" style="display:flex;gap:6px;align-items:flex-end;">
+                                    <input type="hidden" name="action" value="reject_verification" />
+                                    <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
+                                    <input type="text" name="rejection_reason" placeholder="Rejection reason (optional)" style="font-size:0.85rem;padding:5px 8px;border:1px solid var(--border);border-radius:6px;width:220px;" />
+                                    <button type="submit" class="button button-small button-secondary" onclick="return confirm('Reject this verification request?')">✗ Reject</button>
+                                </form>
+                                <form method="post" class="inline-form" style="display:flex;gap:6px;align-items:flex-end;">
+                                    <input type="hidden" name="action" value="request_resubmission" />
+                                    <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
+                                    <input type="text" name="rejection_reason" placeholder="What to fix (optional)" style="font-size:0.85rem;padding:5px 8px;border:1px solid var(--border);border-radius:6px;width:220px;" />
+                                    <button type="submit" class="button button-small button-secondary">↩ Request resubmission</button>
+                                </form>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
                 <?php endif; ?>
                 <h3 style="margin-top: 24px;">Worker Verification Status</h3>
                 <table class="pkg-table">
                     <thead><tr><th>Worker</th><th>Status</th><th>Expires</th><th>Actions</th></tr></thead>
                     <tbody>
                         <?php foreach ($allWorkers as $w): ?>
-                            <?php $hasPendingPayment = in_array($w['id'], $pendingVerificationUserIds, true); ?>
+                            <?php
+                                $hasPendingPayment = in_array($w['id'], $pendingVerificationUserIds, true);
+                                $vstatus = $w['verification_status'] ?? ($w['is_verified'] ? 'approved' : 'none');
+                                $vstatusLabels = ['none'=>'Unverified','pending'=>'Pending','approved'=>'Verified ✓','rejected'=>'Rejected','resubmission_requested'=>'Resubmission needed','expired'=>'Expired'];
+                                $vstatusColors = ['none'=>'#888','pending'=>'#f59e0b','approved'=>'#22a06b','rejected'=>'#ef4444','resubmission_requested'=>'#f59e0b','expired'=>'#ef4444'];
+                            ?>
                             <tr>
                                 <td>
                                     <?php echo sanitize(display_name($w)); ?>
@@ -663,7 +733,11 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                                         <span class="badge" style="background:#f59e0b;color:#fff;font-size:0.75rem;margin-left:6px;">Payment pending</span>
                                     <?php endif; ?>
                                 </td>
-                                <td><?php echo $w['is_verified'] ? '<span class="status status-open">VERIFIED ✓</span>' : '<span class="status status-pending">Unverified</span>'; ?></td>
+                                <td><span style="color:<?php echo $vstatusColors[$vstatus] ?? '#888'; ?>;font-weight:600;"><?php echo sanitize($vstatusLabels[$vstatus] ?? ucfirst($vstatus)); ?></span>
+                                    <?php if (!empty($w['verification_rejection_reason'])): ?>
+                                        <br><span class="meta" style="font-size:0.8rem;">Reason: <?php echo sanitize($w['verification_rejection_reason']); ?></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo $w['verification_expiry'] ? sanitize($w['verification_expiry']) : '—'; ?></td>
                                 <td>
                                     <?php if (!$w['is_verified']): ?>

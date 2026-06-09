@@ -234,6 +234,12 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                         <div class="match-card-head">
                             <div>
                                 <strong><?php echo sanitize($worker['name']); ?></strong>
+                                <?php if (!empty($worker['is_verified'])): ?>
+                                    <span style="display:inline-flex;align-items:center;background:#22a06b;color:#fff;border-radius:4px;padding:0 5px;font-size:0.78rem;margin-left:4px;vertical-align:middle;"><strong>✓</strong>erified</span>
+                                <?php endif; ?>
+                                <?php if (!empty($worker['is_featured'])): ?>
+                                    <span class="badge" style="background:var(--primary);color:#fff;font-size:0.75rem;margin-left:4px;vertical-align:middle;">Featured</span>
+                                <?php endif; ?>
                                 <?php if ($worker['subscription_status'] === 'premium'): ?>
                                     <span class="badge">PREMIUM</span>
                                 <?php endif; ?>

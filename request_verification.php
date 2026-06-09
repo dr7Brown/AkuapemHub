@@ -16,8 +16,17 @@ if (!$profile) {
     exit;
 }
 
-if ($profile['is_verified']) {
+$vStatus  = $profile['verification_status'] ?? ($profile['is_verified'] ? 'approved' : 'none');
+$vReason  = $profile['verification_rejection_reason'] ?? null;
+
+if ($vStatus === 'approved') {
     flash('Your profile is already verified.', 'info');
+    header('Location: worker_profile.php');
+    exit;
+}
+
+if ($vStatus === 'pending') {
+    flash('Your verification request is already pending admin review.', 'info');
     header('Location: worker_profile.php');
     exit;
 }
@@ -55,6 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $refCode = strtoupper(bin2hex(random_bytes(5)));
     $pdo->prepare('INSERT INTO platform_payments (user_id, payment_type, reference_id, package_id, amount, status, reference_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')
         ->execute([$user['id'], 'verification', $profile['id'], $packageId, $package['price'], 'pending', $refCode]);
+    $pdo->prepare("UPDATE worker_profiles SET verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
+        ->execute([$user['id']]);
 
     notify_admins_and_managers(
         'Verification badge payment pending',
@@ -88,8 +99,25 @@ $packages = get_active_packages('verification_packages');
             <div class="alert alert-<?php echo sanitize($f['type']); ?>"><?php echo sanitize($f['message']); ?></div>
         <?php endforeach; ?>
         <div class="card">
-            <h2 style="margin-top: 0;">Get your Verified Worker Badge ✓</h2>
+            <h2 style="margin-top: 0;">Get your ✓erified Worker Badge</h2>
             <p>Verified workers earn more trust from customers. Your profile will display a verification checkmark on search results and your public profile.</p>
+            <?php if ($vStatus === 'rejected'): ?>
+                <div class="alert alert-error" style="margin-bottom:14px;">
+                    <strong>Your previous verification request was rejected.</strong>
+                    <?php if ($vReason): ?><br>Reason: <?php echo sanitize($vReason); ?><?php endif; ?>
+                    <br><span class="meta">You can submit a new request below.</span>
+                </div>
+            <?php elseif ($vStatus === 'resubmission_requested'): ?>
+                <div class="alert alert-warning" style="margin-bottom:14px;">
+                    <strong>Admin has requested updated documents.</strong>
+                    <?php if ($vReason): ?><br>Notes: <?php echo sanitize($vReason); ?><?php endif; ?>
+                    <br><span class="meta">Please resubmit your verification request below.</span>
+                </div>
+            <?php elseif ($vStatus === 'expired'): ?>
+                <div class="alert alert-warning" style="margin-bottom:14px;">
+                    Your verification badge has expired. Renew it below to restore your ✓erified status.
+                </div>
+            <?php endif; ?>
             <?php if (!$isPaid): ?>
                 <div class="alert alert-info">Verification is granted by an admin. There is no payment required at this time. If you believe you qualify, please contact our team.</div>
             <?php elseif (empty($packages)): ?>

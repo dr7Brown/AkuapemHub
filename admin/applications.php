@@ -48,10 +48,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && !empty(
     exit;
 }
 
-$stmt = $pdo->query("SELECT a.*, sr.title AS request_title, sr.status AS request_status, sr.location, sr.budget, w.name AS worker_name, w.email AS worker_email
+$stmt = $pdo->query("SELECT a.*, sr.title AS request_title, sr.status AS request_status, sr.location, sr.budget,
+    w.name AS worker_name, w.email AS worker_email,
+    wp.is_verified AS worker_is_verified, wp.is_featured AS worker_is_featured
     FROM applications a
     JOIN service_requests sr ON a.request_id = sr.id
     JOIN users w ON a.worker_id = w.id
+    LEFT JOIN worker_profiles wp ON w.id = wp.user_id
     ORDER BY (a.status = 'pending') DESC, a.applied_at DESC
     LIMIT 200");
 $applications = $stmt->fetchAll();
@@ -82,7 +85,14 @@ $applications = $stmt->fetchAll();
                             <span class="status status-<?php echo sanitize($application['status']); ?>"><?php echo strtoupper($application['status']); ?></span>
                         </div>
                         <p class="meta"><?php echo sanitize($application['location']); ?> • GH₵ <?php echo sanitize($application['budget']); ?> • Job status: <?php echo strtoupper(str_replace('_', ' ', $application['request_status'])); ?></p>
-                        <p>Applicant: <strong><?php echo sanitize($application['worker_name']); ?></strong> (<?php echo sanitize($application['worker_email']); ?>)</p>
+                        <p>Applicant: <strong><?php echo sanitize($application['worker_name']); ?></strong>
+                            <?php if ($application['worker_is_verified']): ?>
+                                <span style="display:inline-flex;align-items:center;background:#22a06b;color:#fff;border-radius:4px;padding:0 5px;font-size:0.78rem;margin-left:4px;vertical-align:middle;"><strong>✓</strong>erified</span>
+                            <?php endif; ?>
+                            <?php if ($application['worker_is_featured']): ?>
+                                <span class="badge" style="background:var(--primary);color:#fff;font-size:0.75rem;margin-left:4px;vertical-align:middle;">Featured</span>
+                            <?php endif; ?>
+                            (<?php echo sanitize($application['worker_email']); ?>)</p>
                         <p class="meta">Applied <?php echo sanitize(time_ago($application['applied_at'])); ?></p>
                         <div class="request-footer">
                             <a href="../worker_profile_public.php?id=<?php echo $application['worker_id']; ?>" class="button button-secondary button-small">View worker profile</a>
