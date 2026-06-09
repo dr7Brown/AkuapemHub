@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mode = $_POST['monetization_mode'] ?? 'free';
         if (!in_array($mode, ['free', 'hybrid', 'paid'], true)) $mode = 'free';
         set_platform_setting('monetization_mode', $mode);
-        foreach (['enable_paid_featured_jobs', 'enable_paid_featured_workers', 'enable_paid_verification_badges'] as $key) {
+        foreach (['enable_paid_featured_jobs', 'enable_paid_featured_workers', 'enable_paid_verification_badges', 'enable_paid_job_posting', 'enable_paid_worker_service'] as $key) {
             set_platform_setting($key, ($_POST[$key] ?? '0') === '1' ? '1' : '0');
         }
         if ($prevMode !== $mode) {
@@ -42,44 +42,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pkgStatus = ($_POST['pkg_status'] ?? '') === 'active' ? 'active' : 'inactive';
 
         $tableMap = [
-            'featured_job' => 'featured_job_packages',
-            'featured_worker' => 'worker_promotion_packages',
-            'verification' => 'verification_packages',
+            'featured_job'   => 'featured_job_packages',
+            'featured_worker'=> 'worker_promotion_packages',
+            'verification'   => 'verification_packages',
+            'job_posting'    => 'job_posting_packages',
+            'worker_service' => 'worker_service_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgName !== '') {
-            if ($pkgId > 0) {
-                if ($pkgType === 'verification') {
+            if ($pkgType === 'verification') {
+                if ($pkgId > 0) {
                     $pdo->prepare("UPDATE $table SET name = ?, price = ?, status = ? WHERE id = ?")
                         ->execute([$pkgName, $pkgPrice, $pkgStatus, $pkgId]);
                 } else {
-                    $pdo->prepare("UPDATE $table SET name = ?, duration_days = ?, price = ?, status = ? WHERE id = ?")
-                        ->execute([$pkgName, $pkgDays, $pkgPrice, $pkgStatus, $pkgId]);
-                }
-                log_audit_action($user['id'] ?? 0, 'package_edited', "Edited {$pkgType} package ID {$pkgId}: '{$pkgName}'");
-            } else {
-                if ($pkgType === 'verification') {
                     $pdo->prepare("INSERT INTO $table (name, price, status) VALUES (?, ?, ?)")
                         ->execute([$pkgName, $pkgPrice, $pkgStatus]);
+                }
+            } elseif ($pkgType === 'job_posting') {
+                $pkgPostCount = intval($_POST['pkg_post_count'] ?? -1);
+                if ($pkgId > 0) {
+                    $pdo->prepare("UPDATE $table SET name = ?, post_count = ?, price = ?, status = ? WHERE id = ?")
+                        ->execute([$pkgName, $pkgPostCount, $pkgPrice, $pkgStatus, $pkgId]);
+                } else {
+                    $pdo->prepare("INSERT INTO $table (name, post_count, price, status) VALUES (?, ?, ?, ?)")
+                        ->execute([$pkgName, $pkgPostCount, $pkgPrice, $pkgStatus]);
+                }
+            } else {
+                if ($pkgId > 0) {
+                    $pdo->prepare("UPDATE $table SET name = ?, duration_days = ?, price = ?, status = ? WHERE id = ?")
+                        ->execute([$pkgName, $pkgDays, $pkgPrice, $pkgStatus, $pkgId]);
                 } else {
                     $pdo->prepare("INSERT INTO $table (name, duration_days, price, status) VALUES (?, ?, ?, ?)")
                         ->execute([$pkgName, $pkgDays, $pkgPrice, $pkgStatus]);
                 }
-                log_audit_action($user['id'] ?? 0, 'package_created', "Created {$pkgType} package: '{$pkgName}'");
             }
+            $op = $pkgId > 0 ? 'Edited' : 'Created';
+            log_audit_action($user['id'] ?? 0, $pkgId > 0 ? 'package_edited' : 'package_created', "{$op} {$pkgType} package" . ($pkgId > 0 ? " ID {$pkgId}" : '') . ": '{$pkgName}'");
             $success = 'Package saved.';
         } else {
             $error = 'Package name is required.';
         }
-        $tab = $pkgType === 'featured_job' ? 'featured_jobs' : ($pkgType === 'featured_worker' ? 'featured_workers' : 'verification');
+        $tabMap = ['featured_job' => 'featured_jobs', 'featured_worker' => 'featured_workers', 'verification' => 'verification', 'job_posting' => 'job_posting', 'worker_service' => 'worker_service'];
+        $tab = $tabMap[$pkgType] ?? 'settings';
 
     } elseif ($action === 'delete_package') {
         $pkgType = $_POST['pkg_type'] ?? '';
         $pkgId = intval($_POST['pkg_id'] ?? 0);
         $tableMap = [
-            'featured_job' => 'featured_job_packages',
-            'featured_worker' => 'worker_promotion_packages',
-            'verification' => 'verification_packages',
+            'featured_job'   => 'featured_job_packages',
+            'featured_worker'=> 'worker_promotion_packages',
+            'verification'   => 'verification_packages',
+            'job_posting'    => 'job_posting_packages',
+            'worker_service' => 'worker_service_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgId > 0) {
@@ -87,7 +101,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'] ?? 0, 'package_deleted', "Deleted {$pkgType} package ID {$pkgId}");
             $success = 'Package deleted.';
         }
-        $tab = $pkgType === 'featured_job' ? 'featured_jobs' : ($pkgType === 'featured_worker' ? 'featured_workers' : 'verification');
+        $tabMap2 = ['featured_job' => 'featured_jobs', 'featured_worker' => 'featured_workers', 'verification' => 'verification', 'job_posting' => 'job_posting', 'worker_service' => 'worker_service'];
+        $tab = $tabMap2[$pkgType] ?? 'settings';
 
     } elseif ($action === 'confirm_payment') {
         $paymentId = intval($_POST['payment_id'] ?? 0);
@@ -120,6 +135,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$payment['user_id']]);
                 notify_user($payment['user_id'], 'Verification approved', 'Your worker profile is now verified. The badge will appear on your profile and search results.', 'success');
                 log_audit_action($user['id'], 'payment_confirmed', "Confirmed verification payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}");
+            } elseif ($payment['payment_type'] === 'job_post' && $payment['reference_id']) {
+                $pdo->prepare("UPDATE service_requests SET posting_fee_status = 'paid' WHERE id = ?")
+                    ->execute([$payment['reference_id']]);
+                notify_user($payment['user_id'], 'Job posting fee confirmed', 'Your job posting fee has been confirmed. Your job is now submitted for admin review.', 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed job_post payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}, job ID {$payment['reference_id']}");
+            } elseif ($payment['payment_type'] === 'worker_service' && $payment['reference_id']) {
+                $pkgRow = $pdo->prepare('SELECT duration_days FROM worker_service_packages WHERE id = ?');
+                $pkgRow->execute([$payment['package_id']]);
+                $pkgRow = $pkgRow->fetch();
+                $days = $pkgRow ? (int)$pkgRow['duration_days'] : 30;
+                $pdo->prepare("UPDATE worker_profiles SET service_fee_status = 'paid', service_fee_expiry = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE id = ?")
+                    ->execute([$days, $payment['reference_id']]);
+                notify_user($payment['user_id'], 'Service listing confirmed', 'Your worker service listing is now active. You will appear in search results for ' . $days . ' days.', 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed worker_service payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}, worker profile ID {$payment['reference_id']}");
             }
             $success = 'Payment confirmed and feature activated.';
         }
@@ -184,6 +213,8 @@ $monetizationMode = get_platform_setting('monetization_mode', 'free');
 $enableFeaturedJobs = get_platform_setting('enable_paid_featured_jobs', '0');
 $enableFeaturedWorkers = get_platform_setting('enable_paid_featured_workers', '0');
 $enableVerification = get_platform_setting('enable_paid_verification_badges', '0');
+$enablePaidJobPosting = get_platform_setting('enable_paid_job_posting', '0');
+$enablePaidWorkerService = get_platform_setting('enable_paid_worker_service', '0');
 
 $featuredJobPackages = get_active_packages('featured_job_packages');
 $allFeaturedJobPackages = $pdo->query("SELECT * FROM featured_job_packages ORDER BY price ASC")->fetchAll();
@@ -191,22 +222,28 @@ $workerPromoPackages = get_active_packages('worker_promotion_packages');
 $allWorkerPromoPackages = $pdo->query("SELECT * FROM worker_promotion_packages ORDER BY price ASC")->fetchAll();
 $verificationPackages = get_active_packages('verification_packages');
 $allVerificationPackages = $pdo->query("SELECT * FROM verification_packages ORDER BY price ASC")->fetchAll();
+$allJobPostingPackages = $pdo->query("SELECT * FROM job_posting_packages ORDER BY price ASC")->fetchAll();
+$allWorkerServicePackages = $pdo->query("SELECT * FROM worker_service_packages ORDER BY price ASC")->fetchAll();
 
-// Pending payments with context (job title for featured_job type)
+// Pending payments with context
 $pendingPayments = $pdo->query("
     SELECT pp.*, u.name AS user_name, u.username,
         sr.title AS job_title,
         CASE pp.payment_type
-            WHEN 'featured_job' THEN COALESCE(fp.name, '—')
-            WHEN 'featured_worker' THEN COALESCE(wp2.name, '—')
-            WHEN 'verification' THEN COALESCE(vp.name, '—')
+            WHEN 'featured_job'   THEN COALESCE(fp.name, '—')
+            WHEN 'featured_worker'THEN COALESCE(wp2.name, '—')
+            WHEN 'verification'   THEN COALESCE(vp.name, '—')
+            WHEN 'job_post'       THEN COALESCE(jp.name, '—')
+            WHEN 'worker_service' THEN COALESCE(ws.name, '—')
         END AS package_name
     FROM platform_payments pp
     JOIN users u ON pp.user_id = u.id
-    LEFT JOIN service_requests sr ON pp.payment_type = 'featured_job' AND sr.id = pp.reference_id
+    LEFT JOIN service_requests sr ON pp.payment_type IN ('featured_job','job_post') AND sr.id = pp.reference_id
     LEFT JOIN featured_job_packages fp ON pp.payment_type = 'featured_job' AND fp.id = pp.package_id
     LEFT JOIN worker_promotion_packages wp2 ON pp.payment_type = 'featured_worker' AND wp2.id = pp.package_id
     LEFT JOIN verification_packages vp ON pp.payment_type = 'verification' AND vp.id = pp.package_id
+    LEFT JOIN job_posting_packages jp ON pp.payment_type = 'job_post' AND jp.id = pp.package_id
+    LEFT JOIN worker_service_packages ws ON pp.payment_type = 'worker_service' AND ws.id = pp.package_id
     WHERE pp.status = 'pending'
     ORDER BY pp.created_at DESC
 ")->fetchAll();
@@ -216,7 +253,7 @@ $paymentHistory = $pdo->query("
     SELECT pp.*, u.name AS user_name, u.username, sr.title AS job_title
     FROM platform_payments pp
     JOIN users u ON pp.user_id = u.id
-    LEFT JOIN service_requests sr ON pp.payment_type = 'featured_job' AND sr.id = pp.reference_id
+    LEFT JOIN service_requests sr ON pp.payment_type IN ('featured_job','job_post') AND sr.id = pp.reference_id
     WHERE pp.status IN ('paid', 'failed')
     ORDER BY pp.created_at DESC LIMIT 100
 ")->fetchAll();
@@ -230,7 +267,9 @@ $revenueSummary = $pdo->query("
         COUNT(CASE WHEN status = 'pending' THEN 1 END) AS count_pending,
         COALESCE(SUM(CASE WHEN payment_type = 'featured_job' AND status = 'paid' THEN amount ELSE 0 END), 0) AS featured_job_revenue,
         COALESCE(SUM(CASE WHEN payment_type = 'featured_worker' AND status = 'paid' THEN amount ELSE 0 END), 0) AS featured_worker_revenue,
-        COALESCE(SUM(CASE WHEN payment_type = 'verification' AND status = 'paid' THEN amount ELSE 0 END), 0) AS verification_revenue
+        COALESCE(SUM(CASE WHEN payment_type = 'verification' AND status = 'paid' THEN amount ELSE 0 END), 0) AS verification_revenue,
+        COALESCE(SUM(CASE WHEN payment_type = 'job_post' AND status = 'paid' THEN amount ELSE 0 END), 0) AS job_post_revenue,
+        COALESCE(SUM(CASE WHEN payment_type = 'worker_service' AND status = 'paid' THEN amount ELSE 0 END), 0) AS worker_service_revenue
     FROM platform_payments
 ")->fetch();
 
@@ -303,6 +342,8 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
             <button class="mono-tab <?php echo $tab === 'featured_jobs' ? 'active' : ''; ?>" data-tab="featured_jobs">Featured Jobs</button>
             <button class="mono-tab <?php echo $tab === 'featured_workers' ? 'active' : ''; ?>" data-tab="featured_workers">Featured Workers</button>
             <button class="mono-tab <?php echo $tab === 'verification' ? 'active' : ''; ?>" data-tab="verification">Verification</button>
+            <button class="mono-tab <?php echo $tab === 'job_posting' ? 'active' : ''; ?>" data-tab="job_posting">Job Posting Pkgs</button>
+            <button class="mono-tab <?php echo $tab === 'worker_service' ? 'active' : ''; ?>" data-tab="worker_service">Listing Pkgs</button>
             <button class="mono-tab <?php echo $tab === 'payments' ? 'active' : ''; ?>" data-tab="payments">Pending Payments <?php if ($pendingPayments): ?><span style="background:var(--primary);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($pendingPayments); ?></span><?php endif; ?></button>
             <button class="mono-tab <?php echo $tab === 'audit' ? 'active' : ''; ?>" data-tab="audit">Audit Log</button>
         </nav>
@@ -355,6 +396,20 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                                     <td>
                                         <label style="margin-right:16px;"><input type="radio" name="enable_paid_verification_badges" value="0" <?php echo !$enableVerification ? 'checked' : ''; ?>> Free</label>
                                         <label><input type="radio" name="enable_paid_verification_badges" value="1" <?php echo $enableVerification ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Job Posting</strong><br><span class="meta">Charge customers a fee to post a job</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_job_posting" value="0" <?php echo !$enablePaidJobPosting ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_job_posting" value="1" <?php echo $enablePaidJobPosting ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Worker Service Listing</strong><br><span class="meta">Charge workers to appear in search results</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_worker_service" value="0" <?php echo !$enablePaidWorkerService ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_worker_service" value="1" <?php echo $enablePaidWorkerService ? 'checked' : ''; ?>> Paid</label>
                                     </td>
                                 </tr>
                             </tbody>
@@ -605,6 +660,100 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
             </section>
         </div>
 
+        <!-- JOB POSTING PACKAGES TAB -->
+        <div class="tab-panel <?php echo $tab === 'job_posting' ? 'active' : ''; ?>" id="tab-job_posting">
+            <section class="panel">
+                <h2>Job Posting Packages</h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Name</th><th>Post count</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($allJobPostingPackages as $pkg): ?>
+                            <tr>
+                                <td><?php echo sanitize($pkg['name']); ?></td>
+                                <td><?php echo $pkg['post_count'] == -1 ? 'Unlimited' : $pkg['post_count']; ?></td>
+                                <td><?php echo number_format($pkg['price'], 2); ?></td>
+                                <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
+                                <td>
+                                    <button class="button button-small button-secondary" onclick="editJobPostPkg(<?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', <?php echo $pkg['post_count']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
+                                        <input type="hidden" name="action" value="delete_package" />
+                                        <input type="hidden" name="pkg_type" value="job_posting" />
+                                        <input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>" />
+                                        <button type="submit" class="button button-small button-secondary">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <h3 style="margin-top: 20px;">Add / Edit Package</h3>
+                <form method="post" action="monetization.php" id="form-job_posting">
+                    <input type="hidden" name="action" value="save_package" />
+                    <input type="hidden" name="pkg_type" value="job_posting" />
+                    <input type="hidden" name="pkg_id" id="job_posting_id" value="0" />
+                    <label>Package name</label>
+                    <input type="text" name="pkg_name" id="job_posting_name" required placeholder="e.g. Single Post" />
+                    <label>Post count (-1 for unlimited)</label>
+                    <input type="number" name="pkg_post_count" id="job_posting_post_count" required value="1" min="-1" />
+                    <label>Price (GH₵)</label>
+                    <input type="number" name="pkg_price" id="job_posting_price" required min="0" step="0.01" value="0" />
+                    <label>Status</label>
+                    <select name="pkg_status" id="job_posting_status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <button type="submit" class="button button-primary">Save package</button>
+                        <button type="button" class="button button-secondary" onclick="document.getElementById('job_posting_id').value=0; document.getElementById('form-job_posting').reset();">Clear</button>
+                    </div>
+                </form>
+            </section>
+        </div>
+
+        <!-- WORKER SERVICE LISTING PACKAGES TAB -->
+        <div class="tab-panel <?php echo $tab === 'worker_service' ? 'active' : ''; ?>" id="tab-worker_service">
+            <section class="panel">
+                <h2>Worker Service Listing Packages</h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Name</th><th>Duration</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($allWorkerServicePackages as $pkg): ?>
+                            <tr>
+                                <td><?php echo sanitize($pkg['name']); ?></td>
+                                <td><?php echo $pkg['duration_days']; ?> days</td>
+                                <td><?php echo number_format($pkg['price'], 2); ?></td>
+                                <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
+                                <td>
+                                    <button class="button button-small button-secondary" onclick="editPackage('worker_service', <?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', <?php echo $pkg['duration_days']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
+                                        <input type="hidden" name="action" value="delete_package" />
+                                        <input type="hidden" name="pkg_type" value="worker_service" />
+                                        <input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>" />
+                                        <button type="submit" class="button button-small button-secondary">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <h3 style="margin-top: 20px;">Add / Edit Package</h3>
+                <form method="post" action="monetization.php" id="form-worker_service">
+                    <input type="hidden" name="action" value="save_package" />
+                    <input type="hidden" name="pkg_type" value="worker_service" />
+                    <input type="hidden" name="pkg_id" id="worker_service_id" value="0" />
+                    <label>Package name</label>
+                    <input type="text" name="pkg_name" id="worker_service_name" required placeholder="e.g. Monthly Listing" />
+                    <label>Duration (days)</label>
+                    <input type="number" name="pkg_days" id="worker_service_days" required min="1" value="30" />
+                    <label>Price (GH₵)</label>
+                    <input type="number" name="pkg_price" id="worker_service_price" required min="0" step="0.01" value="0" />
+                    <label>Status</label>
+                    <select name="pkg_status" id="worker_service_status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <button type="submit" class="button button-primary">Save package</button>
+                        <button type="button" class="button button-secondary" onclick="resetForm('worker_service')">Clear</button>
+                    </div>
+                </form>
+            </section>
+        </div>
+
         <!-- PENDING PAYMENTS TAB -->
         <div class="tab-panel <?php echo $tab === 'payments' ? 'active' : ''; ?>" id="tab-payments">
 
@@ -623,6 +772,8 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                         <tr><td>Featured Job Posts</td><td>GH₵ <?php echo number_format($revenueSummary['featured_job_revenue'], 2); ?></td></tr>
                         <tr><td>Featured Worker Profiles</td><td>GH₵ <?php echo number_format($revenueSummary['featured_worker_revenue'], 2); ?></td></tr>
                         <tr><td>Verification Badges</td><td>GH₵ <?php echo number_format($revenueSummary['verification_revenue'], 2); ?></td></tr>
+                        <tr><td>Job Posting Fees</td><td>GH₵ <?php echo number_format($revenueSummary['job_post_revenue'], 2); ?></td></tr>
+                        <tr><td>Worker Service Listings</td><td>GH₵ <?php echo number_format($revenueSummary['worker_service_revenue'], 2); ?></td></tr>
                     </tbody>
                 </table>
             </section>
@@ -786,6 +937,15 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
         function resetForm(type) {
             document.getElementById(type + '_id').value = 0;
             document.getElementById('form-' + type).reset();
+        }
+
+        function editJobPostPkg(id, name, postCount, price, status) {
+            document.getElementById('job_posting_id').value = id;
+            document.getElementById('job_posting_name').value = name;
+            document.getElementById('job_posting_post_count').value = postCount;
+            document.getElementById('job_posting_price').value = price;
+            document.getElementById('job_posting_status').value = status;
+            document.getElementById('form-job_posting').scrollIntoView({ behavior: 'smooth' });
         }
 
         function editVerifPackage(id, name, price, status) {

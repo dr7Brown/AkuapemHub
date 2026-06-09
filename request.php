@@ -23,8 +23,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($contactInfo === '') {
         $error = 'Add a phone number to your account on your profile before posting a request.';
     } else {
-        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, skills_needed, status, payment_status, commission_percent, featured, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
-        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, $skillsNeeded !== '' ? $skillsNeeded : null, 'pending', 'unpaid', DEFAULT_COMMISSION, 0]);
+        $postingFeePaid = is_feature_paid('enable_paid_job_posting');
+        $postingFeeStatus = $postingFeePaid ? 'pending' : 'free';
+
+        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, skills_needed, status, payment_status, commission_percent, featured, posting_fee_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, $skillsNeeded !== '' ? $skillsNeeded : null, 'pending', 'unpaid', DEFAULT_COMMISSION, 0, $postingFeeStatus]);
+        $newJobId = (int)$pdo->lastInsertId();
 
         $categoryName = 'Unknown';
         foreach ($categories as $category) {
@@ -32,6 +36,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $categoryName = $category['name'];
                 break;
             }
+        }
+
+        if ($postingFeePaid) {
+            notify_admins_and_managers(
+                'New job — posting fee required',
+                display_name($user) . ' posted "' . $title . '" but it requires a posting fee before approval. See Monetization → Pending Payments.',
+                'info'
+            );
+            flash('Job saved. Please complete the posting fee payment to submit it for review.', 'info');
+            header('Location: pay_job_post.php?id=' . $newJobId);
+            exit;
         }
 
         $adminMessage = "New service request created by {$user['name']} ({$user['email']}):\n\n" .

@@ -978,7 +978,7 @@ function log_audit_action($adminId, $action, $description) {
 
 function get_active_packages($table) {
     global $pdo;
-    static $allowed = ['featured_job_packages', 'worker_promotion_packages', 'verification_packages'];
+    static $allowed = ['featured_job_packages', 'worker_promotion_packages', 'verification_packages', 'job_posting_packages', 'worker_service_packages'];
     if (!in_array($table, $allowed, true)) return [];
     $stmt = $pdo->query("SELECT * FROM $table WHERE status = 'active' ORDER BY price ASC");
     return $stmt->fetchAll();

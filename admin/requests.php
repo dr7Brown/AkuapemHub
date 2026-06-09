@@ -41,6 +41,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         $request = $stmt->fetch();
 
         if ($_POST['action'] === 'approve' && $request) {
+            if (($request['posting_fee_status'] ?? 'free') === 'pending') {
+                // Block approval until posting fee is confirmed
+                header('Location: requests.php?err=' . urlencode('Cannot approve — posting fee payment not yet confirmed.'));
+                exit;
+            }
             $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $requestId]);
             send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.", $request['customer_id']);
             notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
@@ -60,7 +65,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
     exit;
 }
 
-$stmt = $pdo->query('SELECT sr.*, u.name AS customer_name, c.name AS category_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id JOIN service_categories c ON sr.category_id = c.id ORDER BY sr.created_at DESC');
+$errFlash = $_GET['err'] ?? '';
+$stmt = $pdo->query('SELECT sr.*, sr.posting_fee_status, u.name AS customer_name, c.name AS category_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id JOIN service_categories c ON sr.category_id = c.id ORDER BY sr.created_at DESC');
 $requests = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -78,6 +84,9 @@ $requests = $stmt->fetchAll();
         <a href="../logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell">
+        <?php if ($errFlash): ?>
+            <div class="alert alert-error"><?php echo sanitize($errFlash); ?></div>
+        <?php endif; ?>
         <section class="panel">
             <form id="bulk-requests" method="post" action="requests.php" class="filter-form" style="margin-bottom: 16px; gap: 8px; flex-wrap: wrap;">
                 <input type="hidden" name="action" value="bulk" />
@@ -106,6 +115,13 @@ $requests = $stmt->fetchAll();
                             <h2><?php echo sanitize($request['title']); ?></h2>
                             <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
                         </div>
+                        <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
+                        <?php if ($feeStatus === 'pending'): ?>
+                            <div class="alert alert-warning" style="margin-bottom:8px;">
+                                💳 <strong>Posting fee pending</strong> — payment not yet confirmed. Cannot approve until fee is paid.
+                                <a href="../admin/monetization.php?tab=payments" style="color:var(--primary);margin-left:6px;">Confirm payment →</a>
+                            </div>
+                        <?php endif; ?>
                         <?php if ($riskSignals): ?>
                             <div class="alert alert-warning">
                                 ⚠ Possible spam/fraud signals — review before approving:
@@ -124,7 +140,11 @@ $requests = $stmt->fetchAll();
                             <form method="post" class="inline-form" action="requests.php">
                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                 <?php if ($request['status'] !== 'open'): ?>
-                                    <button type="submit" name="action" value="approve" class="button button-primary">Approve</button>
+                                    <?php if ($feeStatus === 'pending'): ?>
+                                        <button type="button" class="button button-primary" disabled title="Posting fee not confirmed">Approve (fee pending)</button>
+                                    <?php else: ?>
+                                        <button type="submit" name="action" value="approve" class="button button-primary">Approve</button>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <button type="submit" name="action" value="remove" class="button button-secondary">Remove</button>
                                 <button type="submit" name="action" value="feature" class="button button-primary">Feature</button>

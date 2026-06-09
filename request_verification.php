@@ -61,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         display_name($user) . ' submitted payment ref ' . $refCode . ' for ' . $package['name'] . ' (GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Verification.',
         'info'
     );
+    log_audit_action($user['id'], 'verification_requested', "Verification badge requested by user ID {$user['id']} — setting: paid — package: {$package['name']} GH₵{$package['price']} — decision: pending payment ref {$refCode}");
 
     flash("Verification request submitted. Reference: {$refCode}. Once our team confirms your payment of GH₵" . number_format($package['price'], 2) . ", your profile will be verified.", 'success');
     header('Location: worker_profile.php');

@@ -27,6 +27,8 @@ $requiredTables = [
     'featured_job_packages',
     'worker_promotion_packages',
     'verification_packages',
+    'job_posting_packages',
+    'worker_service_packages',
     'platform_payments',
     'audit_logs',
 ];
@@ -276,6 +278,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             status ENUM('active','inactive') NOT NULL DEFAULT 'active'
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
+        'job_posting_packages' => "CREATE TABLE IF NOT EXISTS job_posting_packages (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(80) NOT NULL,
+            post_count INT NOT NULL DEFAULT 1,
+            price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'worker_service_packages' => "CREATE TABLE IF NOT EXISTS worker_service_packages (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(80) NOT NULL,
+            duration_days SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+            price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            status ENUM('active','inactive') NOT NULL DEFAULT 'active'
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
         'platform_payments' => "CREATE TABLE IF NOT EXISTS platform_payments (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             user_id INT UNSIGNED NOT NULL,
@@ -516,12 +534,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
                 $pdo->exec('ALTER TABLE worker_profiles ADD COLUMN is_verified TINYINT(1) NOT NULL DEFAULT 0, ADD COLUMN verification_date DATE DEFAULT NULL, ADD COLUMN verification_expiry DATE DEFAULT NULL');
             }
         }
+        // New columns for paid posting/service features
+        if (table_exists('service_requests')) {
+            if (!$pdo->query("SHOW COLUMNS FROM service_requests LIKE 'posting_fee_status'")->fetch()) {
+                $pdo->exec("ALTER TABLE service_requests ADD COLUMN posting_fee_status ENUM('free','pending','paid') NOT NULL DEFAULT 'free'");
+            }
+        }
+        if (table_exists('worker_profiles')) {
+            if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'service_fee_status'")->fetch()) {
+                $pdo->exec("ALTER TABLE worker_profiles ADD COLUMN service_fee_status ENUM('free','pending','paid') NOT NULL DEFAULT 'free', ADD COLUMN service_fee_expiry DATE DEFAULT NULL");
+            }
+        }
         // Seed platform_settings defaults
         $pdo->exec("INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
             ('monetization_mode', 'free', 'Global monetization mode: free, hybrid, or paid'),
             ('enable_paid_featured_jobs', '0', 'Charge for featured job posts (0=free, 1=paid)'),
             ('enable_paid_featured_workers', '0', 'Charge workers to feature profiles (0=free, 1=paid)'),
-            ('enable_paid_verification_badges', '0', 'Charge for verification badges (0=free, 1=paid)')");
+            ('enable_paid_verification_badges', '0', 'Charge for verification badges (0=free, 1=paid)'),
+            ('enable_paid_job_posting', '0', 'Require a posting fee before jobs go live (0=free, 1=paid)'),
+            ('enable_paid_worker_service', '0', 'Require workers to pay to be listed (0=free, 1=paid)')");
         // Seed default packages
         $pdo->exec("INSERT IGNORE INTO featured_job_packages (name, duration_days, price, status) VALUES
             ('7 Days', 7, 0.00, 'active'),
@@ -533,6 +564,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             ('90 Days', 90, 0.00, 'active')");
         $pdo->exec("INSERT IGNORE INTO verification_packages (name, price, status) VALUES
             ('Verified Worker Badge', 0.00, 'active')");
+        $pdo->exec("INSERT IGNORE INTO job_posting_packages (name, post_count, price, status) VALUES
+            ('Single Post', 1, 0.00, 'active'),
+            ('5 Post Bundle', 5, 0.00, 'active'),
+            ('Monthly Unlimited', -1, 0.00, 'active')");
+        $pdo->exec("INSERT IGNORE INTO worker_service_packages (name, duration_days, price, status) VALUES
+            ('Monthly Listing', 30, 0.00, 'active'),
+            ('3 Month Listing', 90, 0.00, 'active'),
+            ('Annual Listing', 365, 0.00, 'active')");
         $migrated = true;
     } catch (Exception $e) {
         $errors[] = $e->getMessage();

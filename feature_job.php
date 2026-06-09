@@ -30,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Free featuring — activate immediately
         $pdo->prepare('UPDATE service_requests SET featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL 30 DAY) WHERE id = ?')
             ->execute([$requestId]);
+        log_audit_action($user['id'], 'feature_job_requested', "Feature job requested for job ID {$requestId} '{$request['title']}' — setting: free — decision: featured immediately (free mode)");
         flash('Your job is now featured for 30 days.', 'success');
         header('Location: request_detail.php?id=' . $requestId);
         exit;
@@ -55,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         display_name($user) . ' submitted payment ref ' . $refCode . ' for "' . $request['title'] . '" (' . $package['name'] . ', GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Pending Payments.',
         'info'
     );
+    log_audit_action($user['id'], 'feature_job_requested', "Feature job requested for job ID {$requestId} '{$request['title']}' — setting: paid — package: {$package['name']} GH₵{$package['price']} — decision: pending payment ref {$refCode}");
 
     flash("Payment request submitted. Reference: {$refCode}. Once our team confirms your payment of GH₵" . number_format($package['price'], 2) . ", your job will be featured.", 'success');
     header('Location: request_detail.php?id=' . $requestId);

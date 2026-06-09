@@ -9,7 +9,7 @@ $sortBy = $_GET['sort'] ?? 'rating';
 $userLat = ($_GET['lat'] ?? '') !== '' ? (float)$_GET['lat'] : null;
 $userLng = ($_GET['lng'] ?? '') !== '' ? (float)$_GET['lng'] : null;
 
-$where = ["u.role = 'worker'", "u.banned = 0", "w.id IS NOT NULL"];
+$where = ["u.role = 'worker'", "u.banned = 0", "w.id IS NOT NULL", "w.service_fee_status != 'pending'"];
 $params = [];
 
 if ($searchQuery) {

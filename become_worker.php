@@ -62,8 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $pdo->beginTransaction();
         try {
-            $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_number, id_document_path, availability, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([$user['id'], '', $townName, $user['latitude'], $user['longitude'], $user['phone'], $idType, $idNumber, $idDocumentPath, 'available']);
+            $serviceFeeStatus = is_feature_paid('enable_paid_worker_service') ? 'pending' : 'free';
+            $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_number, id_document_path, availability, service_fee_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+            $stmt->execute([$user['id'], '', $townName, $user['latitude'], $user['longitude'], $user['phone'], $idType, $idNumber, $idDocumentPath, 'available', $serviceFeeStatus]);
             $profileId = $pdo->lastInsertId();
 
             $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id, category_id, skill_name) VALUES (?, ?, ?)');
@@ -76,8 +77,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             refresh_session_user($pdo, $user['id']);
             notify_user($user['id'], 'Welcome to working on AkuapemHub', 'Your worker profile has been created. You can now browse and accept jobs.', 'success');
-            flash('You are now registered as a worker. Welcome aboard!');
-            header('Location: worker_profile.php');
+            if ($serviceFeeStatus === 'pending') {
+                flash('Worker profile created! Complete your service listing payment to appear in search results.', 'info');
+                header('Location: pay_worker_service.php');
+            } else {
+                flash('You are now registered as a worker. Welcome aboard!');
+                header('Location: worker_profile.php');
+            }
             exit;
         } catch (Exception $e) {
             $pdo->rollBack();

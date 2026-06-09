@@ -106,6 +106,29 @@ $schedule = get_worker_schedule($profile['id']);
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
+            <?php
+            $svcFeeStatus = $profile['service_fee_status'] ?? 'free';
+            $svcFeeExpiry = $profile['service_fee_expiry'] ?? null;
+            ?>
+            <?php if ($svcFeeStatus === 'pending'): ?>
+                <div class="alert alert-warning" style="margin-top:12px;">
+                    💳 <strong>Service listing payment pending</strong> — you are not yet visible in worker search results.
+                    <a href="my_payments.php" style="color:var(--primary);margin-left:4px;">Track payment →</a>
+                    &nbsp;
+                    <a href="pay_worker_service.php" style="color:var(--primary);">View packages →</a>
+                </div>
+            <?php elseif ($svcFeeStatus === 'paid' && $svcFeeExpiry): ?>
+                <p class="meta" style="margin-top:8px;">Service listing active until <strong><?php echo sanitize($svcFeeExpiry); ?></strong>.
+                    <?php if (is_feature_paid('enable_paid_worker_service')): ?>
+                        <a href="pay_worker_service.php" style="color:var(--primary);margin-left:4px;">Renew →</a>
+                    <?php endif; ?>
+                </p>
+            <?php elseif ($svcFeeStatus === 'free' && is_feature_paid('enable_paid_worker_service')): ?>
+                <div class="alert alert-info" style="margin-top:12px;">
+                    A service listing fee is now required to appear in search results.
+                    <a href="pay_worker_service.php" style="color:var(--primary);margin-left:4px;">Pay now →</a>
+                </div>
+            <?php endif; ?>
         </div>
         <form class="card form-card" method="post" action="worker_profile.php">
             <label>Bio</label>

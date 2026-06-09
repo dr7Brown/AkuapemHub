@@ -24,6 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$isPaid) {
         $pdo->prepare('UPDATE worker_profiles SET is_featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL 30 DAY) WHERE user_id = ?')
             ->execute([$user['id']]);
+        log_audit_action($user['id'], 'feature_worker_requested', "Feature worker requested for user ID {$user['id']} — setting: free — decision: featured immediately (free mode)");
         flash('Your profile is now featured for 30 days. You\'ll appear at the top of search results.', 'success');
         header('Location: worker_profile.php');
         exit;
@@ -48,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         display_name($user) . ' submitted payment ref ' . $refCode . ' for profile promotion (' . $package['name'] . ', GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Pending Payments.',
         'info'
     );
+    log_audit_action($user['id'], 'feature_worker_requested', "Feature worker requested for user ID {$user['id']} — setting: paid — package: {$package['name']} GH₵{$package['price']} — decision: pending payment ref {$refCode}");
 
     flash("Payment request submitted. Reference: {$refCode}. Once our team confirms your payment of GH₵" . number_format($package['price'], 2) . ", your profile will be featured.", 'success');
     header('Location: worker_profile.php');

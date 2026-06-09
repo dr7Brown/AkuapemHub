@@ -86,10 +86,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             $townName = get_town_name($townId) ?: '';
+            $workerNeedsServiceFee = false;
             if ($role === 'worker') {
+                $workerNeedsServiceFee = is_feature_paid('enable_paid_worker_service');
+                $serviceFeeStatus = $workerNeedsServiceFee ? 'pending' : 'free';
                 $idDocumentPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $userId);
-                $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_number, id_document_path, availability, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-                $stmt->execute([$userId, '', $townName, $latitude, $longitude, $phone, $idType, $idNumber, $idDocumentPath, 'available']);
+                $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_number, id_document_path, availability, service_fee_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+                $stmt->execute([$userId, '', $townName, $latitude, $longitude, $phone, $idType, $idNumber, $idDocumentPath, 'available', $serviceFeeStatus]);
                 $profileId = $pdo->lastInsertId();
 
                 $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id, category_id, skill_name) VALUES (?, ?, ?)');
@@ -102,7 +105,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
             login_user($user);
-            header('Location: dashboard.php');
+            if ($workerNeedsServiceFee) {
+                flash('Account created! Please complete your service listing payment to appear in search results.', 'info');
+                header('Location: pay_worker_service.php');
+            } else {
+                header('Location: dashboard.php');
+            }
             exit;
         }
     }
