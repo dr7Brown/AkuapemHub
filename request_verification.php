@@ -41,8 +41,29 @@ $hasPaidVerif = (bool)$paidVerifStmt->fetch();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Resubmission when admin requested updated docs — free if already paid once
     if ($vStatus === 'resubmission_requested' && $hasPaidVerif) {
-        $pdo->prepare("UPDATE worker_profiles SET verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
-            ->execute([$user['id']]);
+        $idType   = $_POST['id_type'] ?? '';
+        $idNumber = trim($_POST['id_number'] ?? '');
+        if (!in_array($idType, ['ghana_card', 'passport'], true) || $idNumber === '') {
+            flash('Select an ID type and enter your ID number.', 'error');
+            header('Location: request_verification.php');
+            exit;
+        }
+        $newDocPath = null;
+        if (!empty($_FILES['id_document']['name'])) {
+            if (!is_valid_image_upload($_FILES['id_document'])) {
+                flash('ID photo must be a JPEG, PNG, or WEBP image under 5MB.', 'error');
+                header('Location: request_verification.php');
+                exit;
+            }
+            $newDocPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
+        }
+        if ($newDocPath) {
+            $pdo->prepare("UPDATE worker_profiles SET id_type = ?, id_number = ?, id_document_path = ?, verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
+                ->execute([$idType, $idNumber, $newDocPath, $user['id']]);
+        } else {
+            $pdo->prepare("UPDATE worker_profiles SET id_type = ?, id_number = ?, verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
+                ->execute([$idType, $idNumber, $user['id']]);
+        }
         log_audit_action($user['id'], 'verification_resubmitted', "Worker user ID {$user['id']} resubmitted verification documents");
         flash('Your updated verification request has been submitted. An admin will review your documents shortly.', 'success');
         header('Location: worker_profile.php');
@@ -139,8 +160,25 @@ $packages = get_active_packages('verification_packages');
                 </div>
             <?php endif; ?>
             <?php if ($vStatus === 'resubmission_requested' && $hasPaidVerif): ?>
-                <form method="post" action="request_verification.php">
-                    <p>You've already paid for verification. Simply resubmit to put your profile back in the admin review queue — no additional payment required.</p>
+                <form method="post" action="request_verification.php" enctype="multipart/form-data">
+                    <p style="margin-top:0;">Update your ID details below, then resubmit. No additional payment required.</p>
+                    <label>ID type</label>
+                    <select name="id_type" required style="margin-bottom:10px;">
+                        <option value="">Select ID type</option>
+                        <option value="ghana_card" <?php echo ($profile['id_type'] === 'ghana_card') ? 'selected' : ''; ?>>Ghana Card</option>
+                        <option value="passport" <?php echo ($profile['id_type'] === 'passport') ? 'selected' : ''; ?>>Passport</option>
+                    </select>
+                    <label>ID card number</label>
+                    <input type="text" name="id_number" value="<?php echo sanitize($profile['id_number'] ?? ''); ?>" required placeholder="e.g. GHA-000000000-0" style="margin-bottom:10px;" />
+                    <label>New ID photo <span class="meta">(leave blank to keep current)</span></label>
+                    <?php if (!empty($profile['id_document_path'])): ?>
+                        <div style="margin-bottom:8px;">
+                            <img src="<?php echo sanitize($profile['id_document_path']); ?>" alt="Current ID" style="height:72px;width:auto;border-radius:6px;border:1px solid var(--border);object-fit:cover;" />
+                            <span class="meta" style="margin-left:8px;">Current document</span>
+                        </div>
+                    <?php endif; ?>
+                    <input type="file" name="id_document" accept="image/jpeg,image/png,image/webp" style="margin-bottom:14px;" />
+                    <p class="small-note" style="margin-top:-8px;">Ghana Card or Passport — JPEG/PNG/WEBP, max 5 MB.</p>
                     <button type="submit" class="button button-primary">Resubmit for review</button>
                 </form>
             <?php elseif (!$isPaid): ?>

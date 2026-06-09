@@ -52,6 +52,26 @@ $platformRevenue = $pdo->query("
     FROM platform_payments
 ")->fetch();
 
+// 30-day daily revenue for sparkline
+$dailyRevStmt = $pdo->query("
+    SELECT DATE(paid_at) AS day, COALESCE(SUM(amount), 0) AS revenue
+    FROM platform_payments
+    WHERE status = 'paid' AND paid_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+    GROUP BY DATE(paid_at)
+    ORDER BY day ASC
+");
+$dailyRevRows = [];
+foreach ($dailyRevStmt->fetchAll() as $r) {
+    $dailyRevRows[$r['day']] = (float)$r['revenue'];
+}
+$chartLabels = [];
+$chartData   = [];
+for ($i = 29; $i >= 0; $i--) {
+    $d = date('Y-m-d', strtotime("-{$i} days"));
+    $chartLabels[] = date('M j', strtotime($d));
+    $chartData[]   = $dailyRevRows[$d] ?? 0;
+}
+
 $verifiedWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_verified = 1")->fetchColumn();
 $activeListings  = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE service_fee_status = 'paid' AND (service_fee_expiry IS NULL OR service_fee_expiry >= CURDATE())")->fetchColumn();
 $featuredJobs    = $pdo->query("SELECT COUNT(*) FROM service_requests WHERE featured = 1 AND (featured_end_date IS NULL OR featured_end_date >= CURDATE())")->fetchColumn();
@@ -64,6 +84,7 @@ $featuredWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_fe
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Analytics — AkuapemHub</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>
 <body>
     <header class="topbar">
@@ -183,6 +204,41 @@ $featuredWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_fe
                 </table>
             </div>
         </section>
+        <section class="panel" style="margin-top:24px;">
+            <h3 style="margin:0 0 16px;">Daily revenue — last 30 days</h3>
+            <canvas id="revenueChart" height="90"></canvas>
+            <script>
+            (function() {
+                var labels = <?php echo json_encode($chartLabels); ?>;
+                var data   = <?php echo json_encode($chartData); ?>;
+                var max    = Math.max.apply(null, data) || 1;
+                new Chart(document.getElementById('revenueChart'), {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'GH₵ revenue',
+                            data: data,
+                            backgroundColor: 'rgba(79,140,255,0.7)',
+                            borderRadius: 3,
+                            borderSkipped: false,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false }, tooltip: {
+                            callbacks: { label: ctx => ' GH₵ ' + ctx.parsed.y.toFixed(2) }
+                        }},
+                        scales: {
+                            x: { grid: { display: false }, ticks: { maxTicksLimit: 10, font: { size: 11 } } },
+                            y: { beginAtZero: true, ticks: { callback: v => 'GH₵' + v } }
+                        }
+                    }
+                });
+            })();
+            </script>
+        </section>
+
         <section class="panel stats-grid" style="margin-bottom:0;">
             <div class="stat-card">
                 <h2><?php echo (int)$verifiedWorkers; ?></h2>
