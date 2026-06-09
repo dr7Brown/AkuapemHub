@@ -18,8 +18,19 @@ if (!$profile) {
 
 $isPaid = is_feature_paid('enable_paid_featured_workers');
 
+// Check for an existing pending featuring payment for this worker
+$existingFeatStmt = $pdo->prepare("SELECT id, reference_code FROM platform_payments WHERE user_id = ? AND payment_type = 'featured_worker' AND status = 'pending'");
+$existingFeatStmt->execute([$user['id']]);
+$existingFeatPayment = $existingFeatStmt->fetch();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $packageId = intval($_POST['package_id'] ?? 0);
+
+    if ($existingFeatPayment) {
+        flash('You already have a pending featuring payment (ref ' . $existingFeatPayment['reference_code'] . '). Wait for admin confirmation.', 'info');
+        header('Location: my_payments.php');
+        exit;
+    }
 
     if (!$isPaid) {
         $pdo->prepare('UPDATE worker_profiles SET is_featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL 30 DAY) WHERE user_id = ?')
@@ -75,6 +86,11 @@ $packages = get_active_packages('worker_promotion_packages');
         <div class="card">
             <?php if ($profile['is_featured'] && $profile['featured_end_date'] >= date('Y-m-d')): ?>
                 <div class="alert alert-success">Your profile is already featured until <?php echo sanitize($profile['featured_end_date']); ?>.</div>
+            <?php elseif ($existingFeatPayment): ?>
+                <div class="alert alert-info">
+                    You have a pending featuring payment (ref <strong><?php echo sanitize($existingFeatPayment['reference_code']); ?></strong>). Your profile will be featured once we confirm your payment.
+                    <br><a href="my_payments.php" style="color:var(--primary);">Track payment →</a>
+                </div>
             <?php else: ?>
                 <?php if (!$isPaid): ?>
                     <h2 style="margin-top:0;">Feature your profile for free</h2>

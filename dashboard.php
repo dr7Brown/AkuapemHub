@@ -95,7 +95,7 @@ if (is_worker()) {
 } elseif (is_customer()) {
     $customerWhere = array_merge(['sr.customer_id = ?'], $where);
     $customerParams = array_merge([$user['id']], $params);
-    $sql = 'SELECT sr.*, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment
+    $sql = 'SELECT sr.*, sr.posting_fee_status, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment
         FROM service_requests sr
         JOIN service_categories wc ON sr.category_id = wc.id
         LEFT JOIN users u ON sr.assigned_worker_id = u.id
@@ -156,7 +156,7 @@ if (is_worker()) {
         </section>
 
         <?php if (is_worker() && $profile): ?>
-            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--border);margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--border);margin-bottom:8px;">
                 <span style="font-size:1.25rem;">🛡️</span>
                 <div style="flex:1;min-width:0;">
                     <span style="font-size:0.82rem;color:var(--text-muted);display:block;margin-bottom:3px;">Profile status</span>
@@ -174,6 +174,36 @@ if (is_worker()) {
                 </div>
                 <a href="worker_profile.php" style="font-size:0.8rem;color:var(--primary);white-space:nowrap;">My profile →</a>
             </div>
+            <?php
+                $svcFeeStatus = $profile['service_fee_status'] ?? 'free';
+                $svcFeeExpiry = $profile['service_fee_expiry'] ?? null;
+                $listingRequired = is_feature_paid('enable_paid_worker_service');
+            ?>
+            <?php if ($svcFeeStatus === 'pending'): ?>
+                <div class="alert alert-warning" style="margin-bottom:8px;font-size:0.9rem;">
+                    💳 <strong>Service listing fee pending</strong> — your profile won't appear in Find Workers until confirmed.
+                    <a href="my_payments.php" style="color:var(--primary);margin-left:4px;">Track payment →</a>
+                    &nbsp;·&nbsp;<a href="pay_worker_service.php" style="color:var(--primary);">Pay now →</a>
+                </div>
+            <?php elseif ($svcFeeStatus === 'paid'): ?>
+                <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--border);margin-bottom:8px;font-size:0.9rem;">
+                    <span>📋</span>
+                    <div style="flex:1;">
+                        <strong>Service listing</strong>: active
+                        <?php if ($svcFeeExpiry): ?>
+                            — expires <strong><?php echo sanitize($svcFeeExpiry); ?></strong>
+                            <?php if ($svcFeeExpiry <= date('Y-m-d', strtotime('+7 days'))): ?>
+                                <a href="pay_worker_service.php" style="color:var(--primary);margin-left:6px;">Renew →</a>
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            <?php elseif ($listingRequired): ?>
+                <div class="alert alert-info" style="margin-bottom:8px;font-size:0.9rem;">
+                    A service listing fee is required to appear in Find Workers.
+                    <a href="pay_worker_service.php" style="color:var(--primary);margin-left:4px;">Pay listing fee →</a>
+                </div>
+            <?php endif; ?>
         <?php endif; ?>
 
         <h2 style="margin: 0 0 12px;">Popular categories</h2>
@@ -336,6 +366,13 @@ if (is_worker()) {
                 <?php else: ?>
                     <?php foreach ($requests as $request): ?>
                         <article class="request-card">
+                            <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
+                            <?php if ($feeStatus === 'pending'): ?>
+                                <div class="alert alert-warning" style="margin-bottom:8px;font-size:0.9rem;">
+                                    💳 <strong>Posting fee pending</strong> — your job is not yet visible until the fee is confirmed.
+                                    <a href="pay_job_post.php?id=<?php echo $request['id']; ?>" style="color:var(--primary);margin-left:4px;">Pay now →</a>
+                                </div>
+                            <?php endif; ?>
                             <div class="request-head">
                                 <div>
                                     <h2><?php echo sanitize($request['title']); ?></h2>

@@ -19,6 +19,8 @@ $pendingRequests = $pendingStmt->fetchColumn();
 $completedStmt = $pdo->query('SELECT COUNT(*) FROM service_requests WHERE status = "completed"');
 $completedRequests = $completedStmt->fetchColumn();
 $premiumWorkers = get_premium_worker_count();
+$pendingPlatformPayments = $pdo->query("SELECT COUNT(*) FROM platform_payments WHERE status = 'pending'")->fetchColumn();
+$pendingPostingFeeJobs   = $pdo->query("SELECT COUNT(*) FROM service_requests WHERE posting_fee_status = 'pending'")->fetchColumn();
 
 ?>
 <!DOCTYPE html>
@@ -49,6 +51,15 @@ $premiumWorkers = get_premium_worker_count();
         </div>
     </header>
     <main class="page-shell">
+        <?php if ($pendingPlatformPayments > 0): ?>
+            <div class="alert alert-warning" style="margin-bottom:16px;">
+                💳 <strong><?php echo (int)$pendingPlatformPayments; ?> pending payment<?php echo $pendingPlatformPayments > 1 ? 's' : ''; ?></strong> awaiting confirmation.
+                <a href="monetization.php?tab=payments" style="color:var(--primary);margin-left:6px;">Review in Monetization →</a>
+                <?php if ($pendingPostingFeeJobs > 0): ?>
+                    &nbsp;·&nbsp; <?php echo (int)$pendingPostingFeeJobs; ?> job<?php echo $pendingPostingFeeJobs > 1 ? 's' : ''; ?> blocked by unpaid posting fee.
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
         <section class="panel stats-grid">
             <div class="stat-card">
                 <h2><?php echo $totalUsers; ?></h2>

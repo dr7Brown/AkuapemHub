@@ -297,7 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         'platform_payments' => "CREATE TABLE IF NOT EXISTS platform_payments (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             user_id INT UNSIGNED NOT NULL,
-            payment_type ENUM('featured_job','featured_worker','verification') NOT NULL,
+            payment_type ENUM('featured_job','featured_worker','verification','job_post','worker_service') NOT NULL,
             reference_id INT UNSIGNED DEFAULT NULL,
             package_id INT UNSIGNED DEFAULT NULL,
             amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -543,6 +543,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         if (table_exists('worker_profiles')) {
             if (!$pdo->query("SHOW COLUMNS FROM worker_profiles LIKE 'service_fee_status'")->fetch()) {
                 $pdo->exec("ALTER TABLE worker_profiles ADD COLUMN service_fee_status ENUM('free','pending','paid') NOT NULL DEFAULT 'free', ADD COLUMN service_fee_expiry DATE DEFAULT NULL");
+            }
+        }
+        // Expand platform_payments.payment_type ENUM for existing databases
+        if (table_exists('platform_payments')) {
+            $colInfo = $pdo->query("SHOW COLUMNS FROM platform_payments LIKE 'payment_type'")->fetch();
+            if ($colInfo && strpos($colInfo['Type'], "'job_post'") === false) {
+                $pdo->exec("ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM('featured_job','featured_worker','verification','job_post','worker_service') NOT NULL");
             }
         }
         // Seed platform_settings defaults

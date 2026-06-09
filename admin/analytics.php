@@ -37,6 +37,25 @@ if (!$totalPaidAmount) {
 $topWorkers = $pdo->query('SELECT u.id, u.name, COUNT(sr.id) AS completed_jobs, COALESCE(AVG(r.score), 0) AS avg_rating FROM users u LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = "completed" LEFT JOIN ratings r ON sr.id = r.request_id WHERE u.role = "worker" GROUP BY u.id ORDER BY completed_jobs DESC LIMIT 5')->fetchAll();
 
 $topCategories = $pdo->query('SELECT c.name, COUNT(sr.id) AS job_count FROM service_categories c LEFT JOIN service_requests sr ON c.id = sr.category_id GROUP BY c.id ORDER BY job_count DESC LIMIT 5')->fetchAll();
+
+$platformRevenue = $pdo->query("
+    SELECT
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) AS total_confirmed,
+        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) AS total_pending,
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) AS count_confirmed,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) AS count_pending,
+        COALESCE(SUM(CASE WHEN payment_type = 'featured_job'    AND status = 'paid' THEN amount ELSE 0 END), 0) AS feat_job,
+        COALESCE(SUM(CASE WHEN payment_type = 'featured_worker' AND status = 'paid' THEN amount ELSE 0 END), 0) AS feat_worker,
+        COALESCE(SUM(CASE WHEN payment_type = 'verification'    AND status = 'paid' THEN amount ELSE 0 END), 0) AS verification,
+        COALESCE(SUM(CASE WHEN payment_type = 'job_post'        AND status = 'paid' THEN amount ELSE 0 END), 0) AS job_post,
+        COALESCE(SUM(CASE WHEN payment_type = 'worker_service'  AND status = 'paid' THEN amount ELSE 0 END), 0) AS worker_service
+    FROM platform_payments
+")->fetch();
+
+$verifiedWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_verified = 1")->fetchColumn();
+$activeListings  = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE service_fee_status = 'paid' AND (service_fee_expiry IS NULL OR service_fee_expiry >= CURDATE())")->fetchColumn();
+$featuredJobs    = $pdo->query("SELECT COUNT(*) FROM service_requests WHERE featured = 1 AND (featured_end_date IS NULL OR featured_end_date >= CURDATE())")->fetchColumn();
+$featuredWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_featured = 1 AND (featured_end_date IS NULL OR featured_end_date >= CURDATE())")->fetchColumn();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -122,6 +141,64 @@ $topCategories = $pdo->query('SELECT c.name, COUNT(sr.id) AS job_count FROM serv
             <div class="stat-card">
                 <h2>GH₵ <?php echo number_format($totalPaidAmount, 2); ?></h2>
                 <p>Total paid</p>
+            </div>
+        </section>
+
+        <h2 style="margin: 32px 0 16px;">Platform Revenue</h2>
+        <section class="panel stats-grid">
+            <div class="stat-card">
+                <h2>GH₵ <?php echo number_format($platformRevenue['total_confirmed'], 2); ?></h2>
+                <p>Confirmed revenue</p>
+            </div>
+            <div class="stat-card">
+                <h2>GH₵ <?php echo number_format($platformRevenue['total_pending'], 2); ?></h2>
+                <p>Pending payments</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo (int)$platformRevenue['count_confirmed']; ?></h2>
+                <p>Confirmed transactions</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo (int)$platformRevenue['count_pending']; ?></h2>
+                <p>Pending transactions</p>
+            </div>
+        </section>
+        <section class="panel">
+            <h3 style="margin:0 0 12px;">Revenue by type (confirmed)</h3>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Amount (GH₵)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Featured Jobs</td><td><?php echo number_format($platformRevenue['feat_job'], 2); ?></td></tr>
+                        <tr><td>Featured Workers</td><td><?php echo number_format($platformRevenue['feat_worker'], 2); ?></td></tr>
+                        <tr><td>Verification Badges</td><td><?php echo number_format($platformRevenue['verification'], 2); ?></td></tr>
+                        <tr><td>Job Posting Fees</td><td><?php echo number_format($platformRevenue['job_post'], 2); ?></td></tr>
+                        <tr><td>Worker Service Listings</td><td><?php echo number_format($platformRevenue['worker_service'], 2); ?></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section class="panel stats-grid" style="margin-bottom:0;">
+            <div class="stat-card">
+                <h2><?php echo (int)$verifiedWorkers; ?></h2>
+                <p>Verified workers</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo (int)$activeListings; ?></h2>
+                <p>Active service listings</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo (int)$featuredJobs; ?></h2>
+                <p>Active featured jobs</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo (int)$featuredWorkers; ?></h2>
+                <p>Active featured workers</p>
             </div>
         </section>
 

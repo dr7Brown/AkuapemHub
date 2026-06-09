@@ -67,6 +67,13 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
         </a>
     </header>
     <main class="page-shell small-shell">
+        <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
+        <?php if ($feeStatus === 'pending' && $request['customer_id'] === $user['id']): ?>
+            <div class="alert alert-warning" style="margin-bottom:12px;">
+                💳 <strong>Posting fee required</strong> — this job is not yet visible to workers until you confirm your posting fee payment.
+                <a href="pay_job_post.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small" style="margin-left:8px;">Pay posting fee →</a>
+            </div>
+        <?php endif; ?>
         <section class="card">
             <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
                 <h1 style="margin: 0; font-size: 1.25rem;"><?php echo sanitize($request['title']); ?></h1>

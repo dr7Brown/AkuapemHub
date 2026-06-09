@@ -7,17 +7,26 @@ $user = current_user();
 
 $stmt = $pdo->prepare("
     SELECT pp.*,
-        sr.title AS job_title,
+        CASE pp.payment_type
+            WHEN 'featured_job'    THEN sr.title
+            WHEN 'job_post'        THEN sr2.title
+            ELSE NULL
+        END AS job_title,
         CASE pp.payment_type
             WHEN 'featured_job'    THEN COALESCE(fp.name, '—')
             WHEN 'featured_worker' THEN COALESCE(wp2.name, '—')
             WHEN 'verification'    THEN COALESCE(vp.name, '—')
+            WHEN 'job_post'        THEN COALESCE(jp.name, '—')
+            WHEN 'worker_service'  THEN COALESCE(ws.name, '—')
         END AS package_name
     FROM platform_payments pp
-    LEFT JOIN service_requests sr ON pp.payment_type = 'featured_job' AND sr.id = pp.reference_id
+    LEFT JOIN service_requests sr  ON pp.payment_type = 'featured_job' AND sr.id  = pp.reference_id
+    LEFT JOIN service_requests sr2 ON pp.payment_type = 'job_post'     AND sr2.id = pp.reference_id
     LEFT JOIN featured_job_packages fp      ON pp.payment_type = 'featured_job'    AND fp.id  = pp.package_id
     LEFT JOIN worker_promotion_packages wp2 ON pp.payment_type = 'featured_worker' AND wp2.id = pp.package_id
     LEFT JOIN verification_packages vp      ON pp.payment_type = 'verification'    AND vp.id  = pp.package_id
+    LEFT JOIN job_posting_packages jp       ON pp.payment_type = 'job_post'        AND jp.id  = pp.package_id
+    LEFT JOIN worker_service_packages ws    ON pp.payment_type = 'worker_service'  AND ws.id  = pp.package_id
     WHERE pp.user_id = ?
     ORDER BY pp.created_at DESC
 ");
@@ -32,6 +41,8 @@ $typeLabel = [
     'featured_job'    => 'Featured Job',
     'featured_worker' => 'Featured Profile',
     'verification'    => 'Verification Badge',
+    'job_post'        => 'Job Posting Fee',
+    'worker_service'  => 'Service Listing',
 ];
 ?>
 <!DOCTYPE html>

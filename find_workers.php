@@ -9,7 +9,13 @@ $sortBy = $_GET['sort'] ?? 'rating';
 $userLat = ($_GET['lat'] ?? '') !== '' ? (float)$_GET['lat'] : null;
 $userLng = ($_GET['lng'] ?? '') !== '' ? (float)$_GET['lng'] : null;
 
-$where = ["u.role = 'worker'", "u.banned = 0", "w.id IS NOT NULL", "w.service_fee_status != 'pending'"];
+$where = [
+    "u.role = 'worker'",
+    "u.banned = 0",
+    "w.id IS NOT NULL",
+    // Exclude workers with unpaid listing fee OR an expired paid listing
+    "(w.service_fee_status = 'free' OR (w.service_fee_status = 'paid' AND (w.service_fee_expiry IS NULL OR w.service_fee_expiry >= CURDATE())))",
+];
 $params = [];
 
 if ($searchQuery) {

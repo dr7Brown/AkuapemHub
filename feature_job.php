@@ -23,8 +23,19 @@ if (!$request || $request['customer_id'] != $user['id']) {
 
 $isPaid = is_feature_paid('enable_paid_featured_jobs');
 
+// Check for an existing pending featuring payment for this job
+$existingFeatStmt = $pdo->prepare("SELECT id, reference_code FROM platform_payments WHERE user_id = ? AND payment_type = 'featured_job' AND reference_id = ? AND status = 'pending'");
+$existingFeatStmt->execute([$user['id'], $requestId]);
+$existingFeatPayment = $existingFeatStmt->fetch();
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $packageId = intval($_POST['package_id'] ?? 0);
+
+    if ($existingFeatPayment) {
+        flash('You already have a pending featuring payment (ref ' . $existingFeatPayment['reference_code'] . '). Wait for admin confirmation.', 'info');
+        header('Location: my_payments.php');
+        exit;
+    }
 
     if (!$isPaid) {
         // Free featuring — activate immediately
@@ -84,6 +95,11 @@ $packages = get_active_packages('featured_job_packages');
             <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
             <?php if ($request['featured']): ?>
                 <div class="alert alert-success">This job is already featured<?php echo $request['featured_end_date'] ? ' until ' . sanitize($request['featured_end_date']) : ''; ?>.</div>
+            <?php elseif ($existingFeatPayment): ?>
+                <div class="alert alert-info">
+                    You have a pending featuring payment (ref <strong><?php echo sanitize($existingFeatPayment['reference_code']); ?></strong>). Your job will be featured once we confirm your payment.
+                    <br><a href="my_payments.php" style="color:var(--primary);">Track payment →</a>
+                </div>
             <?php else: ?>
                 <?php if (!$isPaid): ?>
                     <p>Feature this job for <strong>free</strong> for 30 days. Featured jobs appear at the top of all listings and get more applications.</p>
