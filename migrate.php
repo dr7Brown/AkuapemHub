@@ -32,6 +32,11 @@ $requiredTables = [
     'platform_payments',
     'job_post_credits',
     'audit_logs',
+    'conversations',
+    'conversation_participants',
+    'chat_messages',
+    'message_reports',
+    'chat_audit_logs',
 ];
 
 function table_exists($tableName) {
@@ -361,6 +366,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             INDEX idx_business_messages_status (status),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'conversations' => "CREATE TABLE IF NOT EXISTS conversations (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            conversation_type ENUM('job_application','job_hired','worker_direct','direct','admin_granted') NOT NULL DEFAULT 'direct',
+            job_id INT UNSIGNED DEFAULT NULL,
+            created_by INT UNSIGNED NOT NULL,
+            status ENUM('active','blocked','closed') NOT NULL DEFAULT 'active',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_conv_status (status),
+            INDEX idx_conv_job_id (job_id),
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'conversation_participants' => "CREATE TABLE IF NOT EXISTS conversation_participants (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            conversation_id INT UNSIGNED NOT NULL,
+            user_id INT UNSIGNED NOT NULL,
+            joined_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE KEY uk_conv_user (conversation_id, user_id),
+            INDEX idx_cp_user_id (user_id),
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'chat_messages' => "CREATE TABLE IF NOT EXISTS chat_messages (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            conversation_id INT UNSIGNED NOT NULL,
+            sender_id INT UNSIGNED NOT NULL,
+            message TEXT NOT NULL,
+            message_type ENUM('text','image','file') NOT NULL DEFAULT 'text',
+            file_path VARCHAR(255) DEFAULT NULL,
+            is_read TINYINT(1) NOT NULL DEFAULT 0,
+            is_flagged TINYINT(1) NOT NULL DEFAULT 0,
+            flag_reason VARCHAR(120) DEFAULT NULL,
+            deleted_by_sender TINYINT(1) NOT NULL DEFAULT 0,
+            deleted_by_receiver TINYINT(1) NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_cm_conversation_id (conversation_id),
+            INDEX idx_cm_sender_id (sender_id),
+            INDEX idx_cm_created_at (created_at),
+            INDEX idx_cm_is_read (is_read),
+            FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'message_reports' => "CREATE TABLE IF NOT EXISTS message_reports (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            message_id INT UNSIGNED NOT NULL,
+            reported_by INT UNSIGNED NOT NULL,
+            reason VARCHAR(255) NOT NULL,
+            status ENUM('pending','reviewed','dismissed') NOT NULL DEFAULT 'pending',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_mr_status (status),
+            FOREIGN KEY (message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
+            FOREIGN KEY (reported_by) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+
+        'chat_audit_logs' => "CREATE TABLE IF NOT EXISTS chat_audit_logs (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            admin_id INT UNSIGNED NULL DEFAULT NULL,
+            action VARCHAR(80) NOT NULL,
+            target_user_id INT UNSIGNED NULL DEFAULT NULL,
+            conversation_id INT UNSIGNED NULL DEFAULT NULL,
+            details TEXT NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_cal_admin_id (admin_id),
+            INDEX idx_cal_target_user_id (target_user_id),
+            INDEX idx_cal_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
     ];
 
     $initData = "INSERT IGNORE INTO service_categories (name) VALUES
@@ -598,6 +672,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
                 $pdo->exec("ALTER TABLE platform_payments ADD INDEX idx_platform_payments_paystack_ref (paystack_reference)");
             }
         }
+        // Chat system: user messaging restriction columns
+        if (table_exists('users')) {
+            if (!$pdo->query("SHOW COLUMNS FROM users LIKE 'can_send_messages'")->fetch()) {
+                $pdo->exec("ALTER TABLE users ADD COLUMN can_send_messages TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN can_receive_messages TINYINT(1) NOT NULL DEFAULT 1, ADD COLUMN chat_ban_until DATETIME NULL DEFAULT NULL");
+            }
+        }
         // L3: confirmed_by_user_id + payment_method on platform_payments
         if (table_exists('platform_payments')) {
             if (!$pdo->query("SHOW COLUMNS FROM platform_payments LIKE 'confirmed_by_user_id'")->fetch()) {
@@ -638,7 +718,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             ('paystack_public_key', '', 'Paystack publishable key (pk_test_... or pk_live_...)'),
             ('paystack_secret_key', '', 'Paystack secret key (sk_test_... or sk_live_...)'),
             ('paystack_webhook_secret', '', 'Paystack webhook signature secret'),
-            ('paystack_mode', 'test', 'Paystack environment: test or live')");
+            ('paystack_mode', 'test', 'Paystack environment: test or live'),
+            ('chat_disabled', '0', 'Disable all in-platform messaging (1=disabled)'),
+            ('chat_allow_applicant_chat', '1', 'Allow job owner and applicant to chat'),
+            ('chat_allow_hired_chat', '1', 'Allow hired worker and job owner to chat'),
+            ('chat_allow_worker_worker', '0', 'Allow worker to worker direct messaging'),
+            ('chat_allow_direct_all', '0', 'Allow any user to message any other user freely')");
         // Seed default packages
         $pdo->exec("INSERT IGNORE INTO featured_job_packages (name, duration_days, price, status) VALUES
             ('7 Days', 7, 0.00, 'active'),

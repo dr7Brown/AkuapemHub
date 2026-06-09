@@ -7,15 +7,21 @@ if (!isset($user) || !$user) {
     return;
 }
 
-$navUnreadMessages = function_exists('get_unread_messages_count') ? get_unread_messages_count($user['id']) : 0;
-
 $jobsHref = $user['role'] === 'worker' ? 'worker_history.php' : 'dashboard.php';
+
+if (function_exists('get_total_unread_chat_count')) {
+    $navUnreadMessages = get_total_unread_chat_count($user['id']);
+} elseif (function_exists('get_unread_messages_count')) {
+    $navUnreadMessages = get_unread_messages_count($user['id']);
+} else {
+    $navUnreadMessages = 0;
+}
 
 $navItems = [
     'home' => ['href' => 'dashboard.php', 'icon' => '🏠', 'label' => 'Home'],
     'jobs' => ['href' => $jobsHref, 'icon' => '🧰', 'label' => 'Jobs'],
     'workers' => ['href' => 'find_workers.php', 'icon' => '🔍', 'label' => 'Workers'],
-    'messages' => ['href' => 'messages.php', 'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
+    'messages' => ['href' => 'chat.php', 'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
     'settings' => ['href' => 'settings.php', 'icon' => '⚙️', 'label' => 'Settings'],
 ];
 
