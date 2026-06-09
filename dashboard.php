@@ -5,6 +5,7 @@ require_once __DIR__ . '/functions.php';
 require_login();
 $user = current_user();
 $flash = get_flash();
+sweep_expired_featured();
 $categories = get_categories();
 $notificationCount = get_unread_notifications_count($user['id']);
 
@@ -266,7 +267,7 @@ if (is_worker()) {
                             <div class="request-head">
                                 <div>
                                     <h2><?php echo sanitize($request['title']); ?></h2>
-                                    <?php if ($request['featured']): ?>
+                                    <?php if (!empty($request['featured']) && (empty($request['featured_end_date']) || $request['featured_end_date'] >= date('Y-m-d'))): ?>
                                         <span class="badge badge-featured">Featured</span>
                                     <?php endif; ?>
                                     <p class="meta">
@@ -376,7 +377,7 @@ if (is_worker()) {
                             <div class="request-head">
                                 <div>
                                     <h2><?php echo sanitize($request['title']); ?></h2>
-                                    <?php if ($request['featured']): ?>
+                                    <?php if (!empty($request['featured']) && (empty($request['featured_end_date']) || $request['featured_end_date'] >= date('Y-m-d'))): ?>
                                         <span class="badge badge-featured">Featured</span>
                                     <?php endif; ?>
                                     <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
@@ -396,8 +397,13 @@ if (is_worker()) {
                                     <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
                                 <?php endif; ?>
                                 <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
-                                <?php if (!$request['featured'] && in_array($request['status'], ['pending', 'open'], true)): ?>
-                                    <a href="feature_job.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Feature job</a>
+                                <?php
+                                    $cFeatEnd    = $request['featured_end_date'] ?? null;
+                                    $cFeatActive = !empty($request['featured']) && (empty($cFeatEnd) || $cFeatEnd >= date('Y-m-d'));
+                                    $cRenewSoon  = !empty($request['featured']) && !empty($cFeatEnd) && $cFeatEnd < date('Y-m-d', strtotime('+7 days'));
+                                ?>
+                                <?php if (in_array($request['status'], ['pending', 'open'], true) && (!$cFeatActive || $cRenewSoon)): ?>
+                                    <a href="feature_job.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small"><?php echo $cRenewSoon ? '⭐ Renew feature' : '⭐ Feature job'; ?></a>
                                 <?php endif; ?>
                             </div>
                             <?php if ($request['status'] === 'completed'): ?>

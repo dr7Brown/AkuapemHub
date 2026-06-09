@@ -28,6 +28,12 @@ $existingFeatStmt = $pdo->prepare("SELECT id, reference_code FROM platform_payme
 $existingFeatStmt->execute([$user['id'], $requestId]);
 $existingFeatPayment = $existingFeatStmt->fetch();
 
+// Determine if currently active featured (not expired) vs eligible for renewal
+$featEndDate   = $request['featured_end_date'] ?? null;
+$featActive    = !empty($request['featured']) && ($featEndDate === null || $featEndDate >= date('Y-m-d'));
+$featRenewSoon = !empty($request['featured']) && $featEndDate !== null && $featEndDate < date('Y-m-d', strtotime('+7 days'));
+$canFeature    = !$featActive || $featRenewSoon;
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $packageId = intval($_POST['package_id'] ?? 0);
 
@@ -87,28 +93,36 @@ $packages = get_active_packages('featured_job_packages');
 <body class="has-bottom-nav">
     <header class="app-topbar">
         <a href="request_detail.php?id=<?php echo $requestId; ?>" class="button button-secondary button-small">Back</a>
-        <span class="brand">Feature this job</span>
+        <span class="brand"><?php echo ($featActive && !$featRenewSoon) ? 'Featured job' : 'Feature this job'; ?></span>
     </header>
     <main class="page-shell small-shell">
         <div class="card">
             <h2 style="margin-top: 0;"><?php echo sanitize($request['title']); ?></h2>
             <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
-            <?php if ($request['featured']): ?>
-                <div class="alert alert-success">This job is already featured<?php echo $request['featured_end_date'] ? ' until ' . sanitize($request['featured_end_date']) : ''; ?>.</div>
+
+            <?php if ($featActive && !$featRenewSoon): ?>
+                <div class="alert alert-success">
+                    ⭐ This job is featured until <strong><?php echo sanitize($featEndDate); ?></strong>.
+                </div>
             <?php elseif ($existingFeatPayment): ?>
                 <div class="alert alert-info">
                     You have a pending featuring payment (ref <strong><?php echo sanitize($existingFeatPayment['reference_code']); ?></strong>). Your job will be featured once we confirm your payment.
                     <br><a href="my_payments.php" style="color:var(--primary);">Track payment →</a>
                 </div>
             <?php else: ?>
+                <?php if ($featRenewSoon): ?>
+                    <div class="alert alert-warning" style="margin-bottom:14px;">
+                        ⚠️ Your featuring expires on <strong><?php echo sanitize($featEndDate); ?></strong>. Renew now to keep appearing at the top.
+                    </div>
+                <?php endif; ?>
                 <?php if (!$isPaid): ?>
-                    <p>Feature this job for <strong>free</strong> for 30 days. Featured jobs appear at the top of all listings and get more applications.</p>
+                    <p><?php echo $featRenewSoon ? 'Renew' : 'Feature'; ?> this job for <strong>free</strong> for 30 days. Featured jobs appear at the top of all listings and get more applications.</p>
                     <form method="post" action="feature_job.php">
                         <input type="hidden" name="request_id" value="<?php echo $requestId; ?>" />
-                        <button type="submit" class="button button-primary">Feature for free</button>
+                        <button type="submit" class="button button-primary"><?php echo $featRenewSoon ? 'Renew for free' : 'Feature for free'; ?></button>
                     </form>
                 <?php else: ?>
-                    <p>Choose a package to feature this job. Featured jobs appear at the top of all listings and get more applications.</p>
+                    <p>Choose a package to <?php echo $featRenewSoon ? 'renew' : 'feature'; ?> this job. Featured jobs appear at the top of all listings and get more applications.</p>
                     <?php if (empty($packages)): ?>
                         <div class="alert alert-error">No featuring packages are currently available. Check back later.</div>
                     <?php else: ?>
@@ -125,7 +139,7 @@ $packages = get_active_packages('featured_job_packages');
                                 </label>
                             <?php endforeach; ?>
                             <p class="meta" style="margin-top: 8px;">After submitting, contact us to confirm your payment. We'll activate your feature immediately once confirmed.</p>
-                            <button type="submit" class="button button-primary">Submit payment request</button>
+                            <button type="submit" class="button button-primary"><?php echo $featRenewSoon ? 'Submit renewal request' : 'Submit payment request'; ?></button>
                         </form>
                     <?php endif; ?>
                 <?php endif; ?>

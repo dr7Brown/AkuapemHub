@@ -613,19 +613,32 @@ function score_job_for_worker(array $job, array $worker) {
 }
 
 function rank_jobs_for_worker(array $jobs, array $worker) {
+    $today = date('Y-m-d');
     foreach ($jobs as &$job) {
         $match = score_job_for_worker($job, $worker);
         $job['match_score'] = $match['score'];
         $job['match_reasons'] = $match['reasons'];
         $job['match_distance_km'] = $match['distance_km'];
+        $job['_featured_active'] = (!empty($job['featured'])
+            && (empty($job['featured_end_date']) || $job['featured_end_date'] >= $today))
+            ? 1 : 0;
     }
     unset($job);
 
     usort($jobs, function ($a, $b) {
+        if ($b['_featured_active'] !== $a['_featured_active']) {
+            return $b['_featured_active'] <=> $a['_featured_active'];
+        }
         return $b['match_score'] <=> $a['match_score'];
     });
 
     return $jobs;
+}
+
+function sweep_expired_featured() {
+    global $pdo;
+    $pdo->exec("UPDATE service_requests SET featured = 0 WHERE featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
+    $pdo->exec("UPDATE worker_profiles SET is_featured = 0 WHERE is_featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
 }
 
 function extract_numeric_amount($text) {

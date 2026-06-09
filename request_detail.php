@@ -81,8 +81,12 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             </div>
             <div style="margin-top: 8px;">
                 <span class="badge" style="margin-left: 0;"><?php echo sanitize($request['category_name']); ?></span>
-                <?php if ($request['featured']): ?>
-                    <span class="badge badge-featured">⭐ Featured</span>
+                <?php
+                    $rdFeatEnd    = $request['featured_end_date'] ?? null;
+                    $rdFeatActive = !empty($request['featured']) && (empty($rdFeatEnd) || $rdFeatEnd >= date('Y-m-d'));
+                ?>
+                <?php if ($rdFeatActive): ?>
+                    <span class="badge badge-featured">⭐ Featured<?php echo $rdFeatEnd ? ' · until ' . sanitize($rdFeatEnd) : ''; ?></span>
                 <?php endif; ?>
             </div>
 
@@ -183,6 +187,10 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
         }
         $secondaryActions[] = ['link', 'messages.php?request_id=' . $request['id'], '✉️ Messages'];
         if (is_customer() && $request['customer_id'] === $user['id'] && $request['status'] !== 'completed' && $request['status'] !== 'cancelled') {
+            $rdRenewSoon = !empty($request['featured']) && !empty($rdFeatEnd) && $rdFeatEnd < date('Y-m-d', strtotime('+7 days'));
+            if (!$rdFeatActive || $rdRenewSoon) {
+                $secondaryActions[] = ['link', 'feature_job.php?id=' . $request['id'], $rdRenewSoon ? '⭐ Renew feature' : '⭐ Feature job'];
+            }
             $secondaryActions[] = ['link', 'cancel_request.php?request_id=' . $request['id'], 'Cancel request'];
             $secondaryActions[] = ['link', 'file_dispute.php?request_id=' . $request['id'], 'File dispute'];
         } elseif (is_worker() && $request['assigned_worker_id'] === $user['id'] && $request['status'] !== 'cancelled') {

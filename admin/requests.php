@@ -135,7 +135,19 @@ $requests = $stmt->fetchAll();
                         <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?> • GH₵ <?php echo sanitize($request['budget']); ?></p>
                         <p><?php echo sanitize($request['description']); ?></p>
                         <p>Customer: <?php echo sanitize($request['customer_name']); ?> • Contact: <?php echo sanitize($request['contact_info']); ?></p>
-                        <p class="meta">Payment: <?php echo strtoupper($request['payment_status']); ?> • Featured: <?php echo $request['featured'] ? 'Yes' : 'No'; ?></p>
+                        <?php
+                            $arFeatEnd    = $request['featured_end_date'] ?? null;
+                            $arFeatActive = !empty($request['featured']) && (empty($arFeatEnd) || $arFeatEnd >= date('Y-m-d'));
+                        ?>
+                        <p class="meta">Payment: <?php echo strtoupper($request['payment_status']); ?> • Featured:
+                            <?php if ($arFeatActive): ?>
+                                <span style="color:#22a06b;font-weight:600;">Yes<?php echo $arFeatEnd ? ' until ' . sanitize($arFeatEnd) : ''; ?></span>
+                            <?php elseif (!empty($request['featured']) && !$arFeatActive): ?>
+                                <span style="color:#ef4444;font-weight:600;">Expired (<?php echo sanitize($arFeatEnd); ?>)</span>
+                            <?php else: ?>
+                                No
+                            <?php endif; ?>
+                        </p>
                         <div class="request-footer">
                             <form method="post" class="inline-form" action="requests.php">
                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+sweep_expired_featured();
 $searchQuery = trim($_GET['q'] ?? '');
 $locationFilter = trim($_GET['location'] ?? '');
 $skillFilter = trim($_GET['skill'] ?? '');
