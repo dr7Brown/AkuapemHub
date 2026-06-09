@@ -482,25 +482,6 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
 
         <!-- FEATURED JOB PACKAGES TAB -->
         <div class="tab-panel <?php echo $tab === 'featured_jobs' ? 'active' : ''; ?>" id="tab-featured_jobs">
-            <?php if (!empty($activeFeaturedJobs)): ?>
-            <section class="panel" style="margin-bottom:16px;">
-                <h2 style="margin-top:0;">Currently Featured Jobs <span class="meta">(<?php echo count($activeFeaturedJobs); ?> active)</span></h2>
-                <table class="pkg-table">
-                    <thead><tr><th>Job</th><th>Posted by</th><th>Location</th><th>Featured from</th><th>Expires</th></tr></thead>
-                    <tbody>
-                        <?php foreach ($activeFeaturedJobs as $fj): ?>
-                            <tr>
-                                <td><a href="../request_detail.php?id=<?php echo $fj['id']; ?>" style="color:var(--primary);"><?php echo sanitize(substr($fj['title'], 0, 40)); ?></a></td>
-                                <td><?php echo sanitize($fj['customer_username'] ?: $fj['customer_name']); ?></td>
-                                <td><?php echo sanitize($fj['location'] ?: '—'); ?></td>
-                                <td><?php echo sanitize($fj['featured_start_date'] ?: '—'); ?></td>
-                                <td><?php echo $fj['featured_end_date'] ? sanitize($fj['featured_end_date']) : '∞'; ?></td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </section>
-            <?php endif; ?>
             <section class="panel">
                 <h2>Featured Job Packages</h2>
                 <table class="pkg-table">
@@ -544,6 +525,25 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                     </div>
                 </form>
             </section>
+            <?php if (!empty($activeFeaturedJobs)): ?>
+            <section class="panel">
+                <h2 style="margin-top:0;">Currently Featured Jobs <span class="meta">(<?php echo count($activeFeaturedJobs); ?> active)</span></h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Job</th><th>Posted by</th><th>Location</th><th>Featured from</th><th>Expires</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($activeFeaturedJobs as $fj): ?>
+                            <tr>
+                                <td><a href="../request_detail.php?id=<?php echo $fj['id']; ?>" style="color:var(--primary);"><?php echo sanitize(substr($fj['title'], 0, 40)); ?></a></td>
+                                <td><?php echo sanitize($fj['customer_username'] ?: $fj['customer_name']); ?></td>
+                                <td><?php echo sanitize($fj['location'] ?: '—'); ?></td>
+                                <td><?php echo sanitize($fj['featured_start_date'] ?: '—'); ?></td>
+                                <td><?php echo $fj['featured_end_date'] ? sanitize($fj['featured_end_date']) : '∞'; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </section>
+            <?php endif; ?>
         </div>
 
         <!-- FEATURED WORKER PACKAGES TAB -->
