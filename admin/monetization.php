@@ -18,14 +18,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'save_settings') {
+        $prevMode = get_platform_setting('monetization_mode', 'free');
         $mode = $_POST['monetization_mode'] ?? 'free';
         if (!in_array($mode, ['free', 'hybrid', 'paid'], true)) $mode = 'free';
         set_platform_setting('monetization_mode', $mode);
         foreach (['enable_paid_featured_jobs', 'enable_paid_featured_workers', 'enable_paid_verification_badges'] as $key) {
-            set_platform_setting($key, isset($_POST[$key]) ? '1' : '0');
+            set_platform_setting($key, ($_POST[$key] ?? '0') === '1' ? '1' : '0');
         }
-        $prevMode = get_platform_setting('monetization_mode', 'free');
-        log_audit_action($user['id'] ?? 0, 'monetization_updated', "Monetization mode set to '{$mode}'");
+        if ($prevMode !== $mode) {
+            log_audit_action($user['id'], 'monetization_updated', "Monetization mode changed from '{$prevMode}' to '{$mode}'");
+        } else {
+            log_audit_action($user['id'], 'monetization_updated', "Monetization feature toggles updated (mode: '{$mode}')");
+        }
         $success = 'Monetization settings saved.';
         $tab = 'settings';
 
@@ -168,6 +172,9 @@ $pendingPayments = $pdo->query("SELECT pp.*, u.name AS user_name, u.username FRO
 
 $allWorkers = $pdo->query("SELECT u.id, u.name, u.username, wp.is_verified, wp.verification_date, wp.verification_expiry FROM users u JOIN worker_profiles wp ON u.id = wp.user_id WHERE u.role = 'worker' AND u.banned = 0 ORDER BY wp.is_verified ASC, u.name ASC")->fetchAll();
 
+$pendingVerificationPayments = $pdo->query("SELECT pp.*, u.name AS user_name, u.username FROM platform_payments pp JOIN users u ON pp.user_id = u.id WHERE pp.payment_type = 'verification' AND pp.status = 'pending' ORDER BY pp.created_at ASC")->fetchAll();
+$pendingVerificationUserIds = array_column($pendingVerificationPayments, 'user_id');
+
 $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al JOIN users u ON al.admin_id = u.id ORDER BY al.created_at DESC LIMIT 50")->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -241,36 +248,36 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                             <p>All monetizable features require payment, regardless of individual settings.</p>
                         </label>
                     </div>
-                    <h2 style="margin-top: 24px;">Individual feature settings <span class="meta">(apply in Hybrid Mode)</span></h2>
-                    <table class="pkg-table">
-                        <thead><tr><th>Feature</th><th>Status</th></tr></thead>
-                        <tbody>
-                            <tr>
-                                <td><strong>Featured Job Posts</strong><br><span class="meta">Charge users to feature their job posts</span></td>
-                                <td>
-                                    <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_jobs" value="0" <?php echo !$enableFeaturedJobs ? 'checked' : ''; ?>> Free</label>
-                                    <label><input type="radio" name="enable_paid_featured_jobs" value="1" <?php echo $enableFeaturedJobs ? 'checked' : ''; ?>> Paid</label>
-                                    <input type="hidden" name="enable_paid_featured_jobs" value="0" />
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><strong>Featured Worker Profiles</strong><br><span class="meta">Charge workers to appear at top of search</span></td>
-                                <td>
-                                    <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_workers" value="0" <?php echo !$enableFeaturedWorkers ? 'checked' : ''; ?>> Free</label>
-                                    <label><input type="radio" name="enable_paid_featured_workers" value="1" <?php echo $enableFeaturedWorkers ? 'checked' : ''; ?>> Paid</label>
-                                    <input type="hidden" name="enable_paid_featured_workers" value="0" />
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><strong>Verification Badges</strong><br><span class="meta">Charge workers for the verified badge</span></td>
-                                <td>
-                                    <label style="margin-right:16px;"><input type="radio" name="enable_paid_verification_badges" value="0" <?php echo !$enableVerification ? 'checked' : ''; ?>> Free</label>
-                                    <label><input type="radio" name="enable_paid_verification_badges" value="1" <?php echo $enableVerification ? 'checked' : ''; ?>> Paid</label>
-                                    <input type="hidden" name="enable_paid_verification_badges" value="0" />
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <div id="feature-toggles-wrapper" style="margin-top: 24px;">
+                        <h2>Individual feature settings <span class="meta">(apply in Hybrid Mode only)</span></h2>
+                        <div id="feature-toggles-overlay" style="display:none; padding: 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); margin-bottom: 12px; color: var(--text-muted); font-size: 0.9rem;"></div>
+                        <table class="pkg-table" id="feature-toggles-table">
+                            <thead><tr><th>Feature</th><th>Status (Hybrid Mode)</th></tr></thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Featured Job Posts</strong><br><span class="meta">Charge users to feature their job posts</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_jobs" value="0" <?php echo !$enableFeaturedJobs ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_featured_jobs" value="1" <?php echo $enableFeaturedJobs ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Featured Worker Profiles</strong><br><span class="meta">Charge workers to appear at top of search</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_workers" value="0" <?php echo !$enableFeaturedWorkers ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_featured_workers" value="1" <?php echo $enableFeaturedWorkers ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Verification Badges</strong><br><span class="meta">Charge workers for the verified badge</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_verification_badges" value="0" <?php echo !$enableVerification ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_verification_badges" value="1" <?php echo $enableVerification ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                     <button type="submit" class="button button-primary" style="margin-top: 16px;">Save settings</button>
                 </form>
             </section>
@@ -411,13 +418,44 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                         <button type="button" class="button button-secondary" onclick="resetVerifForm()">Clear</button>
                     </div>
                 </form>
+                <?php if (!empty($pendingVerificationPayments)): ?>
+                    <h3 style="margin-top: 24px;">Pending Verification Payments <span class="badge" style="background:var(--primary);color:#fff;"><?php echo count($pendingVerificationPayments); ?></span></h3>
+                    <p class="meta">These workers have submitted a verification payment request. Confirm their payment below to grant the badge.</p>
+                    <table class="pkg-table">
+                        <thead><tr><th>Worker</th><th>Amount</th><th>Reference</th><th>Requested</th><th>Action</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($pendingVerificationPayments as $vp): ?>
+                                <tr>
+                                    <td><?php echo sanitize(display_name($vp)); ?></td>
+                                    <td>GH₵ <?php echo number_format($vp['amount'], 2); ?></td>
+                                    <td><code><?php echo sanitize($vp['reference_code'] ?: '—'); ?></code></td>
+                                    <td><?php echo sanitize($vp['created_at']); ?></td>
+                                    <td>
+                                        <form method="post" class="inline-form">
+                                            <input type="hidden" name="action" value="confirm_payment" />
+                                            <input type="hidden" name="payment_id" value="<?php echo $vp['id']; ?>" />
+                                            <button type="submit" class="button button-small button-primary">Confirm paid + verify</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
                 <h3 style="margin-top: 24px;">Worker Verification Status</h3>
                 <table class="pkg-table">
                     <thead><tr><th>Worker</th><th>Status</th><th>Expires</th><th>Actions</th></tr></thead>
                     <tbody>
                         <?php foreach ($allWorkers as $w): ?>
+                            <?php $hasPendingPayment = in_array($w['id'], $pendingVerificationUserIds, true); ?>
                             <tr>
-                                <td><?php echo sanitize(display_name($w)); ?> <span class="meta">(<?php echo sanitize($w['name']); ?>)</span></td>
+                                <td>
+                                    <?php echo sanitize(display_name($w)); ?>
+                                    <span class="meta">(<?php echo sanitize($w['name']); ?>)</span>
+                                    <?php if ($hasPendingPayment): ?>
+                                        <span class="badge" style="background:#f59e0b;color:#fff;font-size:0.75rem;margin-left:6px;">Payment pending</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo $w['is_verified'] ? '<span class="status status-open">VERIFIED ✓</span>' : '<span class="status status-pending">Unverified</span>'; ?></td>
                                 <td><?php echo $w['verification_expiry'] ? sanitize($w['verification_expiry']) : '—'; ?></td>
                                 <td>
@@ -425,7 +463,7 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                                         <form method="post" class="inline-form">
                                             <input type="hidden" name="action" value="verify_worker_free" />
                                             <input type="hidden" name="worker_user_id" value="<?php echo $w['id']; ?>" />
-                                            <button type="submit" class="button button-small button-primary">Verify</button>
+                                            <button type="submit" class="button button-small button-primary">Verify now</button>
                                         </form>
                                     <?php else: ?>
                                         <form method="post" class="inline-form" onsubmit="return confirm('Revoke verification for this worker?')">
@@ -510,13 +548,40 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
             });
         });
 
-        // Mode card radio highlight
+        // Mode card radio highlight + feature-toggles dimming
+        function applyModeUi(mode) {
+            var overlay = document.getElementById('feature-toggles-overlay');
+            var table   = document.getElementById('feature-toggles-table');
+            if (mode === 'free') {
+                overlay.style.display = 'block';
+                overlay.textContent = 'Individual settings are ignored in Free Mode — all features are free for everyone.';
+                table.style.opacity = '0.4';
+                table.style.pointerEvents = 'none';
+            } else if (mode === 'paid') {
+                overlay.style.display = 'block';
+                overlay.textContent = 'Individual settings are ignored in Paid Mode — all features require payment.';
+                table.style.opacity = '0.4';
+                table.style.pointerEvents = 'none';
+            } else {
+                overlay.style.display = 'none';
+                table.style.opacity = '';
+                table.style.pointerEvents = '';
+            }
+        }
+
         document.querySelectorAll('.mode-card input[type="radio"]').forEach(function (radio) {
             radio.addEventListener('change', function () {
                 document.querySelectorAll('.mode-card').forEach(function (c) { c.classList.remove('selected'); });
                 radio.closest('.mode-card').classList.add('selected');
+                applyModeUi(radio.value);
             });
         });
+
+        // Apply on page load
+        (function () {
+            var checked = document.querySelector('.mode-card input[type="radio"]:checked');
+            if (checked) applyModeUi(checked.value);
+        })();
 
         function editPackage(type, id, name, days, price, status) {
             document.getElementById(type + '_id').value = id;

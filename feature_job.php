@@ -50,6 +50,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo->prepare('INSERT INTO platform_payments (user_id, payment_type, reference_id, package_id, amount, status, reference_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')
         ->execute([$user['id'], 'featured_job', $requestId, $packageId, $package['price'], 'pending', $refCode]);
 
+    notify_admins_and_managers(
+        'Featured job payment pending',
+        display_name($user) . ' submitted payment ref ' . $refCode . ' for "' . $request['title'] . '" (' . $package['name'] . ', GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Pending Payments.',
+        'info'
+    );
+
     flash("Payment request submitted. Reference: {$refCode}. Once our team confirms your payment of GH₵" . number_format($package['price'], 2) . ", your job will be featured.", 'success');
     header('Location: request_detail.php?id=' . $requestId);
     exit;

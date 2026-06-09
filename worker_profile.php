@@ -90,7 +90,20 @@ $schedule = get_worker_schedule($profile['id']);
                         <span class="meta">expires <?php echo sanitize($profile['verification_expiry']); ?></span>
                     <?php endif; ?>
                 <?php else: ?>
-                    <span class="meta" style="font-size:0.9rem;">Not verified — admin can grant verification from the admin panel.</span>
+                    <?php
+                    // Check if worker already has a pending verification payment
+                    $pendingVerifStmt = $pdo->prepare("SELECT id FROM platform_payments WHERE user_id = ? AND payment_type = 'verification' AND status = 'pending'");
+                    $pendingVerifStmt->execute([$user['id']]);
+                    $hasPendingVerif = (bool) $pendingVerifStmt->fetch();
+                    ?>
+                    <?php if ($hasPendingVerif): ?>
+                        <span class="badge" style="background:#f59e0b;color:#fff;">Verification payment pending</span>
+                        <span class="meta" style="font-size:0.9rem;">Awaiting admin confirmation.</span>
+                    <?php elseif (is_feature_paid('enable_paid_verification_badges')): ?>
+                        <a href="request_verification.php" class="button button-secondary button-small">Request Verification</a>
+                    <?php else: ?>
+                        <span class="meta" style="font-size:0.9rem;">Not verified — admin can grant verification from the admin panel.</span>
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
         </div>

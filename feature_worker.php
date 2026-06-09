@@ -43,6 +43,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo->prepare('INSERT INTO platform_payments (user_id, payment_type, reference_id, package_id, amount, status, reference_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')
         ->execute([$user['id'], 'featured_worker', $profile['id'], $packageId, $package['price'], 'pending', $refCode]);
 
+    notify_admins_and_managers(
+        'Featured worker payment pending',
+        display_name($user) . ' submitted payment ref ' . $refCode . ' for profile promotion (' . $package['name'] . ', GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Pending Payments.',
+        'info'
+    );
+
     flash("Payment request submitted. Reference: {$refCode}. Once our team confirms your payment of GH₵" . number_format($package['price'], 2) . ", your profile will be featured.", 'success');
     header('Location: worker_profile.php');
     exit;
