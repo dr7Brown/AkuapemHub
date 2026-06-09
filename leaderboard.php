@@ -33,7 +33,19 @@ $trendingCategories = get_trending_categories(5, 30);
                     <article class="request-card">
                         <div class="request-head">
                             <div>
-                                <h2>#<?php echo $index + 1; ?> <?php echo sanitize($worker['name']); ?></h2>
+                                <h2>
+                                    #<?php echo $index + 1; ?> <?php echo sanitize($worker['name']); ?>
+                                    <?php if (!empty($worker['is_verified'])): ?>
+                                        <span style="display:inline-block;background:#22a06b;color:#fff;font-size:0.72rem;font-weight:700;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px;">✓ Verified</span>
+                                    <?php endif; ?>
+                                    <?php
+                                        $wFeatActive = !empty($worker['is_featured']) &&
+                                            (empty($worker['featured_end_date']) || $worker['featured_end_date'] >= date('Y-m-d'));
+                                    ?>
+                                    <?php if ($wFeatActive): ?>
+                                        <span style="display:inline-block;background:#f59e0b;color:#fff;font-size:0.72rem;font-weight:700;padding:1px 7px;border-radius:20px;vertical-align:middle;margin-left:4px;">⭐ Featured</span>
+                                    <?php endif; ?>
+                                </h2>
                                 <p class="meta"><?php echo sanitize($worker['location'] ?: 'Location not set'); ?> • <?php echo sanitize(ucfirst($worker['subscription_status'])); ?></p>
                             </div>
                             <span class="status status-completed"><?php echo number_format($worker['avg_rating'], 1); ?>/5 <?php echo rating_stars(round($worker['avg_rating'])); ?></span>

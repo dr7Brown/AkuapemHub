@@ -126,8 +126,11 @@ $packages = get_active_packages('worker_service_packages');
                             <input type="radio" name="package_id" value="<?php echo $pkg['id']; ?>" required />
                             <span>
                                 <strong><?php echo sanitize($pkg['name']); ?></strong>
-                                <span class="meta"> — <?php echo $pkg['duration_days']; ?> days</span><br>
-                                <strong style="color:var(--primary);">GH₵ <?php echo number_format($pkg['price'], 2); ?></strong>
+                                <span class="meta"> — <?php echo $pkg['duration_days']; ?> days listing</span>
+                                <?php if (!empty($pkg['description'])): ?>
+                                    <br><span class="meta" style="font-size:0.83rem;"><?php echo sanitize($pkg['description']); ?></span>
+                                <?php endif; ?>
+                                <br><strong style="color:var(--primary);">GH₵ <?php echo number_format($pkg['price'], 2); ?></strong>
                             </span>
                         </label>
                     <?php endforeach; ?>

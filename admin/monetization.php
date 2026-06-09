@@ -72,12 +72,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             } elseif ($pkgType === 'job_posting') {
                 $pkgPostCount = intval($_POST['pkg_post_count'] ?? -1);
+                $pkgDesc      = trim($_POST['pkg_description'] ?? '') ?: null;
                 if ($pkgId > 0) {
-                    $pdo->prepare("UPDATE $table SET name = ?, post_count = ?, price = ?, status = ? WHERE id = ?")
-                        ->execute([$pkgName, $pkgPostCount, $pkgPrice, $pkgStatus, $pkgId]);
+                    $pdo->prepare("UPDATE $table SET name = ?, description = ?, post_count = ?, price = ?, status = ? WHERE id = ?")
+                        ->execute([$pkgName, $pkgDesc, $pkgPostCount, $pkgPrice, $pkgStatus, $pkgId]);
                 } else {
-                    $pdo->prepare("INSERT INTO $table (name, post_count, price, status) VALUES (?, ?, ?, ?)")
-                        ->execute([$pkgName, $pkgPostCount, $pkgPrice, $pkgStatus]);
+                    $pdo->prepare("INSERT INTO $table (name, description, post_count, price, status) VALUES (?, ?, ?, ?, ?)")
+                        ->execute([$pkgName, $pkgDesc, $pkgPostCount, $pkgPrice, $pkgStatus]);
+                }
+            } elseif ($pkgType === 'worker_service') {
+                $pkgDesc = trim($_POST['pkg_description'] ?? '') ?: null;
+                if ($pkgId > 0) {
+                    $pdo->prepare("UPDATE $table SET name = ?, description = ?, duration_days = ?, price = ?, status = ? WHERE id = ?")
+                        ->execute([$pkgName, $pkgDesc, $pkgDays, $pkgPrice, $pkgStatus, $pkgId]);
+                } else {
+                    $pdo->prepare("INSERT INTO $table (name, description, duration_days, price, status) VALUES (?, ?, ?, ?, ?)")
+                        ->execute([$pkgName, $pkgDesc, $pkgDays, $pkgPrice, $pkgStatus]);
                 }
             } else {
                 if ($pkgId > 0) {
@@ -117,7 +127,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tab = $tabMap2[$pkgType] ?? 'settings';
 
     } elseif ($action === 'confirm_payment') {
-        $paymentId = intval($_POST['payment_id'] ?? 0);
+        $paymentId     = intval($_POST['payment_id'] ?? 0);
+        $paymentMethod = trim($_POST['payment_method'] ?? '');
+        $allowedMethods = ['cash', 'mobile_money', 'bank_transfer', 'other'];
+        if (!in_array($paymentMethod, $allowedMethods, true)) $paymentMethod = 'other';
         $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ?');
         $stmt->execute([$paymentId, 'pending']);
         $payment = $stmt->fetch();
@@ -125,8 +138,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Paystack payments are confirmed automatically. Manual confirmation is not allowed.';
             $tab = 'payments';
         } elseif ($payment) {
-            $pdo->prepare('UPDATE platform_payments SET status = ?, paid_at = NOW() WHERE id = ?')
-                ->execute(['paid', $paymentId]);
+            $pdo->prepare('UPDATE platform_payments SET status = ?, paid_at = NOW(), confirmed_by_user_id = ?, payment_method = ? WHERE id = ?')
+                ->execute(['paid', $user['id'], $paymentMethod, $paymentId]);
             if ($payment['payment_type'] === 'featured_job' && $payment['reference_id']) {
                 $pkg = $pdo->prepare('SELECT duration_days FROM featured_job_packages WHERE id = ?');
                 $pkg->execute([$payment['package_id']]);
@@ -244,6 +257,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = 'Resubmission requested. Worker notified.';
         }
         $tab = 'verification';
+
+    } elseif ($action === 'unfeature_job') {
+        $jobId = intval($_POST['job_id'] ?? 0);
+        if ($jobId > 0) {
+            $pdo->prepare('UPDATE service_requests SET featured = 0, featured_end_date = CURDATE() WHERE id = ?')
+                ->execute([$jobId]);
+            log_audit_action($user['id'], 'job_unfeatured', "Removed featured status for job ID {$jobId}");
+            $success = 'Job featured status removed.';
+        }
+        $tab = 'featured_jobs';
 
     } elseif ($action === 'unfeature_worker') {
         $workerId = intval($_POST['worker_user_id'] ?? 0);
@@ -619,7 +642,7 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
             <section class="panel">
                 <h2 style="margin-top:0;">Currently Featured Jobs <span class="meta">(<?php echo count($activeFeaturedJobs); ?> active)</span></h2>
                 <table class="pkg-table">
-                    <thead><tr><th>Job</th><th>Posted by</th><th>Location</th><th>Featured from</th><th>Expires</th></tr></thead>
+                    <thead><tr><th>Job</th><th>Posted by</th><th>Location</th><th>Featured from</th><th>Expires</th><th>Action</th></tr></thead>
                     <tbody>
                         <?php foreach ($activeFeaturedJobs as $fj): ?>
                             <tr>
@@ -628,6 +651,13 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                                 <td><?php echo sanitize($fj['location'] ?: '—'); ?></td>
                                 <td><?php echo sanitize($fj['featured_start_date'] ?: '—'); ?></td>
                                 <td><?php echo $fj['featured_end_date'] ? sanitize($fj['featured_end_date']) : '∞'; ?></td>
+                                <td>
+                                    <form method="post" class="inline-form" onsubmit="return confirm('Remove featured status for this job?')">
+                                        <input type="hidden" name="action" value="unfeature_job" />
+                                        <input type="hidden" name="job_id" value="<?php echo $fj['id']; ?>" />
+                                        <button type="submit" class="button button-small button-secondary">Remove</button>
+                                    </form>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -872,7 +902,7 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                                 <td><?php echo number_format($pkg['price'], 2); ?></td>
                                 <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
                                 <td>
-                                    <button class="button button-small button-secondary" onclick="editJobPostPkg(<?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', <?php echo $pkg['post_count']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                    <button class="button button-small button-secondary" onclick="editJobPostPkg(<?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', '<?php echo sanitize($pkg['description'] ?? ''); ?>', <?php echo $pkg['post_count']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
                                     <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
                                         <input type="hidden" name="action" value="delete_package" />
                                         <input type="hidden" name="pkg_type" value="job_posting" />
@@ -891,6 +921,8 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                     <input type="hidden" name="pkg_id" id="job_posting_id" value="0" />
                     <label>Package name</label>
                     <input type="text" name="pkg_name" id="job_posting_name" required placeholder="e.g. Single Post" />
+                    <label>Description <span class="meta">(shown to customers — optional)</span></label>
+                    <textarea name="pkg_description" id="job_posting_description" rows="2" placeholder="e.g. Post one job to the marketplace. Credits never expire." style="resize:vertical;"></textarea>
                     <label>Post count (-1 for unlimited)</label>
                     <input type="number" name="pkg_post_count" id="job_posting_post_count" required value="1" min="-1" />
                     <label>Price (GH₵)</label>
@@ -919,7 +951,7 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                                 <td><?php echo number_format($pkg['price'], 2); ?></td>
                                 <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
                                 <td>
-                                    <button class="button button-small button-secondary" onclick="editPackage('worker_service', <?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', <?php echo $pkg['duration_days']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                    <button class="button button-small button-secondary" onclick="editPackage('worker_service', <?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', '<?php echo sanitize($pkg['description'] ?? ''); ?>', <?php echo $pkg['duration_days']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
                                     <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
                                         <input type="hidden" name="action" value="delete_package" />
                                         <input type="hidden" name="pkg_type" value="worker_service" />
@@ -938,6 +970,8 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                     <input type="hidden" name="pkg_id" id="worker_service_id" value="0" />
                     <label>Package name</label>
                     <input type="text" name="pkg_name" id="worker_service_name" required placeholder="e.g. Monthly Listing" />
+                    <label>Description <span class="meta">(shown to workers — optional)</span></label>
+                    <textarea name="pkg_description" id="worker_service_description" rows="2" placeholder="e.g. Appear in Find Workers for 30 days. Renew anytime." style="resize:vertical;"></textarea>
                     <label>Duration (days)</label>
                     <input type="number" name="pkg_days" id="worker_service_days" required min="1" value="30" />
                     <label>Price (GH₵)</label>
@@ -1056,9 +1090,15 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                                         <?php if ($payIsPaystack): ?>
                                             <span class="meta" style="font-size:0.8rem;">Auto-confirmed by Paystack</span>
                                         <?php else: ?>
-                                            <form method="post" class="inline-form" style="display:inline-block;margin-right:4px;">
+                                            <form method="post" class="inline-form" style="display:inline-flex;align-items:center;gap:4px;margin-right:4px;">
                                                 <input type="hidden" name="action" value="confirm_payment" />
                                                 <input type="hidden" name="payment_id" value="<?php echo $pay['id']; ?>" />
+                                                <select name="payment_method" style="font-size:0.8rem;padding:3px 6px;border:1px solid var(--border);border-radius:4px;">
+                                                    <option value="cash">Cash</option>
+                                                    <option value="mobile_money">Mobile Money</option>
+                                                    <option value="bank_transfer">Bank Transfer</option>
+                                                    <option value="other">Other</option>
+                                                </select>
                                                 <button type="submit" class="button button-small button-primary">✓ Confirm</button>
                                             </form>
                                             <form method="post" class="inline-form" style="display:inline-block;" onsubmit="return confirm('Reject this payment? The user will be notified.')">
@@ -1082,7 +1122,7 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                     <div class="empty-state">No completed or failed payments yet.</div>
                 <?php else: ?>
                     <table class="pkg-table">
-                        <thead><tr><th>User</th><th>Type</th><th>Amount</th><th>Reference</th><th>Status</th><th>Date</th></tr></thead>
+                        <thead><tr><th>User</th><th>Type</th><th>Amount</th><th>Reference</th><th>Method</th><th>Status</th><th>Date</th></tr></thead>
                         <tbody>
                             <?php foreach ($paymentHistory as $ph): ?>
                                 <tr>
@@ -1093,6 +1133,7 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                                     </td>
                                     <td>GH₵ <?php echo number_format($ph['amount'], 2); ?></td>
                                     <td><code><?php echo sanitize($ph['reference_code'] ?: '—'); ?></code></td>
+                                    <td class="meta"><?php echo sanitize($ph['payment_method'] ? ucwords(str_replace('_', ' ', $ph['payment_method'])) : (($ph['gateway'] ?? '') === 'paystack' ? 'Paystack' : '—')); ?></td>
                                     <td>
                                         <?php if ($ph['status'] === 'paid'): ?>
                                             <span class="status status-open">PAID</span>
@@ -1180,9 +1221,11 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
             if (checked) applyModeUi(checked.value);
         })();
 
-        function editPackage(type, id, name, days, price, status) {
+        function editPackage(type, id, name, desc, days, price, status) {
             document.getElementById(type + '_id').value = id;
             document.getElementById(type + '_name').value = name;
+            var descEl = document.getElementById(type + '_description');
+            if (descEl) descEl.value = desc;
             document.getElementById(type + '_days').value = days;
             document.getElementById(type + '_price').value = price;
             document.getElementById(type + '_status').value = status;
@@ -1194,9 +1237,10 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
             document.getElementById('form-' + type).reset();
         }
 
-        function editJobPostPkg(id, name, postCount, price, status) {
+        function editJobPostPkg(id, name, desc, postCount, price, status) {
             document.getElementById('job_posting_id').value = id;
             document.getElementById('job_posting_name').value = name;
+            document.getElementById('job_posting_description').value = desc;
             document.getElementById('job_posting_post_count').value = postCount;
             document.getElementById('job_posting_price').value = price;
             document.getElementById('job_posting_status').value = status;

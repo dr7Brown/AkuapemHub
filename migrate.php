@@ -288,6 +288,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         'job_posting_packages' => "CREATE TABLE IF NOT EXISTS job_posting_packages (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(80) NOT NULL,
+            description TEXT NULL DEFAULT NULL,
             post_count INT NOT NULL DEFAULT 1,
             price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             status ENUM('active','inactive') NOT NULL DEFAULT 'active'
@@ -296,6 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
         'worker_service_packages' => "CREATE TABLE IF NOT EXISTS worker_service_packages (
             id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             name VARCHAR(80) NOT NULL,
+            description TEXT NULL DEFAULT NULL,
             duration_days SMALLINT UNSIGNED NOT NULL DEFAULT 30,
             price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             status ENUM('active','inactive') NOT NULL DEFAULT 'active'
@@ -314,6 +316,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             paystack_transaction_id BIGINT UNSIGNED DEFAULT NULL,
             currency CHAR(3) NOT NULL DEFAULT 'GHS',
             gateway VARCHAR(20) NOT NULL DEFAULT 'manual',
+            confirmed_by_user_id INT UNSIGNED NULL DEFAULT NULL,
+            payment_method VARCHAR(30) NULL DEFAULT NULL,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             paid_at DATETIME DEFAULT NULL,
             INDEX idx_platform_payments_user_id (user_id),
@@ -592,6 +596,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             if (!$pdo->query("SHOW COLUMNS FROM platform_payments LIKE 'paystack_reference'")->fetch()) {
                 $pdo->exec("ALTER TABLE platform_payments ADD COLUMN paystack_reference VARCHAR(100) DEFAULT NULL, ADD COLUMN paystack_transaction_id BIGINT UNSIGNED DEFAULT NULL, ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'GHS', ADD COLUMN gateway VARCHAR(20) NOT NULL DEFAULT 'manual'");
                 $pdo->exec("ALTER TABLE platform_payments ADD INDEX idx_platform_payments_paystack_ref (paystack_reference)");
+            }
+        }
+        // L3: confirmed_by_user_id + payment_method on platform_payments
+        if (table_exists('platform_payments')) {
+            if (!$pdo->query("SHOW COLUMNS FROM platform_payments LIKE 'confirmed_by_user_id'")->fetch()) {
+                $pdo->exec("ALTER TABLE platform_payments ADD COLUMN confirmed_by_user_id INT UNSIGNED NULL DEFAULT NULL, ADD COLUMN payment_method VARCHAR(30) NULL DEFAULT NULL");
+            }
+        }
+        // L5: description on job_posting_packages and worker_service_packages
+        if (table_exists('job_posting_packages')) {
+            if (!$pdo->query("SHOW COLUMNS FROM job_posting_packages LIKE 'description'")->fetch()) {
+                $pdo->exec("ALTER TABLE job_posting_packages ADD COLUMN description TEXT NULL DEFAULT NULL AFTER name");
+            }
+        }
+        if (table_exists('worker_service_packages')) {
+            if (!$pdo->query("SHOW COLUMNS FROM worker_service_packages LIKE 'description'")->fetch()) {
+                $pdo->exec("ALTER TABLE worker_service_packages ADD COLUMN description TEXT NULL DEFAULT NULL AFTER name");
             }
         }
         // Make audit_logs.admin_id nullable so system actions (admin_id=0/null) are allowed

@@ -144,6 +144,9 @@ $packages = get_active_packages('job_posting_packages');
                                 <?php else: ?>
                                     <span class="meta"> — <?php echo $pkg['post_count']; ?> post<?php echo $pkg['post_count'] > 1 ? 's' : ''; ?></span>
                                 <?php endif; ?>
+                                <?php if (!empty($pkg['description'])): ?>
+                                    <br><span class="meta" style="font-size:0.83rem;"><?php echo sanitize($pkg['description']); ?></span>
+                                <?php endif; ?>
                                 <br><strong style="color:var(--primary);">GH₵ <?php echo number_format($pkg['price'], 2); ?></strong>
                             </span>
                         </label>
