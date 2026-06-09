@@ -652,6 +652,42 @@ function sweep_expired_featured() {
     $pdo->exec("UPDATE service_requests SET featured = 0 WHERE featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET is_featured = 0 WHERE is_featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET is_verified = 0, verification_status = 'expired' WHERE is_verified = 1 AND verification_expiry IS NOT NULL AND verification_expiry < CURDATE()");
+    $pdo->exec("UPDATE worker_profiles SET service_fee_status = 'free' WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry < CURDATE()");
+
+    // H2: notify workers whose service listing expires within 7 days (once per expiry cycle)
+    $expiring = $pdo->query("SELECT user_id, service_fee_expiry FROM worker_profiles WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND service_renewal_notice_sent = 0")->fetchAll();
+    foreach ($expiring as $row) {
+        notify_user($row['user_id'], 'Service listing expiring soon', 'Your service listing expires on ' . $row['service_fee_expiry'] . '. Renew now to stay visible in Find Workers.', 'warning');
+        $pdo->prepare("UPDATE worker_profiles SET service_renewal_notice_sent = 1 WHERE user_id = ?")->execute([$row['user_id']]);
+    }
+}
+
+function consume_job_post_credit(int $userId, int $jobId): bool {
+    global $pdo;
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("SELECT id, posts_remaining FROM job_post_credits WHERE user_id = ? AND posts_remaining > 0 ORDER BY created_at ASC LIMIT 1 FOR UPDATE");
+        $stmt->execute([$userId]);
+        $credit = $stmt->fetch();
+        if (!$credit) {
+            $pdo->rollBack();
+            return false;
+        }
+        $pdo->prepare("UPDATE job_post_credits SET posts_remaining = posts_remaining - 1 WHERE id = ?")->execute([$credit['id']]);
+        $pdo->prepare("UPDATE service_requests SET posting_fee_status = 'paid' WHERE id = ?")->execute([$jobId]);
+        $pdo->commit();
+        return true;
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        return false;
+    }
+}
+
+function get_job_post_credits_remaining(int $userId): int {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(posts_remaining), 0) FROM job_post_credits WHERE user_id = ? AND posts_remaining > 0");
+    $stmt->execute([$userId]);
+    return (int)$stmt->fetchColumn();
 }
 
 function extract_numeric_amount($text) {

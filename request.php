@@ -39,14 +39,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($postingFeePaid) {
-            notify_admins_and_managers(
-                'New job — posting fee required',
-                display_name($user) . ' posted "' . $title . '" but it requires a posting fee before approval. See Monetization → Pending Payments.',
-                'info'
-            );
-            flash('Job saved. Please complete the posting fee payment to submit it for review.', 'info');
-            header('Location: pay_job_post.php?id=' . $newJobId);
-            exit;
+            // Check for an existing credit bundle before requiring a new payment
+            if (consume_job_post_credit($user['id'], $newJobId)) {
+                $creditsLeft = get_job_post_credits_remaining($user['id']);
+                flash('Job posted using your credit bundle.' . ($creditsLeft > 0 ? ' You have ' . $creditsLeft . ' post credit(s) remaining.' : ''), 'success');
+                // fall through to normal admin-notify + redirect below
+            } else {
+                notify_admins_and_managers(
+                    'New job — posting fee required',
+                    display_name($user) . ' posted "' . $title . '" but it requires a posting fee before approval. See Monetization → Pending Payments.',
+                    'info'
+                );
+                flash('Job saved. Please complete the posting fee payment to submit it for review.', 'info');
+                header('Location: pay_job_post.php?id=' . $newJobId);
+                exit;
+            }
         }
 
         $adminMessage = "New service request created by {$user['name']} ({$user['email']}):\n\n" .
@@ -63,6 +70,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 }
+
+$postingFeeEnabled = is_feature_paid('enable_paid_job_posting');
+$availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['id']) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -78,6 +88,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
+        <?php if ($postingFeeEnabled && $availableCredits > 0): ?>
+            <div class="alert alert-success" style="margin-bottom:12px;">
+                🎟️ You have <strong><?php echo $availableCredits; ?> post credit<?php echo $availableCredits !== 1 ? 's' : ''; ?></strong> — this job will be posted using a credit from your bundle.
+            </div>
+        <?php elseif ($postingFeeEnabled): ?>
+            <div class="alert alert-info" style="margin-bottom:12px;">
+                💳 A posting fee is required. You'll be prompted to pay after submitting.
+            </div>
+        <?php endif; ?>
         <form class="card form-card" method="post" action="request.php">
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>

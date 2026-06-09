@@ -138,6 +138,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($payment['payment_type'] === 'job_post' && $payment['reference_id']) {
                 $pdo->prepare("UPDATE service_requests SET posting_fee_status = 'paid' WHERE id = ?")
                     ->execute([$payment['reference_id']]);
+                // Create bundle credits if post_count > 1
+                if ($payment['package_id']) {
+                    $pkgInfo = $pdo->prepare('SELECT post_count FROM job_posting_packages WHERE id = ?');
+                    $pkgInfo->execute([$payment['package_id']]);
+                    $pkgInfo = $pkgInfo->fetch();
+                    if ($pkgInfo && $pkgInfo['post_count'] > 1) {
+                        $pdo->prepare('INSERT INTO job_post_credits (user_id, payment_id, posts_total, posts_remaining, created_at) VALUES (?, ?, ?, ?, NOW())')
+                            ->execute([$payment['user_id'], $payment['id'], $pkgInfo['post_count'], $pkgInfo['post_count'] - 1]);
+                    }
+                }
                 notify_user($payment['user_id'], 'Job posting fee confirmed', 'Your job posting fee has been confirmed. Your job is now submitted for admin review.', 'success');
                 log_audit_action($user['id'], 'payment_confirmed', "Confirmed job_post payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}, job ID {$payment['reference_id']}");
             } elseif ($payment['payment_type'] === 'worker_service' && $payment['reference_id']) {
@@ -145,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pkgRow->execute([$payment['package_id']]);
                 $pkgRow = $pkgRow->fetch();
                 $days = $pkgRow ? (int)$pkgRow['duration_days'] : 30;
-                $pdo->prepare("UPDATE worker_profiles SET service_fee_status = 'paid', service_fee_expiry = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE id = ?")
+                $pdo->prepare("UPDATE worker_profiles SET service_fee_status = 'paid', service_fee_expiry = DATE_ADD(CURDATE(), INTERVAL ? DAY), service_renewal_notice_sent = 0 WHERE id = ?")
                     ->execute([$days, $payment['reference_id']]);
                 notify_user($payment['user_id'], 'Service listing confirmed', 'Your worker service listing is now active. You will appear in search results for ' . $days . ' days.', 'success');
                 log_audit_action($user['id'], 'payment_confirmed', "Confirmed worker_service payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}, worker profile ID {$payment['reference_id']}");
