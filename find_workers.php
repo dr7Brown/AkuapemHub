@@ -57,7 +57,11 @@ $sql = "SELECT u.id, u.name, u.username, u.created_at, w.location, w.latitude, w
         LEFT JOIN ratings r ON sr.id = r.request_id
         WHERE " . implode(' AND ', $where) . "
         GROUP BY u.id, u.name, u.username, u.created_at, w.location, w.latitude, w.longitude, w.subscription_status, w.availability, w.is_featured, w.featured_end_date, w.is_verified
-        ORDER BY (w.is_featured = 1 AND (w.featured_end_date IS NULL OR w.featured_end_date >= CURDATE())) DESC, " . $orderBy . "
+        ORDER BY
+          (w.is_featured = 1 AND (w.featured_end_date IS NULL OR w.featured_end_date >= CURDATE()) AND w.is_verified = 1) DESC,
+          (w.is_featured = 1 AND (w.featured_end_date IS NULL OR w.featured_end_date >= CURDATE())) DESC,
+          w.is_verified DESC,
+          " . $orderBy . "
         LIMIT 100";
 
 $stmt = $pdo->prepare($sql);

@@ -156,7 +156,11 @@ if (is_worker()) {
             <?php endif; ?>
         </section>
 
-        <?php if (is_worker() && $profile): ?>
+        <?php if (is_worker() && $profile):
+            $dbFeatEnd    = $profile['featured_end_date'] ?? null;
+            $dbFeatActive = !empty($profile['is_featured']) && (empty($dbFeatEnd) || $dbFeatEnd >= date('Y-m-d'));
+            $dbRenewSoon  = !empty($profile['is_featured']) && !empty($dbFeatEnd) && $dbFeatEnd < date('Y-m-d', strtotime('+7 days'));
+        ?>
             <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--border);margin-bottom:8px;">
                 <span style="font-size:1.25rem;">🛡️</span>
                 <div style="flex:1;min-width:0;">
@@ -171,6 +175,13 @@ if (is_worker()) {
                     <?php else: ?>
                         <span style="color:var(--text-muted);font-size:0.87rem;">Not verified</span>
                         <a href="<?php echo is_feature_paid('enable_paid_verification_badges') ? 'request_verification.php' : '#'; ?>" class="button button-secondary button-small" style="margin-left:10px;font-size:0.8rem;">Get <strong>✓</strong>erified</a>
+                    <?php endif; ?>
+                    <?php if ($dbFeatActive && !$dbRenewSoon): ?>
+                        <span style="display:inline-flex;align-items:center;background:var(--primary);color:#fff;border-radius:5px;padding:2px 9px;font-size:0.87rem;font-weight:600;margin-left:6px;">⭐ Featured<?php echo $dbFeatEnd ? ' · ' . sanitize($dbFeatEnd) : ''; ?></span>
+                    <?php elseif ($dbRenewSoon): ?>
+                        <a href="feature_worker.php" style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b;color:#fff;border-radius:5px;padding:2px 9px;font-size:0.87rem;font-weight:600;text-decoration:none;margin-left:6px;">⭐ Renew feature</a>
+                    <?php elseif (!$dbFeatActive): ?>
+                        <a href="feature_worker.php" class="button button-secondary button-small" style="margin-left:10px;font-size:0.8rem;">⭐ Feature profile</a>
                     <?php endif; ?>
                 </div>
                 <a href="worker_profile.php" style="font-size:0.8rem;color:var(--primary);white-space:nowrap;">My profile →</a>

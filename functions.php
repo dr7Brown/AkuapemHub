@@ -533,6 +533,17 @@ function score_worker_for_request(array $worker, array $request) {
 
     $score += min(5, (int)($worker['completed_jobs'] ?? 0));
 
+    $today = date('Y-m-d');
+    $wFeatEnd = $worker['featured_end_date'] ?? null;
+    if (!empty($worker['is_featured']) && (empty($wFeatEnd) || $wFeatEnd >= $today)) {
+        $score += 8;
+        $reasons[] = 'Featured worker';
+    }
+    if (!empty($worker['is_verified'])) {
+        $score += 5;
+        $reasons[] = 'Verified worker';
+    }
+
     return [
         'score' => (int)min(100, $score),
         'reasons' => $reasons,
@@ -543,6 +554,7 @@ function score_worker_for_request(array $worker, array $request) {
 function get_recommended_workers_for_request($request, $limit = 5) {
     global $pdo;
     $stmt = $pdo->query("SELECT u.id, u.name, w.id AS profile_id, w.location, w.latitude, w.longitude, w.availability, w.subscription_status,
+        w.is_featured, w.featured_end_date, w.is_verified,
         COALESCE(AVG(r.score), 0) AS avg_rating,
         COALESCE(COUNT(DISTINCT sr.id), 0) AS completed_jobs,
         GROUP_CONCAT(DISTINCT ws.skill_name ORDER BY ws.skill_name SEPARATOR ', ') AS skills
@@ -552,7 +564,7 @@ function get_recommended_workers_for_request($request, $limit = 5) {
         LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
         LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = u.id
         WHERE u.role = 'worker'
-        GROUP BY u.id, u.name, w.id, w.location, w.latitude, w.longitude, w.availability, w.subscription_status");
+        GROUP BY u.id, u.name, w.id, w.location, w.latitude, w.longitude, w.availability, w.subscription_status, w.is_featured, w.featured_end_date, w.is_verified");
     $workers = $stmt->fetchAll();
 
     foreach ($workers as &$worker) {
@@ -999,7 +1011,7 @@ function get_active_packages($table) {
 
 function get_top_workers($limit = 10) {
     global $pdo;
-    $stmt = $pdo->prepare("SELECT u.id, u.name, u.username, w.location, w.subscription_status, w.is_featured, w.is_verified,
+    $stmt = $pdo->prepare("SELECT u.id, u.name, u.username, w.location, w.subscription_status, w.is_featured, w.featured_end_date, w.is_verified,
         COUNT(DISTINCT sr.id) AS completed_jobs,
         COALESCE(AVG(r.score), 0) AS avg_rating
         FROM users u
@@ -1007,9 +1019,14 @@ function get_top_workers($limit = 10) {
         LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
         LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = u.id
         WHERE u.role = 'worker' AND u.banned = 0
-        GROUP BY u.id, u.name, u.username, w.location, w.subscription_status, w.is_featured, w.is_verified
+        GROUP BY u.id, u.name, u.username, w.location, w.subscription_status, w.is_featured, w.featured_end_date, w.is_verified
         HAVING completed_jobs > 0
-        ORDER BY avg_rating DESC, completed_jobs DESC
+        ORDER BY
+          (w.is_featured = 1 AND (w.featured_end_date IS NULL OR w.featured_end_date >= CURDATE()) AND w.is_verified = 1) DESC,
+          (w.is_featured = 1 AND (w.featured_end_date IS NULL OR w.featured_end_date >= CURDATE())) DESC,
+          w.is_verified DESC,
+          avg_rating DESC,
+          completed_jobs DESC
         LIMIT ?");
     $stmt->bindValue(1, $limit, PDO::PARAM_INT);
     $stmt->execute();

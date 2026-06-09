@@ -78,11 +78,18 @@ $schedule = get_worker_schedule($profile['id']);
             <?php else: ?>
                 <a href="toggle_subscription.php" class="button button-secondary">Switch to Free</a>
             <?php endif; ?>
+            <?php
+                $wpFeatEnd    = $profile['featured_end_date'] ?? null;
+                $wpFeatActive = !empty($profile['is_featured']) && (empty($wpFeatEnd) || $wpFeatEnd >= date('Y-m-d'));
+                $wpRenewSoon  = !empty($profile['is_featured']) && !empty($wpFeatEnd) && $wpFeatEnd < date('Y-m-d', strtotime('+7 days'));
+            ?>
             <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-                <?php if ($profile['is_featured'] && (!empty($profile['featured_end_date']) && $profile['featured_end_date'] >= date('Y-m-d'))): ?>
-                    <span class="badge" style="background:var(--primary);color:#fff;">Featured until <?php echo sanitize($profile['featured_end_date']); ?></span>
+                <?php if ($wpFeatActive && !$wpRenewSoon): ?>
+                    <span class="badge" style="background:var(--primary);color:#fff;">⭐ Featured<?php echo $wpFeatEnd ? ' until ' . sanitize($wpFeatEnd) : ''; ?></span>
+                <?php elseif ($wpRenewSoon): ?>
+                    <a href="feature_worker.php" class="button button-secondary button-small">⭐ Renew feature (expires <?php echo sanitize($wpFeatEnd); ?>)</a>
                 <?php else: ?>
-                    <a href="feature_worker.php" class="button button-secondary button-small">Feature my profile</a>
+                    <a href="feature_worker.php" class="button button-secondary button-small">⭐ Feature my profile</a>
                 <?php endif; ?>
                 <?php if ($profile['is_verified']): ?>
                     <span class="badge" style="background:#22a06b;color:#fff;font-size:0.95rem;letter-spacing:0.01em;"><strong style="font-size:1.05em;">✓</strong>erified</span>
