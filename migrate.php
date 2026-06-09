@@ -308,12 +308,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             reference_id INT UNSIGNED DEFAULT NULL,
             package_id INT UNSIGNED DEFAULT NULL,
             amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-            status ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
+            status ENUM('pending','paid','failed','abandoned','refunded') NOT NULL DEFAULT 'pending',
             reference_code VARCHAR(64) DEFAULT NULL,
+            paystack_reference VARCHAR(100) DEFAULT NULL,
+            paystack_transaction_id BIGINT UNSIGNED DEFAULT NULL,
+            currency CHAR(3) NOT NULL DEFAULT 'GHS',
+            gateway VARCHAR(20) NOT NULL DEFAULT 'manual',
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             paid_at DATETIME DEFAULT NULL,
             INDEX idx_platform_payments_user_id (user_id),
             INDEX idx_platform_payments_status (status),
+            INDEX idx_platform_payments_paystack_ref (paystack_reference),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 
@@ -578,6 +583,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             if ($colInfo && strpos($colInfo['Type'], "'job_post'") === false) {
                 $pdo->exec("ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM('featured_job','featured_worker','verification','job_post','worker_service') NOT NULL");
             }
+            // Expand status ENUM to include Paystack statuses
+            $statusCol = $pdo->query("SHOW COLUMNS FROM platform_payments LIKE 'status'")->fetch();
+            if ($statusCol && strpos($statusCol['Type'], "'abandoned'") === false) {
+                $pdo->exec("ALTER TABLE platform_payments MODIFY COLUMN status ENUM('pending','paid','failed','abandoned','refunded') NOT NULL DEFAULT 'pending'");
+            }
+            // Add Paystack-specific columns
+            if (!$pdo->query("SHOW COLUMNS FROM platform_payments LIKE 'paystack_reference'")->fetch()) {
+                $pdo->exec("ALTER TABLE platform_payments ADD COLUMN paystack_reference VARCHAR(100) DEFAULT NULL, ADD COLUMN paystack_transaction_id BIGINT UNSIGNED DEFAULT NULL, ADD COLUMN currency CHAR(3) NOT NULL DEFAULT 'GHS', ADD COLUMN gateway VARCHAR(20) NOT NULL DEFAULT 'manual'");
+                $pdo->exec("ALTER TABLE platform_payments ADD INDEX idx_platform_payments_paystack_ref (paystack_reference)");
+            }
         }
         // Seed platform_settings defaults
         $pdo->exec("INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
@@ -586,7 +601,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
             ('enable_paid_featured_workers', '0', 'Charge workers to feature profiles (0=free, 1=paid)'),
             ('enable_paid_verification_badges', '0', 'Charge for verification badges (0=free, 1=paid)'),
             ('enable_paid_job_posting', '0', 'Require a posting fee before jobs go live (0=free, 1=paid)'),
-            ('enable_paid_worker_service', '0', 'Require workers to pay to be listed (0=free, 1=paid)')");
+            ('enable_paid_worker_service', '0', 'Require workers to pay to be listed (0=free, 1=paid)'),
+            ('paystack_public_key', '', 'Paystack publishable key (pk_test_... or pk_live_...)'),
+            ('paystack_secret_key', '', 'Paystack secret key (sk_test_... or sk_live_...)'),
+            ('paystack_webhook_secret', '', 'Paystack webhook signature secret'),
+            ('paystack_mode', 'test', 'Paystack environment: test or live')");
         // Seed default packages
         $pdo->exec("INSERT IGNORE INTO featured_job_packages (name, duration_days, price, status) VALUES
             ('7 Days', 7, 0.00, 'active'),

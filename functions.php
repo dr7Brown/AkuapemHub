@@ -14,6 +14,11 @@ function get_flash() {
     return null;
 }
 
+function get_flashes(): array {
+    $f = get_flash();
+    return $f ? [$f] : [];
+}
+
 function sanitize($value) {
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }

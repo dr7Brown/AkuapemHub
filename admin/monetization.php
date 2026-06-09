@@ -17,7 +17,21 @@ $tab = $_GET['tab'] ?? 'settings';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'save_settings') {
+    if ($action === 'save_paystack_settings') {
+        $psMode   = in_array($_POST['paystack_mode'] ?? '', ['test', 'live'], true) ? $_POST['paystack_mode'] : 'test';
+        $psPub    = trim($_POST['paystack_public_key'] ?? '');
+        $psSecret = trim($_POST['paystack_secret_key'] ?? '');
+        $psWebhook= trim($_POST['paystack_webhook_secret'] ?? '');
+        set_platform_setting('paystack_mode', $psMode);
+        set_platform_setting('paystack_public_key', $psPub);
+        // Only update secret if non-empty (prevents blanking it if field left empty)
+        if ($psSecret !== '') set_platform_setting('paystack_secret_key', $psSecret);
+        if ($psWebhook !== '') set_platform_setting('paystack_webhook_secret', $psWebhook);
+        log_audit_action($user['id'], 'paystack_settings_updated', "Paystack settings updated — mode: {$psMode}");
+        $success = 'Paystack settings saved.';
+        $tab = 'settings';
+
+    } elseif ($action === 'save_settings') {
         $prevMode = get_platform_setting('monetization_mode', 'free');
         $mode = $_POST['monetization_mode'] ?? 'free';
         if (!in_array($mode, ['free', 'hybrid', 'paid'], true)) $mode = 'free';
@@ -109,7 +123,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ?');
         $stmt->execute([$paymentId, 'pending']);
         $payment = $stmt->fetch();
-        if ($payment) {
+        if ($payment && ($payment['gateway'] ?? 'manual') === 'paystack') {
+            $error = 'Paystack payments are confirmed automatically. Manual confirmation is not allowed.';
+            $tab = 'payments';
+        } elseif ($payment) {
             $pdo->prepare('UPDATE platform_payments SET status = ?, paid_at = NOW() WHERE id = ?')
                 ->execute(['paid', $paymentId]);
             if ($payment['payment_type'] === 'featured_job' && $payment['reference_id']) {
@@ -169,7 +186,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ?');
         $stmt->execute([$paymentId, 'pending']);
         $payment = $stmt->fetch();
-        if ($payment) {
+        if ($payment && ($payment['gateway'] ?? 'manual') === 'paystack') {
+            $error = 'Paystack payments cannot be manually rejected. They resolve automatically.';
+            $tab = 'payments';
+        } elseif ($payment) {
             $pdo->prepare('UPDATE platform_payments SET status = ? WHERE id = ?')
                 ->execute(['failed', $paymentId]);
             $typeLabel = ucwords(str_replace('_', ' ', $payment['payment_type']));
@@ -265,6 +285,10 @@ $enableVerification = get_platform_setting('enable_paid_verification_badges', '0
 $enablePaidJobPosting = get_platform_setting('enable_paid_job_posting', '0');
 $enablePaidWorkerService = get_platform_setting('enable_paid_worker_service', '0');
 
+$psMode    = get_platform_setting('paystack_mode', 'test');
+$psPubKey  = get_platform_setting('paystack_public_key', '');
+$psConfigured = get_platform_setting('paystack_secret_key', '') !== '';
+
 $featuredJobPackages = get_active_packages('featured_job_packages');
 $allFeaturedJobPackages = $pdo->query("SELECT * FROM featured_job_packages ORDER BY price ASC")->fetchAll();
 $workerPromoPackages = get_active_packages('worker_promotion_packages');
@@ -277,6 +301,7 @@ $allWorkerServicePackages = $pdo->query("SELECT * FROM worker_service_packages O
 // Pending payments with context
 $pendingPayments = $pdo->query("
     SELECT pp.*, u.name AS user_name, u.username,
+        COALESCE(pp.gateway, 'manual') AS gateway,
         sr.title AS job_title,
         CASE pp.payment_type
             WHEN 'featured_job'   THEN COALESCE(fp.name, '—')
@@ -366,7 +391,7 @@ $allWorkers = $pdo->query("SELECT u.id, u.name, u.username, wp.is_verified, wp.v
 $pendingVerificationPayments = $pdo->query("SELECT pp.*, u.name AS user_name, u.username, wp.id_type, wp.id_number, wp.id_document_path, wp.contact_phone FROM platform_payments pp JOIN users u ON pp.user_id = u.id LEFT JOIN worker_profiles wp ON u.id = wp.user_id WHERE pp.payment_type = 'verification' AND pp.status = 'pending' ORDER BY pp.created_at ASC")->fetchAll();
 $pendingVerificationUserIds = array_column($pendingVerificationPayments, 'user_id');
 
-$auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al JOIN users u ON al.admin_id = u.id ORDER BY al.created_at DESC LIMIT 50")->fetchAll();
+$auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name FROM audit_logs al LEFT JOIN users u ON al.admin_id = u.id ORDER BY al.created_at DESC LIMIT 50")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -486,6 +511,40 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                         </table>
                     </div>
                     <button type="submit" class="button button-primary" style="margin-top: 16px;">Save settings</button>
+                </form>
+            </section>
+
+            <!-- Paystack settings -->
+            <section class="panel">
+                <h2>Paystack Payment Gateway</h2>
+                <?php if ($psConfigured): ?>
+                    <div class="alert alert-success" style="margin-bottom:12px;">
+                        ✓ Paystack is configured (<?php echo $psMode === 'live' ? '<strong style="color:#22a06b;">Live mode</strong>' : '<strong style="color:#f59e0b;">Test/Sandbox mode</strong>'; ?>).
+                        Payments from users will be processed through Paystack automatically.
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-warning" style="margin-bottom:12px;">
+                        ⚠️ Paystack secret key not set. Paid features will show an error to users until you configure it.
+                    </div>
+                <?php endif; ?>
+                <p class="meta">Get your keys from <a href="https://dashboard.paystack.com/#/settings/developer" target="_blank" rel="noopener">Paystack Dashboard → Settings → API Keys & Webhooks</a>.<br>
+                Set webhook URL to: <code><?php echo sanitize(rtrim(BASE_URL, '/') . '/paystack_webhook.php'); ?></code></p>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_paystack_settings" />
+                    <div style="margin-bottom:14px;">
+                        <label><strong>Environment</strong></label>
+                        <div style="display:flex;gap:16px;margin-top:6px;">
+                            <label><input type="radio" name="paystack_mode" value="test" <?php echo $psMode !== 'live' ? 'checked' : ''; ?>> Test / Sandbox</label>
+                            <label><input type="radio" name="paystack_mode" value="live" <?php echo $psMode === 'live' ? 'checked' : ''; ?>> Live (real money)</label>
+                        </div>
+                    </div>
+                    <label>Public key <span class="meta">(pk_test_... or pk_live_...)</span></label>
+                    <input type="text" name="paystack_public_key" value="<?php echo sanitize($psPubKey); ?>" placeholder="pk_test_xxxxxxxxxxxxxxxx" autocomplete="off" />
+                    <label>Secret key <span class="meta">(leave blank to keep existing)</span></label>
+                    <input type="password" name="paystack_secret_key" placeholder="sk_test_xxxxxxxxxxxxxxxx — leave blank to keep current" autocomplete="new-password" />
+                    <label>Webhook secret <span class="meta">(leave blank to keep existing)</span></label>
+                    <input type="password" name="paystack_webhook_secret" placeholder="Leave blank to keep current" autocomplete="new-password" />
+                    <button type="submit" class="button button-primary" style="margin-top:12px;">Save Paystack settings</button>
                 </form>
             </section>
         </div>
@@ -937,14 +996,15 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
             <!-- Pending payments -->
             <section class="panel" style="margin-bottom:16px;">
                 <h2 style="margin-top:0;">Pending Payments <?php if ($pendingPayments): ?><span style="background:var(--primary);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.82rem;margin-left:6px;"><?php echo count($pendingPayments); ?></span><?php endif; ?></h2>
-                <p class="meta">Confirm once you have received the payment. Reject if the payment was not made.</p>
+                <p class="meta">Manual payments: confirm once received. Paystack payments are confirmed automatically — no action needed.</p>
                 <?php if (empty($pendingPayments)): ?>
                     <div class="empty-state">No pending payments.</div>
                 <?php else: ?>
                     <table class="pkg-table">
-                        <thead><tr><th>User</th><th>For</th><th>Package</th><th>Amount</th><th>Reference</th><th>Submitted</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>User</th><th>For</th><th>Package</th><th>Amount</th><th>Reference</th><th>Gateway</th><th>Submitted</th><th>Actions</th></tr></thead>
                         <tbody>
                             <?php foreach ($pendingPayments as $pay): ?>
+                                <?php $payIsPaystack = ($pay['gateway'] ?? 'manual') === 'paystack'; ?>
                                 <tr>
                                     <td><?php echo sanitize(display_name($pay)); ?><br><span class="meta"><?php echo sanitize($pay['user_name']); ?></span></td>
                                     <td>
@@ -956,18 +1016,29 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
                                     <td><?php echo sanitize($pay['package_name']); ?></td>
                                     <td><strong>GH₵ <?php echo number_format($pay['amount'], 2); ?></strong></td>
                                     <td><code><?php echo sanitize($pay['reference_code'] ?: '—'); ?></code></td>
+                                    <td>
+                                        <?php if ($payIsPaystack): ?>
+                                            <span style="display:inline-flex;align-items:center;gap:4px;background:#00c3f7;color:#fff;border-radius:4px;padding:2px 7px;font-size:0.78rem;font-weight:600;">🔒 Paystack</span>
+                                        <?php else: ?>
+                                            <span style="background:#6b7280;color:#fff;border-radius:4px;padding:2px 7px;font-size:0.78rem;">Manual</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?php echo sanitize(date('d M Y', strtotime($pay['created_at']))); ?></td>
                                     <td style="white-space:nowrap;">
-                                        <form method="post" class="inline-form" style="display:inline-block;margin-right:4px;">
-                                            <input type="hidden" name="action" value="confirm_payment" />
-                                            <input type="hidden" name="payment_id" value="<?php echo $pay['id']; ?>" />
-                                            <button type="submit" class="button button-small button-primary">✓ Confirm</button>
-                                        </form>
-                                        <form method="post" class="inline-form" style="display:inline-block;" onsubmit="return confirm('Reject this payment? The user will be notified.')">
-                                            <input type="hidden" name="action" value="reject_payment" />
-                                            <input type="hidden" name="payment_id" value="<?php echo $pay['id']; ?>" />
-                                            <button type="submit" class="button button-small button-secondary" style="color:#c0392b;border-color:#c0392b;">✗ Reject</button>
-                                        </form>
+                                        <?php if ($payIsPaystack): ?>
+                                            <span class="meta" style="font-size:0.8rem;">Auto-confirmed by Paystack</span>
+                                        <?php else: ?>
+                                            <form method="post" class="inline-form" style="display:inline-block;margin-right:4px;">
+                                                <input type="hidden" name="action" value="confirm_payment" />
+                                                <input type="hidden" name="payment_id" value="<?php echo $pay['id']; ?>" />
+                                                <button type="submit" class="button button-small button-primary">✓ Confirm</button>
+                                            </form>
+                                            <form method="post" class="inline-form" style="display:inline-block;" onsubmit="return confirm('Reject this payment? The user will be notified.')">
+                                                <input type="hidden" name="action" value="reject_payment" />
+                                                <input type="hidden" name="payment_id" value="<?php echo $pay['id']; ?>" />
+                                                <button type="submit" class="button button-small button-secondary" style="color:#c0392b;border-color:#c0392b;">✗ Reject</button>
+                                            </form>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

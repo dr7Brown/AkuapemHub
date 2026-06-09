@@ -31,7 +31,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $packageId = intval($_POST['package_id'] ?? 0);
 
     if ($existingFeatPayment) {
-        flash('You already have a pending featuring payment (ref ' . $existingFeatPayment['reference_code'] . '). Wait for admin confirmation.', 'info');
+        $isPaystack = !empty($existingFeatPayment['gateway']) && $existingFeatPayment['gateway'] === 'paystack';
+        flash($isPaystack
+            ? 'You have an incomplete Paystack payment in progress. Please complete or abandon it first.'
+            : 'You already have a pending featuring payment (ref ' . $existingFeatPayment['reference_code'] . '). Wait for admin confirmation.',
+            'info'
+        );
         header('Location: my_payments.php');
         exit;
     }
@@ -39,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$isPaid) {
         $pdo->prepare('UPDATE worker_profiles SET is_featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL 30 DAY) WHERE user_id = ?')
             ->execute([$user['id']]);
-        log_audit_action($user['id'], 'feature_worker_requested', "Feature worker requested for user ID {$user['id']} — setting: free — decision: featured immediately (free mode)");
+        log_audit_action($user['id'], 'feature_worker_requested', "Feature worker requested for user ID {$user['id']} — free mode, featured immediately");
         flash('Your profile is now featured for 30 days. You\'ll appear at the top of search results.', 'success');
         header('Location: worker_profile.php');
         exit;
@@ -55,19 +60,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $refCode = strtoupper(bin2hex(random_bytes(5)));
-    $pdo->prepare('INSERT INTO platform_payments (user_id, payment_type, reference_id, package_id, amount, status, reference_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')
-        ->execute([$user['id'], 'featured_worker', $profile['id'], $packageId, $package['price'], 'pending', $refCode]);
-
-    notify_admins_and_managers(
-        'Featured worker payment pending',
-        display_name($user) . ' submitted payment ref ' . $refCode . ' for profile promotion (' . $package['name'] . ', GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Pending Payments.',
-        'info'
+    require_once __DIR__ . '/paystack.php';
+    $result = initializePayment(
+        $user['id'], $user['email'],
+        'featured_worker', (int)$profile['id'], $packageId,
+        (float)$package['price']
     );
-    log_audit_action($user['id'], 'feature_worker_requested', "Feature worker requested for user ID {$user['id']} — setting: paid — package: {$package['name']} GH₵{$package['price']} — decision: pending payment ref {$refCode}");
 
-    flash("Payment request submitted. Reference: {$refCode}. Once our team confirms your payment of GH₵" . number_format($package['price'], 2) . ", your profile will be featured.", 'success');
-    header('Location: worker_profile.php');
+    if (isset($result['error'])) {
+        flash($result['error'], 'error');
+        header('Location: feature_worker.php');
+        exit;
+    }
+
+    log_audit_action($user['id'], 'feature_worker_requested', "Paystack checkout initiated for featuring worker user ID {$user['id']} — ref {$result['reference']} — {$package['name']} GH₵{$package['price']}");
+    header('Location: ' . $result['checkout_url']);
     exit;
 }
 
@@ -126,8 +133,9 @@ $packages = get_active_packages('worker_promotion_packages');
                                     </span>
                                 </label>
                             <?php endforeach; ?>
-                            <p class="meta" style="margin-top: 8px;">After submitting, contact us to confirm your payment. We'll activate your feature once confirmed.</p>
-                            <button type="submit" class="button button-primary"><?php echo $wFeatRenewSoon ? 'Submit renewal request' : 'Submit payment request'; ?></button>
+                            <button type="submit" class="button button-primary" style="margin-top:8px;">
+                                🔒 Pay with Paystack — <?php echo $wFeatRenewSoon ? 'Renew' : 'Feature'; ?> my profile
+                            </button>
                         </form>
                     <?php endif; ?>
                 <?php endif; ?>

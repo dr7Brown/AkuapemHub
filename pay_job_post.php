@@ -52,7 +52,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($existingPayment) {
-        flash('You already have a pending payment (ref ' . $existingPayment['reference_code'] . ') for this job. Wait for admin confirmation.', 'info');
+        $isPaystack = !empty($existingPayment['gateway']) && $existingPayment['gateway'] === 'paystack';
+        flash($isPaystack
+            ? 'You have an incomplete Paystack payment for this job. Please complete or abandon it first.'
+            : 'You already have a pending payment (ref ' . $existingPayment['reference_code'] . ') for this job. Wait for admin confirmation.',
+            'info'
+        );
         header('Location: my_payments.php');
         exit;
     }
@@ -68,18 +73,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $refCode = strtoupper(bin2hex(random_bytes(5)));
-    $pdo->prepare('INSERT INTO platform_payments (user_id, payment_type, reference_id, package_id, amount, status, reference_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')
-        ->execute([$user['id'], 'job_post', $jobId, $packageId, $package['price'], 'pending', $refCode]);
-
-    notify_admins_and_managers(
-        'Job posting fee payment pending',
-        display_name($user) . ' submitted payment ref ' . $refCode . ' for posting "' . $job['title'] . '" (' . $package['name'] . ', GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Pending Payments.',
-        'info'
+    require_once __DIR__ . '/paystack.php';
+    $result = initializePayment(
+        $user['id'], $user['email'],
+        'job_post', $jobId, $packageId,
+        (float)$package['price'],
+        ['job_title' => $job['title']]
     );
 
-    flash("Payment request submitted (ref: {$refCode}). Your job will go live for admin review once we confirm your payment of GH₵" . number_format($package['price'], 2) . ".", 'success');
-    header('Location: my_payments.php');
+    if (isset($result['error'])) {
+        flash($result['error'], 'error');
+        header('Location: pay_job_post.php?id=' . $jobId);
+        exit;
+    }
+
+    header('Location: ' . $result['checkout_url']);
     exit;
 }
 
@@ -136,8 +144,9 @@ $packages = get_active_packages('job_posting_packages');
                             </span>
                         </label>
                     <?php endforeach; ?>
-                    <p class="meta">After submitting, contact us with your reference code to confirm payment. Your job will go live once confirmed.</p>
-                    <button type="submit" class="button button-primary">Submit payment request</button>
+                    <button type="submit" class="button button-primary" style="margin-top:8px;">
+                        🔒 Pay with Paystack
+                    </button>
                 </form>
             <?php endif; ?>
         </div>

@@ -46,7 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($existingPayment) {
-        flash('You already have a pending payment (ref ' . $existingPayment['reference_code'] . '). Wait for admin confirmation.', 'info');
+        $isPaystack = !empty($existingPayment['gateway']) && $existingPayment['gateway'] === 'paystack';
+        flash($isPaystack
+            ? 'You have an incomplete Paystack payment in progress. Please complete or abandon it first.'
+            : 'You already have a pending payment (ref ' . $existingPayment['reference_code'] . '). Wait for admin confirmation.',
+            'info'
+        );
         header('Location: my_payments.php');
         exit;
     }
@@ -62,18 +67,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $refCode = strtoupper(bin2hex(random_bytes(5)));
-    $pdo->prepare('INSERT INTO platform_payments (user_id, payment_type, reference_id, package_id, amount, status, reference_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')
-        ->execute([$user['id'], 'worker_service', $profile['id'], $packageId, $package['price'], 'pending', $refCode]);
-
-    notify_admins_and_managers(
-        'Worker service listing payment pending',
-        display_name($user) . ' submitted payment ref ' . $refCode . ' for ' . $package['name'] . ' service listing (GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Pending Payments.',
-        'info'
+    require_once __DIR__ . '/paystack.php';
+    $result = initializePayment(
+        $user['id'], $user['email'],
+        'worker_service', (int)$profile['id'], $packageId,
+        (float)$package['price']
     );
 
-    flash("Payment request submitted (ref: {$refCode}). You'll appear in search results once we confirm your payment of GH₵" . number_format($package['price'], 2) . ".", 'success');
-    header('Location: my_payments.php');
+    if (isset($result['error'])) {
+        flash($result['error'], 'error');
+        header('Location: pay_worker_service.php');
+        exit;
+    }
+
+    header('Location: ' . $result['checkout_url']);
     exit;
 }
 
@@ -120,8 +127,9 @@ $packages = get_active_packages('worker_service_packages');
                             </span>
                         </label>
                     <?php endforeach; ?>
-                    <p class="meta">After submitting, contact us with your reference code to confirm payment. Your profile will go live in search results once confirmed.</p>
-                    <button type="submit" class="button button-primary">Submit payment request</button>
+                    <button type="submit" class="button button-primary" style="margin-top:8px;">
+                        🔒 Pay with Paystack
+                    </button>
                 </form>
             <?php endif; ?>
         </div>

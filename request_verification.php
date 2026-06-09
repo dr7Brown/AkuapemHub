@@ -35,7 +35,6 @@ $isPaid = is_feature_paid('enable_paid_verification_badges');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$isPaid) {
-        // Free verification path — not normally reachable from UI but handle defensively
         flash('Verification is granted by an admin. Please contact support.', 'info');
         header('Location: worker_profile.php');
         exit;
@@ -52,30 +51,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    // Check for existing pending payment
-    $existingStmt = $pdo->prepare("SELECT id FROM platform_payments WHERE user_id = ? AND payment_type = 'verification' AND status = 'pending'");
+    // Block if already pending (any gateway)
+    $existingStmt = $pdo->prepare("SELECT id, gateway FROM platform_payments WHERE user_id = ? AND payment_type = 'verification' AND status = 'pending'");
     $existingStmt->execute([$user['id']]);
-    if ($existingStmt->fetch()) {
-        flash('You already have a pending verification payment. Please wait for admin confirmation.', 'info');
+    $existingPay = $existingStmt->fetch();
+    if ($existingPay) {
+        $isPs = !empty($existingPay['gateway']) && $existingPay['gateway'] === 'paystack';
+        flash($isPs
+            ? 'You have an incomplete Paystack verification payment in progress.'
+            : 'You already have a pending verification payment. Please wait for admin confirmation.',
+            'info'
+        );
         header('Location: worker_profile.php');
         exit;
     }
 
-    $refCode = strtoupper(bin2hex(random_bytes(5)));
-    $pdo->prepare('INSERT INTO platform_payments (user_id, payment_type, reference_id, package_id, amount, status, reference_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())')
-        ->execute([$user['id'], 'verification', $profile['id'], $packageId, $package['price'], 'pending', $refCode]);
-    $pdo->prepare("UPDATE worker_profiles SET verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
-        ->execute([$user['id']]);
-
-    notify_admins_and_managers(
-        'Verification badge payment pending',
-        display_name($user) . ' submitted payment ref ' . $refCode . ' for ' . $package['name'] . ' (GH₵' . number_format($package['price'], 2) . '). Confirm in Monetization → Verification.',
-        'info'
+    require_once __DIR__ . '/paystack.php';
+    $result = initializePayment(
+        $user['id'], $user['email'],
+        'verification', (int)$profile['id'], $packageId,
+        (float)$package['price']
     );
-    log_audit_action($user['id'], 'verification_requested', "Verification badge requested by user ID {$user['id']} — setting: paid — package: {$package['name']} GH₵{$package['price']} — decision: pending payment ref {$refCode}");
 
-    flash("Verification request submitted. Reference: {$refCode}. Once our team confirms your payment of GH₵" . number_format($package['price'], 2) . ", your profile will be verified.", 'success');
-    header('Location: worker_profile.php');
+    if (isset($result['error'])) {
+        flash($result['error'], 'error');
+        header('Location: request_verification.php');
+        exit;
+    }
+
+    log_audit_action($user['id'], 'verification_requested', "Paystack checkout initiated for verification — user ID {$user['id']} — ref {$result['reference']} — {$package['name']} GH₵{$package['price']}");
+    header('Location: ' . $result['checkout_url']);
     exit;
 }
 
@@ -133,8 +138,9 @@ $packages = get_active_packages('verification_packages');
                             </span>
                         </label>
                     <?php endforeach; ?>
-                    <p class="meta" style="margin-top: 8px;">After submitting, contact us with your payment reference to confirm. We'll activate your badge once confirmed.</p>
-                    <button type="submit" class="button button-primary">Submit verification request</button>
+                    <button type="submit" class="button button-primary" style="margin-top:8px;">
+                        🔒 Pay with Paystack
+                    </button>
                 </form>
             <?php endif; ?>
         </div>
