@@ -163,6 +163,11 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                     <span class="list-row-body"><strong>Notifications</strong><p>Email alerts for job activity</p></span>
                     <span class="list-row-meta">›</span>
                 </a>
+                <a href="my_payments.php" class="list-row">
+                    <span class="menu-icon">💳</span>
+                    <span class="list-row-body"><strong>My Payments</strong><p>Featured jobs, profiles &amp; verification history</p></span>
+                    <span class="list-row-meta">›</span>
+                </a>
                 <a href="?section=role" class="list-row">
                     <span class="menu-icon">🧰</span>
                     <span class="list-row-body"><strong>Role</strong><p><?php echo $user['role'] === 'worker' ? 'Worker — manage your offering' : 'Customer — start offering services'; ?></p></span>

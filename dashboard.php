@@ -166,7 +166,7 @@ if (is_worker()) {
                             <span class="meta" style="margin-left:6px;font-size:0.8rem;">until <?php echo sanitize($profile['verification_expiry']); ?></span>
                         <?php endif; ?>
                     <?php elseif ($workerPendingVerif): ?>
-                        <span style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b;color:#fff;border-radius:5px;padding:2px 9px;font-size:0.87rem;font-weight:600;">⏳ Verification payment pending</span>
+                        <a href="my_payments.php" style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b;color:#fff;border-radius:5px;padding:2px 9px;font-size:0.87rem;font-weight:600;text-decoration:none;">⏳ Verification payment pending</a>
                     <?php else: ?>
                         <span style="color:var(--text-muted);font-size:0.87rem;">Not verified</span>
                         <a href="<?php echo is_feature_paid('enable_paid_verification_badges') ? 'request_verification.php' : '#'; ?>" class="button button-secondary button-small" style="margin-left:10px;font-size:0.8rem;">Get <strong>✓</strong>erified</a>

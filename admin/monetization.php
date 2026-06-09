@@ -97,7 +97,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($payment) {
             $pdo->prepare('UPDATE platform_payments SET status = ?, paid_at = NOW() WHERE id = ?')
                 ->execute(['paid', $paymentId]);
-            // Activate the feature based on payment type
             if ($payment['payment_type'] === 'featured_job' && $payment['reference_id']) {
                 $pkg = $pdo->prepare('SELECT duration_days FROM featured_job_packages WHERE id = ?');
                 $pkg->execute([$payment['package_id']]);
@@ -106,6 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('UPDATE service_requests SET featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE id = ?')
                     ->execute([$days, $payment['reference_id']]);
                 notify_user($payment['user_id'], 'Job featured', 'Your job has been featured and will appear at the top of listings.', 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed featured_job payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}");
             } elseif ($payment['payment_type'] === 'featured_worker' && $payment['reference_id']) {
                 $pkg = $pdo->prepare('SELECT duration_days FROM worker_promotion_packages WHERE id = ?');
                 $pkg->execute([$payment['package_id']]);
@@ -114,15 +114,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare('UPDATE worker_profiles SET is_featured = 1, featured_start_date = CURDATE(), featured_end_date = DATE_ADD(CURDATE(), INTERVAL ? DAY) WHERE user_id = ?')
                     ->execute([$days, $payment['user_id']]);
                 notify_user($payment['user_id'], 'Profile featured', 'Your worker profile is now featured in search results.', 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed featured_worker payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}");
             } elseif ($payment['payment_type'] === 'verification') {
-                $pkg = $pdo->prepare('SELECT * FROM verification_packages WHERE id = ?');
-                $pkg->execute([$payment['package_id']]);
-                $pkg = $pkg->fetch();
                 $pdo->prepare('UPDATE worker_profiles SET is_verified = 1, verification_date = CURDATE(), verification_expiry = DATE_ADD(CURDATE(), INTERVAL 365 DAY) WHERE user_id = ?')
                     ->execute([$payment['user_id']]);
                 notify_user($payment['user_id'], 'Verification approved', 'Your worker profile is now verified. The badge will appear on your profile and search results.', 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed verification payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}");
             }
             $success = 'Payment confirmed and feature activated.';
+        }
+        $tab = 'payments';
+
+    } elseif ($action === 'reject_payment') {
+        $paymentId = intval($_POST['payment_id'] ?? 0);
+        $stmt = $pdo->prepare('SELECT * FROM platform_payments WHERE id = ? AND status = ?');
+        $stmt->execute([$paymentId, 'pending']);
+        $payment = $stmt->fetch();
+        if ($payment) {
+            $pdo->prepare('UPDATE platform_payments SET status = ? WHERE id = ?')
+                ->execute(['failed', $paymentId]);
+            $typeLabel = ucwords(str_replace('_', ' ', $payment['payment_type']));
+            notify_user($payment['user_id'], 'Payment not confirmed', "Your {$typeLabel} payment (ref {$payment['reference_code']}) could not be confirmed. Please contact support.", 'warning');
+            log_audit_action($user['id'], 'payment_rejected', "Rejected payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) type {$payment['payment_type']} for user ID {$payment['user_id']}");
+            $success = 'Payment marked as failed.';
         }
         $tab = 'payments';
 
@@ -136,6 +150,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = 'Worker verified.';
         }
         $tab = 'verification';
+
+    } elseif ($action === 'unfeature_worker') {
+        $workerId = intval($_POST['worker_user_id'] ?? 0);
+        if ($workerId > 0) {
+            $pdo->prepare('UPDATE worker_profiles SET is_featured = 0, featured_end_date = NULL WHERE user_id = ?')
+                ->execute([$workerId]);
+            log_audit_action($user['id'], 'worker_unfeatured', "Removed featured status for worker user ID {$workerId}");
+            $success = 'Featured status removed.';
+        }
+        $tab = 'featured_workers';
 
     } elseif ($action === 'revoke_verification') {
         $workerId = intval($_POST['worker_user_id'] ?? 0);
@@ -168,7 +192,65 @@ $allWorkerPromoPackages = $pdo->query("SELECT * FROM worker_promotion_packages O
 $verificationPackages = get_active_packages('verification_packages');
 $allVerificationPackages = $pdo->query("SELECT * FROM verification_packages ORDER BY price ASC")->fetchAll();
 
-$pendingPayments = $pdo->query("SELECT pp.*, u.name AS user_name, u.username FROM platform_payments pp JOIN users u ON pp.user_id = u.id WHERE pp.status = 'pending' ORDER BY pp.created_at DESC")->fetchAll();
+// Pending payments with context (job title for featured_job type)
+$pendingPayments = $pdo->query("
+    SELECT pp.*, u.name AS user_name, u.username,
+        sr.title AS job_title,
+        CASE pp.payment_type
+            WHEN 'featured_job' THEN COALESCE(fp.name, '—')
+            WHEN 'featured_worker' THEN COALESCE(wp2.name, '—')
+            WHEN 'verification' THEN COALESCE(vp.name, '—')
+        END AS package_name
+    FROM platform_payments pp
+    JOIN users u ON pp.user_id = u.id
+    LEFT JOIN service_requests sr ON pp.payment_type = 'featured_job' AND sr.id = pp.reference_id
+    LEFT JOIN featured_job_packages fp ON pp.payment_type = 'featured_job' AND fp.id = pp.package_id
+    LEFT JOIN worker_promotion_packages wp2 ON pp.payment_type = 'featured_worker' AND wp2.id = pp.package_id
+    LEFT JOIN verification_packages vp ON pp.payment_type = 'verification' AND vp.id = pp.package_id
+    WHERE pp.status = 'pending'
+    ORDER BY pp.created_at DESC
+")->fetchAll();
+
+// Full payment history (paid + failed)
+$paymentHistory = $pdo->query("
+    SELECT pp.*, u.name AS user_name, u.username, sr.title AS job_title
+    FROM platform_payments pp
+    JOIN users u ON pp.user_id = u.id
+    LEFT JOIN service_requests sr ON pp.payment_type = 'featured_job' AND sr.id = pp.reference_id
+    WHERE pp.status IN ('paid', 'failed')
+    ORDER BY pp.created_at DESC LIMIT 100
+")->fetchAll();
+
+// Revenue summary
+$revenueSummary = $pdo->query("
+    SELECT
+        COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) AS total_paid,
+        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) AS total_pending,
+        COUNT(CASE WHEN status = 'paid' THEN 1 END) AS count_paid,
+        COUNT(CASE WHEN status = 'pending' THEN 1 END) AS count_pending,
+        COALESCE(SUM(CASE WHEN payment_type = 'featured_job' AND status = 'paid' THEN amount ELSE 0 END), 0) AS featured_job_revenue,
+        COALESCE(SUM(CASE WHEN payment_type = 'featured_worker' AND status = 'paid' THEN amount ELSE 0 END), 0) AS featured_worker_revenue,
+        COALESCE(SUM(CASE WHEN payment_type = 'verification' AND status = 'paid' THEN amount ELSE 0 END), 0) AS verification_revenue
+    FROM platform_payments
+")->fetch();
+
+// Currently active featured jobs
+$activeFeaturedJobs = $pdo->query("
+    SELECT sr.id, sr.title, sr.location, sr.featured_start_date, sr.featured_end_date,
+           u.name AS customer_name, u.username AS customer_username
+    FROM service_requests sr
+    JOIN users u ON sr.customer_id = u.id
+    WHERE sr.featured = 1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date >= CURDATE())
+    ORDER BY sr.featured_end_date ASC
+")->fetchAll();
+
+// Currently active featured workers
+$activeFeaturedWorkers = $pdo->query("
+    SELECT u.id, u.name, u.username, wp.featured_start_date, wp.featured_end_date
+    FROM users u JOIN worker_profiles wp ON u.id = wp.user_id
+    WHERE wp.is_featured = 1 AND (wp.featured_end_date IS NULL OR wp.featured_end_date >= CURDATE())
+    ORDER BY wp.featured_end_date ASC
+")->fetchAll();
 
 $allWorkers = $pdo->query("SELECT u.id, u.name, u.username, wp.is_verified, wp.verification_date, wp.verification_expiry FROM users u JOIN worker_profiles wp ON u.id = wp.user_id WHERE u.role = 'worker' AND u.banned = 0 ORDER BY wp.is_verified ASC, u.name ASC")->fetchAll();
 
@@ -285,6 +367,25 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
 
         <!-- FEATURED JOB PACKAGES TAB -->
         <div class="tab-panel <?php echo $tab === 'featured_jobs' ? 'active' : ''; ?>" id="tab-featured_jobs">
+            <?php if (!empty($activeFeaturedJobs)): ?>
+            <section class="panel" style="margin-bottom:16px;">
+                <h2 style="margin-top:0;">Currently Featured Jobs <span class="meta">(<?php echo count($activeFeaturedJobs); ?> active)</span></h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Job</th><th>Posted by</th><th>Location</th><th>Featured from</th><th>Expires</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($activeFeaturedJobs as $fj): ?>
+                            <tr>
+                                <td><a href="../request_detail.php?id=<?php echo $fj['id']; ?>" style="color:var(--primary);"><?php echo sanitize(substr($fj['title'], 0, 40)); ?></a></td>
+                                <td><?php echo sanitize($fj['customer_username'] ?: $fj['customer_name']); ?></td>
+                                <td><?php echo sanitize($fj['location'] ?: '—'); ?></td>
+                                <td><?php echo sanitize($fj['featured_start_date'] ?: '—'); ?></td>
+                                <td><?php echo $fj['featured_end_date'] ? sanitize($fj['featured_end_date']) : '∞'; ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </section>
+            <?php endif; ?>
             <section class="panel">
                 <h2>Featured Job Packages</h2>
                 <table class="pkg-table">
@@ -332,6 +433,30 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
 
         <!-- FEATURED WORKER PACKAGES TAB -->
         <div class="tab-panel <?php echo $tab === 'featured_workers' ? 'active' : ''; ?>" id="tab-featured_workers">
+            <?php if (!empty($activeFeaturedWorkers)): ?>
+            <section class="panel" style="margin-bottom:16px;">
+                <h2 style="margin-top:0;">Currently Featured Workers <span class="meta">(<?php echo count($activeFeaturedWorkers); ?> active)</span></h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Worker</th><th>Featured from</th><th>Expires</th><th>Action</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($activeFeaturedWorkers as $fw): ?>
+                            <tr>
+                                <td><a href="../worker_profile_public.php?id=<?php echo $fw['id']; ?>" style="color:var(--primary);"><?php echo sanitize($fw['username'] ?: $fw['name']); ?></a><br><span class="meta"><?php echo sanitize($fw['name']); ?></span></td>
+                                <td><?php echo sanitize($fw['featured_start_date'] ?: '—'); ?></td>
+                                <td><?php echo $fw['featured_end_date'] ? sanitize($fw['featured_end_date']) : '∞'; ?></td>
+                                <td>
+                                    <form method="post" class="inline-form" onsubmit="return confirm('Remove featured status for this worker?')">
+                                        <input type="hidden" name="action" value="unfeature_worker" />
+                                        <input type="hidden" name="worker_user_id" value="<?php echo $fw['id']; ?>" />
+                                        <button type="submit" class="button button-small button-secondary">Remove</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </section>
+            <?php endif; ?>
             <section class="panel">
                 <h2>Worker Promotion Packages</h2>
                 <table class="pkg-table">
@@ -482,28 +607,94 @@ $auditLogs = $pdo->query("SELECT al.*, u.name AS admin_name FROM audit_logs al J
 
         <!-- PENDING PAYMENTS TAB -->
         <div class="tab-panel <?php echo $tab === 'payments' ? 'active' : ''; ?>" id="tab-payments">
-            <section class="panel">
-                <h2>Pending Platform Payments</h2>
+
+            <!-- Revenue summary -->
+            <section class="panel" style="margin-bottom:16px;">
+                <h2 style="margin-top:0;">Revenue Overview</h2>
+                <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
+                    <div class="stat-card"><h2>GH₵ <?php echo number_format($revenueSummary['total_paid'], 2); ?></h2><p>Total confirmed</p></div>
+                    <div class="stat-card"><h2>GH₵ <?php echo number_format($revenueSummary['total_pending'], 2); ?></h2><p>Awaiting confirmation</p></div>
+                    <div class="stat-card"><h2><?php echo (int)$revenueSummary['count_paid']; ?></h2><p>Paid transactions</p></div>
+                    <div class="stat-card"><h2><?php echo (int)$revenueSummary['count_pending']; ?></h2><p>Pending</p></div>
+                </div>
+                <table class="pkg-table">
+                    <thead><tr><th>Feature</th><th>Confirmed Revenue</th></tr></thead>
+                    <tbody>
+                        <tr><td>Featured Job Posts</td><td>GH₵ <?php echo number_format($revenueSummary['featured_job_revenue'], 2); ?></td></tr>
+                        <tr><td>Featured Worker Profiles</td><td>GH₵ <?php echo number_format($revenueSummary['featured_worker_revenue'], 2); ?></td></tr>
+                        <tr><td>Verification Badges</td><td>GH₵ <?php echo number_format($revenueSummary['verification_revenue'], 2); ?></td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Pending payments -->
+            <section class="panel" style="margin-bottom:16px;">
+                <h2 style="margin-top:0;">Pending Payments <?php if ($pendingPayments): ?><span style="background:var(--primary);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.82rem;margin-left:6px;"><?php echo count($pendingPayments); ?></span><?php endif; ?></h2>
+                <p class="meta">Confirm once you have received the payment. Reject if the payment was not made.</p>
                 <?php if (empty($pendingPayments)): ?>
                     <div class="empty-state">No pending payments.</div>
                 <?php else: ?>
                     <table class="pkg-table">
-                        <thead><tr><th>User</th><th>Type</th><th>Amount</th><th>Ref</th><th>Date</th><th>Action</th></tr></thead>
+                        <thead><tr><th>User</th><th>For</th><th>Package</th><th>Amount</th><th>Reference</th><th>Submitted</th><th>Actions</th></tr></thead>
                         <tbody>
                             <?php foreach ($pendingPayments as $pay): ?>
                                 <tr>
-                                    <td><?php echo sanitize(display_name($pay)); ?></td>
-                                    <td><?php echo sanitize(ucwords(str_replace('_', ' ', $pay['payment_type']))); ?></td>
-                                    <td>GH₵ <?php echo number_format($pay['amount'], 2); ?></td>
-                                    <td><?php echo sanitize($pay['reference_code'] ?: '—'); ?></td>
-                                    <td><?php echo sanitize($pay['created_at']); ?></td>
+                                    <td><?php echo sanitize(display_name($pay)); ?><br><span class="meta"><?php echo sanitize($pay['user_name']); ?></span></td>
                                     <td>
-                                        <form method="post" class="inline-form">
+                                        <strong><?php echo sanitize(ucwords(str_replace('_', ' ', $pay['payment_type']))); ?></strong>
+                                        <?php if ($pay['job_title']): ?>
+                                            <br><span class="meta">📋 <?php echo sanitize(substr($pay['job_title'], 0, 35)); ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo sanitize($pay['package_name']); ?></td>
+                                    <td><strong>GH₵ <?php echo number_format($pay['amount'], 2); ?></strong></td>
+                                    <td><code><?php echo sanitize($pay['reference_code'] ?: '—'); ?></code></td>
+                                    <td><?php echo sanitize(date('d M Y', strtotime($pay['created_at']))); ?></td>
+                                    <td style="white-space:nowrap;">
+                                        <form method="post" class="inline-form" style="display:inline-block;margin-right:4px;">
                                             <input type="hidden" name="action" value="confirm_payment" />
                                             <input type="hidden" name="payment_id" value="<?php echo $pay['id']; ?>" />
-                                            <button type="submit" class="button button-small button-primary">Confirm paid</button>
+                                            <button type="submit" class="button button-small button-primary">✓ Confirm</button>
+                                        </form>
+                                        <form method="post" class="inline-form" style="display:inline-block;" onsubmit="return confirm('Reject this payment? The user will be notified.')">
+                                            <input type="hidden" name="action" value="reject_payment" />
+                                            <input type="hidden" name="payment_id" value="<?php echo $pay['id']; ?>" />
+                                            <button type="submit" class="button button-small button-secondary" style="color:#c0392b;border-color:#c0392b;">✗ Reject</button>
                                         </form>
                                     </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                <?php endif; ?>
+            </section>
+
+            <!-- Payment history -->
+            <section class="panel">
+                <h2 style="margin-top:0;">Payment History <span class="meta">(last 100)</span></h2>
+                <?php if (empty($paymentHistory)): ?>
+                    <div class="empty-state">No completed or failed payments yet.</div>
+                <?php else: ?>
+                    <table class="pkg-table">
+                        <thead><tr><th>User</th><th>Type</th><th>Amount</th><th>Reference</th><th>Status</th><th>Date</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($paymentHistory as $ph): ?>
+                                <tr>
+                                    <td><?php echo sanitize(display_name($ph)); ?></td>
+                                    <td>
+                                        <?php echo sanitize(ucwords(str_replace('_', ' ', $ph['payment_type']))); ?>
+                                        <?php if ($ph['job_title']): ?><br><span class="meta"><?php echo sanitize(substr($ph['job_title'], 0, 30)); ?></span><?php endif; ?>
+                                    </td>
+                                    <td>GH₵ <?php echo number_format($ph['amount'], 2); ?></td>
+                                    <td><code><?php echo sanitize($ph['reference_code'] ?: '—'); ?></code></td>
+                                    <td>
+                                        <?php if ($ph['status'] === 'paid'): ?>
+                                            <span class="status status-open">PAID</span>
+                                        <?php else: ?>
+                                            <span class="status status-cancelled">FAILED</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo sanitize(date('d M Y', strtotime($ph['created_at']))); ?></td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>
