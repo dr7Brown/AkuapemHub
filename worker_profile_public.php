@@ -4,135 +4,185 @@ require_once __DIR__ . '/functions.php';
 
 $workerId = intval($_GET['id'] ?? 0);
 if ($workerId <= 0) {
-    header('Location: dashboard.php');
+    header('Location: find_workers.php');
     exit;
 }
 
-$stmt = $pdo->prepare('SELECT u.id, u.name, u.created_at, u.banned, w.* FROM users u LEFT JOIN worker_profiles w ON u.id = w.user_id WHERE u.id = ? AND u.role = "worker" AND u.banned = 0');
+$stmt = $pdo->prepare('
+    SELECT u.id, u.name, u.username, u.created_at, u.profile_photo, u.banned,
+           w.bio, w.location, w.availability, w.subscription_status,
+           w.contact_phone, w.is_featured, w.featured_end_date,
+           w.is_verified, w.verification_expiry,
+           w.id AS worker_profile_id
+    FROM users u
+    LEFT JOIN worker_profiles w ON u.id = w.user_id
+    WHERE u.id = ? AND u.role = "worker" AND u.banned = 0
+');
 $stmt->execute([$workerId]);
 $worker = $stmt->fetch();
 
 if (!$worker) {
-    header('Location: dashboard.php');
+    header('Location: find_workers.php');
     exit;
 }
 
 $completedJobs = get_worker_completed_jobs($workerId);
 $avgRating = get_worker_average_rating($workerId);
 
-$stmt = $pdo->prepare('SELECT ws.skill_name FROM worker_skills ws WHERE ws.worker_profile_id = ?');
-$stmt->execute([$worker['id']]);
-$skills = array_column($stmt->fetchAll(), 'skill_name');
+$skillStmt = $pdo->prepare('SELECT ws.skill_name FROM worker_skills ws WHERE ws.worker_profile_id = ?');
+$skillStmt->execute([$worker['worker_profile_id']]);
+$skills = array_column($skillStmt->fetchAll(), 'skill_name');
 
-$schedule = get_worker_schedule($worker['id']);
+$schedule = get_worker_schedule($worker['worker_profile_id']);
 
-$stmt = $pdo->prepare('SELECT sr.*, c.name AS category_name, r.score AS rating_score FROM service_requests sr JOIN service_categories c ON sr.category_id = c.id LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = sr.assigned_worker_id WHERE sr.assigned_worker_id = ? AND sr.status = "completed" ORDER BY sr.updated_at DESC LIMIT 10');
-$stmt->execute([$workerId]);
-$recentJobs = $stmt->fetchAll();
+$recentStmt = $pdo->prepare('
+    SELECT sr.title, c.name AS category_name, r.score AS rating_score, r.comment, sr.updated_at
+    FROM service_requests sr
+    JOIN service_categories c ON sr.category_id = c.id
+    LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = sr.assigned_worker_id
+    WHERE sr.assigned_worker_id = ? AND sr.status = "completed"
+    ORDER BY sr.updated_at DESC LIMIT 8
+');
+$recentStmt->execute([$workerId]);
+$recentJobs = $recentStmt->fetchAll();
+
+$isActive = $worker['is_featured'] && (!$worker['featured_end_date'] || $worker['featured_end_date'] >= date('Y-m-d'));
+$user = current_user();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><?php echo sanitize($worker['name']); ?> — AkuapemHub</title>
+    <title><?php echo sanitize(display_name($worker)); ?> — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body class="<?php echo current_user() ? 'has-bottom-nav' : ''; ?>">
+<body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
     <header class="app-topbar">
-        <span class="brand"><span class="brand-icon">👤</span> Worker Profile</span>
-        <?php if (current_user()): ?>
-            <a href="logout.php" class="button button-secondary button-small">Logout</a>
-        <?php else: ?>
+        <a href="javascript:history.back()" class="button button-secondary button-small">← Back</a>
+        <span class="brand">Worker Profile</span>
+        <?php if (!$user): ?>
             <a href="login.php" class="button button-primary button-small">Login</a>
         <?php endif; ?>
     </header>
-    <main class="page-shell">
-        <section class="panel">
-            <div class="request-head">
-                <div>
-                    <h2><?php echo sanitize($worker['name']); ?></h2>
-                    <p class="meta">Member since <?php echo sanitize(date('M Y', strtotime($worker['created_at']))); ?></p>
-                </div>
-            </div>
-            
-            <div style="margin: 20px 0;">
-                <p><strong>Location:</strong> <?php echo sanitize($worker['location'] ?: 'Not specified'); ?></p>
-                <p><strong>Availability:</strong> <?php echo sanitize(ucfirst($worker['availability'])); ?></p>
-                <p><strong>Subscription:</strong> <?php echo sanitize(ucfirst($worker['subscription_status'])); ?></p>
-                <p><strong>Contact:</strong> <a href="<?php echo whatsapp_contact_link($worker['contact_phone'], 'Hi'); ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a></p>
-            </div>
+    <main class="page-shell small-shell">
 
-            <?php if ($worker['bio']): ?>
-                <div style="margin: 20px 0; padding: 16px; background: #f9fafb; border-radius: 12px;">
-                    <h3 style="margin-top: 0;">About</h3>
-                    <p><?php echo nl2br(sanitize($worker['bio'])); ?></p>
-                </div>
-            <?php endif; ?>
-
-            <?php if (!empty($skills)): ?>
-                <div style="margin: 20px 0; padding: 16px; background: #f9fafb; border-radius: 12px;">
-                    <h3 style="margin-top: 0;">Skills</h3>
-                    <p><?php echo sanitize(implode(', ', $skills)); ?></p>
-                </div>
-            <?php endif; ?>
-
-            <?php if (!empty($schedule)): ?>
-                <div style="margin: 20px 0; padding: 16px; background: #f9fafb; border-radius: 12px;">
-                    <h3 style="margin-top: 0;">Weekly availability</h3>
-                    <ul style="margin: 0; padding-left: 20px;">
-                        <?php foreach (get_weekday_names() as $dayNum => $dayName): ?>
-                            <?php if (!empty($schedule[$dayNum])): ?>
-                                <li><strong><?php echo sanitize($dayName); ?>:</strong>
-                                    <?php echo sanitize(implode(', ', array_map(function ($slot) {
-                                        return format_time_range($slot['start_time'], $slot['end_time']);
-                                    }, $schedule[$dayNum]))); ?>
-                                </li>
-                            <?php endif; ?>
-                        <?php endforeach; ?>
-                    </ul>
-                </div>
-            <?php endif; ?>
-
-            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 20px 0;">
-                <div style="padding: 16px; background: #d1fae5; border-radius: 12px; text-align: center;">
-                    <h3 style="margin: 0 0 8px; font-size: 1.8rem;"><?php echo $completedJobs; ?></h3>
-                    <p style="margin: 0; color: #166534;">Completed jobs</p>
-                </div>
-                <div style="padding: 16px; background: #fef9c3; border-radius: 12px; text-align: center;">
-                    <h3 style="margin: 0 0 8px; font-size: 1.8rem;"><?php echo number_format($avgRating, 1); ?>/5</h3>
-                    <p style="margin: 0; color: #92400e;">Average rating</p>
+        <!-- Profile hero -->
+        <section class="panel" style="padding-bottom: 20px;">
+            <div style="display:flex;align-items:flex-start;gap:16px;">
+                <?php if (!empty($worker['profile_photo'])): ?>
+                    <img src="<?php echo sanitize($worker['profile_photo']); ?>" alt="" class="avatar" style="width:64px;height:64px;flex-shrink:0;" />
+                <?php else: ?>
+                    <span class="avatar" style="width:64px;height:64px;font-size:1.6rem;flex-shrink:0;"><?php echo sanitize(strtoupper(substr(display_name($worker), 0, 1))); ?></span>
+                <?php endif; ?>
+                <div style="flex:1;min-width:0;">
+                    <h2 style="margin:0 0 4px;font-size:1.2rem;display:flex;align-items:center;flex-wrap:wrap;gap:6px;">
+                        <?php echo sanitize(display_name($worker)); ?>
+                        <?php if ($worker['is_verified']): ?>
+                            <span style="display:inline-flex;align-items:center;background:#22a06b;color:#fff;border-radius:4px;padding:1px 7px;font-size:0.8rem;"><strong>✓</strong>erified</span>
+                        <?php endif; ?>
+                        <?php if ($isActive): ?>
+                            <span class="badge" style="background:var(--primary);color:#fff;font-size:0.78rem;">Featured</span>
+                        <?php endif; ?>
+                    </h2>
+                    <p class="meta" style="margin:0 0 6px;">
+                        <?php if ($worker['location']): ?><?php echo sanitize($worker['location']); ?> · <?php endif; ?>
+                        Member since <?php echo sanitize(date('M Y', strtotime($worker['created_at']))); ?>
+                    </p>
+                    <span class="status status-<?php echo sanitize($worker['availability']); ?>"><?php echo strtoupper(sanitize($worker['availability'])); ?></span>
                 </div>
             </div>
 
-            <?php if (!empty($recentJobs)): ?>
-                <div style="margin-top: 24px;">
-                    <h3>Recent completed work</h3>
-                    <div class="table-wrapper">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Job</th>
-                                    <th>Category</th>
-                                    <th>Rating</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($recentJobs as $job): ?>
-                                    <tr>
-                                        <td><?php echo sanitize(substr($job['title'], 0, 40)); ?></td>
-                                        <td><?php echo sanitize($job['category_name']); ?></td>
-                                        <td><?php echo $job['rating_score'] ? sanitize($job['rating_score']) . '/5' : '—'; ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
+            <!-- Stats row -->
+            <div class="stats-grid" style="margin-top:20px;">
+                <div class="stat-card">
+                    <h2><?php echo $completedJobs; ?></h2>
+                    <p>Jobs done</p>
                 </div>
+                <div class="stat-card">
+                    <h2><?php echo number_format($avgRating, 1); ?><small style="font-size:0.65em;font-weight:400;">/5</small></h2>
+                    <p>Avg rating</p>
+                </div>
+                <div class="stat-card">
+                    <h2><?php echo count($skills); ?></h2>
+                    <p>Skills</p>
+                </div>
+            </div>
+
+            <!-- Contact button -->
+            <?php if ($worker['contact_phone']): ?>
+                <a href="<?php echo whatsapp_contact_link($worker['contact_phone'], 'Hi, I found your profile on AkuapemHub and would like to hire you.'); ?>" target="_blank" class="button button-primary" style="width:100%;margin-top:18px;text-align:center;display:block;">
+                    💬 Contact via WhatsApp
+                </a>
             <?php endif; ?>
         </section>
+
+        <!-- About -->
+        <?php if ($worker['bio']): ?>
+            <section class="panel">
+                <h3 style="margin-top:0;">About</h3>
+                <p style="margin:0;line-height:1.6;"><?php echo nl2br(sanitize($worker['bio'])); ?></p>
+            </section>
+        <?php endif; ?>
+
+        <!-- Skills -->
+        <?php if (!empty($skills)): ?>
+            <section class="panel">
+                <h3 style="margin-top:0;">Skills</h3>
+                <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                    <?php foreach ($skills as $skill): ?>
+                        <span style="background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:0.87rem;"><?php echo sanitize($skill); ?></span>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endif; ?>
+
+        <!-- Weekly schedule -->
+        <?php if (!empty($schedule)): ?>
+            <section class="panel">
+                <h3 style="margin-top:0;">Availability schedule</h3>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                    <?php foreach (get_weekday_names() as $dayNum => $dayName): ?>
+                        <?php if (!empty($schedule[$dayNum])): ?>
+                            <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--surface);border-radius:8px;font-size:0.9rem;">
+                                <strong><?php echo sanitize($dayName); ?></strong>
+                                <span class="meta"><?php echo sanitize(implode(', ', array_map(function ($s) {
+                                    return format_time_range($s['start_time'], $s['end_time']);
+                                }, $schedule[$dayNum]))); ?></span>
+                            </div>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endif; ?>
+
+        <!-- Recent work -->
+        <?php if (!empty($recentJobs)): ?>
+            <section class="panel">
+                <h3 style="margin-top:0;">Recent completed work</h3>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    <?php foreach ($recentJobs as $job): ?>
+                        <div style="padding:12px;background:var(--surface);border-radius:10px;border:1px solid var(--border);">
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+                                <div>
+                                    <strong style="font-size:0.95rem;"><?php echo sanitize(substr($job['title'], 0, 50)); ?></strong>
+                                    <p class="meta" style="margin:2px 0 0;"><?php echo sanitize($job['category_name']); ?></p>
+                                </div>
+                                <?php if ($job['rating_score']): ?>
+                                    <span style="background:#fef9c3;color:#92400e;border-radius:5px;padding:2px 8px;font-size:0.85rem;white-space:nowrap;flex-shrink:0;">★ <?php echo sanitize($job['rating_score']); ?>/5</span>
+                                <?php endif; ?>
+                            </div>
+                            <?php if ($job['comment']): ?>
+                                <p style="margin:8px 0 0;font-size:0.87rem;color:var(--text-muted);font-style:italic;">"<?php echo sanitize($job['comment']); ?>"</p>
+                            <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+        <?php endif; ?>
+
     </main>
-    <?php $user = current_user(); if ($user): ?>
+    <?php if ($user): ?>
         <?php $activeNav = 'workers'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <?php endif; ?>
 </body>

@@ -10,7 +10,7 @@ if ($requestId <= 0) {
     exit;
 }
 
-$stmt = $pdo->prepare('SELECT sr.*, c.name AS customer_name, c.email AS customer_email, w.name AS worker_name, wc.name AS category_name FROM service_requests sr JOIN users c ON sr.customer_id = c.id JOIN service_categories wc ON sr.category_id = wc.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.id = ?');
+$stmt = $pdo->prepare('SELECT sr.*, c.name AS customer_name, c.username AS customer_username, c.profile_photo AS customer_photo, c.email AS customer_email, w.name AS worker_name, w.username AS worker_username, wc.name AS category_name FROM service_requests sr JOIN users c ON sr.customer_id = c.id JOIN service_categories wc ON sr.category_id = wc.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.id = ?');
 $stmt->execute([$requestId]);
 $request = $stmt->fetch();
 
@@ -79,13 +79,17 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                 <?php endif; ?>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 10px; margin-top: 18px;">
-                <span class="avatar avatar-sm"><?php echo sanitize(strtoupper(substr($request['customer_name'], 0, 1))); ?></span>
+            <a href="customer_profile.php?id=<?php echo $request['customer_id']; ?>" style="display:flex;align-items:center;gap:10px;margin-top:18px;text-decoration:none;color:inherit;">
+                <?php if (!empty($request['customer_photo'])): ?>
+                    <img src="<?php echo sanitize($request['customer_photo']); ?>" alt="" class="avatar avatar-sm" style="object-fit:cover;" />
+                <?php else: ?>
+                    <span class="avatar avatar-sm"><?php echo sanitize(strtoupper(substr($request['customer_username'] ?: $request['customer_name'], 0, 1))); ?></span>
+                <?php endif; ?>
                 <div>
                     <p class="meta" style="margin: 0;">Posted by</p>
-                    <strong><?php echo sanitize($request['customer_name']); ?></strong>
+                    <strong><?php echo sanitize($request['customer_username'] ?: $request['customer_name']); ?></strong>
                 </div>
-            </div>
+            </a>
             <p class="meta" style="margin-top: 10px;">📍 <?php echo sanitize($request['location']); ?> · <?php echo sanitize(time_ago($request['created_at'])); ?></p>
 
             <div class="info-grid" style="margin: 18px 0;">
@@ -116,7 +120,9 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 
             <?php if ($request['assigned_worker_id']): ?>
                 <h2 style="font-size: 1rem; margin: 16px 0 6px;">Assigned worker</h2>
-                <p style="margin: 0;"><?php echo sanitize($request['worker_name'] ?: 'Worker'); ?></p>
+                <a href="worker_profile_public.php?id=<?php echo $request['assigned_worker_id']; ?>" style="color:var(--primary);font-weight:600;">
+                    <?php echo sanitize($request['worker_username'] ?: $request['worker_name'] ?: 'Worker'); ?>
+                </a>
             <?php endif; ?>
 
             <?php if (!empty($request['completion_notes'])): ?>

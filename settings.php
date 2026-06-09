@@ -131,10 +131,13 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                 <?php if (!empty($user['profile_photo'])): ?>
                     <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile photo" class="avatar avatar-lg" />
                 <?php else: ?>
-                    <span class="avatar avatar-lg"><?php echo sanitize(strtoupper(substr($user['name'], 0, 1))); ?></span>
+                    <span class="avatar avatar-lg"><?php echo sanitize(strtoupper(substr(display_name($user), 0, 1))); ?></span>
                 <?php endif; ?>
                 <div>
-                    <strong style="font-size: 1.05rem;"><?php echo sanitize($user['name']); ?></strong>
+                    <strong style="font-size: 1.05rem;"><?php echo sanitize(display_name($user)); ?></strong>
+                    <?php if (!empty($user['username']) && $user['username'] !== $user['name']): ?>
+                        <p class="meta" style="margin: 1px 0 0; font-size: 0.82rem;">@<?php echo sanitize($user['username']); ?></p>
+                    <?php endif; ?>
                     <p class="meta" style="margin: 2px 0 0;"><?php echo sanitize($user['phone'] ?? 'No phone on file'); ?></p>
                 </div>
             </section>
