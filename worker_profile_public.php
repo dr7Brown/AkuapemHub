@@ -109,10 +109,15 @@ $user = current_user();
                 </div>
             </div>
 
-            <!-- Contact button -->
+            <!-- Contact buttons -->
             <?php if ($worker['contact_phone']): ?>
                 <a href="<?php echo whatsapp_contact_link($worker['contact_phone'], 'Hi, I found your profile on AkuapemHub and would like to hire you.'); ?>" target="_blank" class="button button-primary" style="width:100%;margin-top:18px;text-align:center;display:block;">
                     💬 Contact via WhatsApp
+                </a>
+            <?php endif; ?>
+            <?php if ($user && $user['id'] !== $workerId): ?>
+                <a href="chat_start.php?user_id=<?php echo $workerId; ?>" class="button button-secondary" style="width:100%;margin-top:10px;text-align:center;display:block;">
+                    ✉️ Send Message
                 </a>
             <?php endif; ?>
         </section>

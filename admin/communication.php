@@ -77,17 +77,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $uid1 = intval($_POST['user1_id'] ?? 0);
         $uid2 = intval($_POST['user2_id'] ?? 0);
         if ($uid1 && $uid2 && $uid1 !== $uid2) {
-            $convId = get_or_create_conversation($user['id'], $uid2, 'admin_granted', null);
-            // Ensure both target users are participants
-            foreach ([$uid1, $uid2] as $uid) {
-                $check = $pdo->prepare("SELECT id FROM conversation_participants WHERE conversation_id=? AND user_id=?");
-                $check->execute([$convId, $uid]);
-                if (!$check->fetch()) {
-                    $pdo->prepare("INSERT INTO conversation_participants (conversation_id, user_id, joined_at) VALUES (?,?,NOW())")->execute([$convId, $uid]);
-                }
+            // Find existing conversation between uid1 and uid2 (not admin)
+            $existing = $pdo->prepare("
+                SELECT c.id FROM conversations c
+                JOIN conversation_participants cp1 ON c.id = cp1.conversation_id AND cp1.user_id = ?
+                JOIN conversation_participants cp2 ON c.id = cp2.conversation_id AND cp2.user_id = ?
+                WHERE c.status != 'closed' LIMIT 1
+            ");
+            $existing->execute([$uid1, $uid2]);
+            if ($row = $existing->fetch()) {
+                $convId = (int)$row['id'];
+                $pdo->prepare("UPDATE conversations SET conversation_type='admin_granted', status='active' WHERE id=?")->execute([$convId]);
+            } else {
+                $pdo->prepare("INSERT INTO conversations (conversation_type, job_id, created_by, status, created_at) VALUES ('admin_granted', NULL, ?, 'active', NOW())")
+                    ->execute([$user['id']]);
+                $convId = (int)$pdo->lastInsertId();
+                $pdo->prepare("INSERT INTO conversation_participants (conversation_id, user_id, joined_at) VALUES (?,?,NOW()),(?,?,NOW())")
+                    ->execute([$convId, $uid1, $convId, $uid2]);
             }
-            // Update type if needed
-            $pdo->prepare("UPDATE conversations SET conversation_type='admin_granted', status='active', created_by=? WHERE id=?")->execute([$user['id'], $convId]);
             log_chat_audit($user['id'], 'grant_chat', $uid1, $convId, "Admin granted chat between user $uid1 and $uid2");
             $msg = 'Chat access granted.';
         }

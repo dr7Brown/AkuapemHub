@@ -185,7 +185,14 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
         if ($contactUrl) {
             $secondaryActions[] = ['link_external', $contactUrl, '💬 Chat on WhatsApp'];
         }
-        $secondaryActions[] = ['link', 'messages.php?request_id=' . $request['id'], '✉️ Messages'];
+        // In-app chat: customer → assigned worker, worker → customer
+        if (is_customer() && $request['customer_id'] === $user['id'] && $request['assigned_worker_id']) {
+            $secondaryActions[] = ['link', 'chat_start.php?user_id=' . $request['assigned_worker_id'] . '&job_id=' . $request['id'], '💬 Message Worker'];
+        } elseif (is_worker() && ($request['assigned_worker_id'] === $user['id'] || $myApplicationStatus === 'pending' || $myApplicationStatus === 'accepted')) {
+            $secondaryActions[] = ['link', 'chat_start.php?user_id=' . $request['customer_id'] . '&job_id=' . $request['id'], '💬 Message Customer'];
+        } else {
+            $secondaryActions[] = ['link', 'chat.php', '💬 Messages'];
+        }
         if (is_customer() && $request['customer_id'] === $user['id'] && $request['status'] !== 'completed' && $request['status'] !== 'cancelled') {
             $rdRenewSoon = !empty($request['featured']) && !empty($rdFeatEnd) && $rdFeatEnd < date('Y-m-d', strtotime('+7 days'));
             if (!$rdFeatActive || $rdRenewSoon) {
@@ -262,6 +269,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                         <?php endif; ?>
                         <div class="button-group">
                             <a href="worker_profile_public.php?id=<?php echo $worker['id']; ?>" class="button button-secondary button-small">View profile</a>
+                            <a href="chat_start.php?user_id=<?php echo $worker['id']; ?>&job_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">💬 Message</a>
                         </div>
                     </div>
                 <?php endforeach; ?>

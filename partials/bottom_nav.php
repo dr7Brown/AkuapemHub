@@ -11,10 +11,19 @@ $jobsHref = $user['role'] === 'worker' ? 'worker_history.php' : 'dashboard.php';
 
 if (function_exists('get_total_unread_chat_count')) {
     $navUnreadMessages = get_total_unread_chat_count($user['id']);
-} elseif (function_exists('get_unread_messages_count')) {
-    $navUnreadMessages = get_unread_messages_count($user['id']);
 } else {
-    $navUnreadMessages = 0;
+    try {
+        global $pdo;
+        $navChatStmt = $pdo->prepare("
+            SELECT COUNT(*) FROM chat_messages cm
+            JOIN conversation_participants cp ON cm.conversation_id = cp.conversation_id AND cp.user_id = ?
+            WHERE cm.sender_id != ? AND cm.is_read = 0 AND cm.deleted_by_receiver = 0
+        ");
+        $navChatStmt->execute([$user['id'], $user['id']]);
+        $navUnreadMessages = (int)$navChatStmt->fetchColumn();
+    } catch (Exception $e) {
+        $navUnreadMessages = 0;
+    }
 }
 
 $navItems = [
