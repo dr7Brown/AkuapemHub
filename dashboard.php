@@ -58,10 +58,15 @@ if (is_worker()) {
     $workerEarnings = get_paid_total_by_worker($user['id']);
 
     $workerSkillsCsv = '';
+    $workerPendingVerif = false;
     if ($profile) {
         $skillRows = $pdo->prepare('SELECT skill_name FROM worker_skills WHERE worker_profile_id = ?');
         $skillRows->execute([$profile['id']]);
         $workerSkillsCsv = implode(', ', array_column($skillRows->fetchAll(), 'skill_name'));
+
+        $pvStmt = $pdo->prepare("SELECT id FROM platform_payments WHERE user_id = ? AND payment_type = 'verification' AND status = 'pending'");
+        $pvStmt->execute([$user['id']]);
+        $workerPendingVerif = (bool) $pvStmt->fetch();
     }
     $matchContext = [
         'latitude' => $profile['latitude'] ?? null,
@@ -149,6 +154,27 @@ if (is_worker()) {
                 <a href="request.php" class="button button-primary">➕ Post Job</a>
             <?php endif; ?>
         </section>
+
+        <?php if (is_worker() && $profile): ?>
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--border);margin-bottom:16px;">
+                <span style="font-size:1.25rem;">🛡️</span>
+                <div style="flex:1;min-width:0;">
+                    <span style="font-size:0.82rem;color:var(--text-muted);display:block;margin-bottom:3px;">Profile status</span>
+                    <?php if ($profile['is_verified']): ?>
+                        <span style="display:inline-flex;align-items:center;gap:3px;background:#22a06b;color:#fff;border-radius:5px;padding:2px 9px;font-size:0.92rem;font-weight:600;"><strong style="font-size:1.05em;">✓</strong>erified</span>
+                        <?php if ($profile['verification_expiry']): ?>
+                            <span class="meta" style="margin-left:6px;font-size:0.8rem;">until <?php echo sanitize($profile['verification_expiry']); ?></span>
+                        <?php endif; ?>
+                    <?php elseif ($workerPendingVerif): ?>
+                        <span style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b;color:#fff;border-radius:5px;padding:2px 9px;font-size:0.87rem;font-weight:600;">⏳ Verification payment pending</span>
+                    <?php else: ?>
+                        <span style="color:var(--text-muted);font-size:0.87rem;">Not verified</span>
+                        <a href="<?php echo is_feature_paid('enable_paid_verification_badges') ? 'request_verification.php' : '#'; ?>" class="button button-secondary button-small" style="margin-left:10px;font-size:0.8rem;">Get <strong>✓</strong>erified</a>
+                    <?php endif; ?>
+                </div>
+                <a href="worker_profile.php" style="font-size:0.8rem;color:var(--primary);white-space:nowrap;">My profile →</a>
+            </div>
+        <?php endif; ?>
 
         <h2 style="margin: 0 0 12px;">Popular categories</h2>
         <div class="category-grid" id="category-grid">

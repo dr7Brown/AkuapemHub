@@ -130,7 +130,7 @@ $user = current_user();
                                 <h2>
                                     <?php echo sanitize(display_name($worker)); ?>
                                     <?php if ($worker['is_verified']): ?>
-                                        <span title="Verified worker" style="color:var(--primary);">✓</span>
+                                        <span title="Verified worker" style="display:inline-flex;align-items:center;background:#22a06b;color:#fff;border-radius:4px;padding:1px 6px;font-size:0.78rem;margin-left:4px;vertical-align:middle;"><strong style="font-size:1em;">✓</strong>erified</span>
                                     <?php endif; ?>
                                     <?php if ($worker['is_featured'] && (!$worker['featured_end_date'] || $worker['featured_end_date'] >= date('Y-m-d'))): ?>
                                         <span class="badge" style="background:var(--primary);color:#fff;font-size:0.75rem;padding:2px 7px;">Featured</span>

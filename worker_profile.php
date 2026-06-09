@@ -85,7 +85,7 @@ $schedule = get_worker_schedule($profile['id']);
                     <a href="feature_worker.php" class="button button-secondary button-small">Feature my profile</a>
                 <?php endif; ?>
                 <?php if ($profile['is_verified']): ?>
-                    <span class="badge" style="background:#22a06b;color:#fff;">Verified ✓</span>
+                    <span class="badge" style="background:#22a06b;color:#fff;font-size:0.95rem;letter-spacing:0.01em;"><strong style="font-size:1.05em;">✓</strong>erified</span>
                     <?php if ($profile['verification_expiry']): ?>
                         <span class="meta">expires <?php echo sanitize($profile['verification_expiry']); ?></span>
                     <?php endif; ?>
