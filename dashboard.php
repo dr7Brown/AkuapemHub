@@ -472,7 +472,7 @@ if (is_worker()) {
                 <div class="panel-header">
                     <h1>Browse Available Jobs</h1>
                 </div>
-                <p class="meta" style="margin-bottom: 14px;">Want to earn on AkuapemHub? <a href="settings.php" style="color:var(--primary);">Switch your profile to Worker</a> to apply for jobs.</p>
+                <p class="meta" style="margin-bottom: 14px;">Want to earn on AkuapemHub? <a href="become_worker.php" style="color:var(--primary);">Switch your profile to Worker</a> to apply for jobs.</p>
                 <div class="jobs-grid">
                 <?php foreach ($browseJobs as $job): ?>
                     <article class="request-card">
@@ -487,7 +487,8 @@ if (is_worker()) {
                         <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($job['budget']); ?></p>
                         <div class="card-bottom">
                             <div class="card-mid-actions">
-                                <span class="card-status-badge info">You must change your profile to Worker to apply for this job.</span>
+                                <span class="card-status-badge info">To apply for jobs, switch your profile to Worker.</span>
+                                <a href="become_worker.php" class="button button-secondary" style="font-size:0.85rem;">Become a Worker →</a>
                             </div>
                             <div class="card-actions">
                                 <a href="<?php echo whatsapp_share_link($job['title'], $job['location'], $job['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>

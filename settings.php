@@ -8,6 +8,13 @@ $towns = get_towns();
 $error = '';
 $success = '';
 $section = $_GET['section'] ?? '';
+$skillCategories = get_skill_categories_with_skills();
+$workerProfile = null;
+if ($user['role'] === 'worker') {
+    $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
+    $wpStmt->execute([$user['id']]);
+    $workerProfile = $wpStmt->fetch() ?: null;
+}
 
 function settings_refresh_user(PDO $pdo, $userId) {
     $stmt = $pdo->prepare('SELECT id, name, username, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
@@ -89,6 +96,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
     $pdo->prepare('UPDATE users SET email_notifications_enabled = ? WHERE id = ?')->execute([$emailNotifications, $user['id']]);
     $user = settings_refresh_user($pdo, $user['id']);
     $success = 'Notification preferences updated.';
+
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_bio') {
+    if ($workerProfile) {
+        $bio = trim($_POST['bio'] ?? '');
+        $avail = in_array($_POST['availability'] ?? '', ['available', 'busy', 'on_leave'], true) ? $_POST['availability'] : 'available';
+        $pdo->prepare('UPDATE worker_profiles SET bio = ?, availability = ? WHERE user_id = ?')->execute([$bio, $avail, $user['id']]);
+        $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
+        $wpStmt->execute([$user['id']]);
+        $workerProfile = $wpStmt->fetch() ?: null;
+        $success = 'Bio and availability updated.';
+    }
+
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_id') {
+    if ($workerProfile) {
+        $idType   = $_POST['id_type'] ?? '';
+        $idNumber = trim($_POST['id_number'] ?? '');
+        if (!in_array($idType, ['ghana_card', 'passport'], true) || $idNumber === '') {
+            $error = 'Select an ID type and enter your ID card number.';
+        } elseif (!empty($_FILES['id_document']['name']) && !is_valid_image_upload($_FILES['id_document'])) {
+            $error = 'ID photo must be a JPEG, PNG, or WEBP image under 5MB.';
+        } else {
+            $idDocPath = $workerProfile['id_document_path'];
+            if (!empty($_FILES['id_document']['name'])) {
+                $uploaded = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
+                if ($uploaded) $idDocPath = $uploaded;
+            }
+            $pdo->prepare('UPDATE worker_profiles SET id_type = ?, id_number = ?, id_document_path = ? WHERE user_id = ?')->execute([$idType, $idNumber, $idDocPath, $user['id']]);
+            $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
+            $wpStmt->execute([$user['id']]);
+            $workerProfile = $wpStmt->fetch() ?: null;
+            $success = 'Identity information updated.';
+        }
+    }
+
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_remove_skill') {
+    if ($workerProfile) {
+        $skillId = intval($_POST['skill_id'] ?? 0);
+        if ($skillId > 0) {
+            $pdo->prepare('DELETE FROM worker_skills WHERE id = ? AND worker_profile_id = ?')->execute([$skillId, $workerProfile['id']]);
+        }
+        $success = 'Skill removed.';
+    }
+
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_add_skill') {
+    if ($workerProfile) {
+        $newSkills = json_decode($_POST['skills_json'] ?? '', true);
+        if (is_array($newSkills) && $newSkills) {
+            $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id, category_id, skill_name) VALUES (?, ?, ?)');
+            foreach ($newSkills as $entry) {
+                if (!is_array($entry)) continue;
+                $sn  = trim((string)($entry['skill_name'] ?? ''));
+                $cid = intval($entry['category_id'] ?? 0) ?: null;
+                if ($sn !== '') $skillStmt->execute([$workerProfile['id'], $cid, $sn]);
+            }
+            $success = 'Skills added.';
+        }
+    }
+}
+
+$workerSkills = [];
+if ($workerProfile) {
+    $wsStmt = $pdo->prepare(
+        'SELECT ws.id, ws.skill_name, ws.category_id, sc.name AS category_name
+         FROM worker_skills ws
+         LEFT JOIN skill_categories sc ON ws.category_id = sc.id
+         WHERE ws.worker_profile_id = ?
+         ORDER BY sc.name, ws.skill_name'
+    );
+    $wsStmt->execute([$workerProfile['id']]);
+    $workerSkills = $wsStmt->fetchAll();
 }
 
 $sectionMeta = [
@@ -96,6 +173,7 @@ $sectionMeta = [
     'location' => ['icon' => '📍', 'title' => 'Location'],
     'password' => ['icon' => '🔑', 'title' => 'Account Settings'],
     'notifications' => ['icon' => '🔔', 'title' => 'Notifications'],
+    'worker' => ['icon' => '🛠️', 'title' => 'Worker Profile'],
     'role' => ['icon' => '🧰', 'title' => 'Role'],
     'privacy' => ['icon' => '🔒', 'title' => 'Privacy & Security'],
     'help' => ['icon' => '❓', 'title' => 'Help & Support'],
@@ -172,6 +250,13 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                     <span class="list-row-body"><strong>My Payments</strong><p>Featured jobs, profiles &amp; verification history</p></span>
                     <span class="list-row-meta">›</span>
                 </a>
+                <?php if ($user['role'] === 'worker'): ?>
+                <a href="?section=worker" class="list-row">
+                    <span class="menu-icon">🛠️</span>
+                    <span class="list-row-body"><strong>Worker Profile</strong><p>Bio, availability, identity &amp; skills</p></span>
+                    <span class="list-row-meta">›</span>
+                </a>
+                <?php endif; ?>
                 <a href="?section=role" class="list-row">
                     <span class="menu-icon">🧰</span>
                     <span class="list-row-body"><strong>Role</strong><p><?php echo $user['role'] === 'worker' ? 'Worker — manage your offering' : 'Customer — start offering services'; ?></p></span>
@@ -298,6 +383,179 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                     </form>
                 <?php endif; ?>
             </section>
+
+        <?php elseif ($activeSection === 'worker'): ?>
+            <?php if (!$workerProfile): ?>
+                <div class="alert alert-info">You don't have a worker profile yet. <a href="become_worker.php" style="color:var(--primary);">Become a worker</a> to create one.</div>
+            <?php else: ?>
+                <!-- Bio & Availability -->
+                <form class="card form-card" method="post" action="settings.php?section=worker" style="margin-bottom:14px;">
+                    <input type="hidden" name="form" value="worker_bio" />
+                    <h2>Bio &amp; Availability</h2>
+                    <label>About you <span class="meta">(optional)</span></label>
+                    <textarea name="bio" rows="3" placeholder="Briefly describe your experience and what makes you a great worker..."><?php echo sanitize($workerProfile['bio']); ?></textarea>
+                    <label>Availability</label>
+                    <select name="availability">
+                        <option value="available" <?php echo $workerProfile['availability'] === 'available' ? 'selected' : ''; ?>>Available for work</option>
+                        <option value="busy" <?php echo $workerProfile['availability'] === 'busy' ? 'selected' : ''; ?>>Busy — not taking new jobs</option>
+                        <option value="on_leave" <?php echo $workerProfile['availability'] === 'on_leave' ? 'selected' : ''; ?>>On leave</option>
+                    </select>
+                    <button type="submit" class="button button-primary">Save</button>
+                </form>
+
+                <!-- Identity Verification -->
+                <form class="card form-card" method="post" action="settings.php?section=worker" enctype="multipart/form-data" style="margin-bottom:14px;">
+                    <input type="hidden" name="form" value="worker_id" />
+                    <h2>Identity Verification</h2>
+                    <p class="meta">Your ID is never shared publicly — it is used for trust &amp; safety only.</p>
+                    <label>ID type</label>
+                    <select name="id_type" required>
+                        <option value="">Select ID type</option>
+                        <option value="ghana_card" <?php echo $workerProfile['id_type'] === 'ghana_card' ? 'selected' : ''; ?>>Ghana Card</option>
+                        <option value="passport" <?php echo $workerProfile['id_type'] === 'passport' ? 'selected' : ''; ?>>Passport</option>
+                    </select>
+                    <label>ID card number</label>
+                    <input type="text" name="id_number" value="<?php echo sanitize($workerProfile['id_number'] ?? ''); ?>" required placeholder="e.g. GHA-000000000-0" />
+                    <label>New ID photo <span class="meta">(leave blank to keep current)</span></label>
+                    <input type="file" name="id_document" accept="image/jpeg,image/png,image/webp" />
+                    <?php if (!empty($workerProfile['id_document_path'])): ?>
+                        <p class="meta" style="margin-top:4px;">Current document on file — <a href="<?php echo sanitize($workerProfile['id_document_path']); ?>" target="_blank" style="color:var(--primary);">View</a></p>
+                    <?php endif; ?>
+                    <button type="submit" class="button button-primary">Update ID</button>
+                </form>
+
+                <!-- Skills -->
+                <div class="card form-card" style="margin-bottom:14px;">
+                    <h2>Your Skills</h2>
+                    <?php if ($workerSkills): ?>
+                        <p class="meta" style="margin-bottom:10px;">Tap × next to any skill to remove it.</p>
+                        <ul style="list-style:none;padding:0;margin:0 0 18px;display:flex;flex-wrap:wrap;gap:8px;">
+                        <?php foreach ($workerSkills as $sk): ?>
+                            <li class="badge" style="display:inline-flex;align-items:center;gap:5px;font-size:0.88rem;">
+                                <?php if ($sk['category_name']): ?><span style="font-size:0.78rem;color:var(--text-muted);font-weight:normal;"><?php echo sanitize($sk['category_name']); ?>:</span><?php endif; ?>
+                                <?php echo sanitize($sk['skill_name']); ?>
+                                <form method="post" action="settings.php?section=worker" style="display:contents;">
+                                    <input type="hidden" name="form" value="worker_remove_skill" />
+                                    <input type="hidden" name="skill_id" value="<?php echo $sk['id']; ?>" />
+                                    <button type="submit" title="Remove skill" onclick="return confirm('Remove <?php echo addslashes(sanitize($sk['skill_name'])); ?>?')" style="border:none;background:transparent;cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 2px;color:var(--text-muted);">×</button>
+                                </form>
+                            </li>
+                        <?php endforeach; ?>
+                        </ul>
+                    <?php else: ?>
+                        <p class="meta" style="margin-bottom:12px;">No skills added yet.</p>
+                    <?php endif; ?>
+                    <form method="post" action="settings.php?section=worker" id="add-skill-form">
+                        <input type="hidden" name="form" value="worker_add_skill" />
+                        <h3 style="font-size:0.95rem;margin:0 0 6px;font-weight:600;">Add skills</h3>
+                        <label>Category</label>
+                        <select id="skill-category-select">
+                            <option value="">Select a category</option>
+                            <?php foreach ($skillCategories as $cat): ?>
+                                <option value="<?php echo $cat['id']; ?>"><?php echo sanitize($cat['name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <label>Skill</label>
+                        <select id="skill-select" disabled>
+                            <option value="">Select a category first</option>
+                        </select>
+                        <div id="other-skill-wrap" style="display:none;">
+                            <label>Specify your skill</label>
+                            <input type="text" id="other-skill-input" placeholder="e.g. Borehole drilling" />
+                        </div>
+                        <button type="button" id="add-skill-button" class="button button-secondary button-small" style="margin-top:10px;">+ Add to list</button>
+                        <ul id="skill-list" style="list-style:none;padding:0;margin:10px 0 0;display:flex;flex-wrap:wrap;gap:8px;"></ul>
+                        <input type="hidden" name="skills_json" id="skills-json" value="[]" />
+                        <button type="submit" id="save-skills-button" class="button button-primary" style="display:none;margin-top:14px;">Save added skills</button>
+                    </form>
+                </div>
+            <?php endif; ?>
+            <script>
+                var skillTaxonomy = <?php echo json_encode($skillCategories); ?>;
+                var catSel = document.getElementById('skill-category-select');
+                var skillSel = document.getElementById('skill-select');
+                var otherWrap = document.getElementById('other-skill-wrap');
+                var otherInput = document.getElementById('other-skill-input');
+                var addBtn = document.getElementById('add-skill-button');
+                var skillList = document.getElementById('skill-list');
+                var skillsJson = document.getElementById('skills-json');
+                var saveBtn = document.getElementById('save-skills-button');
+                var pending = [];
+
+                if (catSel) {
+                    function findCat(id) {
+                        for (var i = 0; i < skillTaxonomy.length; i++) {
+                            if (String(skillTaxonomy[i].id) === String(id)) return skillTaxonomy[i];
+                        }
+                        return null;
+                    }
+
+                    catSel.addEventListener('change', function () {
+                        var cat = findCat(this.value);
+                        skillSel.innerHTML = '';
+                        otherWrap.style.display = 'none';
+                        if (!cat) {
+                            skillSel.disabled = true;
+                            skillSel.innerHTML = '<option value="">Select a category first</option>';
+                            return;
+                        }
+                        skillSel.disabled = false;
+                        var blank = document.createElement('option');
+                        blank.value = ''; blank.textContent = 'Select a skill';
+                        skillSel.appendChild(blank);
+                        cat.skills.forEach(function (s) {
+                            var o = document.createElement('option');
+                            o.value = s; o.textContent = s;
+                            skillSel.appendChild(o);
+                        });
+                        var oth = document.createElement('option');
+                        oth.value = '__other__'; oth.textContent = 'Other (specify)';
+                        skillSel.appendChild(oth);
+                    });
+
+                    skillSel.addEventListener('change', function () {
+                        otherWrap.style.display = this.value === '__other__' ? 'block' : 'none';
+                    });
+
+                    function renderPending() {
+                        skillList.innerHTML = '';
+                        saveBtn.style.display = pending.length > 0 ? 'inline-flex' : 'none';
+                        pending.forEach(function (sk, idx) {
+                            var li = document.createElement('li');
+                            li.className = 'badge';
+                            li.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:0.88rem;';
+                            li.textContent = (sk.category_name ? sk.category_name + ': ' : '') + sk.skill_name;
+                            var btn = document.createElement('button');
+                            btn.type = 'button'; btn.textContent = '×';
+                            btn.style.cssText = 'border:none;background:transparent;cursor:pointer;font-size:1rem;padding:0 0 0 2px;color:var(--text-muted);';
+                            btn.addEventListener('click', function () {
+                                pending.splice(idx, 1);
+                                renderPending();
+                            });
+                            li.appendChild(btn);
+                            skillList.appendChild(li);
+                        });
+                        skillsJson.value = JSON.stringify(pending);
+                    }
+
+                    addBtn.addEventListener('click', function () {
+                        var cat = findCat(catSel.value);
+                        if (!cat) { catSel.focus(); return; }
+                        var name = skillSel.value === '__other__' ? otherInput.value.trim() : skillSel.value;
+                        if (!name) { skillSel.focus(); return; }
+                        var exists = pending.some(function (s) {
+                            return s.category_id === cat.id && s.skill_name.toLowerCase() === name.toLowerCase();
+                        });
+                        if (!exists) {
+                            pending.push({ category_id: cat.id, category_name: cat.name, skill_name: name });
+                            renderPending();
+                        }
+                        otherInput.value = ''; otherWrap.style.display = 'none'; skillSel.value = '';
+                    });
+
+                    renderPending();
+                }
+            </script>
 
         <?php elseif ($activeSection === 'privacy'): ?>
             <section class="card form-card">
