@@ -596,10 +596,57 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+/* Card-bottom wraps mid-actions + card-actions; pushed to bottom of the flex-column card */
+.request-card .card-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Tinted action zone above the bottom button bar */
+.request-card .card-mid-actions {
+  margin: 0 -18px;
+  padding: 12px 18px;
+  background: var(--surface-muted);
+  border-top: 1.5px solid rgba(47, 143, 91, 0.12);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.request-card .card-mid-actions > form,
+.request-card .card-mid-actions > a.button {
+  flex: 1;
+  min-width: 0;
+}
+
+.request-card .card-mid-actions .button {
+  width: 100%;
+  text-align: center;
+  justify-content: center;
+}
+
+/* Inline status row (applied, approved, rejected) inside card-mid-actions */
+.card-status-badge {
+  display: flex;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  font-weight: 600;
+  width: 100%;
+  box-sizing: border-box;
+  gap: 6px;
+}
+.card-status-badge.pending  { background: #fef3c7; color: #92400e; }
+.card-status-badge.approved { background: #d1fae5; color: #065f46; }
+.card-status-badge.rejected { background: #fee2e2; color: #991b1b; }
+.card-status-badge.info     { background: var(--surface-muted); color: var(--muted); border: 1px solid var(--border); }
+
 /* Flush bottom action bar — bleeds to card edges, corners clipped by card overflow:hidden */
 .request-card .card-actions {
   display: flex;
-  margin: auto -18px -18px;
+  margin: 0 -18px -18px;
   border-top: 1.5px solid rgba(47, 143, 91, 0.15);
 }
 

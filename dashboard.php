@@ -147,7 +147,7 @@ if (is_worker()) {
                 <h1>Find trusted jobs near you in Akuapem</h1>
                 <div class="button-group">
                     <a href="#open-jobs" class="button button-primary">Browse open jobs</a>
-                    <a href="job_applications.php" class="button button-secondary">📋 My Applications</a>
+                    <a href="worker_history.php" class="button button-secondary">📋 My Applications</a>
                     <a href="request.php" class="button button-secondary">➕ Post Job</a>
                 </div>
             <?php else: ?>
@@ -295,34 +295,36 @@ if (is_worker()) {
                                 <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
                             </div>
                             <p><?php echo sanitize($request['description']); ?></p>
-                            <div class="request-footer">
-                                <span>Budget: GH₵ <?php echo sanitize($request['budget']); ?></span>
-                                <div class="button-group">
-                                    <?php if (in_array($request['status'], ['open','partially_staffed'], true)): ?>
-                                        <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
+                            <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($request['budget']); ?></p>
+                            <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
+                            <div class="card-bottom">
+                                <?php if (in_array($request['status'], ['open','partially_staffed'], true)): ?>
+                                    <div class="card-mid-actions">
                                         <?php if ($myAppStatus === 'pending'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Application pending</span>
+                                            <span class="card-status-badge pending">⏳ Application pending review</span>
                                         <?php elseif ($myAppStatus === 'approved'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default; background:#d1fae5; color:#065f46;">✓ Approved</span>
+                                            <span class="card-status-badge approved">✓ Your application was approved</span>
                                         <?php elseif ($myAppStatus === 'rejected'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Not selected</span>
+                                            <span class="card-status-badge rejected">✗ Application not selected</span>
                                         <?php else: ?>
                                             <form method="post" action="apply_job.php">
                                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                                 <button type="submit" class="button button-primary">Apply for this job</button>
                                             </form>
                                         <?php endif; ?>
-                                    <?php elseif (in_array($request['status'], ['in_progress','fully_staffed'], true) && $request['assigned_worker_id'] === $user['id']): ?>
+                                    </div>
+                                <?php elseif (in_array($request['status'], ['in_progress','fully_staffed'], true) && $request['assigned_worker_id'] === $user['id']): ?>
+                                    <div class="card-mid-actions">
                                         <form method="post" action="complete_job.php">
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                                            <button type="submit" class="button button-primary">Mark completed</button>
+                                            <button type="submit" class="button button-primary">✓ Mark completed</button>
                                         </form>
-                                    <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                                <div class="card-actions">
+                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                    <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
                                 </div>
-                            </div>
-                            <div class="card-actions">
-                                <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
-                                <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
                             </div>
                         </article>
                     <?php endforeach; ?>
@@ -357,7 +359,7 @@ if (is_worker()) {
                 <div class="panel-header">
                     <h1>Your service requests</h1>
                     <div style="display:flex;gap:8px;">
-                        <a href="job_applications.php" class="button button-secondary">👥 Applicants</a>
+                        <a href="manage_applicants.php" class="button button-secondary">👥 Applicants</a>
                         <a href="request.php" class="button button-primary">Create request</a>
                     </div>
                 </div>
@@ -402,50 +404,53 @@ if (is_worker()) {
                                 <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
                             </div>
                             <p><?php echo sanitize($request['description']); ?></p>
-                            <div class="request-footer">
-                                <span>Budget: GH₵ <?php echo sanitize($request['budget']); ?></span>
+                            <p class="meta" style="margin: 0;">
+                                GH₵ <?php echo sanitize($request['budget']); ?>
                                 <?php if (($request['workers_needed'] ?? 1) > 1 || ($request['workers_approved'] ?? 0) > 0): ?>
-                                    <span>Hired: <?php echo (int)($request['workers_approved'] ?? 0); ?>/<?php echo (int)($request['workers_needed'] ?? 1); ?></span>
-                                <?php else: ?>
-                                    <span>Worker: <?php echo sanitize($request['assigned_worker_name'] ?: 'Not assigned'); ?></span>
+                                    · <?php echo (int)($request['workers_approved'] ?? 0); ?>/<?php echo (int)($request['workers_needed'] ?? 1); ?> hired
+                                <?php elseif ($request['assigned_worker_name']): ?>
+                                    · <?php echo sanitize($request['assigned_worker_name']); ?>
                                 <?php endif; ?>
-                                <span>Payment: <?php echo strtoupper($request['payment_status']); ?></span>
-                            </div>
+                                · <?php echo strtoupper($request['payment_status']); ?>
+                            </p>
                             <?php
                                 $cFeatEnd    = $request['featured_end_date'] ?? null;
                                 $cFeatActive = !empty($request['featured']) && (empty($cFeatEnd) || $cFeatEnd >= date('Y-m-d'));
                                 $cRenewSoon  = !empty($request['featured']) && !empty($cFeatEnd) && $cFeatEnd < date('Y-m-d', strtotime('+7 days'));
+                                $hasActions  = !in_array($request['status'], ['pending','cancelled'], true)
+                                            || (in_array($request['status'], ['pending','open'], true) && (!$cFeatActive || $cRenewSoon))
+                                            || $request['status'] === 'completed';
                             ?>
-                            <?php if (!in_array($request['status'], ['pending', 'cancelled'], true) || (in_array($request['status'], ['pending', 'open'], true) && (!$cFeatActive || $cRenewSoon))): ?>
-                            <div class="request-footer">
-                                <?php if (!in_array($request['status'], ['pending', 'cancelled'], true)): ?>
-                                    <a href="job_applications.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small">👥 Manage Applicants</a>
-                                <?php endif; ?>
-                                <?php if (in_array($request['status'], ['pending', 'open'], true) && (!$cFeatActive || $cRenewSoon)): ?>
-                                    <a href="feature_job.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small"><?php echo $cRenewSoon ? '⭐ Renew feature' : '⭐ Feature job'; ?></a>
-                                <?php endif; ?>
-                            </div>
-                            <?php endif; ?>
-                            <div class="card-actions">
-                                <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
-                                <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
-                            </div>
-                            <?php if ($request['status'] === 'completed'): ?>
-                                <div class="request-footer">
-                                    <?php if ($request['rating_score'] === null && $request['assigned_worker_id']): ?>
-                                        <a href="rate_job.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Rate worker</a>
-                                    <?php elseif ($request['rating_score'] !== null): ?>
-                                        <span>Rated: <?php echo sanitize($request['rating_score']); ?>/5</span>
+                            <div class="card-bottom">
+                                <?php if ($hasActions): ?>
+                                <div class="card-mid-actions">
+                                    <?php if (!in_array($request['status'], ['pending','cancelled'], true)): ?>
+                                        <a href="manage_applicants.php?id=<?php echo $request['id']; ?>" class="button button-primary">👥 Manage Applicants</a>
                                     <?php endif; ?>
-                                    <form method="post" action="toggle_payment.php" class="inline-form">
-                                        <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                                        <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
-                                        <button type="submit" class="button button-primary button-small">
-                                            Mark as <?php echo $request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid'; ?>
-                                        </button>
-                                    </form>
+                                    <?php if (in_array($request['status'], ['pending','open'], true) && (!$cFeatActive || $cRenewSoon)): ?>
+                                        <a href="feature_job.php?id=<?php echo $request['id']; ?>" class="button button-secondary"><?php echo $cRenewSoon ? '⭐ Renew feature' : '⭐ Feature job'; ?></a>
+                                    <?php endif; ?>
+                                    <?php if ($request['status'] === 'completed'): ?>
+                                        <?php if ($request['rating_score'] === null && $request['assigned_worker_id']): ?>
+                                            <a href="rate_job.php?request_id=<?php echo $request['id']; ?>" class="button button-secondary">⭐ Rate worker</a>
+                                        <?php elseif ($request['rating_score'] !== null): ?>
+                                            <span class="card-status-badge approved">⭐ Rated <?php echo sanitize($request['rating_score']); ?>/5</span>
+                                        <?php endif; ?>
+                                        <form method="post" action="toggle_payment.php" class="inline-form">
+                                            <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                            <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
+                                            <button type="submit" class="button button-primary">
+                                                Mark as <?php echo $request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid'; ?>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
                                 </div>
-                            <?php endif; ?>
+                                <?php endif; ?>
+                                <div class="card-actions">
+                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                    <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
+                                </div>
+                            </div>
                         </article>
                     <?php endforeach; ?>
                     </div>

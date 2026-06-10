@@ -40,7 +40,7 @@ $pdo->prepare('INSERT INTO applications (request_id, worker_id, status, applied_
 
 // Notify job owner (not just admins)
 notify_user((int)$request['customer_id'], 'New application received',
-    "{$user['name']} applied for your job '{$request['title']}'. <a href=\"job_applications.php\">Review applicants →</a>", 'info');
+    "{$user['name']} applied for your job '{$request['title']}'. <a href=\"manage_applicants.php?id={$request['id']}\">Review applicants →</a>", 'info');
 notify_admins_and_managers('New job application', "{$user['name']} applied for '{$request['title']}'.", 'info');
 
 flash('Application submitted. You will be notified once it is reviewed.');

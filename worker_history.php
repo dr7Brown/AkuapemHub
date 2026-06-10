@@ -136,14 +136,17 @@ $ledgerRows = array_reverse($ledgerRows);
                             <span class="status <?php echo $badge[1]; ?>"><?php echo $badge[0]; ?></span>
                         </div>
                         <p><?php echo sanitize($app['description']); ?></p>
-                        <div class="request-footer">
-                            <span>GH₵ <?php echo sanitize($app['budget']); ?></span>
-                        </div>
-                        <div class="card-actions">
-                            <a href="request_detail.php?id=<?php echo $app['id']; ?>" class="button">Details</a>
+                        <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($app['budget']); ?></p>
+                        <div class="card-bottom">
                             <?php if ($app['app_status'] === 'approved'): ?>
-                                <a href="chat_start.php?user_id=<?php echo $app['customer_id']; ?>&job_id=<?php echo $app['id']; ?>" class="button button-primary">💬 Message Owner</a>
+                                <div class="card-mid-actions">
+                                    <a href="chat_start.php?user_id=<?php echo $app['customer_id']; ?>&job_id=<?php echo $app['id']; ?>" class="button button-primary">💬 Message Owner</a>
+                                </div>
                             <?php endif; ?>
+                            <div class="card-actions">
+                                <a href="<?php echo whatsapp_share_link($app['title'], $app['location'], $app['budget'], BASE_URL . '/worker_history.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                <a href="request_detail.php?id=<?php echo $app['id']; ?>" class="button">Details</a>
+                            </div>
                         </div>
                     </article>
                 <?php endforeach; ?>
