@@ -47,6 +47,7 @@ $pendingPostingFeeJobs   = $pdo->query("SELECT COUNT(*) FROM service_requests WH
                 <a href="monetization.php" class="button button-small">Monetization</a>
                 <a href="communication.php" class="button button-small">Communication</a>
                 <a href="theme.php" class="button button-small">🎨 Theme</a>
+                <a href="audit_logs.php" class="button button-small">Audit Logs</a>
             <?php endif; ?>
             <a href="../settings.php" class="button button-secondary button-small">Settings</a>
             <a href="../logout.php" class="button button-secondary button-small">Logout</a>

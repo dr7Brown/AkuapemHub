@@ -28,6 +28,19 @@ if ($request['status'] === 'fully_staffed') {
     exit;
 }
 
+if (is_feature_paid('enable_paid_worker_service')) {
+    $wpStmt = $pdo->prepare("SELECT service_fee_status, service_fee_expiry FROM worker_profiles WHERE user_id = ?");
+    $wpStmt->execute([$user['id']]);
+    $wp = $wpStmt->fetch();
+    $feeOk = $wp && ($wp['service_fee_status'] === 'free'
+        || ($wp['service_fee_status'] === 'paid' && (empty($wp['service_fee_expiry']) || $wp['service_fee_expiry'] >= date('Y-m-d'))));
+    if (!$feeOk) {
+        flash('You must pay the worker service listing fee before applying for jobs. <a href="pay_worker_service.php">Pay now →</a>', 'error');
+        header('Location: request_detail.php?id=' . $requestId);
+        exit;
+    }
+}
+
 $existingStmt = $pdo->prepare("SELECT id FROM applications WHERE request_id = ? AND worker_id = ? AND status IN ('pending','approved','accepted')");
 $existingStmt->execute([$requestId, $user['id']]);
 if ($existingStmt->fetch()) {

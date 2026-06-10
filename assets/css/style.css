@@ -458,6 +458,10 @@ textarea {
   align-items: center;
 }
 
+.filter-form {
+  margin-bottom: 14px;
+}
+
 .filter-form select,
 .filter-form input {
   flex: 1 1 160px;

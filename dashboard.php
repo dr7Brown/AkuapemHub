@@ -38,7 +38,7 @@ if ($searchQuery) {
 }
 
 if (is_worker()) {
-    $workerWhere = array_merge(["sr.status IN ('open','partially_staffed')"], $where);
+    $workerWhere = array_merge(["sr.status IN ('open','partially_staffed')", "sr.posting_fee_status != 'pending'"], $where);
     $sql = 'SELECT sr.*, u.name AS customer_name, wc.name AS category_name, w.user_id AS worker_user_id
             FROM service_requests sr
             JOIN users u ON sr.customer_id = u.id
@@ -111,7 +111,9 @@ if (is_worker()) {
     $browseStmt = $pdo->prepare(
         'SELECT sr.*, sc.name AS category_name FROM service_requests sr
          JOIN service_categories sc ON sr.category_id = sc.id
-         WHERE sr.status IN (\'open\', \'partially_staffed\') AND sr.customer_id != ?
+         WHERE sr.status IN (\'open\', \'partially_staffed\')
+           AND sr.posting_fee_status != \'pending\'
+           AND sr.customer_id != ?
          ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 9'
     );
     $browseStmt->execute([$user['id']]);

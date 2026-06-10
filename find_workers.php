@@ -14,9 +14,11 @@ $where = [
     "u.role = 'worker'",
     "u.banned = 0",
     "w.id IS NOT NULL",
-    // Exclude workers with unpaid listing fee OR an expired paid listing
-    "(w.service_fee_status = 'free' OR (w.service_fee_status = 'paid' AND (w.service_fee_expiry IS NULL OR w.service_fee_expiry >= CURDATE())))",
 ];
+if (is_feature_paid('enable_paid_worker_service')) {
+    // Only show workers who have paid (active/free) when the listing fee feature is on
+    $where[] = "(w.service_fee_status = 'free' OR (w.service_fee_status = 'paid' AND (w.service_fee_expiry IS NULL OR w.service_fee_expiry >= CURDATE())))";
+}
 $params = [];
 
 if ($searchQuery) {
