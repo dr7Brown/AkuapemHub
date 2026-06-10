@@ -480,6 +480,8 @@ textarea {
   padding: 18px;
   margin-bottom: 14px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
   transition: box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
@@ -587,7 +589,7 @@ textarea {
 /* Flush bottom action bar — bleeds to card edges, corners clipped by card overflow:hidden */
 .request-card .card-actions {
   display: flex;
-  margin: 14px -18px -18px;
+  margin: auto -18px -18px;
   border-top: 1.5px solid rgba(47, 143, 91, 0.15);
 }
 
