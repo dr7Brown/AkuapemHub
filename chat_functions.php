@@ -218,6 +218,7 @@ function get_user_conversations(int $userId, int $limit = 40): array {
         SELECT c.id, c.conversation_type, c.job_id, c.status, c.created_at,
                u2.id AS other_id, u2.name AS other_name, u2.username AS other_username,
                u2.role AS other_role, u2.profile_photo AS other_photo,
+               sr.title AS job_title,
                (SELECT cm2.message FROM chat_messages cm2
                 WHERE cm2.conversation_id = c.id ORDER BY cm2.id DESC LIMIT 1) AS last_message,
                (SELECT cm2.message_type FROM chat_messages cm2
@@ -231,6 +232,7 @@ function get_user_conversations(int $userId, int $limit = 40): array {
         JOIN conversation_participants cp  ON c.id = cp.conversation_id  AND cp.user_id = ?
         JOIN conversation_participants cp2 ON c.id = cp2.conversation_id AND cp2.user_id != ?
         JOIN users u2 ON cp2.user_id = u2.id
+        LEFT JOIN service_requests sr ON c.job_id = sr.id
         ORDER BY last_at DESC, c.created_at DESC
         LIMIT ?
     ");

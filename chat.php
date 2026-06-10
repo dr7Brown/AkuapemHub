@@ -60,6 +60,7 @@ $myStatus = get_user_chat_status($user['id']);
         .conv-meta { flex:1; min-width:0; }
         .conv-name { font-weight:600; font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .conv-preview { font-size:0.8rem; color:var(--text-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+        .conv-job-tag { font-size:0.72rem; color:var(--primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; font-weight:500; }
         .conv-badge { background:var(--primary); color:#fff; border-radius:50%; min-width:18px; height:18px; font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; padding:0 3px; }
         .chat-pane { flex:1; display:flex; flex-direction:column; min-width:0; }
         .chat-header { padding:10px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:10px; flex-shrink:0; background:var(--bg); }
@@ -122,6 +123,9 @@ $myStatus = get_user_chat_status($user['id']);
                 <div class="conv-avatar"><?php echo $c['other_photo'] ? '<img src="' . sanitize($c['other_photo']) . '" alt="">' : htmlspecialchars(strtoupper(substr($c['other_name'],0,1))); ?></div>
                 <div class="conv-meta">
                     <div class="conv-name"><?php echo sanitize($c['other_name']); ?></div>
+                    <?php if ($c['job_id'] && $c['job_title']): ?>
+                        <div class="conv-job-tag">Re: <?php echo sanitize($c['job_title']); ?></div>
+                    <?php endif; ?>
                     <div class="conv-preview"><?php echo sanitize($preview); ?></div>
                 </div>
                 <?php if ($c['unread_count'] > 0): ?>
@@ -145,6 +149,11 @@ $myStatus = get_user_chat_status($user['id']);
                 <div>
                     <a href="<?php echo $other['role']==='worker' ? 'worker_profile_public.php?id='.$other['id'] : 'profile.php?id='.$other['id']; ?>" style="font-weight:600;text-decoration:none;color:inherit;"><?php echo sanitize($other['name']); ?></a>
                     <div class="meta" style="font-size:0.75rem;"><?php echo sanitize(ucfirst($other['role'])); ?></div>
+                    <?php if ($activeConv && $activeConv['job_id'] && $activeConv['job_title']): ?>
+                        <div style="font-size:0.75rem;margin-top:2px;">
+                            Re: <a href="request_detail.php?id=<?php echo (int)$activeConv['job_id']; ?>" style="color:var(--primary);text-decoration:none;font-weight:500;"><?php echo sanitize($activeConv['job_title']); ?></a>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
