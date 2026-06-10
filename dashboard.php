@@ -38,14 +38,37 @@ if ($searchQuery) {
 }
 
 if (is_worker()) {
-    $workerWhere = array_merge(["sr.status IN ('open','partially_staffed')"], $where);
+    // Load application statuses first — used to expand the job query to include applied-to jobs
+    $appStmt = $pdo->prepare('SELECT request_id, status FROM applications WHERE worker_id = ? ORDER BY applied_at ASC');
+    $appStmt->execute([$user['id']]);
+    $myApplicationStatuses = [];
+    $myAppliedJobIds = [];
+    foreach ($appStmt->fetchAll() as $appRow) {
+        $myApplicationStatuses[$appRow['request_id']] = $appRow['status'];
+        $myAppliedJobIds[] = (int)$appRow['request_id'];
+    }
+
+    $viewFilter = $_GET['view'] ?? 'all';
+
+    if ($myAppliedJobIds) {
+        $appliedPl = implode(',', $myAppliedJobIds);
+        $statusClause = $viewFilter === 'applied'
+            ? "sr.id IN ($appliedPl)"
+            : "(sr.status IN ('open','partially_staffed') OR sr.id IN ($appliedPl))";
+    } else {
+        $statusClause = $viewFilter === 'applied'
+            ? 'sr.id = 0'
+            : "sr.status IN ('open','partially_staffed')";
+    }
+
+    $workerWhere = array_merge([$statusClause], $where);
     $sql = 'SELECT sr.*, u.name AS customer_name, wc.name AS category_name, w.user_id AS worker_user_id
             FROM service_requests sr
             JOIN users u ON sr.customer_id = u.id
             JOIN service_categories wc ON sr.category_id = wc.id
             LEFT JOIN worker_profiles w ON sr.assigned_worker_id = w.user_id
             WHERE ' . implode(' AND ', $workerWhere);
-    $sql .= ' ORDER BY sr.created_at DESC LIMIT 100';
+    $sql .= ' ORDER BY sr.created_at DESC LIMIT 150';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $requests = $stmt->fetchAll();
@@ -74,23 +97,20 @@ if (is_worker()) {
         'skills' => $workerSkillsCsv,
     ];
 
+    // Split: applied jobs (any status) vs open jobs not yet applied to
+    $appliedJobs = [];
     $openJobs = [];
     $myJobs = [];
     foreach ($requests as $request) {
-        if (in_array($request['status'], ['open','partially_staffed'], true)) {
+        if (isset($myApplicationStatuses[$request['id']])) {
+            $appliedJobs[] = $request;
+        } elseif (in_array($request['status'], ['open','partially_staffed'], true)) {
             $openJobs[] = $request;
-        } elseif ($request['assigned_worker_id'] === $user['id']) {
+        } elseif ((string)$request['assigned_worker_id'] === (string)$user['id']) {
             $myJobs[] = $request;
         }
     }
     $openJobs = rank_jobs_for_worker($openJobs, $matchContext);
-
-    $myApplicationStatuses = [];
-    $appStmt = $pdo->prepare('SELECT request_id, status FROM applications WHERE worker_id = ? ORDER BY applied_at ASC');
-    $appStmt->execute([$user['id']]);
-    foreach ($appStmt->fetchAll() as $appRow) {
-        $myApplicationStatuses[$appRow['request_id']] = $appRow['status'];
-    }
 
 } elseif (is_customer()) {
     $customerWhere = array_merge(['sr.customer_id = ?'], $where);
@@ -254,6 +274,10 @@ if (is_worker()) {
                 <div class="panel-header">
                     <h1>Jobs for you</h1>
                     <form method="get" class="filter-form">
+                        <select name="view">
+                            <option value="all" <?php echo $viewFilter !== 'applied' ? 'selected' : ''; ?>>All open jobs</option>
+                            <option value="applied" <?php echo $viewFilter === 'applied' ? 'selected' : ''; ?>>My applications (<?php echo count($myApplicationStatuses); ?>)</option>
+                        </select>
                         <select name="category">
                             <option value="">All categories</option>
                             <?php foreach ($categories as $category): ?>
@@ -263,68 +287,111 @@ if (is_worker()) {
                         <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search jobs" />
                         <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
                         <button type="submit" class="button button-primary">Filter</button>
+                        <?php if ($viewFilter !== 'all' || $searchQuery || $locationFilter || $categoryFilter): ?>
+                            <a href="dashboard.php#open-jobs" class="button button-secondary button-small">Clear</a>
+                        <?php endif; ?>
                     </form>
                 </div>
-                <?php if ($openJobs): ?>
-                    <p class="small-note" style="text-align: left; margin-bottom: 14px;">🎯 Open jobs are ranked by how well they match your skills, location, and recent activity.</p>
-                <?php endif; ?>
-                <?php $displayJobs = array_merge($openJobs, $myJobs); ?>
-                <?php if (!$displayJobs): ?>
-                    <div class="empty-state">No jobs match your filters.</div>
-                <?php else: ?>
-                    <div class="jobs-grid">
-                    <?php foreach ($displayJobs as $request): ?>
+
+                <?php if ($appliedJobs): ?>
+                    <p style="font-size:0.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin:0 0 10px;">📋 My Applications</p>
+                    <div class="jobs-grid" style="margin-bottom:22px;">
+                    <?php
+                    $appBadgeMap = [
+                        'approved'  => ['✓ Approved',    'status-completed'],
+                        'rejected'  => ['Not selected',  'status-cancelled'],
+                        'withdrawn' => ['Withdrawn',      'status-cancelled'],
+                        'completed' => ['Job completed',  'status-completed'],
+                    ];
+                    ?>
+                    <?php foreach ($appliedJobs as $request): ?>
                         <?php $jobDistance = $request['match_distance_km'] ?? distance_km($profile['latitude'] ?? null, $profile['longitude'] ?? null, $request['latitude'], $request['longitude']); ?>
+                        <?php $myAppStatus = $myApplicationStatuses[$request['id']]; ?>
+                        <?php $appBadge = $appBadgeMap[$myAppStatus] ?? ['Applied', 'status-pending']; ?>
                         <article class="request-card">
                             <div class="request-head">
-                                <div>
+                                <div style="flex:1;min-width:0;">
                                     <h2><?php echo sanitize($request['title']); ?></h2>
-                                    <?php if (!empty($request['featured']) && (empty($request['featured_end_date']) || $request['featured_end_date'] >= date('Y-m-d'))): ?>
-                                        <span class="badge badge-featured">Featured</span>
-                                    <?php endif; ?>
-                                    <p class="meta">
-                                        <?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?>
-                                        <?php if ($jobDistance !== null): ?>
-                                            • <?php echo sanitize(format_distance($jobDistance)); ?>
-                                        <?php endif; ?>
-                                    </p>
-                                    <?php if (isset($request['match_score'])): ?>
-                                        <p class="meta match-meta">🎯 <?php echo (int)$request['match_score']; ?>% match for you<?php if (!empty($request['match_reasons'])): ?> — <?php echo sanitize(implode(' • ', $request['match_reasons'])); ?><?php endif; ?></p>
-                                    <?php endif; ?>
+                                    <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?><?php if ($jobDistance !== null): ?> • <?php echo sanitize(format_distance($jobDistance)); ?><?php endif; ?></p>
                                 </div>
-                                <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                                <span class="status <?php echo $appBadge[1]; ?>"><?php echo $appBadge[0]; ?></span>
                             </div>
                             <p><?php echo sanitize($request['description']); ?></p>
                             <div class="request-footer">
-                                <span>Budget: GH₵ <?php echo sanitize($request['budget']); ?></span>
+                                <span>GH₵ <?php echo sanitize($request['budget']); ?></span>
                                 <div class="button-group">
-                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
                                     <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
-                                    <?php if (in_array($request['status'], ['open','partially_staffed'], true)): ?>
-                                        <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
-                                        <?php if ($myAppStatus === 'pending'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Application pending</span>
-                                        <?php elseif ($myAppStatus === 'approved'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default; background:#d1fae5; color:#065f46;">✓ Approved</span>
-                                        <?php elseif ($myAppStatus === 'rejected'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Not selected</span>
-                                        <?php else: ?>
-                                            <form method="post" action="apply_job.php">
+                                    <?php if ($myAppStatus === 'approved'): ?>
+                                        <a href="chat_start.php?user_id=<?php echo $request['customer_id']; ?>&job_id=<?php echo $request['id']; ?>" class="button button-primary button-small">💬 Message Owner</a>
+                                        <?php if ($request['assigned_worker_id'] == $user['id'] && in_array($request['status'], ['in_progress','fully_staffed'], true)): ?>
+                                            <form method="post" action="complete_job.php">
                                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                                                <button type="submit" class="button button-primary">Apply for this job</button>
+                                                <button type="submit" class="button button-primary button-small">✓ Mark completed</button>
                                             </form>
                                         <?php endif; ?>
-                                    <?php elseif (in_array($request['status'], ['in_progress','fully_staffed'], true) && $request['assigned_worker_id'] === $user['id']): ?>
-                                        <form method="post" action="complete_job.php">
-                                            <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                                            <button type="submit" class="button button-primary">Mark completed</button>
-                                        </form>
                                     <?php endif; ?>
                                 </div>
                             </div>
                         </article>
                     <?php endforeach; ?>
                     </div>
+                <?php endif; ?>
+
+                <?php if ($viewFilter !== 'applied'): ?>
+                    <?php if ($appliedJobs && ($openJobs || $myJobs)): ?>
+                        <p style="font-size:0.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin:0 0 10px;">🔍 Open Jobs</p>
+                    <?php endif; ?>
+                    <?php if ($openJobs): ?>
+                        <p class="small-note" style="text-align:left;margin-bottom:14px;">🎯 Ranked by how well they match your skills and location.</p>
+                    <?php endif; ?>
+                    <?php $displayJobs = array_merge($openJobs, $myJobs); ?>
+                    <?php if (!$displayJobs): ?>
+                        <div class="empty-state">No open jobs match your filters.</div>
+                    <?php else: ?>
+                        <div class="jobs-grid">
+                        <?php foreach ($displayJobs as $request): ?>
+                            <?php $jobDistance = $request['match_distance_km'] ?? distance_km($profile['latitude'] ?? null, $profile['longitude'] ?? null, $request['latitude'], $request['longitude']); ?>
+                            <article class="request-card">
+                                <div class="request-head">
+                                    <div>
+                                        <h2><?php echo sanitize($request['title']); ?></h2>
+                                        <?php if (!empty($request['featured']) && (empty($request['featured_end_date']) || $request['featured_end_date'] >= date('Y-m-d'))): ?>
+                                            <span class="badge badge-featured">Featured</span>
+                                        <?php endif; ?>
+                                        <p class="meta">
+                                            <?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?>
+                                            <?php if ($jobDistance !== null): ?>• <?php echo sanitize(format_distance($jobDistance)); ?><?php endif; ?>
+                                        </p>
+                                        <?php if (isset($request['match_score'])): ?>
+                                            <p class="meta match-meta">🎯 <?php echo (int)$request['match_score']; ?>% match for you<?php if (!empty($request['match_reasons'])): ?> — <?php echo sanitize(implode(' • ', $request['match_reasons'])); ?><?php endif; ?></p>
+                                        <?php endif; ?>
+                                    </div>
+                                    <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                                </div>
+                                <p><?php echo sanitize($request['description']); ?></p>
+                                <div class="request-footer">
+                                    <span>GH₵ <?php echo sanitize($request['budget']); ?></span>
+                                    <div class="button-group">
+                                        <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
+                                        <?php if (in_array($request['status'], ['open','partially_staffed'], true)): ?>
+                                            <form method="post" action="apply_job.php">
+                                                <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                                <button type="submit" class="button button-primary">Apply for this job</button>
+                                            </form>
+                                        <?php elseif (in_array($request['status'], ['in_progress','fully_staffed'], true) && $request['assigned_worker_id'] == $user['id']): ?>
+                                            <form method="post" action="complete_job.php">
+                                                <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                                <button type="submit" class="button button-primary">Mark completed</button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            </article>
+                        <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                <?php elseif (!$appliedJobs): ?>
+                    <div class="empty-state">You haven't applied to any jobs yet. <a href="dashboard.php#open-jobs">Browse open jobs →</a></div>
                 <?php endif; ?>
             </section>
             <section class="panel">

@@ -2,9 +2,43 @@
 /**
  * Shared bottom tab bar. Include after $user = current_user(); is set.
  * Optional: set $activeNav to one of 'home','jobs','workers','messages','settings' to force the active tab.
+ * Also injects admin-defined theme colour overrides as a <style> block.
  */
 if (!isset($user) || !$user) {
     return;
+}
+
+// Inject custom theme colours saved by admin
+try {
+    global $pdo;
+    $themeRows = $pdo->query("SELECT setting_key, setting_value FROM platform_settings WHERE setting_key LIKE 'theme_%'")->fetchAll();
+    if ($themeRows) {
+        $propMap = [
+            'theme_primary'       => '--primary',
+            'theme_primary_dark'  => '--primary-dark',
+            'theme_primary_soft'  => '--primary-soft',
+            'theme_secondary'     => '--secondary',
+            'theme_secondary_soft'=> '--secondary-soft',
+            'theme_bg'            => '--bg',
+            'theme_surface'       => '--surface',
+            'theme_surface_muted' => '--surface-muted',
+            'theme_border'        => '--border',
+            'theme_text'          => '--text',
+        ];
+        $lines = [];
+        foreach ($themeRows as $row) {
+            $prop = $propMap[$row['setting_key']] ?? null;
+            $val  = $row['setting_value'];
+            if ($prop && preg_match('/^#[0-9a-f]{3,6}$/i', $val)) {
+                $lines[] = "  {$prop}: {$val};";
+            }
+        }
+        if ($lines) {
+            echo '<style>:root{' . implode('', $lines) . '}</style>';
+        }
+    }
+} catch (Exception $e) {
+    // silently skip if DB not available
 }
 
 $jobsHref = $user['role'] === 'worker' ? 'worker_history.php' : 'dashboard.php';
