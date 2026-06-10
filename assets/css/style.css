@@ -465,7 +465,7 @@ textarea {
 }
 
 .filter-form button {
-  flex: 1 1 100%;
+  flex: 0 0 auto;
   width: auto;
 }
 
@@ -817,7 +817,8 @@ tbody tr:hover td {
   }
 
   .filter-form select,
-  .filter-form input {
+  .filter-form input,
+  .filter-form button {
     flex: 1 1 100%;
   }
 }

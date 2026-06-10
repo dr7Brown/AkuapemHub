@@ -36,10 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         $stmtEmail->execute([$email, $user['id']]);
         $stmtUser = $pdo->prepare('SELECT id FROM users WHERE username = ? AND id != ?');
         $stmtUser->execute([$username, $user['id']]);
+        $stmtPhone = $pdo->prepare('SELECT id FROM users WHERE phone = ? AND id != ?');
+        $stmtPhone->execute([$phone, $user['id']]);
         if ($stmtEmail->fetch()) {
             $error = 'Another account already uses this email address.';
         } elseif ($stmtUser->fetch()) {
             $error = 'This username is already taken.';
+        } elseif ($stmtPhone->fetch()) {
+            $error = 'This phone number is already registered to another account.';
         } else {
             $pdo->prepare('UPDATE users SET name = ?, username = ?, email = ?, phone = ? WHERE id = ?')->execute([$name, $username, $email, $phone, $user['id']]);
             if (!empty($_FILES['profile_photo']['name'])) {

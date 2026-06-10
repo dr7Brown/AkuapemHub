@@ -68,10 +68,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtEmail->execute([$email]);
         $stmtUser = $pdo->prepare('SELECT id FROM users WHERE username = ?');
         $stmtUser->execute([$username]);
+        $stmtPhone = $pdo->prepare('SELECT id FROM users WHERE phone = ?');
+        $stmtPhone->execute([$phone]);
         if ($stmtEmail->fetch()) {
             $error = 'This email is already registered.';
         } elseif ($stmtUser->fetch()) {
             $error = 'This username is already taken. Please choose another.';
+        } elseif ($stmtPhone->fetch()) {
+            $error = 'This phone number is already registered to another account.';
         } else {
             $passwordHash = password_hash($password, PASSWORD_BCRYPT);
             $stmt = $pdo->prepare('INSERT INTO users (name, username, email, password_hash, role, phone, town_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');

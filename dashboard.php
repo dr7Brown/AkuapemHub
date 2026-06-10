@@ -108,6 +108,15 @@ if (is_worker()) {
     $customerCounts = get_request_status_counts($user['id']);
     $customerSpent = get_customer_spending_total($user['id']);
 
+    $browseStmt = $pdo->prepare(
+        'SELECT sr.*, sc.name AS category_name FROM service_requests sr
+         JOIN service_categories sc ON sr.category_id = sc.id
+         WHERE sr.status IN (\'open\', \'partially_staffed\') AND sr.customer_id != ?
+         ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 9'
+    );
+    $browseStmt->execute([$user['id']]);
+    $browseJobs = $browseStmt->fetchAll();
+
 } else {
     header('Location: admin/index.php');
     exit;
@@ -456,6 +465,38 @@ if (is_worker()) {
                     </div>
                 <?php endif; ?>
             </section>
+            <?php if (!empty($browseJobs)): ?>
+            <section class="panel">
+                <div class="panel-header">
+                    <h1>Browse Available Jobs</h1>
+                </div>
+                <p class="meta" style="margin-bottom: 14px;">Want to earn on AkuapemHub? <a href="settings.php" style="color:var(--primary);">Switch your profile to Worker</a> to apply for jobs.</p>
+                <div class="jobs-grid">
+                <?php foreach ($browseJobs as $job): ?>
+                    <article class="request-card">
+                        <div class="request-head">
+                            <div>
+                                <h2><?php echo sanitize($job['title']); ?></h2>
+                                <p class="meta"><?php echo sanitize($job['category_name']); ?> · <?php echo sanitize($job['location']); ?></p>
+                            </div>
+                            <span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span>
+                        </div>
+                        <p><?php echo sanitize(mb_substr($job['description'], 0, 100)) . (mb_strlen($job['description']) > 100 ? '…' : ''); ?></p>
+                        <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($job['budget']); ?></p>
+                        <div class="card-bottom">
+                            <div class="card-mid-actions">
+                                <span class="card-status-badge info">You must change your profile to Worker to apply for this job.</span>
+                            </div>
+                            <div class="card-actions">
+                                <a href="<?php echo whatsapp_share_link($job['title'], $job['location'], $job['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                <a href="request_detail.php?id=<?php echo $job['id']; ?>" class="button">Details</a>
+                            </div>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+                </div>
+            </section>
+            <?php endif; ?>
         <?php endif; ?>
     </main>
     <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>

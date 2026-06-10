@@ -10,7 +10,9 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $title = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
-    $categoryId = intval($_POST['category_id'] ?? 0);
+    $rawCategoryInput = trim($_POST['category_id'] ?? '');
+    $customCategoryName = trim($_POST['other_category_name'] ?? '');
+    $categoryId = ($rawCategoryInput === '__other__') ? -1 : intval($rawCategoryInput);
     $location = trim($_POST['location'] ?? '');
     $budget = trim($_POST['budget'] ?? '');
     $contactInfo = trim($user['phone'] ?? '');
@@ -22,9 +24,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if ($title === '' || $description === '' || $categoryId === 0 || $location === '' || $budget === '') {
         $error = 'All fields are required.';
+    } elseif ($rawCategoryInput === '__other__' && $customCategoryName === '') {
+        $error = 'Please describe the type of work for the "Other" category.';
     } elseif ($contactInfo === '') {
         $error = 'Add a phone number to your account on your profile before posting a request.';
     } else {
+        if ($rawCategoryInput === '__other__') {
+            $description = "Type of work: {$customCategoryName}\n\n{$description}";
+            $othStmt = $pdo->prepare("SELECT id FROM service_categories WHERE name = 'Other'");
+            $othStmt->execute();
+            $othCat = $othStmt->fetch();
+            if ($othCat) {
+                $categoryId = (int)$othCat['id'];
+            } else {
+                $pdo->prepare("INSERT INTO service_categories (name) VALUES ('Other')")->execute();
+                $categoryId = (int)$pdo->lastInsertId();
+            }
+        }
         $postingFeePaid = is_feature_paid('enable_paid_job_posting');
         $postingFeeStatus = $postingFeePaid ? 'pending' : 'free';
 
@@ -113,7 +129,11 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                 <?php foreach ($categories as $category): ?>
                     <option value="<?php echo $category['id']; ?>"><?php echo sanitize($category['name']); ?></option>
                 <?php endforeach; ?>
+                <option value="__other__">Other (specify)</option>
             </select>
+            <div id="other-category-wrap" style="display:none; margin-top:6px;">
+                <input type="text" name="other_category_name" id="other-category-input" placeholder="Describe the type of work (e.g. Pool cleaning, Car detailing)" />
+            </div>
             <p class="meta" id="category-suggestion-note"></p>
 
             <label>Skills needed <span class="meta">(optional — helps us match the right workers)</span></label>
@@ -122,6 +142,9 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             </select>
             <button type="button" id="add-skill-button" class="button button-secondary button-small">+ Add skill</button>
             <ul id="skill-list" style="list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 8px;"></ul>
+            <div id="other-skill-wrap" style="display:none; margin: 0 0 4px;">
+                <input type="text" id="other-skill-input" placeholder="Describe the skill or task" />
+            </div>
             <input type="hidden" name="skills_needed" id="skills-needed-input" />
 
             <label>Location</label>
@@ -225,6 +248,8 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
         categorySelect.addEventListener('change', function () {
             categoryManuallyChanged = true;
             categoryNote.textContent = '';
+            var otherWrap = document.getElementById('other-category-wrap');
+            if (otherWrap) otherWrap.style.display = this.value === '__other__' ? 'block' : 'none';
         });
 
         function fetchCategorySuggestion() {
@@ -319,9 +344,17 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                 option.textContent = skillName;
                 skillNameSelect.appendChild(option);
             });
+            var otherOpt = document.createElement('option');
+            otherOpt.value = '__other__';
+            otherOpt.textContent = 'Other (specify)';
+            skillNameSelect.appendChild(otherOpt);
         }
 
         categorySelect.addEventListener('change', refreshSkillOptions);
+
+        skillNameSelect.addEventListener('change', function () {
+            document.getElementById('other-skill-wrap').style.display = this.value === '__other__' ? 'block' : 'none';
+        });
 
         function renderSkillList() {
             skillList.innerHTML = '';
@@ -351,6 +384,12 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
 
         addSkillButton.addEventListener('click', function () {
             var skillName = skillNameSelect.value;
+            if (skillName === '__other__') {
+                skillName = document.getElementById('other-skill-input').value.trim();
+                if (!skillName) return;
+                document.getElementById('other-skill-input').value = '';
+                document.getElementById('other-skill-wrap').style.display = 'none';
+            }
             if (!skillName || selectedSkills.indexOf(skillName) !== -1) {
                 return;
             }
