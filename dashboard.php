@@ -317,7 +317,7 @@ if (is_worker()) {
                                     <div class="card-mid-actions">
                                         <form method="post" action="complete_job.php">
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                                            <button type="submit" class="button button-primary">✓ Mark completed</button>
+                                            <button type="submit" class="button button-secondary">✓ Mark completed</button>
                                         </form>
                                     </div>
                                 <?php endif; ?>
@@ -439,7 +439,7 @@ if (is_worker()) {
                                         <form method="post" action="toggle_payment.php" class="inline-form">
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                             <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
-                                            <button type="submit" class="button button-primary">
+                                            <button type="submit" class="button button-secondary">
                                                 Mark as <?php echo $request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid'; ?>
                                             </button>
                                         </form>
