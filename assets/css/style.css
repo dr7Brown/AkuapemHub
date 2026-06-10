@@ -502,6 +502,10 @@ textarea {
   margin: 0 0 4px;
 }
 
+.request-card > p {
+  color: var(--text);
+}
+
 /* Responsive job card grid — 1 col mobile, 2 tablet, 3 desktop */
 .jobs-grid {
   display: grid;

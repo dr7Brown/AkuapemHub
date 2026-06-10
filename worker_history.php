@@ -11,6 +11,37 @@ $completedCount = get_worker_completed_jobs($user['id']);
 $avgRating = get_worker_average_rating($user['id']);
 $earnings = get_paid_total_by_worker($user['id']);
 
+// My Applications section
+$appStatusFilter = $_GET['app_status'] ?? '';
+$appSearch       = trim($_GET['q'] ?? '');
+
+$appWhere  = ['a.worker_id = ?'];
+$appParams = [$user['id']];
+if ($appStatusFilter) {
+    $appWhere[]  = 'a.status = ?';
+    $appParams[] = $appStatusFilter;
+}
+if ($appSearch) {
+    $appWhere[]  = '(sr.title LIKE ? OR sr.description LIKE ? OR sr.location LIKE ?)';
+    $like        = "%{$appSearch}%";
+    $appParams   = array_merge($appParams, [$like, $like, $like]);
+}
+$appWhereClause = 'WHERE ' . implode(' AND ', $appWhere);
+
+$appStmt = $pdo->prepare("
+    SELECT sr.*, a.status AS app_status, a.applied_at,
+           c.name AS category_name,
+           u.name AS customer_name
+    FROM applications a
+    JOIN service_requests sr ON a.request_id = sr.id
+    LEFT JOIN categories c ON sr.category_id = c.id
+    LEFT JOIN users u ON sr.customer_id = u.id
+    {$appWhereClause}
+    ORDER BY a.applied_at DESC
+");
+$appStmt->execute($appParams);
+$myApplications = $appStmt->fetchAll();
+
 // Earnings ledger: individual paid payments for this worker's jobs
 $ledgerStmt = $pdo->prepare("
     SELECT p.id, p.amount, p.created_at AS paid_at,
@@ -61,6 +92,65 @@ $ledgerRows = array_reverse($ledgerRows);
                 <p>Paid earnings</p>
             </div>
         </section>
+        <!-- My Applications -->
+        <section class="panel">
+            <div class="panel-header" style="margin-bottom: 16px;">
+                <h2 style="margin:0;">My Applications</h2>
+                <form method="get" class="filter-form">
+                    <select name="app_status">
+                        <option value="">All statuses</option>
+                        <option value="pending"   <?php echo $appStatusFilter === 'pending'   ? 'selected' : ''; ?>>Pending</option>
+                        <option value="approved"  <?php echo $appStatusFilter === 'approved'  ? 'selected' : ''; ?>>Approved</option>
+                        <option value="rejected"  <?php echo $appStatusFilter === 'rejected'  ? 'selected' : ''; ?>>Not selected</option>
+                        <option value="withdrawn" <?php echo $appStatusFilter === 'withdrawn' ? 'selected' : ''; ?>>Withdrawn</option>
+                        <option value="completed" <?php echo $appStatusFilter === 'completed' ? 'selected' : ''; ?>>Completed</option>
+                    </select>
+                    <input type="text" name="q" value="<?php echo sanitize($appSearch); ?>" placeholder="Search applications" />
+                    <button type="submit" class="button button-primary">Filter</button>
+                    <?php if ($appStatusFilter || $appSearch): ?>
+                        <a href="worker_history.php" class="button button-secondary button-small">Clear</a>
+                    <?php endif; ?>
+                </form>
+            </div>
+            <?php
+            $appBadgeMap = [
+                'pending'   => ['Applied',       'status-pending'],
+                'approved'  => ['✓ Approved',    'status-completed'],
+                'rejected'  => ['Not selected',  'status-cancelled'],
+                'withdrawn' => ['Withdrawn',      'status-cancelled'],
+                'completed' => ['Job completed',  'status-completed'],
+            ];
+            ?>
+            <?php if (!$myApplications): ?>
+                <div class="empty-state">No applications match your filters.</div>
+            <?php else: ?>
+                <div class="jobs-grid">
+                <?php foreach ($myApplications as $app): ?>
+                    <?php $badge = $appBadgeMap[$app['app_status']] ?? ['Applied', 'status-pending']; ?>
+                    <article class="request-card">
+                        <div class="request-head">
+                            <div style="flex:1;min-width:0;">
+                                <h2><?php echo sanitize($app['title']); ?></h2>
+                                <p class="meta"><?php echo sanitize($app['category_name'] ?? ''); ?> • <?php echo sanitize($app['location']); ?> • Applied <?php echo sanitize(date('M j, Y', strtotime($app['applied_at']))); ?></p>
+                            </div>
+                            <span class="status <?php echo $badge[1]; ?>"><?php echo $badge[0]; ?></span>
+                        </div>
+                        <p><?php echo sanitize($app['description']); ?></p>
+                        <div class="request-footer">
+                            <span>GH₵ <?php echo sanitize($app['budget']); ?></span>
+                            <div class="button-group">
+                                <a href="request_detail.php?id=<?php echo $app['id']; ?>" class="button button-secondary button-small">Details</a>
+                                <?php if ($app['app_status'] === 'approved'): ?>
+                                    <a href="chat_start.php?user_id=<?php echo $app['customer_id']; ?>&job_id=<?php echo $app['id']; ?>" class="button button-primary button-small">💬 Message Owner</a>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+
         <?php if (!empty($ledgerRows)): ?>
         <section class="panel" style="margin-bottom:0;">
             <h2 style="margin-top:0;">Earnings ledger</h2>
