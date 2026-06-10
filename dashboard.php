@@ -38,14 +38,13 @@ if ($searchQuery) {
 }
 
 if (is_worker()) {
-    $sql = 'SELECT sr.*, u.name AS customer_name, wc.name AS category_name, w.user_id AS worker_user_id 
+    $workerWhere = array_merge(["sr.status IN ('open','partially_staffed')"], $where);
+    $sql = 'SELECT sr.*, u.name AS customer_name, wc.name AS category_name, w.user_id AS worker_user_id
             FROM service_requests sr
             JOIN users u ON sr.customer_id = u.id
             JOIN service_categories wc ON sr.category_id = wc.id
-            LEFT JOIN worker_profiles w ON sr.assigned_worker_id = w.user_id';
-    if ($where) {
-        $sql .= ' WHERE ' . implode(' AND ', $where);
-    }
+            LEFT JOIN worker_profiles w ON sr.assigned_worker_id = w.user_id
+            WHERE ' . implode(' AND ', $workerWhere);
     $sql .= ' ORDER BY sr.created_at DESC LIMIT 100';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
@@ -78,7 +77,7 @@ if (is_worker()) {
     $openJobs = [];
     $myJobs = [];
     foreach ($requests as $request) {
-        if ($request['status'] === 'open') {
+        if (in_array($request['status'], ['open','partially_staffed'], true)) {
             $openJobs[] = $request;
         } elseif ($request['assigned_worker_id'] === $user['id']) {
             $myJobs[] = $request;
@@ -148,6 +147,7 @@ if (is_worker()) {
                 <h1>Find trusted jobs near you in Akuapem</h1>
                 <div class="button-group">
                     <a href="#open-jobs" class="button button-primary">Browse open jobs</a>
+                    <a href="job_applications.php" class="button button-secondary">📋 My Applications</a>
                     <a href="request.php" class="button button-secondary">➕ Post Job</a>
                 </div>
             <?php else: ?>
@@ -303,19 +303,21 @@ if (is_worker()) {
                                         <a href="<?php echo $contactUrl; ?>" target="_blank" class="button button-secondary button-small">Contact via WhatsApp</a>
                                     <?php endif; ?>
                                     <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
-                                    <?php if ($request['status'] === 'open'): ?>
+                                    <?php if (in_array($request['status'], ['open','partially_staffed'], true)): ?>
                                         <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
                                         <?php if ($myAppStatus === 'pending'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Application pending review</span>
-                                        <?php elseif ($myAppStatus === 'declined'): ?>
-                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Application declined</span>
+                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Application pending</span>
+                                        <?php elseif ($myAppStatus === 'approved'): ?>
+                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default; background:#d1fae5; color:#065f46;">✓ Approved</span>
+                                        <?php elseif ($myAppStatus === 'rejected'): ?>
+                                            <span class="button button-secondary button-small" style="opacity: 0.7; cursor: default;">Not selected</span>
                                         <?php else: ?>
                                             <form method="post" action="apply_job.php">
                                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                                 <button type="submit" class="button button-primary">Apply for this job</button>
                                             </form>
                                         <?php endif; ?>
-                                    <?php elseif ($request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id']): ?>
+                                    <?php elseif (in_array($request['status'], ['in_progress','fully_staffed'], true) && $request['assigned_worker_id'] === $user['id']): ?>
                                         <form method="post" action="complete_job.php">
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                             <button type="submit" class="button button-primary">Mark completed</button>
@@ -354,7 +356,10 @@ if (is_worker()) {
                 </div>
                 <div class="panel-header">
                     <h1>Your service requests</h1>
-                    <a href="request.php" class="button button-primary">Create request</a>
+                    <div style="display:flex;gap:8px;">
+                        <a href="job_applications.php" class="button button-secondary">👥 Applicants</a>
+                        <a href="request.php" class="button button-primary">Create request</a>
+                    </div>
                 </div>
                 <form method="get" class="filter-form">
                     <select name="category">
@@ -365,7 +370,7 @@ if (is_worker()) {
                     </select>
                     <select name="status">
                         <option value="">All statuses</option>
-                        <?php foreach (['pending', 'open', 'in_progress', 'completed', 'cancelled'] as $statusOption): ?>
+                        <?php foreach (['pending', 'open', 'partially_staffed', 'fully_staffed', 'in_progress', 'completed', 'cancelled'] as $statusOption): ?>
                             <option value="<?php echo $statusOption; ?>" <?php echo $statusFilter === $statusOption ? 'selected' : ''; ?>><?php echo strtoupper(str_replace('_', ' ', $statusOption)); ?></option>
                         <?php endforeach; ?>
                     </select>
@@ -398,10 +403,15 @@ if (is_worker()) {
                             <p><?php echo sanitize($request['description']); ?></p>
                             <div class="request-footer">
                                 <span>Budget: GH₵ <?php echo sanitize($request['budget']); ?></span>
-                                <span>Worker: <?php echo sanitize($request['assigned_worker_name'] ?: 'Not assigned'); ?></span>
+                                <?php if (($request['workers_needed'] ?? 1) > 1 || ($request['workers_approved'] ?? 0) > 0): ?>
+                                    <span>Hired: <?php echo (int)($request['workers_approved'] ?? 0); ?>/<?php echo (int)($request['workers_needed'] ?? 1); ?></span>
+                                <?php else: ?>
+                                    <span>Worker: <?php echo sanitize($request['assigned_worker_name'] ?: 'Not assigned'); ?></span>
+                                <?php endif; ?>
                                 <span>Payment: <?php echo strtoupper($request['payment_status']); ?></span>
                             </div>
                             <div class="request-footer">
+                                <a href="job_applications.php" class="button button-primary button-small">👥 Manage Applicants</a>
                                 <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
                                 <?php $contactUrl = whatsapp_contact_link($request['contact_info'], $request['title']); ?>
                                 <?php if ($contactUrl): ?>

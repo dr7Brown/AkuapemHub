@@ -32,7 +32,9 @@ if (is_worker()) {
     $myApplication = $appStmt->fetch();
     $myApplicationStatus = $myApplication['status'] ?? null;
 }
-$canApply = is_worker() && $request['status'] === 'open' && !in_array($myApplicationStatus, ['pending', 'accepted'], true);
+$canApply = is_worker()
+    && in_array($request['status'], ['open','partially_staffed'], true)
+    && !in_array($myApplicationStatus, ['pending','approved','accepted'], true);
 $canComplete = is_worker() && $request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id'];
 $canMarkPaid = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
 $canRate = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
@@ -87,6 +89,14 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                 ?>
                 <?php if ($rdFeatActive): ?>
                     <span class="badge badge-featured">⭐ Featured<?php echo $rdFeatEnd ? ' · until ' . sanitize($rdFeatEnd) : ''; ?></span>
+                <?php endif; ?>
+                <?php if ($request['status'] === 'fully_staffed'): ?>
+                    <span class="badge" style="background:#22a06b;color:#fff;margin-left:4px;">✅ Fully Staffed</span>
+                <?php elseif ($request['status'] === 'partially_staffed'): ?>
+                    <span class="badge" style="background:#f59e0b;color:#fff;margin-left:4px;">Partially Staffed</span>
+                <?php endif; ?>
+                <?php if (($request['workers_needed'] ?? 1) > 1): ?>
+                    <span class="badge" style="background:var(--surface);color:var(--text);border:1px solid var(--border);margin-left:4px;"><?php echo (int)($request['workers_approved']??0); ?>/<?php echo (int)$request['workers_needed']; ?> workers</span>
                 <?php endif; ?>
             </div>
 
@@ -168,12 +178,16 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 
         <?php
         $primaryAction = null;
-        if ($canApply) {
+        if (is_customer() && $request['customer_id'] === $user['id']) {
+            $primaryAction = ['link', 'job_applications.php', '👥 Manage Applicants'];
+        } elseif ($canApply) {
             $primaryAction = ['form', 'apply_job.php', 'Apply for this job'];
+        } elseif (is_worker() && $request['status'] === 'fully_staffed' && $myApplicationStatus !== 'approved') {
+            $primaryAction = ['info', null, 'This job is fully staffed'];
         } elseif (is_worker() && $myApplicationStatus === 'pending') {
             $primaryAction = ['info', null, 'Application pending review'];
-        } elseif (is_worker() && $myApplicationStatus === 'declined') {
-            $primaryAction = ['info', null, 'Application declined'];
+        } elseif (is_worker() && in_array($myApplicationStatus, ['rejected','declined'], true)) {
+            $primaryAction = ['info', null, 'Application not selected'];
         } elseif ($canMarkPaid) {
             $primaryAction = ['form_paid', null, 'Mark as ' . ($request['payment_status'] === 'paid' ? 'Unpaid' : 'Paid')];
         } elseif ($canRate && !$ratingExists) {

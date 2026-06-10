@@ -17,6 +17,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
     $skillsNeeded = trim($_POST['skills_needed'] ?? '');
+    $hiringType = $_POST['hiring_type'] ?? 'single';
+    $workersNeeded = $hiringType === 'multiple' ? max(1, intval($_POST['workers_needed'] ?? 1)) : 1;
 
     if ($title === '' || $description === '' || $categoryId === 0 || $location === '' || $budget === '') {
         $error = 'All fields are required.';
@@ -26,8 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $postingFeePaid = is_feature_paid('enable_paid_job_posting');
         $postingFeeStatus = $postingFeePaid ? 'pending' : 'free';
 
-        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, skills_needed, status, payment_status, commission_percent, featured, posting_fee_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
-        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, $skillsNeeded !== '' ? $skillsNeeded : null, 'pending', 'unpaid', DEFAULT_COMMISSION, 0, $postingFeeStatus]);
+        $stmt = $pdo->prepare('INSERT INTO service_requests (customer_id, title, description, category_id, location, latitude, longitude, budget, contact_info, skills_needed, workers_needed, status, payment_status, commission_percent, featured, posting_fee_status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+        $stmt->execute([$user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $budget, $contactInfo, $skillsNeeded !== '' ? $skillsNeeded : null, $workersNeeded, 'pending', 'unpaid', DEFAULT_COMMISSION, 0, $postingFeeStatus]);
         $newJobId = (int)$pdo->lastInsertId();
 
         $categoryName = 'Unknown';
@@ -142,6 +144,19 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             <input type="hidden" name="longitude" id="longitude" />
             <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
             <p class="meta" id="location-status">Sharing your location helps nearby workers find your job faster.</p>
+            <label>Hiring type</label>
+            <div style="display:flex;gap:16px;margin-bottom:4px;" id="hiring-type-group">
+                <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
+                    <input type="radio" name="hiring_type" value="single" checked onchange="toggleWorkersNeeded(this)"> Single worker
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
+                    <input type="radio" name="hiring_type" value="multiple" onchange="toggleWorkersNeeded(this)"> Multiple workers
+                </label>
+            </div>
+            <div id="workers-needed-wrap" style="display:none;margin-bottom:4px;">
+                <label>Number of workers needed</label>
+                <input type="number" name="workers_needed" id="workers-needed-input" min="2" max="50" value="2" style="width:100px;" />
+            </div>
             <label>Budget</label>
             <input type="text" name="budget" required placeholder="GH₵ 100 or Negotiable" />
             <p class="meta" id="budget-suggestion"></p>
@@ -155,6 +170,12 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
         </form>
     </main>
     <script>
+        function toggleWorkersNeeded(radio) {
+            document.getElementById('workers-needed-wrap').style.display = radio.value === 'multiple' ? 'block' : 'none';
+            var inp = document.getElementById('workers-needed-input');
+            inp.required = radio.value === 'multiple';
+        }
+
         document.getElementById('use-my-location').addEventListener('click', function () {
             var status = document.getElementById('location-status');
             if (!navigator.geolocation) {

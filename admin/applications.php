@@ -8,103 +8,100 @@ if (!is_admin_or_manager()) {
     exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && !empty($_POST['application_id'])) {
-    $applicationId = intval($_POST['application_id']);
-    $stmt = $pdo->prepare('SELECT a.*, sr.title AS request_title, sr.status AS request_status, sr.customer_id, w.name AS worker_name, w.email AS worker_email, c.name AS customer_name, c.email AS customer_email
-        FROM applications a
-        JOIN service_requests sr ON a.request_id = sr.id
-        JOIN users w ON a.worker_id = w.id
-        JOIN users c ON sr.customer_id = c.id
-        WHERE a.id = ?');
-    $stmt->execute([$applicationId]);
-    $application = $stmt->fetch();
-
-    if ($application && $application['status'] === 'pending') {
-        if ($_POST['action'] === 'approve' && $application['request_status'] === 'open') {
-            $pdo->beginTransaction();
-            try {
-                $pdo->prepare("UPDATE service_requests SET assigned_worker_id = ?, status = 'in_progress', updated_at = NOW() WHERE id = ? AND status = 'open'")->execute([$application['worker_id'], $application['request_id']]);
-                $pdo->prepare("UPDATE applications SET status = 'accepted' WHERE id = ?")->execute([$applicationId]);
-                $pdo->prepare("UPDATE applications SET status = 'declined' WHERE request_id = ? AND id != ? AND status = 'pending'")->execute([$application['request_id'], $applicationId]);
-                $pdo->commit();
-
-                notify_user($application['worker_id'], 'Application approved', "Your application for '{$application['request_title']}' was approved. The job is now assigned to you.", 'success');
-                send_email_notification($application['worker_email'], 'Your job application was approved', "Hello {$application['worker_name']},\n\nYour application for '{$application['request_title']}' has been approved. The job is now in progress.\n\nThank you.", $application['worker_id']);
-                notify_user($application['customer_id'], 'Worker assigned', "'{$application['worker_name']}' was assigned to your request '{$application['request_title']}'.", 'success');
-            } catch (Exception $e) {
-                $pdo->rollBack();
-                flash('Unable to approve this application. Please try again.', 'error');
-                header('Location: applications.php');
-                exit;
-            }
-            flash('Application approved and worker assigned.');
-        } elseif ($_POST['action'] === 'decline') {
-            $pdo->prepare("UPDATE applications SET status = 'declined' WHERE id = ?")->execute([$applicationId]);
-            notify_user($application['worker_id'], 'Application declined', "Your application for '{$application['request_title']}' was not approved this time.", 'warning');
-            flash('Application declined.');
-        }
-    }
-    header('Location: applications.php');
-    exit;
+// Admin is read-only for applications — hiring decisions belong to job owners
+$statusFilter = $_GET['status'] ?? '';
+$where = [];
+$params = [];
+if ($statusFilter) {
+    $where[] = 'a.status = ?';
+    $params[] = $statusFilter;
 }
+$whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
 
-$stmt = $pdo->query("SELECT a.*, sr.title AS request_title, sr.status AS request_status, sr.location, sr.budget,
-    w.name AS worker_name, w.email AS worker_email,
-    wp.is_verified AS worker_is_verified, wp.is_featured AS worker_is_featured
+$stmt = $pdo->prepare("
+    SELECT a.*, sr.title AS request_title, sr.status AS request_status, sr.location,
+           sr.budget, sr.workers_needed, sr.workers_approved, sr.customer_id,
+           w.name AS worker_name, w.email AS worker_email,
+           c.name AS customer_name,
+           wp.is_verified AS worker_is_verified, wp.is_featured AS worker_is_featured
     FROM applications a
     JOIN service_requests sr ON a.request_id = sr.id
     JOIN users w ON a.worker_id = w.id
+    JOIN users c ON sr.customer_id = c.id
     LEFT JOIN worker_profiles wp ON w.id = wp.user_id
-    ORDER BY (a.status = 'pending') DESC, a.applied_at DESC
-    LIMIT 200");
+    $whereClause
+    ORDER BY FIELD(a.status,'pending','approved','rejected') ASC, a.applied_at DESC
+    LIMIT 300
+");
+$params ? $stmt->execute($params) : $stmt->execute();
 $applications = $stmt->fetchAll();
+
+// Summary counts
+$counts = $pdo->query("SELECT status, COUNT(*) AS n FROM applications GROUP BY status")->fetchAll();
+$countMap = array_column($counts, 'n', 'status');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Job Applications — AkuapemHub</title>
+    <title>Job Applications (Monitor) — AkuapemHub</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
+    <style>
+        .stat-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+        .stat-chip { padding:6px 14px; border-radius:20px; font-size:0.82rem; font-weight:700; border:1px solid var(--border); }
+    </style>
 </head>
 <body>
     <header class="topbar">
         <a href="index.php" class="button button-secondary button-small">Back</a>
-        <h1>Job applications</h1>
+        <h1>Job applications <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted);">(read-only — hiring is managed by job owners)</span></h1>
         <a href="../logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell">
+        <div class="stat-row">
+            <span class="stat-chip" style="background:#fef3c7;">⏳ Pending: <?php echo (int)($countMap['pending']??0); ?></span>
+            <span class="stat-chip" style="background:#d1fae5;">✓ Approved: <?php echo (int)($countMap['approved']??0); ?></span>
+            <span class="stat-chip" style="background:#fde8e8;">✗ Rejected: <?php echo (int)($countMap['rejected']??0); ?></span>
+        </div>
+
+        <div class="filter-form" style="margin-bottom:16px;">
+            <a href="applications.php" class="button button-secondary button-small <?php echo !$statusFilter?'button-primary':''; ?>">All</a>
+            <?php foreach (['pending','approved','rejected'] as $s): ?>
+                <a href="applications.php?status=<?php echo $s; ?>" class="button button-secondary button-small <?php echo $statusFilter===$s?'button-primary':''; ?>"><?php echo ucfirst($s); ?></a>
+            <?php endforeach; ?>
+        </div>
+
         <section class="panel">
             <?php if (!$applications): ?>
-                <div class="empty-state">No job applications yet.</div>
+                <div class="empty-state">No applications match the filter.</div>
             <?php else: ?>
                 <?php foreach ($applications as $application): ?>
                     <article class="request-card">
                         <div class="request-head">
-                            <h2><?php echo sanitize($application['request_title']); ?></h2>
+                            <div>
+                                <h2><?php echo sanitize($application['request_title']); ?></h2>
+                                <p class="meta">
+                                    <?php echo sanitize($application['location']); ?> • GH₵ <?php echo sanitize($application['budget']); ?>
+                                    • Job: <strong><?php echo strtoupper(str_replace('_',' ',$application['request_status'])); ?></strong>
+                                    • Need <?php echo (int)$application['workers_needed']; ?>, Approved <?php echo (int)$application['workers_approved']; ?>, Remaining <?php echo max(0,(int)$application['workers_needed']-(int)$application['workers_approved']); ?>
+                                </p>
+                            </div>
                             <span class="status status-<?php echo sanitize($application['status']); ?>"><?php echo strtoupper($application['status']); ?></span>
                         </div>
-                        <p class="meta"><?php echo sanitize($application['location']); ?> • GH₵ <?php echo sanitize($application['budget']); ?> • Job status: <?php echo strtoupper(str_replace('_', ' ', $application['request_status'])); ?></p>
-                        <p>Applicant: <strong><?php echo sanitize($application['worker_name']); ?></strong>
+                        <p>
+                            Applicant: <strong><?php echo sanitize($application['worker_name']); ?></strong>
                             <?php if ($application['worker_is_verified']): ?>
                                 <span style="display:inline-flex;align-items:center;background:#22a06b;color:#fff;border-radius:4px;padding:0 5px;font-size:0.78rem;margin-left:4px;vertical-align:middle;"><strong>✓</strong>erified</span>
                             <?php endif; ?>
                             <?php if ($application['worker_is_featured']): ?>
                                 <span class="badge" style="background:var(--primary);color:#fff;font-size:0.75rem;margin-left:4px;vertical-align:middle;">Featured</span>
                             <?php endif; ?>
-                            (<?php echo sanitize($application['worker_email']); ?>)</p>
-                        <p class="meta">Applied <?php echo sanitize(time_ago($application['applied_at'])); ?></p>
+                            (<?php echo sanitize($application['worker_email']); ?>)
+                        </p>
+                        <p class="meta">Job owner: <?php echo sanitize($application['customer_name']); ?> · Applied <?php echo sanitize(time_ago($application['applied_at'])); ?></p>
                         <div class="request-footer">
                             <a href="../worker_profile_public.php?id=<?php echo $application['worker_id']; ?>" class="button button-secondary button-small">View worker profile</a>
-                            <?php if ($application['status'] === 'pending'): ?>
-                                <form method="post" class="inline-form" action="applications.php">
-                                    <input type="hidden" name="application_id" value="<?php echo $application['id']; ?>" />
-                                    <?php if ($application['request_status'] === 'open'): ?>
-                                        <button type="submit" name="action" value="approve" class="button button-primary">Approve</button>
-                                    <?php endif; ?>
-                                    <button type="submit" name="action" value="decline" class="button button-secondary">Decline</button>
-                                </form>
-                            <?php endif; ?>
                         </div>
                     </article>
                 <?php endforeach; ?>

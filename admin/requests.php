@@ -66,7 +66,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 }
 
 $errFlash = $_GET['err'] ?? '';
-$stmt = $pdo->query('SELECT sr.*, sr.posting_fee_status, u.name AS customer_name, c.name AS category_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id JOIN service_categories c ON sr.category_id = c.id ORDER BY sr.created_at DESC');
+
+// Staffing summary for reports
+$staffingReport = $pdo->query("
+    SELECT
+        COUNT(*) AS total_jobs,
+        SUM(status='open') AS open_jobs,
+        SUM(status='partially_staffed') AS partial_jobs,
+        SUM(status='fully_staffed') AS full_jobs,
+        SUM(status='in_progress') AS inprogress_jobs,
+        SUM(status='completed') AS completed_jobs
+    FROM service_requests WHERE status NOT IN ('pending','cancelled')
+")->fetch();
+
+$stmt = $pdo->query('SELECT sr.*, sr.posting_fee_status, sr.workers_needed, sr.workers_approved, u.name AS customer_name, c.name AS category_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id JOIN service_categories c ON sr.category_id = c.id ORDER BY sr.created_at DESC');
 $requests = $stmt->fetchAll();
 ?>
 <!DOCTYPE html>
@@ -87,6 +100,17 @@ $requests = $stmt->fetchAll();
         <?php if ($errFlash): ?>
             <div class="alert alert-error"><?php echo sanitize($errFlash); ?></div>
         <?php endif; ?>
+
+        <!-- Staffing report -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;">
+            <?php $rpt = $staffingReport; ?>
+            <div class="stat-card"><h2><?php echo (int)$rpt['total_jobs']; ?></h2><p>Total jobs</p></div>
+            <div class="stat-card"><h2><?php echo (int)$rpt['open_jobs']; ?></h2><p>Open</p></div>
+            <div class="stat-card"><h2><?php echo (int)$rpt['partial_jobs']; ?></h2><p>Partially staffed</p></div>
+            <div class="stat-card"><h2><?php echo (int)$rpt['full_jobs']; ?></h2><p>Fully staffed</p></div>
+            <div class="stat-card"><h2><?php echo (int)$rpt['completed_jobs']; ?></h2><p>Completed</p></div>
+        </div>
+
         <section class="panel">
             <form id="bulk-requests" method="post" action="requests.php" class="filter-form" style="margin-bottom: 16px; gap: 8px; flex-wrap: wrap;">
                 <input type="hidden" name="action" value="bulk" />
@@ -132,7 +156,11 @@ $requests = $stmt->fetchAll();
                                 </ul>
                             </div>
                         <?php endif; ?>
-                        <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?> • GH₵ <?php echo sanitize($request['budget']); ?></p>
+                        <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?> • GH₵ <?php echo sanitize($request['budget']); ?>
+                            <?php if (isset($request['workers_needed'])): ?>
+                                • Need <?php echo (int)$request['workers_needed']; ?> / Approved <?php echo (int)$request['workers_approved']; ?> / Remaining <?php echo max(0,(int)$request['workers_needed']-(int)$request['workers_approved']); ?>
+                            <?php endif; ?>
+                        </p>
                         <p><?php echo sanitize($request['description']); ?></p>
                         <p>Customer: <?php echo sanitize($request['customer_name']); ?> • Contact: <?php echo sanitize($request['contact_info']); ?></p>
                         <?php

@@ -127,8 +127,34 @@ function get_worker_request_counts($workerId) {
 
 function get_open_jobs_count() {
     global $pdo;
-    $stmt = $pdo->query('SELECT COUNT(*) FROM service_requests WHERE status = "open"');
+    $stmt = $pdo->query('SELECT COUNT(*) FROM service_requests WHERE status IN ("open","partially_staffed")');
     return (int)$stmt->fetchColumn();
+}
+
+function update_job_staffing_status(int $requestId): string {
+    global $pdo;
+    $job = $pdo->prepare("SELECT workers_needed FROM service_requests WHERE id = ?");
+    $job->execute([$requestId]);
+    $row = $job->fetch();
+    if (!$row) return '';
+
+    $countStmt = $pdo->prepare("SELECT COUNT(*) FROM applications WHERE request_id = ? AND status = 'approved'");
+    $countStmt->execute([$requestId]);
+    $approved = (int)$countStmt->fetchColumn();
+
+    $needed  = max(1, (int)$row['workers_needed']);
+    if ($approved === 0) {
+        $newStatus = 'open';
+    } elseif ($approved >= $needed) {
+        $newStatus = 'fully_staffed';
+    } else {
+        $newStatus = 'partially_staffed';
+    }
+
+    $pdo->prepare("UPDATE service_requests SET status = ?, workers_approved = ?, updated_at = NOW() WHERE id = ? AND status NOT IN ('completed','cancelled','pending')")
+        ->execute([$newStatus, $approved, $requestId]);
+
+    return $newStatus;
 }
 
 function get_premium_worker_count() {

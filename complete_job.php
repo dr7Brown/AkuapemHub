@@ -13,8 +13,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id'])) {
 
 $requestId = intval($_POST['request_id']);
 $completionNotes = trim($_POST['completion_notes'] ?? '');
-$stmt = $pdo->prepare('SELECT sr.*, u.email AS customer_email, u.name AS customer_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE sr.id = ? AND sr.assigned_worker_id = ? AND sr.status = ?');
-$stmt->execute([$requestId, $user['id'], 'in_progress']);
+$stmt = $pdo->prepare("SELECT sr.*, u.email AS customer_email, u.name AS customer_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE sr.id = ? AND sr.assigned_worker_id = ? AND sr.status IN ('in_progress','fully_staffed')");
+$stmt->execute([$requestId, $user['id']]);
 $request = $stmt->fetch();
 
 if (!$request) {

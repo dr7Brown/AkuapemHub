@@ -695,6 +695,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && $_POST[
                 $pdo->exec("ALTER TABLE worker_service_packages ADD COLUMN description TEXT NULL DEFAULT NULL AFTER name");
             }
         }
+        // Hiring workflow: workers_needed + workers_approved on service_requests
+        if (table_exists('service_requests')) {
+            if (!$pdo->query("SHOW COLUMNS FROM service_requests LIKE 'workers_needed'")->fetch()) {
+                $pdo->exec("ALTER TABLE service_requests ADD COLUMN workers_needed INT UNSIGNED NOT NULL DEFAULT 1 AFTER skills_needed, ADD COLUMN workers_approved INT UNSIGNED NOT NULL DEFAULT 0 AFTER workers_needed");
+            }
+            $pdo->exec("ALTER TABLE service_requests MODIFY COLUMN status ENUM('pending','open','in_progress','partially_staffed','fully_staffed','completed','cancelled') NOT NULL DEFAULT 'pending'");
+        }
+        // Hiring workflow: expanded application statuses
+        if (table_exists('applications')) {
+            $pdo->exec("ALTER TABLE applications MODIFY COLUMN status ENUM('pending','approved','rejected','withdrawn','completed','accepted','declined') NOT NULL DEFAULT 'pending'");
+        }
         // Make audit_logs.admin_id nullable so system actions (admin_id=0/null) are allowed
         if (table_exists('audit_logs')) {
             $adminIdCol = $pdo->query("SHOW COLUMNS FROM audit_logs LIKE 'admin_id'")->fetch();
