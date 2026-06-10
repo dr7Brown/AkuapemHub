@@ -584,6 +584,49 @@ textarea {
   border-top: 1px solid var(--border);
 }
 
+/* Flush bottom action bar — bleeds to card edges, corners clipped by card overflow:hidden */
+.request-card .card-actions {
+  display: flex;
+  margin: 14px -18px -18px;
+  border-top: 1.5px solid rgba(47, 143, 91, 0.15);
+}
+
+.request-card .card-actions .button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 8px;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.request-card .card-actions .button + .button {
+  border-left: 1.5px solid rgba(47, 143, 91, 0.15);
+}
+
+.request-card .card-actions .button:hover {
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
+.request-card .card-actions .button-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.request-card .card-actions .button-primary:hover {
+  background: var(--primary-dark);
+  color: #fff;
+}
+
 .job-action-bar {
   display: flex;
   flex-direction: column;

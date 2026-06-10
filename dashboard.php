@@ -298,8 +298,6 @@ if (is_worker()) {
                             <div class="request-footer">
                                 <span>Budget: GH₵ <?php echo sanitize($request['budget']); ?></span>
                                 <div class="button-group">
-                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
-                                    <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
                                     <?php if (in_array($request['status'], ['open','partially_staffed'], true)): ?>
                                         <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
                                         <?php if ($myAppStatus === 'pending'): ?>
@@ -321,6 +319,10 @@ if (is_worker()) {
                                         </form>
                                     <?php endif; ?>
                                 </div>
+                            </div>
+                            <div class="card-actions">
+                                <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
                             </div>
                         </article>
                     <?php endforeach; ?>
@@ -409,20 +411,24 @@ if (is_worker()) {
                                 <?php endif; ?>
                                 <span>Payment: <?php echo strtoupper($request['payment_status']); ?></span>
                             </div>
+                            <?php
+                                $cFeatEnd    = $request['featured_end_date'] ?? null;
+                                $cFeatActive = !empty($request['featured']) && (empty($cFeatEnd) || $cFeatEnd >= date('Y-m-d'));
+                                $cRenewSoon  = !empty($request['featured']) && !empty($cFeatEnd) && $cFeatEnd < date('Y-m-d', strtotime('+7 days'));
+                            ?>
+                            <?php if (!in_array($request['status'], ['pending', 'cancelled'], true) || (in_array($request['status'], ['pending', 'open'], true) && (!$cFeatActive || $cRenewSoon))): ?>
                             <div class="request-footer">
                                 <?php if (!in_array($request['status'], ['pending', 'cancelled'], true)): ?>
                                     <a href="job_applications.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small">👥 Manage Applicants</a>
                                 <?php endif; ?>
-                                <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
-                                <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small">Details</a>
-                                <?php
-                                    $cFeatEnd    = $request['featured_end_date'] ?? null;
-                                    $cFeatActive = !empty($request['featured']) && (empty($cFeatEnd) || $cFeatEnd >= date('Y-m-d'));
-                                    $cRenewSoon  = !empty($request['featured']) && !empty($cFeatEnd) && $cFeatEnd < date('Y-m-d', strtotime('+7 days'));
-                                ?>
                                 <?php if (in_array($request['status'], ['pending', 'open'], true) && (!$cFeatActive || $cRenewSoon)): ?>
                                     <a href="feature_job.php?id=<?php echo $request['id']; ?>" class="button button-secondary button-small"><?php echo $cRenewSoon ? '⭐ Renew feature' : '⭐ Feature job'; ?></a>
                                 <?php endif; ?>
+                            </div>
+                            <?php endif; ?>
+                            <div class="card-actions">
+                                <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
                             </div>
                             <?php if ($request['status'] === 'completed'): ?>
                                 <div class="request-footer">

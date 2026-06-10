@@ -138,12 +138,12 @@ $ledgerRows = array_reverse($ledgerRows);
                         <p><?php echo sanitize($app['description']); ?></p>
                         <div class="request-footer">
                             <span>GH₵ <?php echo sanitize($app['budget']); ?></span>
-                            <div class="button-group">
-                                <a href="request_detail.php?id=<?php echo $app['id']; ?>" class="button button-secondary button-small">Details</a>
-                                <?php if ($app['app_status'] === 'approved'): ?>
-                                    <a href="chat_start.php?user_id=<?php echo $app['customer_id']; ?>&job_id=<?php echo $app['id']; ?>" class="button button-primary button-small">💬 Message Owner</a>
-                                <?php endif; ?>
-                            </div>
+                        </div>
+                        <div class="card-actions">
+                            <a href="request_detail.php?id=<?php echo $app['id']; ?>" class="button">Details</a>
+                            <?php if ($app['app_status'] === 'approved'): ?>
+                                <a href="chat_start.php?user_id=<?php echo $app['customer_id']; ?>&job_id=<?php echo $app['id']; ?>" class="button button-primary">💬 Message Owner</a>
+                            <?php endif; ?>
                         </div>
                     </article>
                 <?php endforeach; ?>
