@@ -34,7 +34,7 @@ $appStmt = $pdo->prepare("
            u.name AS customer_name
     FROM applications a
     JOIN service_requests sr ON a.request_id = sr.id
-    LEFT JOIN categories c ON sr.category_id = c.id
+    LEFT JOIN service_categories c ON sr.category_id = c.id
     LEFT JOIN users u ON sr.customer_id = u.id
     {$appWhereClause}
     ORDER BY a.applied_at DESC
