@@ -272,6 +272,7 @@ if (is_worker()) {
                 <?php if (!$displayJobs): ?>
                     <div class="empty-state">No jobs match your filters.</div>
                 <?php else: ?>
+                    <div class="jobs-grid">
                     <?php foreach ($displayJobs as $request): ?>
                         <?php $jobDistance = $request['match_distance_km'] ?? distance_km($profile['latitude'] ?? null, $profile['longitude'] ?? null, $request['latitude'], $request['longitude']); ?>
                         <article class="request-card">
@@ -327,6 +328,7 @@ if (is_worker()) {
                             </div>
                         </article>
                     <?php endforeach; ?>
+                    </div>
                 <?php endif; ?>
             </section>
             <section class="panel">
@@ -381,6 +383,7 @@ if (is_worker()) {
                 <?php if (!$requests): ?>
                     <div class="empty-state">You have no service requests yet.</div>
                 <?php else: ?>
+                    <div class="jobs-grid">
                     <?php foreach ($requests as $request): ?>
                         <article class="request-card">
                             <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
@@ -445,6 +448,7 @@ if (is_worker()) {
                             <?php endif; ?>
                         </article>
                     <?php endforeach; ?>
+                    </div>
                 <?php endif; ?>
             </section>
         <?php endif; ?>

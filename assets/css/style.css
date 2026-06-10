@@ -366,6 +366,8 @@ textarea {
 .status-in_progress,
 .status-busy { background: #dbeafe; color: #1e40af; }
 .status-pending { background: #fef3c7; color: #92400e; }
+.status-partially_staffed { background: #fef3c7; color: #92400e; }
+.status-fully_staffed { background: #d1fae5; color: #166534; }
 .status-completed { background: #ede9fe; color: #6d28d9; }
 .status-cancelled,
 .status-offline { background: #fee2e2; color: #991b1b; }
@@ -473,7 +475,7 @@ textarea {
 
 .request-card {
   background: #ffffff;
-  border: 1px solid var(--border);
+  border: 1.5px solid rgba(47, 143, 91, 0.3);
   border-radius: var(--radius-md);
   padding: 18px;
   margin-bottom: 14px;
@@ -482,7 +484,18 @@ textarea {
 
 .request-card:hover {
   box-shadow: var(--shadow-md);
-  border-color: var(--border-strong);
+  border-color: var(--primary);
+}
+
+/* Responsive job card grid — 1 col mobile, 2 tablet, 3 desktop */
+.jobs-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.jobs-grid .request-card {
+  margin-bottom: 0;
 }
 
 .request-head {
@@ -694,6 +707,10 @@ tbody tr:hover td {
 
 /* Tablet and up */
 
+@media (min-width: 640px) {
+  .jobs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 @media (min-width: 700px) {
   .page-shell {
     padding-left: 24px;
@@ -721,6 +738,33 @@ tbody tr:hover td {
 @media (min-width: 960px) {
   .page-shell {
     padding-top: 28px;
+  }
+
+  .jobs-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* Wide screen: expand page width and enable sidebar layouts */
+@media (min-width: 1100px) {
+  .page-shell {
+    max-width: 1280px;
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+
+  .jobs-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+/* Sidebar layout utility: single col on mobile, sidebar+content on wide screens */
+.sidebar-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .sidebar-layout {
+    grid-template-columns: 260px 1fr;
   }
 }
 
