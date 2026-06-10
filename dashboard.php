@@ -483,7 +483,7 @@ if (is_worker()) {
                             </div>
                             <span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span>
                         </div>
-                        <p><?php echo sanitize(mb_substr($job['description'], 0, 100)) . (mb_strlen($job['description']) > 100 ? '…' : ''); ?></p>
+                        <p><?php echo sanitize($job['description']); ?></p>
                         <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($job['budget']); ?></p>
                         <div class="card-bottom">
                             <div class="card-mid-actions">

@@ -153,6 +153,7 @@ h1, .hero-card h1, .card h1, .panel h1 {
 }
 
 .panel-header {
+  margin-top: var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
@@ -510,6 +511,13 @@ textarea {
 
 .request-card > p {
   color: var(--text);
+}
+
+.jobs-grid .request-card > p:not(.meta) {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Small uppercase label used as section heading inside detail cards */
