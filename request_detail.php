@@ -195,10 +195,6 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
         }
 
         $secondaryActions = [];
-        $contactUrl = whatsapp_contact_link($request['contact_info'], $request['title']);
-        if ($contactUrl) {
-            $secondaryActions[] = ['link_external', $contactUrl, '💬 Chat on WhatsApp'];
-        }
         // In-app chat: customer → assigned worker, worker → customer
         if (is_customer() && $request['customer_id'] === $user['id'] && $request['assigned_worker_id']) {
             $secondaryActions[] = ['link', 'chat_start.php?user_id=' . $request['assigned_worker_id'] . '&job_id=' . $request['id'], '💬 Message Worker'];
