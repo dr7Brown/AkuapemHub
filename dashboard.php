@@ -411,7 +411,7 @@ if (is_worker()) {
                                 <span>Payment: <?php echo strtoupper($request['payment_status']); ?></span>
                             </div>
                             <div class="request-footer">
-                                <a href="job_applications.php" class="button button-primary button-small">👥 Manage Applicants</a>
+                                <a href="job_applications.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small">👥 Manage Applicants</a>
                                 <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button button-secondary button-small">Share WhatsApp</a>
                                 <?php $contactUrl = whatsapp_contact_link($request['contact_info'], $request['title']); ?>
                                 <?php if ($contactUrl): ?>

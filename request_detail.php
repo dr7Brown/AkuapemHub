@@ -179,7 +179,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
         <?php
         $primaryAction = null;
         if (is_customer() && $request['customer_id'] === $user['id']) {
-            $primaryAction = ['link', 'job_applications.php', '👥 Manage Applicants'];
+            $primaryAction = ['link', 'job_applications.php?id=' . $request['id'], '👥 Manage Applicants'];
         } elseif ($canApply) {
             $primaryAction = ['form', 'apply_job.php', 'Apply for this job'];
         } elseif (is_worker() && $request['status'] === 'fully_staffed' && $myApplicationStatus !== 'approved') {
