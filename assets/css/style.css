@@ -508,6 +508,16 @@ textarea {
   color: var(--text);
 }
 
+/* Small uppercase label used as section heading inside detail cards */
+.detail-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 5px;
+}
+
 /* Responsive job card grid — 1 col mobile, 2 tablet, 3 desktop */
 .jobs-grid {
   display: grid;

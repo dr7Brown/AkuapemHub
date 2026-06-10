@@ -76,90 +76,100 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                 <a href="pay_job_post.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small" style="margin-left:8px;">Pay posting fee →</a>
             </div>
         <?php endif; ?>
-        <section class="card">
-            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;">
-                <h1 style="margin: 0; font-size: 1.25rem;"><?php echo sanitize($request['title']); ?></h1>
-                <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
-            </div>
-            <div style="margin-top: 8px;">
-                <span class="badge" style="margin-left: 0;"><?php echo sanitize($request['category_name']); ?></span>
-                <?php
-                    $rdFeatEnd    = $request['featured_end_date'] ?? null;
-                    $rdFeatActive = !empty($request['featured']) && (empty($rdFeatEnd) || $rdFeatEnd >= date('Y-m-d'));
-                ?>
-                <?php if ($rdFeatActive): ?>
-                    <span class="badge badge-featured">⭐ Featured<?php echo $rdFeatEnd ? ' · until ' . sanitize($rdFeatEnd) : ''; ?></span>
-                <?php endif; ?>
-                <?php if ($request['status'] === 'fully_staffed'): ?>
-                    <span class="badge" style="background:#22a06b;color:#fff;margin-left:4px;">✅ Fully Staffed</span>
-                <?php elseif ($request['status'] === 'partially_staffed'): ?>
-                    <span class="badge" style="background:#f59e0b;color:#fff;margin-left:4px;">Partially Staffed</span>
-                <?php endif; ?>
-                <?php if (($request['workers_needed'] ?? 1) > 1): ?>
-                    <span class="badge" style="background:var(--surface);color:var(--text);border:1px solid var(--border);margin-left:4px;"><?php echo (int)($request['workers_approved']??0); ?>/<?php echo (int)$request['workers_needed']; ?> workers</span>
-                <?php endif; ?>
+        <?php
+        $rdFeatEnd    = $request['featured_end_date'] ?? null;
+        $rdFeatActive = !empty($request['featured']) && (empty($rdFeatEnd) || $rdFeatEnd >= date('Y-m-d'));
+        ?>
+        <section class="request-card" style="margin-bottom: 20px;">
+            <div class="request-head">
+                <div style="flex: 1; min-width: 0;">
+                    <h1 style="margin: 0 0 5px; font-size: 1.2rem; line-height: 1.3;"><?php echo sanitize($request['title']); ?></h1>
+                    <p class="meta" style="margin: 0;"><?php echo sanitize($request['category_name']); ?> · <?php echo sanitize($request['location']); ?> · <?php echo sanitize(time_ago($request['created_at'])); ?></p>
+                </div>
+                <span class="status status-<?php echo sanitize($request['status']); ?>" style="flex-shrink: 0;"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
             </div>
 
-            <a href="customer_profile.php?id=<?php echo $request['customer_id']; ?>" style="display:flex;align-items:center;gap:10px;margin-top:18px;text-decoration:none;color:inherit;">
+            <?php if ($rdFeatActive || in_array($request['status'], ['fully_staffed', 'partially_staffed'], true) || ($request['workers_needed'] ?? 1) > 1): ?>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;">
+                    <?php if ($rdFeatActive): ?>
+                        <span class="badge badge-featured">⭐ Featured<?php echo $rdFeatEnd ? ' · until ' . sanitize($rdFeatEnd) : ''; ?></span>
+                    <?php endif; ?>
+                    <?php if ($request['status'] === 'fully_staffed'): ?>
+                        <span class="badge" style="background: #22a06b; color: #fff;">✅ Fully Staffed</span>
+                    <?php elseif ($request['status'] === 'partially_staffed'): ?>
+                        <span class="badge" style="background: #f59e0b; color: #fff;">Partially Staffed</span>
+                    <?php endif; ?>
+                    <?php if (($request['workers_needed'] ?? 1) > 1): ?>
+                        <span class="badge"><?php echo (int)($request['workers_approved'] ?? 0); ?>/<?php echo (int)$request['workers_needed']; ?> workers hired</span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+
+            <a href="customer_profile.php?id=<?php echo $request['customer_id']; ?>" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; padding: 10px 12px; background: var(--surface-muted); border-radius: var(--radius-sm); margin-bottom: 18px;">
                 <?php if (!empty($request['customer_photo'])): ?>
-                    <img src="<?php echo sanitize($request['customer_photo']); ?>" alt="" class="avatar avatar-sm" style="object-fit:cover;" />
+                    <img src="<?php echo sanitize($request['customer_photo']); ?>" alt="" class="avatar avatar-sm" style="object-fit: cover; flex-shrink: 0;" />
                 <?php else: ?>
-                    <span class="avatar avatar-sm"><?php echo sanitize(strtoupper(substr($request['customer_username'] ?: $request['customer_name'], 0, 1))); ?></span>
+                    <span class="avatar avatar-sm" style="flex-shrink: 0;"><?php echo sanitize(strtoupper(substr($request['customer_username'] ?: $request['customer_name'], 0, 1))); ?></span>
                 <?php endif; ?>
-                <div>
-                    <p class="meta" style="margin: 0;">Posted by</p>
+                <div style="min-width: 0;">
+                    <p class="meta" style="margin: 0 0 1px;">Posted by</p>
                     <strong><?php echo sanitize($request['customer_username'] ?: $request['customer_name']); ?></strong>
                 </div>
+                <span style="margin-left: auto; color: var(--muted);">›</span>
             </a>
-            <p class="meta" style="margin-top: 10px;">📍 <?php echo sanitize($request['location']); ?> · <?php echo sanitize(time_ago($request['created_at'])); ?></p>
 
-            <div class="info-grid" style="margin: 18px 0;">
+            <div class="info-grid" style="margin-bottom: 18px;">
                 <div>
-                    <p class="meta" style="margin: 0 0 2px;">Budget</p>
+                    <p class="detail-label">Budget</p>
                     <strong>GH₵ <?php echo sanitize($request['budget']); ?></strong>
                 </div>
                 <div>
-                    <p class="meta" style="margin: 0 0 2px;">Payment</p>
+                    <p class="detail-label">Payment</p>
                     <strong><?php echo strtoupper($request['payment_status']); ?></strong>
                 </div>
             </div>
 
-            <h2 style="font-size: 1rem; margin-bottom: 6px;">Description</h2>
-            <p><?php echo nl2br(sanitize($request['description'])); ?></p>
+            <hr style="border: none; border-top: 1px solid var(--border); margin: 0 0 18px;">
 
-            <h2 style="font-size: 1rem; margin: 16px 0 6px;">Skills needed</h2>
-            <?php if (!empty($request['skills_needed'])): ?>
-                <?php foreach (array_filter(array_map('trim', explode(',', $request['skills_needed']))) as $skillName): ?>
-                    <span class="badge" style="margin-left: 0; margin-right: 6px;"><?php echo sanitize($skillName); ?></span>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <span class="badge" style="margin-left: 0;"><?php echo sanitize($request['category_name']); ?></span>
-            <?php endif; ?>
+            <p class="detail-label">Description</p>
+            <p style="line-height: 1.7; margin-bottom: 18px;"><?php echo nl2br(sanitize($request['description'])); ?></p>
 
-            <h2 style="font-size: 1rem; margin: 16px 0 6px;">Location</h2>
-            <p style="margin: 0;"><?php echo sanitize($request['location']); ?></p>
-
-            <?php if ($request['assigned_worker_id']): ?>
-                <h2 style="font-size: 1rem; margin: 16px 0 6px;">Assigned worker</h2>
-                <a href="worker_profile_public.php?id=<?php echo $request['assigned_worker_id']; ?>" style="color:var(--primary);font-weight:600;">
-                    <?php echo sanitize($request['worker_username'] ?: $request['worker_name'] ?: 'Worker'); ?>
-                </a>
-            <?php endif; ?>
-
-            <?php if (!empty($request['completion_notes'])): ?>
-                <h2 style="font-size: 1rem; margin: 16px 0 6px;">Completion notes</h2>
-                <p style="margin: 0;"><?php echo nl2br(sanitize($request['completion_notes'])); ?></p>
-            <?php endif; ?>
-
-            <?php if (!empty($completionPhotos)): ?>
-                <h2 style="font-size: 1rem; margin: 16px 0 6px;">Completion photos</h2>
-                <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                    <?php foreach ($completionPhotos as $photo): ?>
-                        <a href="<?php echo sanitize($photo['file_path']); ?>" target="_blank">
-                            <img src="<?php echo sanitize($photo['file_path']); ?>" alt="Completion evidence" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb;" />
-                        </a>
+            <p class="detail-label">Skills needed</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                <?php if (!empty($request['skills_needed'])): ?>
+                    <?php foreach (array_filter(array_map('trim', explode(',', $request['skills_needed']))) as $skillName): ?>
+                        <span class="badge" style="margin: 0;"><?php echo sanitize($skillName); ?></span>
                     <?php endforeach; ?>
-                </div>
+                <?php else: ?>
+                    <span class="badge" style="margin: 0;"><?php echo sanitize($request['category_name']); ?></span>
+                <?php endif; ?>
+            </div>
+
+            <?php if ($request['assigned_worker_id'] || !empty($request['completion_notes']) || !empty($completionPhotos)): ?>
+                <hr style="border: none; border-top: 1px solid var(--border); margin: 18px 0;">
+
+                <?php if ($request['assigned_worker_id']): ?>
+                    <p class="detail-label">Assigned worker</p>
+                    <a href="worker_profile_public.php?id=<?php echo $request['assigned_worker_id']; ?>" style="color: var(--primary); font-weight: 600; text-decoration: none;">
+                        <?php echo sanitize($request['worker_username'] ?: $request['worker_name'] ?: 'Worker'); ?>
+                    </a>
+                <?php endif; ?>
+
+                <?php if (!empty($request['completion_notes'])): ?>
+                    <p class="detail-label" style="margin-top: 14px;">Completion notes</p>
+                    <p style="margin: 0; line-height: 1.6;"><?php echo nl2br(sanitize($request['completion_notes'])); ?></p>
+                <?php endif; ?>
+
+                <?php if (!empty($completionPhotos)): ?>
+                    <p class="detail-label" style="margin-top: 14px;">Completion photos</p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                        <?php foreach ($completionPhotos as $photo): ?>
+                            <a href="<?php echo sanitize($photo['file_path']); ?>" target="_blank">
+                                <img src="<?php echo sanitize($photo['file_path']); ?>" alt="Completion evidence" style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; border: 1px solid var(--border);" />
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
             <?php endif; ?>
         </section>
 
