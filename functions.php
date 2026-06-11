@@ -58,6 +58,19 @@ function whatsapp_contact_link($contactInfo, $title) {
     return 'https://wa.me/' . rawurlencode($cleanPhone) . '?text=' . rawurlencode($text);
 }
 
+function log_security_event(?int $userId, string $action, string $ip, string $userAgent = ''): void
+{
+    global $pdo;
+    try {
+        $pdo->prepare(
+            'INSERT INTO security_logs (user_id, action, ip_address, user_agent, created_at)
+             VALUES (?, ?, ?, ?, NOW())'
+        )->execute([$userId, $action, $ip, $userAgent ?: null]);
+    } catch (PDOException $e) {
+        error_log('[security_log] ' . $e->getMessage());
+    }
+}
+
 function notify_user($userId, $title, $body, $type = 'info') {
     global $pdo;
     $stmt = $pdo->prepare('INSERT INTO notifications (user_id, title, body, type, is_read, created_at) VALUES (?, ?, ?, ?, 0, NOW())');
@@ -1061,6 +1074,41 @@ function is_feature_paid($featureKey) {
     if ($mode === 'free') return false;
     if ($mode === 'paid') return true;
     return (bool)get_platform_setting($featureKey, 0);
+}
+
+// ── Login rate-limiting (5 failures per IP in 15 min → lockout) ─────────────
+
+function login_rate_limit_exceeded(string $ip): bool {
+    global $pdo;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS login_attempts (
+            id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            ip_address VARCHAR(45) NOT NULL,
+            attempted_at DATETIME NOT NULL,
+            INDEX idx_ip_time (ip_address, attempted_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $window = date('Y-m-d H:i:s', time() - 900); // 15-minute window
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM login_attempts WHERE ip_address = ? AND attempted_at > ?");
+        $stmt->execute([$ip, $window]);
+        return (int)$stmt->fetchColumn() >= 5;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+function login_rate_limit_record(string $ip): void {
+    global $pdo;
+    try {
+        $pdo->prepare("INSERT INTO login_attempts (ip_address, attempted_at) VALUES (?, NOW())")->execute([$ip]);
+        $pdo->exec("DELETE FROM login_attempts WHERE attempted_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)");
+    } catch (Exception $e) {}
+}
+
+function login_rate_limit_clear(string $ip): void {
+    global $pdo;
+    try {
+        $pdo->prepare("DELETE FROM login_attempts WHERE ip_address = ?")->execute([$ip]);
+    } catch (Exception $e) {}
 }
 
 function log_audit_action($adminId, $action, $description) {
