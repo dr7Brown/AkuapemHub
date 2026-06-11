@@ -319,6 +319,7 @@ if (is_worker()) {
                                             <span class="card-status-badge rejected">✗ Application not selected</span>
                                         <?php else: ?>
                                             <form method="post" action="apply_job.php">
+                                                <?php echo csrf_field(); ?>
                                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                                 <button type="submit" class="button button-primary">Apply for this job</button>
                                             </form>
@@ -327,6 +328,7 @@ if (is_worker()) {
                                 <?php elseif (in_array($request['status'], ['in_progress','fully_staffed'], true) && $request['assigned_worker_id'] === $user['id']): ?>
                                     <div class="card-mid-actions">
                                         <form method="post" action="complete_job.php">
+                                            <?php echo csrf_field(); ?>
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                             <button type="submit" class="button button-secondary">✓ Mark completed</button>
                                         </form>
@@ -448,6 +450,7 @@ if (is_worker()) {
                                             <span class="card-status-badge approved">⭐ Rated <?php echo sanitize($request['rating_score']); ?>/5</span>
                                         <?php endif; ?>
                                         <form method="post" action="toggle_payment.php" class="inline-form">
+                                            <?php echo csrf_field(); ?>
                                             <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                             <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
                                             <button type="submit" class="button button-secondary">

@@ -9,6 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id']) || !iss
     header('Location: dashboard.php');
     exit;
 }
+csrf_check();
 
 $requestId = intval($_POST['request_id']);
 $currentStatus = $_POST['current_status'] === 'paid' ? 'paid' : 'unpaid';

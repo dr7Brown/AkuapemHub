@@ -177,6 +177,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             <section class="card form-card">
                 <h2 style="margin-top: 0;">Mark this job as completed</h2>
                 <form method="post" action="complete_job.php" enctype="multipart/form-data">
+                    <?php echo csrf_field(); ?>
                     <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                     <textarea name="completion_notes" rows="3" placeholder="Add completion notes or evidence summary..."></textarea>
                     <label class="meta">Attach photo evidence (JPG/PNG/WebP, up to 5MB each)</label>
@@ -230,6 +231,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             <?php if ($primaryAction): ?>
                 <?php if ($primaryAction[0] === 'form'): ?>
                     <form method="post" action="<?php echo sanitize($primaryAction[1]); ?>">
+                        <?php echo csrf_field(); ?>
                         <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                         <button type="submit" class="button button-primary"><?php echo sanitize($primaryAction[2]); ?></button>
                     </form>
@@ -237,6 +239,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                     <span class="button button-secondary" style="text-align: center; opacity: 0.7; cursor: default;"><?php echo sanitize($primaryAction[2]); ?></span>
                 <?php elseif ($primaryAction[0] === 'form_paid'): ?>
                     <form method="post" action="toggle_payment.php">
+                        <?php echo csrf_field(); ?>
                         <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                         <input type="hidden" name="current_status" value="<?php echo sanitize($request['payment_status']); ?>" />
                         <button type="submit" class="button button-primary"><?php echo sanitize($primaryAction[2]); ?></button>
