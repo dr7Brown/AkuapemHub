@@ -19,7 +19,7 @@ if (!$profile) {
 $isPaid = is_feature_paid('enable_paid_featured_workers');
 
 // Check for an existing pending featuring payment for this worker
-$existingFeatStmt = $pdo->prepare("SELECT id, reference_code FROM platform_payments WHERE user_id = ? AND payment_type = 'featured_worker' AND status = 'pending'");
+$existingFeatStmt = $pdo->prepare("SELECT id, reference_code, COALESCE(gateway,'manual') AS gateway FROM platform_payments WHERE user_id = ? AND payment_type = 'featured_worker' AND status = 'pending'");
 $existingFeatStmt->execute([$user['id']]);
 $existingFeatPayment = $existingFeatStmt->fetch();
 
@@ -28,6 +28,7 @@ $wFeatActive   = !empty($profile['is_featured']) && (empty($wFeatEndDate) || $wF
 $wFeatRenewSoon = !empty($profile['is_featured']) && !empty($wFeatEndDate) && $wFeatEndDate < date('Y-m-d', strtotime('+7 days'));
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $packageId = intval($_POST['package_id'] ?? 0);
 
     if ($existingFeatPayment) {
@@ -114,6 +115,7 @@ $packages = get_active_packages('worker_promotion_packages');
                     <h2 style="margin-top:0;"><?php echo $wFeatRenewSoon ? 'Renew your feature' : 'Feature your profile for free'; ?></h2>
                     <p>Get featured for <strong>30 days</strong> at no cost. Featured workers appear at the top of search results and the Find Workers page.</p>
                     <form method="post" action="feature_worker.php">
+                        <?php echo csrf_field(); ?>
                         <button type="submit" class="button button-primary"><?php echo $wFeatRenewSoon ? 'Renew for free' : 'Feature my profile'; ?></button>
                     </form>
                 <?php else: ?>
@@ -123,6 +125,7 @@ $packages = get_active_packages('worker_promotion_packages');
                         <div class="alert alert-error">No promotion packages are available right now. Check back later.</div>
                     <?php else: ?>
                         <form method="post" action="feature_worker.php">
+                            <?php echo csrf_field(); ?>
                             <?php foreach ($packages as $pkg): ?>
                                 <label class="list-row" style="display:flex;align-items:center;gap:12px;padding:14px;border:2px solid var(--border);border-radius:10px;margin-bottom:10px;cursor:pointer;">
                                     <input type="radio" name="package_id" value="<?php echo $pkg['id']; ?>" required />

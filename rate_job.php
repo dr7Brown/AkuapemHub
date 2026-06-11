@@ -28,6 +28,7 @@ if ($ratingExists->fetch()) {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $score = intval($_POST['score'] ?? 0);
     $comment = trim($_POST['comment'] ?? '');
 
@@ -57,6 +58,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </header>
     <main class="page-shell small-shell">
         <form class="card form-card" method="post" action="rate_job.php?request_id=<?php echo $requestId; ?>">
+            <?php echo csrf_field(); ?>
             <h2><?php echo sanitize($request['title']); ?></h2>
             <p class="meta">Worker: <?php echo sanitize($request['assigned_worker_name']); ?></p>
             <?php if ($error): ?>

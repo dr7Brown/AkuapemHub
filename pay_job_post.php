@@ -43,6 +43,7 @@ $existingStmt->execute([$user['id'], $jobId]);
 $existingPayment = $existingStmt->fetch();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     // Hard backend guard — re-check paid mode
     if (!is_feature_paid('enable_paid_job_posting')) {
         $pdo->prepare("UPDATE service_requests SET posting_fee_status = 'free' WHERE id = ?")->execute([$jobId]);
@@ -133,6 +134,7 @@ $packages = get_active_packages('job_posting_packages');
                 <div class="alert alert-error">No posting packages available right now. Contact support.</div>
             <?php else: ?>
                 <form method="post" action="pay_job_post.php">
+                    <?php echo csrf_field(); ?>
                     <input type="hidden" name="job_id" value="<?php echo $jobId; ?>" />
                     <?php foreach ($packages as $pkg): ?>
                         <label class="list-row" style="display:flex;align-items:center;gap:12px;padding:14px;border:2px solid var(--border);border-radius:10px;margin-bottom:10px;cursor:pointer;">

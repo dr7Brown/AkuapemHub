@@ -37,6 +37,7 @@ $existingStmt->execute([$user['id']]);
 $existingPayment = $existingStmt->fetch();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     // Hard backend guard
     if (!is_feature_paid('enable_paid_worker_service')) {
         $pdo->prepare("UPDATE worker_profiles SET service_fee_status = 'free' WHERE user_id = ?")->execute([$user['id']]);
@@ -121,6 +122,7 @@ $packages = get_active_packages('worker_service_packages');
                 <div class="alert alert-error">No service packages are available right now. Contact support.</div>
             <?php else: ?>
                 <form method="post" action="pay_worker_service.php">
+                    <?php echo csrf_field(); ?>
                     <?php foreach ($packages as $pkg): ?>
                         <label class="list-row" style="display:flex;align-items:center;gap:12px;padding:14px;border:2px solid var(--border);border-radius:10px;margin-bottom:10px;cursor:pointer;">
                             <input type="radio" name="package_id" value="<?php echo $pkg['id']; ?>" required />

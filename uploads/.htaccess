@@ -1,0 +1,11 @@
+# Deny execution of PHP scripts in upload directories
+<FilesMatch "\.php[0-9]?$">
+    Require all denied
+</FilesMatch>
+
+# Deny execution of other server-side scripts
+<FilesMatch "\.(phtml|pht|phar|php3|php4|php5|php7|shtml|cgi|pl|py|rb|sh)$">
+    Require all denied
+</FilesMatch>
+
+Options -ExecCGI -Indexes

@@ -44,6 +44,7 @@ if (!$reportedUserId) {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $disputeType = $_POST['dispute_type'] ?? '';
     $description = trim($_POST['description'] ?? '');
     
@@ -85,6 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </header>
     <main class="page-shell small-shell">
         <form class="card form-card" method="post" action="file_dispute.php?request_id=<?php echo $requestId; ?>">
+            <?php echo csrf_field(); ?>
             <h2><?php echo sanitize($request['title']); ?></h2>
             <p class="meta">Request status: <?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></p>
             

@@ -1,5 +1,6 @@
 *
 !.gitignore
+!.htaccess
 !completions/
 completions/*
 !completions/.gitkeep

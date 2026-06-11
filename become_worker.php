@@ -19,6 +19,7 @@ function refresh_session_user($pdo, $userId) {
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     if ($existingProfile) {
         $pdo->prepare('UPDATE users SET role = ? WHERE id = ?')->execute(['worker', $user['id']]);
         refresh_session_user($pdo, $user['id']);
@@ -114,12 +115,14 @@ $skillCategories = get_skill_categories_with_skills();
 
         <?php if ($existingProfile): ?>
             <form class="card form-card" method="post" action="become_worker.php">
+                <?php echo csrf_field(); ?>
                 <h2>Welcome back</h2>
                 <p class="meta">You already have a worker profile from a previous registration, including your verified ID and skills. Switch back to worker mode to start accepting jobs again — no need to redo verification.</p>
                 <button type="submit" class="button button-primary">Switch to worker mode</button>
             </form>
         <?php else: ?>
             <form class="card form-card" method="post" action="become_worker.php" enctype="multipart/form-data" id="become-worker-form">
+                <?php echo csrf_field(); ?>
                 <p class="meta" id="step-indicator">Step 1 of 2</p>
 
                 <div class="wizard-step" data-step="1">

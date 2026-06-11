@@ -8,6 +8,7 @@ $categories = get_categories();
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $title = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
     $rawCategoryInput = trim($_POST['category_id'] ?? '');
@@ -116,6 +117,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             </div>
         <?php endif; ?>
         <form class="card form-card" method="post" action="request.php">
+            <?php echo csrf_field(); ?>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
             <?php endif; ?>
