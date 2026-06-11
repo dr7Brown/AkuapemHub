@@ -447,10 +447,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             selectedSkills.push({ category_id: categoryId, category_name: categoryName, skill_name: skillName });
             renderSkillList();
-            otherCategoryInput.value = '';
-            otherInput.value = '';
-            otherWrap.style.display = 'none';
-            if (categorySelect.value !== '__other__') skillSelect.value = '';
+            if (categorySelect.value === '__other__') {
+                // keep category name locked; only clear the skill field and re-focus it
+                otherInput.value = '';
+                otherInput.focus();
+            } else {
+                otherInput.value = '';
+                otherWrap.style.display = 'none';
+                skillSelect.value = '';
+            }
         });
 
         renderSkillList();

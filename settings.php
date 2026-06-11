@@ -148,6 +148,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
                 if (!is_array($entry)) continue;
                 $sn  = trim((string)($entry['skill_name'] ?? ''));
                 $cid = intval($entry['category_id'] ?? 0) ?: null;
+                $customCatName = trim((string)($entry['category_name'] ?? ''));
+                if ($cid === null && $customCatName !== '') {
+                    $catCheck = $pdo->prepare('SELECT id FROM skill_categories WHERE LOWER(name) = LOWER(?)');
+                    $catCheck->execute([$customCatName]);
+                    if ($catRow = $catCheck->fetch()) {
+                        $cid = (int)$catRow['id'];
+                    } else {
+                        $pdo->prepare('INSERT INTO skill_categories (name) VALUES (?)')->execute([$customCatName]);
+                        $cid = (int)$pdo->lastInsertId();
+                    }
+                }
                 if ($sn !== '') $skillStmt->execute([$workerProfile['id'], $cid, $sn]);
             }
             $success = 'Skills added.';
@@ -454,14 +465,19 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                             <?php foreach ($skillCategories as $cat): ?>
                                 <option value="<?php echo $cat['id']; ?>"><?php echo sanitize($cat['name']); ?></option>
                             <?php endforeach; ?>
+                            <option value="__other__">Other (specify)</option>
                         </select>
-                        <label>Skill</label>
+                        <div id="other-category-wrap" style="display:none;">
+                            <label>Describe your category</label>
+                            <input type="text" id="other-category-input" placeholder="e.g. Welding, Pool cleaning, Borehole drilling" />
+                        </div>
+                        <label id="skill-label">Skill</label>
                         <select id="skill-select" disabled>
                             <option value="">Select a category first</option>
                         </select>
                         <div id="other-skill-wrap" style="display:none;">
                             <label>Specify your skill</label>
-                            <input type="text" id="other-skill-input" placeholder="e.g. Borehole drilling" />
+                            <input type="text" id="other-skill-input" placeholder="e.g. Arc welding, Filter cleaning" />
                         </div>
                         <button type="button" id="add-skill-button" class="button button-secondary button-small" style="margin-top:10px;">+ Add to list</button>
                         <ul id="skill-list" style="list-style:none;padding:0;margin:10px 0 0;display:flex;flex-wrap:wrap;gap:8px;"></ul>
@@ -476,6 +492,9 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                 var skillSel = document.getElementById('skill-select');
                 var otherWrap = document.getElementById('other-skill-wrap');
                 var otherInput = document.getElementById('other-skill-input');
+                var otherCatWrap = document.getElementById('other-category-wrap');
+                var otherCatInput = document.getElementById('other-category-input');
+                var skillLabel = document.getElementById('skill-label');
                 var addBtn = document.getElementById('add-skill-button');
                 var skillList = document.getElementById('skill-list');
                 var skillsJson = document.getElementById('skills-json');
@@ -491,9 +510,26 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                     }
 
                     catSel.addEventListener('change', function () {
-                        var cat = findCat(this.value);
-                        skillSel.innerHTML = '';
+                        otherCatWrap.style.display = 'none';
+                        otherCatInput.value = '';
                         otherWrap.style.display = 'none';
+                        otherInput.value = '';
+
+                        if (this.value === '__other__') {
+                            otherCatWrap.style.display = 'block';
+                            otherCatInput.focus();
+                            skillLabel.style.display = 'none';
+                            skillSel.style.display = 'none';
+                            skillSel.disabled = true;
+                            otherWrap.style.display = 'block';
+                            return;
+                        }
+
+                        skillLabel.style.display = '';
+                        skillSel.style.display = '';
+                        skillSel.innerHTML = '';
+
+                        var cat = findCat(this.value);
                         if (!cat) {
                             skillSel.disabled = true;
                             skillSel.innerHTML = '<option value="">Select a category first</option>';
@@ -541,18 +577,41 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                     }
 
                     addBtn.addEventListener('click', function () {
-                        var cat = findCat(catSel.value);
-                        if (!cat) { catSel.focus(); return; }
-                        var name = skillSel.value === '__other__' ? otherInput.value.trim() : skillSel.value;
-                        if (!name) { skillSel.focus(); return; }
+                        var categoryId, categoryName, skillName;
+
+                        if (catSel.value === '__other__') {
+                            categoryName = otherCatInput.value.trim();
+                            if (!categoryName) { otherCatInput.focus(); return; }
+                            skillName = otherInput.value.trim();
+                            if (!skillName) { otherInput.focus(); return; }
+                            categoryId = null;
+                        } else {
+                            var cat = findCat(catSel.value);
+                            if (!cat) { catSel.focus(); return; }
+                            categoryId = cat.id;
+                            categoryName = cat.name;
+                            skillName = skillSel.value === '__other__' ? otherInput.value.trim() : skillSel.value;
+                            if (!skillName) { skillSel.focus(); return; }
+                        }
+
                         var exists = pending.some(function (s) {
-                            return s.category_id === cat.id && s.skill_name.toLowerCase() === name.toLowerCase();
+                            return s.category_name.toLowerCase() === categoryName.toLowerCase()
+                                && s.skill_name.toLowerCase() === skillName.toLowerCase();
                         });
                         if (!exists) {
-                            pending.push({ category_id: cat.id, category_name: cat.name, skill_name: name });
+                            pending.push({ category_id: categoryId, category_name: categoryName, skill_name: skillName });
                             renderPending();
                         }
-                        otherInput.value = ''; otherWrap.style.display = 'none'; skillSel.value = '';
+
+                        if (catSel.value === '__other__') {
+                            // keep category name; only clear skill and re-focus
+                            otherInput.value = '';
+                            otherInput.focus();
+                        } else {
+                            otherInput.value = '';
+                            otherWrap.style.display = 'none';
+                            skillSel.value = '';
+                        }
                     });
 
                     renderPending();
