@@ -514,7 +514,9 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                     });
 
                     skillSel.addEventListener('change', function () {
-                        otherWrap.style.display = this.value === '__other__' ? 'block' : 'none';
+                        var isOther = this.value === '__other__';
+                        otherWrap.style.display = isOther ? 'block' : 'none';
+                        if (isOther) otherInput.focus();
                     });
 
                     function renderPending() {

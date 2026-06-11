@@ -347,7 +347,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         });
 
         skillSelect.addEventListener('change', function () {
-            otherWrap.style.display = skillSelect.value === '__other__' ? 'block' : 'none';
+            var isOther = skillSelect.value === '__other__';
+            otherWrap.style.display = isOther ? 'block' : 'none';
+            if (isOther) otherInput.focus();
         });
 
         function renderSkillList() {

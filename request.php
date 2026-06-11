@@ -140,11 +140,11 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             <select id="skill-name-select" disabled>
                 <option value="">Select a category first</option>
             </select>
-            <button type="button" id="add-skill-button" class="button button-secondary button-small">+ Add skill</button>
-            <ul id="skill-list" style="list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 8px;"></ul>
-            <div id="other-skill-wrap" style="display:none; margin: 0 0 4px;">
-                <input type="text" id="other-skill-input" placeholder="Describe the skill or task" />
+            <div id="other-skill-wrap" style="display:none; margin-top:6px;">
+                <input type="text" id="other-skill-input" placeholder="Describe the skill or task (e.g. Borehole drilling)" />
             </div>
+            <button type="button" id="add-skill-button" class="button button-secondary button-small" style="margin-top:8px;">+ Add skill</button>
+            <ul id="skill-list" style="list-style: none; padding: 0; margin: 8px 0; display: flex; flex-wrap: wrap; gap: 8px;"></ul>
             <input type="hidden" name="skills_needed" id="skills-needed-input" />
 
             <label>Location</label>
@@ -353,7 +353,9 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
         categorySelect.addEventListener('change', refreshSkillOptions);
 
         skillNameSelect.addEventListener('change', function () {
-            document.getElementById('other-skill-wrap').style.display = this.value === '__other__' ? 'block' : 'none';
+            var isOther = this.value === '__other__';
+            document.getElementById('other-skill-wrap').style.display = isOther ? 'block' : 'none';
+            if (isOther) document.getElementById('other-skill-input').focus();
         });
 
         function renderSkillList() {
