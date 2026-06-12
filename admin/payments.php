@@ -8,6 +8,32 @@ if (!is_admin() && !is_manager()) {
     exit;
 }
 
+// ── Tab routing ───────────────────────────────────────────────────────────────
+$tab = $_GET['tab'] ?? 'overview';
+
+// ── POST: save_charges (admin only) ──────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && is_admin()) {
+    csrf_check();
+    if (($_POST['action'] ?? '') === 'save_charges') {
+        $newRate      = min(50, max(0, round((float)($_POST['escrow_commission_rate'] ?? DEFAULT_COMMISSION), 2)));
+        $newRelease   = min(90, max(1, (int)($_POST['escrow_auto_release_days'] ?? 7)));
+        $newMinBudget = max(0, round((float)($_POST['escrow_min_budget'] ?? 0), 2));
+        set_platform_setting('escrow_commission_rate', $newRate);
+        set_platform_setting('escrow_auto_release_days', $newRelease);
+        set_platform_setting('escrow_min_budget', $newMinBudget);
+        log_audit_action($user['id'], 'system_charges_updated',
+            "Commission {$newRate}%, auto-release {$newRelease}d, min budget GH₵{$newMinBudget}");
+        flash('System charges updated successfully.', 'success');
+        header('Location: payments.php?tab=charges');
+        exit;
+    }
+}
+
+// ── Current charge settings (used in charges tab form) ───────────────────────
+$chargeCommRate    = (float)get_platform_setting('escrow_commission_rate', DEFAULT_COMMISSION);
+$chargeAutoRelease = max(1, (int)get_platform_setting('escrow_auto_release_days', 7));
+$chargeMinBudget   = (float)get_platform_setting('escrow_min_budget', 0);
+
 // ── Overview stats ────────────────────────────────────────────────────────────
 $stats = $pdo->query("SELECT
     SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END)                                      AS total_revenue,
@@ -125,12 +151,14 @@ $typeLabels = [
         <?php endforeach; ?>
 
         <nav class="pay-nav">
-            <a href="payments.php" class="active">Overview</a>
+            <a href="payments.php?tab=overview" class="<?php echo $tab === 'overview' ? 'active' : ''; ?>">Overview</a>
             <a href="transactions.php">Transactions</a>
             <a href="escrow.php">Escrow</a>
-            <a href="monetization.php">Settings</a>
+            <a href="payments.php?tab=charges" class="<?php echo $tab === 'charges' ? 'active' : ''; ?>">Charges</a>
+            <a href="monetization.php">Packages</a>
         </nav>
 
+        <?php if ($tab === 'overview'): ?>
         <!-- Revenue headline stats -->
         <div class="stat-grid">
             <div class="stat-box highlight">
@@ -289,6 +317,76 @@ $typeLabels = [
             <a href="escrow.php" class="button button-secondary">Manage Escrow →</a>
             <a href="transactions.php?export=csv" class="button button-secondary">Export CSV</a>
         </div>
+
+        <?php elseif ($tab === 'charges'): ?>
+
+        <div style="max-width:620px;">
+            <p style="font-weight:700;font-size:1.05rem;margin:0 0 6px;">System Charges</p>
+            <p class="meta" style="margin:0 0 20px;">These settings control platform fees for escrow-protected jobs. Changes apply to new jobs only — existing escrow records are not affected.</p>
+
+            <?php if (!is_admin()): ?>
+                <div class="alert alert-warning">Only admins can modify system charges.</div>
+            <?php else: ?>
+            <form method="post" action="payments.php?tab=charges" style="background:var(--surface-muted);border:1px solid var(--border);border-radius:var(--radius-sm);padding:24px;">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="save_charges" />
+
+                <div style="margin-bottom:22px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;">Escrow Commission Rate</label>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <input type="number" name="escrow_commission_rate"
+                               value="<?php echo htmlspecialchars($chargeCommRate); ?>"
+                               min="0" max="50" step="0.5" required
+                               style="width:90px;font-size:1.1rem;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);" />
+                        <span style="font-size:1.1rem;font-weight:600;">%</span>
+                        <span class="meta">of the worker's quoted budget</span>
+                    </div>
+                    <p class="meta" style="margin:8px 0 0;">
+                        At <strong><?php echo $chargeCommRate; ?>%</strong>: a GH₵&nbsp;500 job charges the client
+                        <strong>GH₵&nbsp;<?php echo number_format(500 * (1 + $chargeCommRate / 100), 2); ?></strong> —
+                        worker gets GH₵&nbsp;500, platform earns
+                        <strong>GH₵&nbsp;<?php echo number_format(500 * $chargeCommRate / 100, 2); ?></strong>.
+                    </p>
+                </div>
+
+                <div style="margin-bottom:22px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;">Auto-Release Window</label>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <input type="number" name="escrow_auto_release_days"
+                               value="<?php echo $chargeAutoRelease; ?>"
+                               min="1" max="90" required
+                               style="width:90px;font-size:1.1rem;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);" />
+                        <span class="meta">days after the worker marks the job complete</span>
+                    </div>
+                    <p class="meta" style="margin:8px 0 0;">If a client doesn't release escrow within this window, funds are automatically released to the worker. Range: 1–90 days.</p>
+                </div>
+
+                <div style="margin-bottom:28px;">
+                    <label style="font-weight:600;display:block;margin-bottom:6px;">Minimum Escrow Budget</label>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        <span style="font-size:1rem;font-weight:600;">GH₵</span>
+                        <input type="number" name="escrow_min_budget"
+                               value="<?php echo htmlspecialchars($chargeMinBudget); ?>"
+                               min="0" step="0.01"
+                               style="width:120px;font-size:1.1rem;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);" />
+                        <span class="meta">set to 0 for no minimum</span>
+                    </div>
+                    <p class="meta" style="margin:8px 0 0;">Clients attempting to post an escrow job below this amount will see an error. Prevents micro-transactions with disproportionate overhead.</p>
+                </div>
+
+                <button type="submit" class="button button-primary">Save Charges</button>
+                <a href="payments.php?tab=overview" class="button button-secondary" style="margin-left:8px;">Cancel</a>
+            </form>
+            <?php endif; ?>
+
+            <div style="margin-top:24px;padding:16px;background:var(--surface-muted);border:1px solid var(--border);border-radius:var(--radius-sm);">
+                <p style="font-weight:600;margin:0 0 6px;">Other Platform Fees</p>
+                <p class="meta" style="margin:0 0 10px;">Job posting fees, featured listing prices, verification fees, and subscription packages are managed separately.</p>
+                <a href="monetization.php" class="button button-secondary button-small">Monetization &amp; Packages →</a>
+            </div>
+        </div>
+
+        <?php endif; ?>
     </main>
 
     <script>

@@ -14,6 +14,11 @@ if (!is_email_verified()) {
 $categories = get_categories();
 $error = '';
 
+// Platform charge settings (DB-backed, fall back to compile-time defaults)
+$commRate        = (float)get_platform_setting('escrow_commission_rate', DEFAULT_COMMISSION);
+$autoReleaseDays = max(1, (int)get_platform_setting('escrow_auto_release_days', 7));
+$escrowMinBudget = (float)get_platform_setting('escrow_min_budget', 0);
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $title       = trim($_POST['title'] ?? '');
@@ -58,6 +63,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $budgetAmount = round((float)$budgetClean, 2);
             $budget = number_format($budgetAmount, 2, '.', '');
+            if ($escrowMinBudget > 0 && $budgetAmount < $escrowMinBudget) {
+                $error = 'Minimum budget for escrow jobs is GH₵ ' . number_format($escrowMinBudget, 2) . '.';
+            }
         }
     }
 
@@ -100,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $budget, $budgetAmount, $contactInfo,
             $skillsNeeded !== '' ? $skillsNeeded : null, $workersNeeded,
             $paymentMode, $deadlineValue, $deadlineUnit, $deadlineDate,
-            $initialStatus, 'unpaid', DEFAULT_COMMISSION, 0, $postingFeeStatus,
+            $initialStatus, 'unpaid', $commRate, 0, $postingFeeStatus,
         ]);
         $newJobId = (int)$pdo->lastInsertId();
 
@@ -113,14 +121,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($paymentMode === 'escrow') {
-            $commRate    = (float)DEFAULT_COMMISSION;
             $commAmount  = round($budgetAmount * $commRate / 100, 2);
             $grossAmount = round($budgetAmount + $commAmount, 2);
 
             $pdo->prepare('INSERT INTO escrow_payments
                 (job_id, client_id, budget_amount, commission_rate, commission_amount, gross_amount, net_amount, status, auto_release_days, created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,NOW())')
-                ->execute([$newJobId, $user['id'], $budgetAmount, $commRate, $commAmount, $grossAmount, $budgetAmount, 'awaiting_payment', 7]);
+                ->execute([$newJobId, $user['id'], $budgetAmount, $commRate, $commAmount, $grossAmount, $budgetAmount, 'awaiting_payment', $autoReleaseDays]);
 
             flash('Job saved. Complete the escrow payment to submit it for review.', 'info');
             header('Location: escrow_checkout.php?id=' . $newJobId);
@@ -282,7 +289,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                         <td style="text-align:right;font-weight:600;" id="cp-worker">—</td>
                     </tr>
                     <tr>
-                        <td style="padding:3px 0;">Platform fee (<span id="cp-rate"><?php echo DEFAULT_COMMISSION; ?>%</span>)</td>
+                        <td style="padding:3px 0;">Platform fee (<span id="cp-rate"><?php echo $commRate; ?>%</span>)</td>
                         <td style="text-align:right;" id="cp-commission">—</td>
                     </tr>
                     <tr style="border-top:1px solid var(--border);">
@@ -290,7 +297,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                         <td style="text-align:right;font-weight:700;font-size:1.05rem;color:var(--primary);" id="cp-total">—</td>
                     </tr>
                 </table>
-                <p class="meta" style="margin:8px 0 0;">Funds are held securely. Auto-released to the worker 7 days after job completion if you don't act sooner.</p>
+                <p class="meta" style="margin:8px 0 0;">Funds are held securely. Auto-released to the worker <?php echo $autoReleaseDays; ?> day<?php echo $autoReleaseDays !== 1 ? 's' : ''; ?> after job completion if you don't act sooner.</p>
             </div>
 
             <div id="direct-warning" style="display:none;background:#fffbeb;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:12px;margin-top:4px;">
@@ -320,7 +327,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
         </form>
     </main>
     <script>
-        var COMMISSION_RATE = <?php echo (int)DEFAULT_COMMISSION; ?>;
+        var COMMISSION_RATE = <?php echo (float)$commRate; ?>;
 
         function onModeChange() {
             var mode = document.querySelector('input[name="payment_mode"]:checked').value;
