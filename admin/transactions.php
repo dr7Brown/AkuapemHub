@@ -169,7 +169,7 @@ function qstr(array $overrides = []): string {
         </div>
     </header>
     <main class="page-shell" style="padding-bottom:40px;">
-        <?php foreach (get_flash() as $msg): ?>
+        <?php foreach (get_flashes() as $msg): ?>
             <div class="alert alert-<?php echo sanitize($msg['type']); ?>"><?php echo $msg['message']; ?></div>
         <?php endforeach; ?>
 

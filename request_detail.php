@@ -36,27 +36,8 @@ $canApply = is_worker()
     && in_array($request['status'], ['open','partially_staffed'], true)
     && !in_array($myApplicationStatus, ['pending','approved','accepted'], true);
 $canComplete = is_worker() && $request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id'];
-$isEscrowJob     = ($request['payment_mode'] ?? 'direct') === 'escrow';
-$canMarkPaid     = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'] && !$isEscrowJob;
-$canReleaseEscrow = $isEscrowJob
-    && is_customer()
-    && $request['customer_id'] === $user['id']
-    && $request['status'] === 'completed'
-    && isset($escrowRecord)
-    && $escrowRecord
-    && $escrowRecord['status'] === 'held';
-$canRate = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
 
-$ratingExists = false;
-if ($canRate) {
-    $ratingStmt = $pdo->prepare('SELECT id FROM ratings WHERE request_id = ? AND customer_id = ?');
-    $ratingStmt->execute([$requestId, $user['id']]);
-    $ratingExists = (bool)$ratingStmt->fetch();
-}
-
-$completionPhotos = get_completion_photos($requestId);
-
-// Escrow: fetch record + lazy auto-release check
+// Escrow: fetch record + lazy auto-release check (must run before can-flags)
 $escrowRecord = null;
 if (($request['payment_mode'] ?? 'direct') === 'escrow') {
     $escStmt = $pdo->prepare('SELECT * FROM escrow_payments WHERE job_id = ?');
@@ -84,6 +65,26 @@ if (($request['payment_mode'] ?? 'direct') === 'escrow') {
         $request['payment_status'] = 'paid';
     }
 }
+
+// Can-flags: computed after escrow record is loaded
+$isEscrowJob      = ($request['payment_mode'] ?? 'direct') === 'escrow';
+$canMarkPaid      = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'] && !$isEscrowJob;
+$canReleaseEscrow = $isEscrowJob
+    && is_customer()
+    && $request['customer_id'] === $user['id']
+    && $request['status'] === 'completed'
+    && $escrowRecord
+    && $escrowRecord['status'] === 'held';
+$canRate = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
+
+$ratingExists = false;
+if ($canRate) {
+    $ratingStmt = $pdo->prepare('SELECT id FROM ratings WHERE request_id = ? AND customer_id = ?');
+    $ratingStmt->execute([$requestId, $user['id']]);
+    $ratingExists = (bool)$ratingStmt->fetch();
+}
+
+$completionPhotos = get_completion_photos($requestId);
 
 $recommendedWorkers = [];
 if (is_customer() && $request['customer_id'] === $user['id'] && in_array($request['status'], ['pending', 'open'], true)) {

@@ -62,6 +62,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && is_admin()) {
 
         if ($refundOk) {
             $pdo->prepare("UPDATE platform_payments SET status='refunded' WHERE id=?")->execute([$id]);
+            // Cascade refund to escrow record if applicable
+            if ($tx['payment_type'] === 'escrow_payment') {
+                $pdo->prepare("UPDATE escrow_payments SET status='refunded', refunded_at=NOW() WHERE job_id=? AND status IN ('awaiting_payment','held')")
+                    ->execute([$tx['reference_id']]);
+                $pdo->prepare("UPDATE service_requests SET payment_status='unpaid', updated_at=NOW() WHERE id=? AND payment_status='escrowed'")
+                    ->execute([$tx['reference_id']]);
+            }
             log_audit_action($user['id'], 'payment_refunded', "Payment #{$id} refunded by admin {$user['id']}. " . $refundMsg);
             notify_user((int)$tx['user_id'], '↩️ Payment refunded',
                 "Your payment of {$tx['currency']} " . number_format($tx['amount'], 2) . " (Ref: {$tx['reference_code']}) has been refunded by admin. Please allow 3–5 business days for the funds to appear.",
@@ -194,7 +201,7 @@ $methodLabels = [
         </div>
     </header>
     <main class="page-shell small-shell" style="padding-bottom:40px;">
-        <?php foreach (get_flash() as $msg): ?>
+        <?php foreach (get_flashes() as $msg): ?>
             <div class="alert alert-<?php echo sanitize($msg['type']); ?>"><?php echo $msg['message']; ?></div>
         <?php endforeach; ?>
 
