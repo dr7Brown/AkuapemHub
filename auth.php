@@ -80,6 +80,16 @@ function csrf_check(): void {
     }
 }
 
+function is_email_verified(): bool
+{
+    $user = current_user();
+    if (!$user) {
+        return true;
+    }
+    // Sessions created before the migration won't have this key — treat as verified
+    return !isset($user['email_verified']) || (bool) $user['email_verified'];
+}
+
 function is_admin() {
     $user = current_user();
     return $user && $user['role'] === 'admin';

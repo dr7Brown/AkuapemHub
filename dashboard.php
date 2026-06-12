@@ -152,6 +152,24 @@ if (is_worker()) {
             <div class="alert alert-<?php echo sanitize($flash['type']); ?>"><?php echo sanitize($flash['message']); ?></div>
         <?php endif; ?>
 
+        <?php if (!is_email_verified()): ?>
+            <div class="alert alert-warning" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                <span style="font-size:1.2rem;line-height:1;">📧</span>
+                <div style="flex:1;min-width:200px;">
+                    <strong>Please verify your email address</strong><br>
+                    <span style="font-size:0.9rem;">
+                        We sent a link to <strong><?php echo sanitize($user['email']); ?></strong>.
+                        You need to verify your email before you can post or apply for jobs.
+                    </span>
+                </div>
+                <form method="post" action="resend_verification.php" style="margin:0;">
+                    <?php echo csrf_field(); ?>
+                    <button type="submit" class="button button-secondary button-small"
+                            style="white-space:nowrap;">Resend email</button>
+                </form>
+            </div>
+        <?php endif; ?>
+
         <section class="hero-card">
             <p class="meta" style="color: rgba(255,255,255,0.85); margin-bottom: 4px;">👋 Hello, <?php echo sanitize(display_name($user)); ?></p>
             <?php if (is_worker()): ?>

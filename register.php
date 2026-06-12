@@ -11,6 +11,7 @@ $towns = get_towns();
 $skillCategories = get_skill_categories_with_skills();
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $name = trim($_POST['name'] ?? '');
     $username = trim($_POST['username'] ?? '');
     $email = trim($_POST['email'] ?? '');
@@ -116,7 +117,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $stmt = $pdo->prepare('SELECT id, name, username, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+            // Generate email verification token and send
+            $verifyToken = bin2hex(random_bytes(32));
+            $pdo->prepare(
+                'UPDATE users SET email_verified = 0, email_verification_token = ?, email_verification_sent_at = NOW() WHERE id = ?'
+            )->execute([$verifyToken, $userId]);
+            require_once __DIR__ . '/services/EmailService.php';
+            EmailService::sendVerificationEmail($email, $name, $verifyToken);
+
+            $stmt = $pdo->prepare('SELECT id, name, username, email, email_verified, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
             login_user($user);
@@ -147,6 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="meta">Join AkuapemHub to find work or get jobs done</p>
         </div>
         <form class="card form-card" method="post" action="register.php" enctype="multipart/form-data" id="register-form">
+            <?php echo csrf_field(); ?>
             <p class="meta" id="step-indicator">Step 1 of 1</p>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>

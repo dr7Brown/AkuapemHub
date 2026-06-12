@@ -10,6 +10,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id'])) {
     header('Location: dashboard.php');
     exit;
 }
+csrf_check();
+
+if (!is_email_verified()) {
+    flash('Please verify your email address before applying for jobs. Check your inbox.', 'error');
+    header('Location: request_detail.php?id=' . intval($_POST['request_id']));
+    exit;
+}
 
 $requestId = intval($_POST['request_id']);
 $stmt = $pdo->prepare("SELECT * FROM service_requests WHERE id = ? AND status IN ('open','partially_staffed')");

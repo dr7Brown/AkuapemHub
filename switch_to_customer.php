@@ -13,7 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $pdo->prepare('UPDATE users SET role = ? WHERE id = ?')->execute(['customer', $user['id']]);
 
-$stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+$stmt = $pdo->prepare('SELECT id, name, email, email_verified, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
 $stmt->execute([$user['id']]);
 $_SESSION['user'] = $stmt->fetch();
 

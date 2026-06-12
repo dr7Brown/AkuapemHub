@@ -11,7 +11,7 @@ $stmt->execute([$user['id']]);
 $existingProfile = $stmt->fetch();
 
 function refresh_session_user($pdo, $userId) {
-    $stmt = $pdo->prepare('SELECT id, name, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT id, name, email, email_verified, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $_SESSION['user'] = $stmt->fetch();
 }

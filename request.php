@@ -4,6 +4,13 @@ require_once __DIR__ . '/functions.php';
 
 require_login();
 $user = current_user();
+
+if (!is_email_verified()) {
+    flash('Please verify your email address before posting a job. Check your inbox.', 'error');
+    header('Location: dashboard.php');
+    exit;
+}
+
 $categories = get_categories();
 $error = '';
 

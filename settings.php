@@ -17,11 +17,15 @@ if ($user['role'] === 'worker') {
 }
 
 function settings_refresh_user(PDO $pdo, $userId) {
-    $stmt = $pdo->prepare('SELECT id, name, username, email, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT id, name, username, email, email_verified, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $fresh = $stmt->fetch();
     $_SESSION['user'] = $fresh;
     return $fresh;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_profile') {
@@ -297,6 +301,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
 
         <?php elseif ($activeSection === 'account'): ?>
             <form class="card form-card" method="post" action="settings.php?section=account" enctype="multipart/form-data">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="form" value="edit_profile" />
                 <?php if (!empty($user['profile_photo'])): ?>
                     <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile photo" style="width: 72px; height: 72px; border-radius: 50%; object-fit: cover; margin-bottom: 8px;" />
@@ -319,6 +324,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
 
         <?php elseif ($activeSection === 'location'): ?>
             <form class="card form-card" method="post" action="settings.php?section=location">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="form" value="location" />
                 <label>Town</label>
                 <select name="town_id" required>
@@ -360,6 +366,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
 
         <?php elseif ($activeSection === 'password'): ?>
             <form class="card form-card" method="post" action="settings.php?section=password">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="form" value="password" />
                 <p class="meta">Leave blank to keep your current password.</p>
                 <label>Current password</label>
@@ -371,6 +378,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
 
         <?php elseif ($activeSection === 'notifications'): ?>
             <form class="card form-card" method="post" action="settings.php?section=notifications">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="form" value="notifications" />
                 <label class="checkbox-label" style="display: flex; align-items: center; gap: 8px; font-weight: normal;">
                     <input type="checkbox" name="email_notifications_enabled" <?php echo !empty($user['email_notifications_enabled']) ? 'checked' : ''; ?> />
@@ -390,6 +398,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                     <a href="worker_profile.php" class="button button-secondary" style="margin-bottom: 12px;">Manage worker profile</a>
                     <p class="meta">Switching to customer mode hides your worker profile from job matching. Your worker profile and skills are kept, so you can switch back any time.</p>
                     <form method="post" action="switch_to_customer.php" onsubmit="return confirm('Switch to customer mode? Your worker profile will be kept and you can switch back later.');">
+                        <?php echo csrf_field(); ?>
                         <button type="submit" class="button button-secondary">Switch to customer mode</button>
                     </form>
                 <?php endif; ?>
@@ -401,6 +410,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
             <?php else: ?>
                 <!-- Bio & Availability -->
                 <form class="card form-card" method="post" action="settings.php?section=worker" style="margin-bottom:14px;">
+                    <?php echo csrf_field(); ?>
                     <input type="hidden" name="form" value="worker_bio" />
                     <h2>Bio &amp; Availability</h2>
                     <label>About you <span class="meta">(optional)</span></label>
@@ -416,6 +426,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
 
                 <!-- Identity Verification -->
                 <form class="card form-card" method="post" action="settings.php?section=worker" enctype="multipart/form-data" style="margin-bottom:14px;">
+                    <?php echo csrf_field(); ?>
                     <input type="hidden" name="form" value="worker_id" />
                     <h2>Identity Verification</h2>
                     <p class="meta">Your ID is never shared publicly — it is used for trust &amp; safety only.</p>
@@ -446,6 +457,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                                 <?php if ($sk['category_name']): ?><span style="font-size:0.78rem;color:var(--text-muted);font-weight:normal;"><?php echo sanitize($sk['category_name']); ?>:</span><?php endif; ?>
                                 <?php echo sanitize($sk['skill_name']); ?>
                                 <form method="post" action="settings.php?section=worker" style="display:contents;">
+                                    <?php echo csrf_field(); ?>
                                     <input type="hidden" name="form" value="worker_remove_skill" />
                                     <input type="hidden" name="skill_id" value="<?php echo $sk['id']; ?>" />
                                     <button type="submit" title="Remove skill" onclick="return confirm('Remove <?php echo addslashes(sanitize($sk['skill_name'])); ?>?')" style="border:none;background:transparent;cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 2px;color:var(--text-muted);">×</button>
@@ -457,6 +469,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
                         <p class="meta" style="margin-bottom:12px;">No skills added yet.</p>
                     <?php endif; ?>
                     <form method="post" action="settings.php?section=worker" id="add-skill-form">
+                        <?php echo csrf_field(); ?>
                         <input type="hidden" name="form" value="worker_add_skill" />
                         <h3 style="font-size:0.95rem;margin:0 0 6px;font-weight:600;">Add skills</h3>
                         <label>Category</label>
@@ -622,6 +635,7 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
             <section class="card form-card">
                 <p class="meta">Your account details are only shared with the customers and workers you transact with. Closing your account deactivates it and signs you out immediately.</p>
                 <form method="post" action="delete_account.php" onsubmit="return confirm('Are you sure you want to close your account? You will be signed out immediately.');">
+                    <?php echo csrf_field(); ?>
                     <label>Confirm your password</label>
                     <input type="password" name="current_password" required placeholder="Enter your password to confirm" />
                     <button type="submit" class="button button-secondary" style="color: #c0392b; border-color: #c0392b;">Close my account</button>
