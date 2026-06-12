@@ -36,7 +36,15 @@ $canApply = is_worker()
     && in_array($request['status'], ['open','partially_staffed'], true)
     && !in_array($myApplicationStatus, ['pending','approved','accepted'], true);
 $canComplete = is_worker() && $request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id'];
-$canMarkPaid = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
+$isEscrowJob     = ($request['payment_mode'] ?? 'direct') === 'escrow';
+$canMarkPaid     = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'] && !$isEscrowJob;
+$canReleaseEscrow = $isEscrowJob
+    && is_customer()
+    && $request['customer_id'] === $user['id']
+    && $request['status'] === 'completed'
+    && isset($escrowRecord)
+    && $escrowRecord
+    && $escrowRecord['status'] === 'held';
 $canRate = is_customer() && $request['status'] === 'completed' && $request['customer_id'] === $user['id'];
 
 $ratingExists = false;
@@ -47,6 +55,35 @@ if ($canRate) {
 }
 
 $completionPhotos = get_completion_photos($requestId);
+
+// Escrow: fetch record + lazy auto-release check
+$escrowRecord = null;
+if (($request['payment_mode'] ?? 'direct') === 'escrow') {
+    $escStmt = $pdo->prepare('SELECT * FROM escrow_payments WHERE job_id = ?');
+    $escStmt->execute([$requestId]);
+    $escrowRecord = $escStmt->fetch();
+
+    // Lazy auto-release: if held, job completed, and auto_release_at has passed
+    if ($escrowRecord && $escrowRecord['status'] === 'held'
+        && $request['status'] === 'completed'
+        && !empty($escrowRecord['auto_release_at'])
+        && $escrowRecord['auto_release_at'] <= date('Y-m-d H:i:s')
+    ) {
+        $pdo->prepare("UPDATE escrow_payments SET status='released', released_at=NOW(), release_initiated_by='auto' WHERE id=?")
+            ->execute([$escrowRecord['id']]);
+        $pdo->prepare("UPDATE service_requests SET payment_status='paid', updated_at=NOW() WHERE id=?")
+            ->execute([$requestId]);
+        if ($escrowRecord['worker_id']) {
+            notify_user((int)$escrowRecord['worker_id'], '💸 Payment auto-released',
+                "Your escrow payment for \"{$request['title']}\" was automatically released. Funds: GH₵ " . number_format($escrowRecord['net_amount'], 2) . ".",
+                'success');
+        }
+        $escrowRecord['status'] = 'released';
+        $escrowRecord['released_at'] = date('Y-m-d H:i:s');
+        $escrowRecord['release_initiated_by'] = 'auto';
+        $request['payment_status'] = 'paid';
+    }
+}
 
 $recommendedWorkers = [];
 if (is_customer() && $request['customer_id'] === $user['id'] && in_array($request['status'], ['pending', 'open'], true)) {
@@ -70,10 +107,72 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
     </header>
     <main class="page-shell small-shell">
         <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
-        <?php if ($feeStatus === 'pending' && $request['customer_id'] === $user['id']): ?>
+        <?php if ($request['status'] === 'pending_payment' && $request['customer_id'] === $user['id']): ?>
+            <div class="alert alert-warning" style="margin-bottom:12px;">
+                🔒 <strong>Escrow payment required</strong> — complete your payment to submit this job for review.
+                <a href="escrow_checkout.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small" style="margin-left:8px;">Complete payment →</a>
+            </div>
+        <?php elseif ($feeStatus === 'pending' && $request['customer_id'] === $user['id']): ?>
             <div class="alert alert-warning" style="margin-bottom:12px;">
                 💳 <strong>Posting fee required</strong> — this job is not yet visible to workers until you confirm your posting fee payment.
                 <a href="pay_job_post.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small" style="margin-left:8px;">Pay posting fee →</a>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($escrowRecord): ?>
+            <?php
+            $escrowColors = [
+                'awaiting_payment' => '#f59e0b',
+                'held'     => '#2563eb',
+                'released' => '#16a34a',
+                'refunded' => '#dc2626',
+                'disputed' => '#7c3aed',
+            ];
+            $escrowLabels = [
+                'awaiting_payment' => '⏳ Awaiting payment',
+                'held'     => '🔒 Funds held in escrow',
+                'released' => '✅ Payment released to worker',
+                'refunded' => '↩️ Refunded',
+                'disputed' => '⚠️ Disputed',
+            ];
+            $escColor = $escrowColors[$escrowRecord['status']] ?? '#888';
+            $escLabel = $escrowLabels[$escrowRecord['status']] ?? $escrowRecord['status'];
+            ?>
+            <div style="background:var(--surface-muted);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <strong style="font-size:0.9rem;">Escrow Payment</strong>
+                    <span style="background:<?php echo $escColor; ?>;color:#fff;border-radius:4px;padding:2px 8px;font-size:0.78rem;"><?php echo $escLabel; ?></span>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:0.88rem;">
+                    <tr>
+                        <td style="padding:2px 0;">Worker receives</td>
+                        <td style="text-align:right;font-weight:600;">GH₵ <?php echo number_format($escrowRecord['net_amount'], 2); ?></td>
+                    </tr>
+                    <tr>
+                        <td style="padding:2px 0;">Platform fee (<?php echo number_format($escrowRecord['commission_rate'], 0); ?>%)</td>
+                        <td style="text-align:right;">GH₵ <?php echo number_format($escrowRecord['commission_amount'], 2); ?></td>
+                    </tr>
+                    <tr style="border-top:1px solid var(--border);">
+                        <td style="padding:4px 0 0;font-weight:600;">Client paid</td>
+                        <td style="text-align:right;font-weight:700;color:var(--primary);">GH₵ <?php echo number_format($escrowRecord['gross_amount'], 2); ?></td>
+                    </tr>
+                </table>
+                <?php if ($escrowRecord['status'] === 'held' && !empty($escrowRecord['auto_release_at'])): ?>
+                    <?php
+                    $arTs   = strtotime($escrowRecord['auto_release_at']);
+                    $arDiff = $arTs - time();
+                    $arDays = max(0, (int)ceil($arDiff / 86400));
+                    ?>
+                    <p class="meta" style="margin:8px 0 0;">
+                        Auto-release <?php echo $arDays > 0 ? "in {$arDays} day" . ($arDays !== 1 ? 's' : '') : 'today'; ?>
+                        (<?php echo date('d M Y', $arTs); ?>)
+                    </p>
+                <?php elseif ($escrowRecord['status'] === 'released' && !empty($escrowRecord['released_at'])): ?>
+                    <p class="meta" style="margin:8px 0 0;">
+                        Released on <?php echo date('d M Y, g:i a', strtotime($escrowRecord['released_at'])); ?>
+                        by <?php echo sanitize(ucfirst($escrowRecord['release_initiated_by'] ?? '')); ?>
+                    </p>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
         <?php
@@ -125,8 +224,31 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                 </div>
                 <div>
                     <p class="detail-label">Payment</p>
-                    <strong><?php echo strtoupper($request['payment_status']); ?></strong>
+                    <strong>
+                        <?php if ($isEscrowJob): ?>
+                            <span style="background:#2563eb;color:#fff;border-radius:4px;padding:1px 6px;font-size:0.8rem;">ESCROW</span>
+                            <?php echo strtoupper($request['payment_status']); ?>
+                        <?php else: ?>
+                            <?php echo strtoupper($request['payment_status']); ?>
+                        <?php endif; ?>
+                    </strong>
                 </div>
+                <?php if (!empty($request['deadline_date'])): ?>
+                <div>
+                    <p class="detail-label">Deadline</p>
+                    <strong><?php
+                        $dlTs   = strtotime($request['deadline_date']);
+                        $dlDiff = $dlTs - time();
+                        echo date('d M Y', $dlTs);
+                        if ($dlDiff > 0) {
+                            $dlDays = (int)ceil($dlDiff / 86400);
+                            echo ' <span class="meta">(' . $dlDays . ' day' . ($dlDays !== 1 ? 's' : '') . ' left)</span>';
+                        } else {
+                            echo ' <span style="color:#dc2626;">(overdue)</span>';
+                        }
+                    ?></strong>
+                </div>
+                <?php endif; ?>
             </div>
 
             <hr style="border: none; border-top: 1px solid var(--border); margin: 0 0 18px;">
@@ -189,7 +311,9 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 
         <?php
         $primaryAction = null;
-        if (is_customer() && $request['customer_id'] === $user['id']) {
+        if ($canReleaseEscrow) {
+            $primaryAction = ['form_escrow_release', null, '💸 Release Payment to Worker'];
+        } elseif (is_customer() && $request['customer_id'] === $user['id']) {
             $primaryAction = ['link', 'manage_applicants.php?id=' . $request['id'], '👥 Manage Applicants'];
         } elseif ($canApply) {
             $primaryAction = ['form', 'apply_job.php', 'Apply for this job'];
@@ -229,7 +353,13 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
         ?>
         <div class="job-action-bar">
             <?php if ($primaryAction): ?>
-                <?php if ($primaryAction[0] === 'form'): ?>
+                <?php if ($primaryAction[0] === 'form_escrow_release'): ?>
+                    <form method="post" action="escrow_release.php" onsubmit="return confirm('Release the escrow payment to the worker? This cannot be undone.')">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="job_id" value="<?php echo $request['id']; ?>" />
+                        <button type="submit" class="button button-primary"><?php echo sanitize($primaryAction[2]); ?></button>
+                    </form>
+                <?php elseif ($primaryAction[0] === 'form'): ?>
                     <form method="post" action="<?php echo sanitize($primaryAction[1]); ?>">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />

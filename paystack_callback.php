@@ -18,7 +18,9 @@ if ($result['success']) {
     $payment = $result['payment'];
 
     if (!empty($result['already_paid'])) {
-        flash('Payment already confirmed — your feature is active.', 'info');
+        flash('Payment already confirmed.', 'info');
+    } elseif (($payment['payment_type'] ?? '') === 'escrow_payment') {
+        flash('Escrow payment confirmed! Your job is now pending admin review.', 'success');
     } else {
         flash('Payment confirmed! Your feature has been activated.', 'success');
     }
@@ -29,6 +31,7 @@ if ($result['success']) {
         'verification'    => 'worker_profile.php',
         'job_post'        => 'dashboard.php',
         'worker_service'  => 'worker_profile.php',
+        'escrow_payment'  => 'request_detail.php?id=' . $payment['reference_id'],
     ];
     $redirect = $redirects[$payment['payment_type']] ?? 'dashboard.php';
     header('Location: ' . $redirect);

@@ -139,10 +139,21 @@ function verifyPayment(string $reference): array {
             return ['success' => false, 'error' => 'Amount mismatch — payment not confirmed.'];
         }
 
-        $pdo->prepare("UPDATE platform_payments SET status = 'paid', paystack_transaction_id = ?, paid_at = NOW() WHERE id = ?")
-            ->execute([$tx['id'], $payment['id']]);
+        $txId = isset($tx['id']) ? (int)$tx['id'] : null;
+
+        // Atomic UPDATE — only succeeds once; prevents double-activation on concurrent
+        // webhook + callback calls for the same reference.
+        $upd = $pdo->prepare("UPDATE platform_payments SET status = 'paid', paystack_transaction_id = ?, paid_at = NOW() WHERE id = ? AND status = 'pending'");
+        $upd->execute([$txId, $payment['id']]);
+
+        if ($upd->rowCount() === 0) {
+            // Another process already marked it paid
+            $payment['status'] = 'paid';
+            return ['success' => true, 'already_paid' => true, 'payment' => $payment];
+        }
+
         $payment['status'] = 'paid';
-        $payment['paystack_transaction_id'] = $tx['id'];
+        $payment['paystack_transaction_id'] = $txId;
 
         activatePurchasedFeature($payment);
         return ['success' => true, 'payment' => $payment];
@@ -225,6 +236,36 @@ function activatePurchasedFeature(array $payment): void {
                 WHERE id = ?")
                 ->execute([$days, $payment['reference_id']]);
             notify_user($payment['user_id'], 'Service listing active', "Your service listing is now active for {$days} days. You'll appear in Find Workers.", 'success');
+            break;
+
+        case 'escrow_payment':
+            $jobId = (int)$payment['reference_id'];
+
+            // Mark escrow as held
+            $pdo->prepare("UPDATE escrow_payments
+                SET status = 'held', platform_payment_id = ?, paystack_reference = ?, paid_at = NOW()
+                WHERE job_id = ? AND status = 'awaiting_payment'")
+                ->execute([$payment['id'], $payment['paystack_reference'], $jobId]);
+
+            // Move job to pending for admin approval, mark payment as escrowed
+            $pdo->prepare("UPDATE service_requests
+                SET status = 'pending', payment_status = 'escrowed', updated_at = NOW()
+                WHERE id = ? AND status = 'pending_payment'")
+                ->execute([$jobId]);
+
+            $jobRow = $pdo->prepare("SELECT title FROM service_requests WHERE id = ?");
+            $jobRow->execute([$jobId]);
+            $jobRow = $jobRow->fetch();
+            $jobTitle = $jobRow ? $jobRow['title'] : "Job #{$jobId}";
+
+            notify_user($payment['user_id'], '💳 Escrow payment received',
+                "Your escrow payment for \"{$jobTitle}\" has been received and is now held securely. The job is pending admin review — you'll be notified once it goes live.",
+                'success');
+            notify_admins_and_managers(
+                'New escrow job awaiting approval',
+                "Job #{$jobId} \"{$jobTitle}\" was posted with escrow payment (GH₵ " . number_format($payment['amount'], 2) . ") held. Review and approve it in the admin panel.",
+                'info'
+            );
             break;
     }
 
