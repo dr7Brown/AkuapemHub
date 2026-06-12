@@ -44,6 +44,7 @@ $pendingPostingFeeJobs   = $pdo->query("SELECT COUNT(*) FROM service_requests WH
                 <a href="disputes.php" class="button button-small">Disputes</a>
                 <a href="business_messages.php" class="button button-small">Messages</a>
                 <a href="analytics.php" class="button button-small">Analytics</a>
+                <a href="payments.php" class="button button-small">Payments</a>
                 <a href="monetization.php" class="button button-small">Monetization</a>
                 <a href="communication.php" class="button button-small">Communication</a>
                 <a href="theme.php" class="button button-small">🎨 Theme</a>
@@ -57,7 +58,7 @@ $pendingPostingFeeJobs   = $pdo->query("SELECT COUNT(*) FROM service_requests WH
         <?php if ($pendingPlatformPayments > 0): ?>
             <div class="alert alert-warning" style="margin-bottom:16px;">
                 💳 <strong><?php echo (int)$pendingPlatformPayments; ?> pending payment<?php echo $pendingPlatformPayments > 1 ? 's' : ''; ?></strong> awaiting confirmation.
-                <a href="monetization.php?tab=payments" style="color:var(--primary);margin-left:6px;">Review in Monetization →</a>
+                <a href="payments.php" style="color:var(--primary);margin-left:6px;">View in Payments →</a>
                 <?php if ($pendingPostingFeeJobs > 0): ?>
                     &nbsp;·&nbsp; <?php echo (int)$pendingPostingFeeJobs; ?> job<?php echo $pendingPostingFeeJobs > 1 ? 's' : ''; ?> blocked by unpaid posting fee.
                 <?php endif; ?>

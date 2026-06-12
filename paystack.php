@@ -103,6 +103,22 @@ function initializePayment(
     ];
 }
 
+// ── Refund ───────────────────────────────────────────────────────────────────
+// Calls Paystack refund API. Pass null $amount for full refund.
+// Returns: ['success'=>true] | ['success'=>false, 'error'=>'...']
+
+function paystack_refund(string $paystackTransactionId, ?float $amount = null): array {
+    $body = ['transaction' => $paystackTransactionId];
+    if ($amount !== null) {
+        $body['amount'] = (int)round($amount * 100);
+    }
+    $data = paystack_request('POST', '/refund', $body);
+    if (!$data || !($data['status'] ?? false)) {
+        return ['success' => false, 'error' => $data['message'] ?? 'Refund request failed.'];
+    }
+    return ['success' => true, 'data' => $data['data'] ?? []];
+}
+
 // ── Verify & activate ─────────────────────────────────────────────────────────
 // Returns: ['success'=>true, 'payment'=>[...]]
 // Or:      ['success'=>false, 'error'=>'...']
@@ -140,11 +156,12 @@ function verifyPayment(string $reference): array {
         }
 
         $txId = isset($tx['id']) ? (int)$tx['id'] : null;
+        $channel = $tx['authorization']['channel'] ?? ($tx['channel'] ?? null);
 
         // Atomic UPDATE — only succeeds once; prevents double-activation on concurrent
         // webhook + callback calls for the same reference.
-        $upd = $pdo->prepare("UPDATE platform_payments SET status = 'paid', paystack_transaction_id = ?, paid_at = NOW() WHERE id = ? AND status = 'pending'");
-        $upd->execute([$txId, $payment['id']]);
+        $upd = $pdo->prepare("UPDATE platform_payments SET status = 'paid', paystack_transaction_id = ?, payment_method = COALESCE(?, payment_method), paid_at = NOW() WHERE id = ? AND status = 'pending'");
+        $upd->execute([$txId, $channel, $payment['id']]);
 
         if ($upd->rowCount() === 0) {
             // Another process already marked it paid
