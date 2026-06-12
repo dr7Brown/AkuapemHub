@@ -19,6 +19,20 @@ $commRate        = (float)get_platform_setting('escrow_commission_rate', DEFAULT
 $autoReleaseDays = max(1, (int)get_platform_setting('escrow_auto_release_days', 7));
 $escrowMinBudget = (float)get_platform_setting('escrow_min_budget', 0);
 
+// Load existing draft for editing
+$draft  = null;
+$editId = intval($_GET['edit'] ?? 0);
+if ($editId > 0) {
+    $dStmt = $pdo->prepare("SELECT * FROM service_requests WHERE id = ? AND status = 'draft' AND customer_id = ?");
+    $dStmt->execute([$editId, $user['id']]);
+    $draft = $dStmt->fetch();
+    if (!$draft) {
+        flash('Draft not found.', 'error');
+        header('Location: dashboard.php');
+        exit;
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $title       = trim($_POST['title'] ?? '');
@@ -53,6 +67,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($deadlineUnit === 'months') $dt->add(new DateInterval('P' . $deadlineValue . 'M'));
         $deadlineDate = $dt->format('Y-m-d H:i:s');
     }
+
+    $submitType  = in_array($_POST['submit_type'] ?? '', ['draft', 'publish'], true) ? $_POST['submit_type'] : 'publish';
+    $postEditId  = intval($_POST['edit_id'] ?? 0);
+
+    // ── Save as Draft ─────────────────────────────────────────────────────────
+    if ($submitType === 'draft') {
+        if ($title === '') {
+            $error = 'A title is required to save a draft.';
+        } else {
+            $draftCatId = $categoryId > 0 ? $categoryId : null;
+            if ($rawCategoryInput === '__other__') {
+                if ($customCategoryName !== '') {
+                    $description = "Type of work: {$customCategoryName}\n\n{$description}";
+                }
+                $othStmt = $pdo->prepare("SELECT id FROM service_categories WHERE name = 'Other'");
+                $othStmt->execute();
+                $othCat = $othStmt->fetch();
+                if ($othCat) {
+                    $draftCatId = (int)$othCat['id'];
+                } else {
+                    $pdo->prepare("INSERT INTO service_categories (name) VALUES ('Other')")->execute();
+                    $draftCatId = (int)$pdo->lastInsertId();
+                }
+            }
+            $draftBudgetClean  = preg_replace('/[^0-9.]/', '', $budget);
+            $draftBudgetAmount = is_numeric($draftBudgetClean) && (float)$draftBudgetClean > 0
+                ? round((float)$draftBudgetClean, 2) : null;
+
+            if ($postEditId > 0) {
+                $pdo->prepare("UPDATE service_requests SET
+                    title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,
+                    budget=?,budget_amount=?,skills_needed=?,workers_needed=?,payment_mode=?,
+                    deadline_value=?,deadline_unit=?,deadline_date=?,updated_at=NOW()
+                    WHERE id=? AND status='draft' AND customer_id=?")
+                    ->execute([$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,
+                        $budget,$draftBudgetAmount,$skillsNeeded ?: null,$workersNeeded,$paymentMode,
+                        $deadlineValue,$deadlineUnit,$deadlineDate,$postEditId,$user['id']]);
+                flash('Draft updated.', 'info');
+            } else {
+                $pdo->prepare("INSERT INTO service_requests
+                    (customer_id,title,description,category_id,location,latitude,longitude,budget,budget_amount,
+                     contact_info,skills_needed,workers_needed,payment_mode,deadline_value,deadline_unit,deadline_date,
+                     status,payment_status,commission_percent,featured,posting_fee_status,created_at,updated_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft','unpaid',?,0,'free',NOW(),NOW())")
+                    ->execute([$user['id'],$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,
+                        $budget,$draftBudgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,$paymentMode,
+                        $deadlineValue,$deadlineUnit,$deadlineDate,$commRate]);
+                flash('Draft saved. Publish it from your dashboard whenever you are ready.', 'info');
+            }
+            header('Location: dashboard.php');
+            exit;
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Numeric budget required for escrow
     $budgetAmount = null;
@@ -96,21 +164,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $initialStatus    = ($paymentMode === 'escrow') ? 'pending_payment' : 'pending';
         $postingFeeStatus = ($paymentMode === 'escrow') ? 'free' : ($postingFeePaid ? 'pending' : 'free');
 
-        $stmt = $pdo->prepare('INSERT INTO service_requests
-            (customer_id, title, description, category_id, location, latitude, longitude,
-             budget, budget_amount, contact_info, skills_needed, workers_needed,
-             payment_mode, deadline_value, deadline_unit, deadline_date,
-             status, payment_status, commission_percent, featured, posting_fee_status,
-             created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
-        $stmt->execute([
-            $user['id'], $title, $description, $categoryId, $location, $latitude, $longitude,
-            $budget, $budgetAmount, $contactInfo,
-            $skillsNeeded !== '' ? $skillsNeeded : null, $workersNeeded,
-            $paymentMode, $deadlineValue, $deadlineUnit, $deadlineDate,
-            $initialStatus, 'unpaid', $commRate, 0, $postingFeeStatus,
-        ]);
-        $newJobId = (int)$pdo->lastInsertId();
+        if ($postEditId > 0) {
+            // Publishing an existing draft — update in place
+            $pdo->prepare("UPDATE service_requests SET
+                title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,
+                budget=?,budget_amount=?,contact_info=?,skills_needed=?,workers_needed=?,
+                payment_mode=?,deadline_value=?,deadline_unit=?,deadline_date=?,
+                status=?,payment_status='unpaid',commission_percent=?,posting_fee_status=?,updated_at=NOW()
+                WHERE id=? AND status='draft' AND customer_id=?")
+                ->execute([$title,$description,$categoryId,$location,$latitude,$longitude,
+                    $budget,$budgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,
+                    $paymentMode,$deadlineValue,$deadlineUnit,$deadlineDate,
+                    $initialStatus,$commRate,$postingFeeStatus,$postEditId,$user['id']]);
+            $newJobId = $postEditId;
+        } else {
+            $stmt = $pdo->prepare('INSERT INTO service_requests
+                (customer_id, title, description, category_id, location, latitude, longitude,
+                 budget, budget_amount, contact_info, skills_needed, workers_needed,
+                 payment_mode, deadline_value, deadline_unit, deadline_date,
+                 status, payment_status, commission_percent, featured, posting_fee_status,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+            $stmt->execute([
+                $user['id'], $title, $description, $categoryId, $location, $latitude, $longitude,
+                $budget, $budgetAmount, $contactInfo,
+                $skillsNeeded !== '' ? $skillsNeeded : null, $workersNeeded,
+                $paymentMode, $deadlineValue, $deadlineUnit, $deadlineDate,
+                $initialStatus, 'unpaid', $commRate, 0, $postingFeeStatus,
+            ]);
+            $newJobId = (int)$pdo->lastInsertId();
+        }
 
         $categoryName = 'Unknown';
         foreach ($categories as $category) {
@@ -194,18 +277,23 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
         <?php endif; ?>
         <form class="card form-card" method="post" action="request.php">
             <?php echo csrf_field(); ?>
+            <input type="hidden" name="submit_type" id="submit-type-input" value="publish" />
+            <?php if ($draft): ?>
+                <input type="hidden" name="edit_id" value="<?php echo (int)$draft['id']; ?>" />
+                <div class="alert alert-info" style="margin-bottom:8px;">Editing draft — publish when you're ready.</div>
+            <?php endif; ?>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
             <?php endif; ?>
             <label>Title</label>
-            <input type="text" name="title" required />
+            <input type="text" name="title" required value="<?php echo $draft ? sanitize($draft['title']) : ''; ?>" />
             <label>Description</label>
-            <textarea name="description" rows="4" required></textarea>
+            <textarea name="description" rows="4" required><?php echo $draft ? sanitize($draft['description']) : ''; ?></textarea>
             <label>Category</label>
             <select name="category_id" required>
                 <option value="">Select category</option>
                 <?php foreach ($categories as $category): ?>
-                    <option value="<?php echo $category['id']; ?>"><?php echo sanitize($category['name']); ?></option>
+                    <option value="<?php echo $category['id']; ?>" <?php echo ($draft && (int)$draft['category_id'] === (int)$category['id']) ? 'selected' : ''; ?>><?php echo sanitize($category['name']); ?></option>
                 <?php endforeach; ?>
                 <option value="__other__">Other (specify)</option>
             </select>
@@ -240,36 +328,37 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                 <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
                 <option value="__other__">Other (specify)</option>
             </select>
-            <input type="text" name="location" id="location-input" required placeholder="City, neighbourhood" readonly />
-            <input type="hidden" name="latitude" id="latitude" />
-            <input type="hidden" name="longitude" id="longitude" />
+            <input type="text" name="location" id="location-input" required placeholder="City, neighbourhood" value="<?php echo $draft ? sanitize($draft['location']) : ''; ?>" <?php echo ($draft && $draft['location']) ? '' : 'readonly'; ?> />
+            <input type="hidden" name="latitude" id="latitude" value="<?php echo $draft ? sanitize($draft['latitude'] ?? '') : ''; ?>" />
+            <input type="hidden" name="longitude" id="longitude" value="<?php echo $draft ? sanitize($draft['longitude'] ?? '') : ''; ?>" />
             <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
             <p class="meta" id="location-status">Sharing your location helps nearby workers find your job faster.</p>
             <label>Hiring type</label>
+            <?php $draftHiringType = ($draft && ($draft['workers_needed'] ?? 1) > 1) ? 'multiple' : 'single'; ?>
             <div style="display:flex;gap:16px;margin-bottom:4px;" id="hiring-type-group">
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                    <input type="radio" name="hiring_type" value="single" checked onchange="toggleWorkersNeeded(this)"> Single worker
+                    <input type="radio" name="hiring_type" value="single" <?php echo $draftHiringType === 'single' ? 'checked' : ''; ?> onchange="toggleWorkersNeeded(this)"> Single worker
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                    <input type="radio" name="hiring_type" value="multiple" onchange="toggleWorkersNeeded(this)"> Multiple workers
+                    <input type="radio" name="hiring_type" value="multiple" <?php echo $draftHiringType === 'multiple' ? 'checked' : ''; ?> onchange="toggleWorkersNeeded(this)"> Multiple workers
                 </label>
             </div>
-            <div id="workers-needed-wrap" style="display:none;margin-bottom:4px;">
+            <div id="workers-needed-wrap" style="display:<?php echo $draftHiringType === 'multiple' ? 'block' : 'none'; ?>;margin-bottom:4px;">
                 <label>Number of workers needed</label>
-                <input type="number" name="workers_needed" id="workers-needed-input" min="2" max="50" value="2" style="width:100px;" />
+                <input type="number" name="workers_needed" id="workers-needed-input" min="2" max="50" value="<?php echo $draft ? max(2, (int)($draft['workers_needed'] ?? 2)) : 2; ?>" style="width:100px;" />
             </div>
 
             <label style="margin-top:8px;">Payment mode</label>
             <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px;">
                 <label style="display:flex;gap:10px;border:2px solid var(--primary);border-radius:var(--radius-sm);padding:12px;cursor:pointer;background:var(--surface-muted);" id="mode-escrow-label">
-                    <input type="radio" name="payment_mode" value="escrow" id="mode-escrow" checked onchange="onModeChange()">
+                    <input type="radio" name="payment_mode" value="escrow" id="mode-escrow" <?php echo (!$draft || ($draft['payment_mode'] ?? 'escrow') === 'escrow') ? 'checked' : ''; ?> onchange="onModeChange()">
                     <div>
                         <strong>Escrow Payment <span style="background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;font-size:0.75rem;vertical-align:middle;">Recommended</span></strong>
                         <p class="meta" style="margin:2px 0 0;">Your funds are held securely by AkuapemHub. Released to the worker only after you confirm satisfactory completion.</p>
                     </div>
                 </label>
                 <label style="display:flex;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;" id="mode-direct-label">
-                    <input type="radio" name="payment_mode" value="direct" id="mode-direct" onchange="onModeChange()">
+                    <input type="radio" name="payment_mode" value="direct" id="mode-direct" <?php echo ($draft && ($draft['payment_mode'] ?? '') === 'direct') ? 'checked' : ''; ?> onchange="onModeChange()">
                     <div>
                         <strong>Direct Payment</strong>
                         <p class="meta" style="margin:2px 0 0;">You pay the worker directly. AkuapemHub only tracks job completion, not the payment itself.</p>
@@ -278,7 +367,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             </div>
 
             <label id="budget-label">Budget <span class="meta" id="budget-meta">(numeric amount, e.g. 300)</span></label>
-            <input type="text" name="budget" id="budget-input" required placeholder="e.g. 300" oninput="updateCommissionPreview()" />
+            <input type="text" name="budget" id="budget-input" required placeholder="e.g. 300" value="<?php echo $draft ? sanitize($draft['budget']) : ''; ?>" oninput="updateCommissionPreview()" />
             <p class="meta" id="budget-suggestion"></p>
 
             <div id="commission-preview" style="display:none;background:var(--surface-muted);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-top:4px;">
@@ -307,12 +396,12 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
 
             <label style="margin-top:12px;">Deadline <span class="meta">(optional)</span></label>
             <div style="display:flex;gap:8px;align-items:center;">
-                <input type="number" name="deadline_value" id="deadline-value" min="1" max="999" placeholder="e.g. 3" style="width:80px;" />
+                <input type="number" name="deadline_value" id="deadline-value" min="1" max="999" placeholder="e.g. 3" style="width:80px;" value="<?php echo $draft ? sanitize($draft['deadline_value'] ?? '') : ''; ?>" />
                 <select name="deadline_unit" id="deadline-unit" style="flex:1;">
                     <option value="">No deadline</option>
-                    <option value="hours">Hour(s)</option>
-                    <option value="days">Day(s)</option>
-                    <option value="months">Month(s)</option>
+                    <option value="hours" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'hours') ? 'selected' : ''; ?>>Hour(s)</option>
+                    <option value="days" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'days') ? 'selected' : ''; ?>>Day(s)</option>
+                    <option value="months" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'months') ? 'selected' : ''; ?>>Month(s)</option>
                 </select>
             </div>
             <p class="meta" id="deadline-hint" style="margin-top:4px;"></p>
@@ -323,11 +412,20 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             <?php else: ?>
                 <p class="alert alert-error">No phone number on file. Please add one to your account before posting — contact support to update it.</p>
             <?php endif; ?>
-            <button type="submit" class="button button-primary" id="submit-btn" <?php echo empty($user['phone']) ? 'disabled' : ''; ?>>Pay & Publish</button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+                <button type="submit" class="button button-primary" id="submit-btn" <?php echo empty($user['phone']) ? 'disabled' : ''; ?>>Pay & Publish</button>
+                <button type="button" class="button button-secondary" id="save-draft-btn" onclick="saveDraft()">Save as Draft</button>
+            </div>
         </form>
     </main>
     <script>
         var COMMISSION_RATE = <?php echo (float)$commRate; ?>;
+        var DRAFT_SKILLS    = <?php echo $draft ? json_encode(array_filter(array_map('trim', explode(',', $draft['skills_needed'] ?? '')))) : '[]'; ?>;
+
+        function saveDraft() {
+            document.getElementById('submit-type-input').value = 'draft';
+            document.querySelector('form.form-card').submit();
+        }
 
         function onModeChange() {
             var mode = document.querySelector('input[name="payment_mode"]:checked').value;
@@ -599,6 +697,16 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
 
         // Init state
         onModeChange();
+
+        // Pre-fill skills from draft
+        if (DRAFT_SKILLS.length) {
+            DRAFT_SKILLS.forEach(function (skill) {
+                if (skill && selectedSkills.indexOf(skill) === -1) {
+                    selectedSkills.push(skill);
+                }
+            });
+            renderSkillList();
+        }
     </script>
     <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>

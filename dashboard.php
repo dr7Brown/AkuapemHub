@@ -94,7 +94,30 @@ if (is_worker()) {
     }
 
 } elseif (is_customer()) {
-    $customerWhere = array_merge(['sr.customer_id = ?'], $where);
+    // Drafts — shown separately above main job list
+    $draftStmt = $pdo->prepare(
+        "SELECT sr.*, sc.name AS category_name FROM service_requests sr
+         JOIN service_categories sc ON sr.category_id = sc.id
+         WHERE sr.customer_id = ? AND sr.status = 'draft'
+         ORDER BY sr.updated_at DESC"
+    );
+    $draftStmt->execute([$user['id']]);
+    $drafts = $draftStmt->fetchAll();
+
+    // Handle draft delete/discard
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete_draft') {
+        csrf_check();
+        $delId = intval($_POST['draft_id'] ?? 0);
+        if ($delId > 0) {
+            $pdo->prepare("DELETE FROM service_requests WHERE id = ? AND status = 'draft' AND customer_id = ?")
+                ->execute([$delId, $user['id']]);
+            flash('Draft deleted.', 'info');
+        }
+        header('Location: dashboard.php');
+        exit;
+    }
+
+    $customerWhere = array_merge(["sr.customer_id = ?", "sr.status != 'draft'"], $where);
     $customerParams = array_merge([$user['id']], $params);
     $sql = 'SELECT sr.*, sr.posting_fee_status, wc.name AS category_name, u.name AS assigned_worker_name, r.score AS rating_score, r.comment AS rating_comment
         FROM service_requests sr
@@ -407,6 +430,42 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                 <p>Location: <?php echo sanitize($profile['location'] ?: 'Not set'); ?></p>
             </section>
         <?php else: ?>
+            <?php if (!empty($drafts)): ?>
+            <section class="panel" style="margin-bottom:16px;">
+                <div class="panel-header" style="margin-bottom:8px;">
+                    <h2 style="font-size:1rem;margin:0;">Drafts <span style="background:var(--text-muted);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.75rem;font-weight:600;"><?php echo count($drafts); ?></span></h2>
+                    <a href="request.php" class="button button-small button-secondary">New job</a>
+                </div>
+                <div class="jobs-grid">
+                    <?php foreach ($drafts as $dr): ?>
+                    <div class="job-card" style="border-left:4px solid var(--text-muted);opacity:0.9;">
+                        <div class="job-card-header">
+                            <span class="category-badge"><?php echo sanitize($dr['category_name']); ?></span>
+                            <span class="status" style="background:var(--text-muted);color:#fff;">DRAFT</span>
+                        </div>
+                        <h3 class="job-title"><?php echo sanitize($dr['title']); ?></h3>
+                        <p class="job-description"><?php echo sanitize($dr['description']); ?></p>
+                        <?php if ($dr['location']): ?>
+                        <p class="meta">📍 <?php echo sanitize($dr['location']); ?></p>
+                        <?php endif; ?>
+                        <?php if ($dr['budget']): ?>
+                        <p class="meta">💰 GH₵ <?php echo sanitize($dr['budget']); ?></p>
+                        <?php endif; ?>
+                        <p class="meta">Last saved: <?php echo date('d M Y', strtotime($dr['updated_at'])); ?></p>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                            <a href="request.php?edit=<?php echo (int)$dr['id']; ?>" class="button button-primary button-small">Edit &amp; Publish</a>
+                            <form method="post" style="margin:0;" onsubmit="return confirm('Delete this draft?')">
+                                <?php echo csrf_field(); ?>
+                                <input type="hidden" name="action" value="delete_draft" />
+                                <input type="hidden" name="draft_id" value="<?php echo (int)$dr['id']; ?>" />
+                                <button type="submit" class="button button-secondary button-small">Delete</button>
+                            </form>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+            <?php endif; ?>
             <section class="panel">
                 <div class="stats-grid">
                     <div class="stat-card">
