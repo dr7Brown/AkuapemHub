@@ -64,6 +64,12 @@ $pdo->prepare("UPDATE escrow_payments
 $pdo->prepare("UPDATE service_requests SET payment_status = 'paid', updated_at = NOW() WHERE id = ?")
     ->execute([$jobId]);
 
+// Points: client explicitly released escrow (marks job confirmed)
+if ($initiatedBy === 'client') {
+    require_once __DIR__ . '/modules/referrals/service.php';
+    award_points((int)$row['customer_id'], 'mark_job_completed', $jobId);
+}
+
 if ($row['worker_id']) {
     notify_user((int)$row['worker_id'], '💸 Payment released',
         "The client has released your escrow payment of GH₵ " . number_format($row['net_amount'], 2) . " for \"{$row['title']}\". Thank you for your great work!",

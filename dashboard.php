@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/modules/referrals/service.php';
 
 require_login();
 $user = current_user();
@@ -124,6 +125,12 @@ if (is_worker()) {
     exit;
 }
 
+// Referral & points data for dashboard banner
+$dashRefEnabled  = referrals_enabled();
+$dashPtsBalance  = $dashRefEnabled ? get_points_balance((int)$user['id']) : 0;
+$dashRefCode     = $dashRefEnabled ? get_or_create_referral_code((int)$user['id']) : '';
+$dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -184,6 +191,38 @@ if (is_worker()) {
                 <a href="request.php" class="button button-primary">➕ Post Job</a>
             <?php endif; ?>
         </section>
+
+        <?php if ($dashRefEnabled): ?>
+        <div style="background:linear-gradient(135deg,var(--primary) 0%,#1d4ed8 100%);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div>
+                <p style="color:rgba(255,255,255,0.75);font-size:0.75rem;margin:0 0 1px;letter-spacing:.03em;">YOUR POINTS</p>
+                <p style="color:#fff;font-size:1.5rem;font-weight:800;margin:0;letter-spacing:-0.5px;"><?php echo number_format($dashPtsBalance); ?></p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <a href="referrals.php" style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.35);padding:7px 14px;border-radius:var(--radius-sm);font-size:0.85rem;font-weight:600;text-decoration:none;white-space:nowrap;">View &amp; Earn</a>
+                <button id="dash-share-btn" onclick="dashShare()" style="background:rgba(255,255,255,0.12);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:7px 14px;border-radius:var(--radius-sm);font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;display:none;">
+                    Share Link
+                </button>
+                <button onclick="dashCopy()" id="dash-copy-btn" style="background:rgba(255,255,255,0.12);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:7px 14px;border-radius:var(--radius-sm);font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;">
+                    Copy Invite
+                </button>
+            </div>
+        </div>
+        <script>
+        var _dashRefUrl = <?php echo json_encode($dashRefUrl); ?>;
+        if (navigator.share) { var sb = document.getElementById('dash-share-btn'); if(sb) sb.style.display='block'; }
+        async function dashShare() {
+            try { await navigator.share({ title:'Join AkuapemHub', text:'Use my referral link:', url:_dashRefUrl }); }
+            catch(e) { dashCopy(); }
+        }
+        async function dashCopy() {
+            try { await navigator.clipboard.writeText(_dashRefUrl); }
+            catch(e) { /* fallback */ }
+            var btn = document.getElementById('dash-copy-btn');
+            if (btn) { var orig = btn.textContent; btn.textContent = 'Copied!'; setTimeout(function(){ btn.textContent = orig; }, 1800); }
+        }
+        </script>
+        <?php endif; ?>
 
         <?php if (is_worker() && $profile):
             $dbFeatEnd    = $profile['featured_end_date'] ?? null;

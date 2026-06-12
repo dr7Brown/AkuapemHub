@@ -28,6 +28,10 @@ $pdo->beginTransaction();
 try {
     $pdo->prepare('UPDATE service_requests SET status = ?, completion_notes = ?, updated_at = NOW() WHERE id = ?')->execute(['completed', $completionNotes ?: null, $requestId]);
 
+    // Points: worker completed a job
+    require_once __DIR__ . '/modules/referrals/service.php';
+    award_points((int)$user['id'], 'complete_job', $requestId);
+
     if (!empty($_FILES['completion_photos'])) {
         save_completion_photos($requestId, $_FILES['completion_photos']);
     }

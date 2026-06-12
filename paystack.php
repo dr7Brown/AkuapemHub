@@ -286,6 +286,10 @@ function activatePurchasedFeature(array $payment): void {
             break;
     }
 
+    // Referral milestone: first payment made by a referred user
+    require_once __DIR__ . '/modules/referrals/service.php';
+    handle_referral_milestone((int)$payment['user_id'], 'first_payment');
+
     log_audit_action(
         0,
         'paystack_feature_activated',

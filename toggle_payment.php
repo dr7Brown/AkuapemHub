@@ -39,6 +39,13 @@ try {
     }
 
     $pdo->commit();
+
+    // Points: client marked direct-pay job as paid (confirms completion)
+    if ($newStatus === 'paid') {
+        require_once __DIR__ . '/modules/referrals/service.php';
+        award_points((int)$user['id'], 'mark_job_completed', $requestId);
+    }
+
     flash('Payment status updated.');
 } catch (Exception $e) {
     $pdo->rollBack();

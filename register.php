@@ -1,10 +1,20 @@
 <?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/modules/referrals/service.php';
 
 if (current_user()) {
     header('Location: dashboard.php');
     exit;
+}
+
+// Capture referral code from URL into session (survives the POST)
+if (!isset($_SESSION['ref_code']) && !empty($_GET['ref'])) {
+    $rc = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $_GET['ref']));
+    if (strlen($rc) >= 6 && strlen($rc) <= 16) {
+        $_SESSION['ref_code'] = $rc;
+        record_referral_visit($rc, $_SERVER['REMOTE_ADDR'] ?? '');
+    }
 }
 
 $towns = get_towns();
@@ -129,6 +139,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
             login_user($user);
+
+            // Points & referral hooks
+            award_points((int)$userId, 'registration');
+            if (isset($profilePhotoPath) && $profilePhotoPath) {
+                award_points((int)$userId, 'profile_photo');
+            }
+            if (!empty($_SESSION['ref_code'])) {
+                $referrerId = referral_code_owner($_SESSION['ref_code']);
+                if ($referrerId && $referrerId !== (int)$userId) {
+                    record_referral($referrerId, (int)$userId, $_SESSION['ref_code']);
+                }
+                unset($_SESSION['ref_code']);
+            }
+
             if ($workerNeedsServiceFee) {
                 flash('Account created! Please complete your service listing payment to appear in search results.', 'info');
                 header('Location: pay_worker_service.php');

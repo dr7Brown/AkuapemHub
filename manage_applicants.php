@@ -15,6 +15,7 @@ $focusJobId = intval($_GET['id'] ?? 0);
 
 // ── POST: approve / reject ────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $act      = $_POST['action'] ?? '';
     $appId    = intval($_POST['application_id'] ?? 0);
     $returnId = intval($_POST['return_id'] ?? 0);
@@ -46,6 +47,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     get_or_create_conversation($user['id'], (int)$app['worker_id'], 'job_hired', (int)$app['request_id']);
                     $pdo->commit();
+
+                    // Points: client hired a worker
+                    require_once __DIR__ . '/modules/referrals/service.php';
+                    award_points((int)$app['customer_id'], 'hire_worker', (int)$app['request_id']);
 
                     notify_user((int)$app['worker_id'], 'Application approved',
                         "Your application for '{$app['job_title']}' was approved by the job owner.", 'success');

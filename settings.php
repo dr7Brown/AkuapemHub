@@ -60,6 +60,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
             if (!empty($_FILES['profile_photo']['name'])) {
                 $profilePhotoPath = save_uploaded_image($_FILES['profile_photo'], 'uploads/profiles/' . $user['id']);
                 $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $user['id']]);
+                // Points: first time a profile photo is uploaded
+                require_once __DIR__ . '/modules/referrals/service.php';
+                award_points((int)$user['id'], 'profile_photo');
             }
             $user = settings_refresh_user($pdo, $user['id']);
             $success = 'Profile updated.';

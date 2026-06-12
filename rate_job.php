@@ -37,6 +37,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $stmt = $pdo->prepare('INSERT INTO ratings (request_id, worker_id, customer_id, score, comment, created_at) VALUES (?, ?, ?, ?, ?, NOW())');
         $stmt->execute([$requestId, $request['assigned_worker_id'], $user['id'], $score, $comment]);
+
+        // Points: reviewer + worker (if 5-star)
+        require_once __DIR__ . '/modules/referrals/service.php';
+        award_points((int)$user['id'], 'leave_review', $requestId);
+        if ($score === 5) {
+            award_points((int)$request['assigned_worker_id'], 'five_star_rating', $requestId);
+        }
+
         flash('Thank you for rating the worker.');
         header('Location: dashboard.php');
         exit;

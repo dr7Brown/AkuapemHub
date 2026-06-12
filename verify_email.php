@@ -38,6 +38,11 @@ if ($token === '') {
             "UPDATE users SET email_verified = 1, email_verification_token = NULL WHERE id = ?"
         )->execute([$target['id']]);
 
+        // Points: email verification + referral milestone
+        require_once __DIR__ . '/modules/referrals/service.php';
+        award_points((int)$target['id'], 'email_verification');
+        handle_referral_milestone((int)$target['id'], 'email_verified');
+
         // Update the live session if this user is logged in
         $sessionUser = current_user();
         if ($sessionUser && $sessionUser['id'] === $target['id']) {
