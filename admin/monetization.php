@@ -804,7 +804,13 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                             <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start;">
                                 <div>
                                     <p class="meta" style="margin:0 0 4px;">ID Type</p>
-                                    <strong><?php echo sanitize($vp['id_type'] ? strtoupper(str_replace('_', ' ', $vp['id_type'])) : '—'); ?></strong>
+                                    <strong><?php
+                                        if ($vp['id_type'] === 'other' && !empty($vp['id_type_custom'])) {
+                                            echo 'Other: ' . sanitize($vp['id_type_custom']);
+                                        } else {
+                                            echo sanitize($vp['id_type'] ? strtoupper(str_replace('_', ' ', $vp['id_type'])) : '—');
+                                        }
+                                    ?></strong>
                                 </div>
                                 <div>
                                     <p class="meta" style="margin:0 0 4px;">ID Number</p>

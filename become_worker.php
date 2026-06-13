@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $idType = $_POST['id_type'] ?? '';
     $idNumber = trim($_POST['id_number'] ?? '');
+    $idTypeCustom = trim($_POST['id_type_custom'] ?? '');
 
     $skills = [];
     $decodedSkills = json_decode($_POST['skills_json'] ?? '', true);
@@ -47,10 +48,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    if (!in_array($idType, ['ghana_card', 'passport'], true) || $idNumber === '') {
-        $error = 'Select an ID type (Ghana Card or Passport) and enter your ID card number.';
+    if (!in_array($idType, ['ghana_card', 'passport', 'other'], true) || $idNumber === '') {
+        $error = 'Select an ID type and enter your ID card number.';
+    } elseif ($idType === 'other' && $idTypeCustom === '') {
+        $error = 'Please specify the type of ID document you are using.';
+    } elseif ($idType === 'ghana_card' && !validate_ghana_card($idNumber)) {
+        $error = 'Ghana Card number must be in the format GHA-123456789-0.';
+    } elseif ($idType === 'ghana_card' && is_ghana_card_duplicate($idNumber, $user['id'])) {
+        $error = 'This Ghana Card number is already registered to another account.';
     } elseif (empty($_FILES['id_document']['name'])) {
-        $error = 'Upload a clear photo of your Ghana Card or Passport.';
+        $error = 'Upload a clear photo of your ID document.';
     } elseif (!is_valid_image_upload($_FILES['id_document'])) {
         $error = 'ID card photo must be a JPEG, PNG, or WEBP image under 5MB.';
     } elseif (empty($skills)) {
@@ -64,8 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->beginTransaction();
         try {
             $serviceFeeStatus = is_feature_paid('enable_paid_worker_service') ? 'pending' : 'free';
-            $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_number, id_document_path, availability, service_fee_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([$user['id'], '', $townName, $user['latitude'], $user['longitude'], $user['phone'], $idType, $idNumber, $idDocumentPath, 'available', $serviceFeeStatus]);
+            $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_type_custom, id_number, id_document_path, availability, service_fee_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+            $stmt->execute([$user['id'], '', $townName, $user['latitude'], $user['longitude'], $user['phone'], $idType, ($idType === 'other' ? $idTypeCustom : null), $idNumber, $idDocumentPath, 'available', $serviceFeeStatus]);
             $profileId = $pdo->lastInsertId();
 
             $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id, category_id, skill_name) VALUES (?, ?, ?)');
@@ -133,12 +140,18 @@ $skillCategories = get_skill_categories_with_skills();
                         <option value="">Select ID type</option>
                         <option value="ghana_card">Ghana Card</option>
                         <option value="passport">Passport</option>
+                        <option value="other">Other (specify)</option>
                     </select>
+                    <div id="id-type-custom-wrap" style="display:none;">
+                        <label>Specify ID type</label>
+                        <input type="text" name="id_type_custom" id="id-type-custom-input" placeholder="e.g. National ID, Driver's Licence, NHIS" maxlength="100" />
+                    </div>
                     <label>ID card number</label>
-                    <input type="text" name="id_number" id="id-number-input" required placeholder="e.g. GHA-000000000-0" />
+                    <input type="text" name="id_number" id="id-number-input" required placeholder="ID card number" autocomplete="off" />
+                    <small id="id_number_hint" style="display:block;margin-top:4px;font-size:0.82rem;"></small>
                     <label>Photo of ID card</label>
                     <input type="file" name="id_document" id="id-document-input" required accept="image/jpeg,image/png,image/webp" />
-                    <p class="small-note" style="text-align: left; margin-top: 4px;">Ghana Card or Passport — a clear photo of the card, JPEG/PNG/WEBP up to 5MB.</p>
+                    <p class="small-note" style="text-align: left; margin-top: 4px;">A clear photo of your ID document — JPEG/PNG/WEBP up to 5MB.</p>
                 </div>
 
                 <div class="wizard-step" data-step="2" style="display: none;">
@@ -339,6 +352,28 @@ $skillCategories = get_skill_categories_with_skills();
                 skillListEmpty.style.display = 'block';
             }
         });
+    </script>
+    <script src="assets/js/ghana-card-input.js"></script>
+    <script>
+        var idTypeSelect = document.getElementById('id-type-select');
+        var idNumberInput = document.getElementById('id-number-input');
+        var idTypeCustomWrap = document.getElementById('id-type-custom-wrap');
+        var idTypeCustomInput = document.getElementById('id-type-custom-input');
+        var ghanaCtrl = initGhanaCardInput(idNumberInput);
+
+        function onIdTypeChange() {
+            var v = idTypeSelect.value;
+            idTypeCustomWrap.style.display = v === 'other' ? 'block' : 'none';
+            if (idTypeCustomInput) idTypeCustomInput.required = (v === 'other');
+            if (v === 'ghana_card') {
+                ghanaCtrl.activate();
+            } else {
+                ghanaCtrl.deactivate();
+                idNumberInput.placeholder = v === 'passport' ? 'e.g. G0000000' : 'ID card number';
+            }
+        }
+        idTypeSelect.addEventListener('change', onIdTypeChange);
+        onIdTypeChange();
     </script>
     <?php endif; ?>
     <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>

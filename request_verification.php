@@ -41,10 +41,26 @@ $hasPaidVerif = (bool)$paidVerifStmt->fetch();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Resubmission when admin requested updated docs — free if already paid once
     if ($vStatus === 'resubmission_requested' && $hasPaidVerif) {
-        $idType   = $_POST['id_type'] ?? '';
-        $idNumber = trim($_POST['id_number'] ?? '');
-        if (!in_array($idType, ['ghana_card', 'passport'], true) || $idNumber === '') {
+        $idType       = $_POST['id_type'] ?? '';
+        $idNumber     = trim($_POST['id_number'] ?? '');
+        $idTypeCustom = trim($_POST['id_type_custom'] ?? '');
+        if (!in_array($idType, ['ghana_card', 'passport', 'other'], true) || $idNumber === '') {
             flash('Select an ID type and enter your ID number.', 'error');
+            header('Location: request_verification.php');
+            exit;
+        }
+        if ($idType === 'other' && $idTypeCustom === '') {
+            flash('Please specify the type of ID document you are using.', 'error');
+            header('Location: request_verification.php');
+            exit;
+        }
+        if ($idType === 'ghana_card' && !validate_ghana_card($idNumber)) {
+            flash('Ghana Card number must be in the format GHA-123456789-0.', 'error');
+            header('Location: request_verification.php');
+            exit;
+        }
+        if ($idType === 'ghana_card' && is_ghana_card_duplicate($idNumber, $user['id'])) {
+            flash('This Ghana Card number is already registered to another account.', 'error');
             header('Location: request_verification.php');
             exit;
         }
@@ -57,12 +73,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $newDocPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
         }
+        $customVal = ($idType === 'other') ? $idTypeCustom : null;
         if ($newDocPath) {
-            $pdo->prepare("UPDATE worker_profiles SET id_type = ?, id_number = ?, id_document_path = ?, verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
-                ->execute([$idType, $idNumber, $newDocPath, $user['id']]);
+            $pdo->prepare("UPDATE worker_profiles SET id_type = ?, id_type_custom = ?, id_number = ?, id_document_path = ?, verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
+                ->execute([$idType, $customVal, $idNumber, $newDocPath, $user['id']]);
         } else {
-            $pdo->prepare("UPDATE worker_profiles SET id_type = ?, id_number = ?, verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
-                ->execute([$idType, $idNumber, $user['id']]);
+            $pdo->prepare("UPDATE worker_profiles SET id_type = ?, id_type_custom = ?, id_number = ?, verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
+                ->execute([$idType, $customVal, $idNumber, $user['id']]);
         }
         log_audit_action($user['id'], 'verification_resubmitted', "Worker user ID {$user['id']} resubmitted verification documents");
         flash('Your updated verification request has been submitted. An admin will review your documents shortly.', 'success');
@@ -160,16 +177,23 @@ $packages = get_active_packages('verification_packages');
                 </div>
             <?php endif; ?>
             <?php if ($vStatus === 'resubmission_requested' && $hasPaidVerif): ?>
-                <form method="post" action="request_verification.php" enctype="multipart/form-data">
+                <form method="post" action="request_verification.php" enctype="multipart/form-data" id="resubmit-form">
+                    <?php echo csrf_field(); ?>
                     <p style="margin-top:0;">Update your ID details below, then resubmit. No additional payment required.</p>
                     <label>ID type</label>
-                    <select name="id_type" required style="margin-bottom:10px;">
+                    <select name="id_type" id="rv-id-type" required style="margin-bottom:10px;">
                         <option value="">Select ID type</option>
                         <option value="ghana_card" <?php echo ($profile['id_type'] === 'ghana_card') ? 'selected' : ''; ?>>Ghana Card</option>
                         <option value="passport" <?php echo ($profile['id_type'] === 'passport') ? 'selected' : ''; ?>>Passport</option>
+                        <option value="other" <?php echo ($profile['id_type'] === 'other') ? 'selected' : ''; ?>>Other (specify)</option>
                     </select>
+                    <div id="rv-custom-wrap" style="display:<?php echo ($profile['id_type'] === 'other') ? 'block' : 'none'; ?>;margin-bottom:10px;">
+                        <label>Specify ID type</label>
+                        <input type="text" name="id_type_custom" id="rv-id-type-custom" placeholder="e.g. National ID, Driver's Licence, NHIS" maxlength="100" value="<?php echo sanitize($profile['id_type_custom'] ?? ''); ?>" />
+                    </div>
                     <label>ID card number</label>
-                    <input type="text" name="id_number" value="<?php echo sanitize($profile['id_number'] ?? ''); ?>" required placeholder="e.g. GHA-000000000-0" style="margin-bottom:10px;" />
+                    <input type="text" name="id_number" id="rv-id-number" value="<?php echo sanitize($profile['id_number'] ?? ''); ?>" required placeholder="ID card number" autocomplete="off" style="margin-bottom:4px;" />
+                    <small id="rv-id-number_hint" style="display:block;margin-bottom:10px;font-size:0.82rem;"></small>
                     <label>New ID photo <span class="meta">(leave blank to keep current)</span></label>
                     <?php if (!empty($profile['id_document_path'])): ?>
                         <div style="margin-bottom:8px;">
@@ -178,7 +202,7 @@ $packages = get_active_packages('verification_packages');
                         </div>
                     <?php endif; ?>
                     <input type="file" name="id_document" accept="image/jpeg,image/png,image/webp" style="margin-bottom:14px;" />
-                    <p class="small-note" style="margin-top:-8px;">Ghana Card or Passport — JPEG/PNG/WEBP, max 5 MB.</p>
+                    <p class="small-note" style="margin-top:-8px;">JPEG/PNG/WEBP, max 5 MB.</p>
                     <button type="submit" class="button button-primary">Resubmit for review</button>
                 </form>
             <?php elseif (!$isPaid): ?>
@@ -204,5 +228,29 @@ $packages = get_active_packages('verification_packages');
         </div>
     </main>
     <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <script src="assets/js/ghana-card-input.js"></script>
+    <script>
+        (function () {
+            var typeEl   = document.getElementById('rv-id-type');
+            var numEl    = document.getElementById('rv-id-number');
+            var custWrap = document.getElementById('rv-custom-wrap');
+            var custEl   = document.getElementById('rv-id-type-custom');
+            if (!typeEl || !numEl) return;
+            var ctrl = initGhanaCardInput(numEl);
+            function sync() {
+                var v = typeEl.value;
+                custWrap.style.display = v === 'other' ? 'block' : 'none';
+                if (custEl) custEl.required = (v === 'other');
+                if (v === 'ghana_card') {
+                    ctrl.activate();
+                } else {
+                    ctrl.deactivate();
+                    numEl.placeholder = v === 'passport' ? 'e.g. G0000000' : 'ID card number';
+                }
+            }
+            typeEl.addEventListener('change', sync);
+            sync();
+        })();
+    </script>
 </body>
 </html>

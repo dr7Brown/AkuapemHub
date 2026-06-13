@@ -347,6 +347,19 @@ function save_completion_photos($requestId, array $files) {
     return $saved;
 }
 
+// ── ID verification helpers ───────────────────────────────────────────────────
+
+function validate_ghana_card(string $number): bool {
+    return (bool)preg_match('/^GHA-\d{9}-\d$/', $number);
+}
+
+function is_ghana_card_duplicate(string $number, int $excludeUserId = 0): bool {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT id FROM worker_profiles WHERE id_type = 'ghana_card' AND id_number = ? AND user_id != ? LIMIT 1");
+    $stmt->execute([$number, $excludeUserId]);
+    return (bool)$stmt->fetch();
+}
+
 function save_uploaded_image(array $file, $relativeDir) {
     $allowedTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
     $maxSize = 5 * 1024 * 1024;
