@@ -108,27 +108,45 @@ $user = current_user();
         </div>
     </header>
     <main class="page-shell">
-        <section class="panel">
-            <form method="get" class="filter-form" style="flex-direction: column; gap: 14px;">
-                <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search by name or bio" />
-                <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
-                <select name="skill">
-                    <option value="">All skills</option>
-                    <?php foreach ($allSkills as $skillOption): ?>
-                        <option value="<?php echo sanitize($skillOption['skill_name']); ?>" <?php echo $skillFilter === $skillOption['skill_name'] ? 'selected' : ''; ?>><?php echo sanitize($skillOption['skill_name']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <select name="sort">
-                    <option value="rating" <?php echo $sortBy === 'rating' ? 'selected' : ''; ?>>Sort by rating</option>
-                    <option value="completed" <?php echo $sortBy === 'completed' ? 'selected' : ''; ?>>Most completed</option>
-                    <option value="newest" <?php echo $sortBy === 'newest' ? 'selected' : ''; ?>>Newest</option>
-                    <option value="distance" <?php echo $sortBy === 'distance' ? 'selected' : ''; ?>>Nearest to me</option>
-                </select>
+        <section class="panel" style="padding:20px 24px;">
+            <form method="get" id="worker-filter-form">
                 <input type="hidden" name="lat" id="lat" value="<?php echo $userLat !== null ? sanitize($userLat) : ''; ?>" />
                 <input type="hidden" name="lng" id="lng" value="<?php echo $userLng !== null ? sanitize($userLng) : ''; ?>" />
-                <button type="button" id="find-near-me" class="button button-secondary">Find workers near me</button>
-                <p class="meta" id="near-me-status"><?php echo ($userLat !== null) ? 'Showing distances from your shared location.' : 'Tap "Find workers near me" to sort and show distances based on your current location.'; ?></p>
-                <button type="submit" class="button button-primary">Search</button>
+                <!-- Desktop: single-row search bar -->
+                <div style="display:flex;gap:0;border:2px solid var(--primary);border-radius:40px;overflow:hidden;background:#fff;flex-wrap:wrap;">
+                    <div style="display:flex;align-items:center;gap:8px;padding:0 14px;flex:2;min-width:160px;border-right:1px solid var(--border);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                        <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search by name or skill…" style="border:none;outline:none;background:transparent;padding:12px 0;width:100%;font-size:0.95rem;" />
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;padding:0 14px;flex:1;min-width:120px;border-right:1px solid var(--border);">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" style="border:none;outline:none;background:transparent;padding:12px 0;width:100%;font-size:0.95rem;" />
+                    </div>
+                    <div style="display:flex;align-items:center;padding:0 10px;flex:1;min-width:120px;border-right:1px solid var(--border);">
+                        <select name="skill" style="border:none;outline:none;background:transparent;padding:12px 0;width:100%;font-size:0.95rem;color:<?php echo $skillFilter ? 'inherit' : 'var(--text-muted)'; ?>;cursor:pointer;appearance:auto;">
+                            <option value="">All skills</option>
+                            <?php foreach ($allSkills as $skillOption): ?>
+                                <option value="<?php echo sanitize($skillOption['skill_name']); ?>" <?php echo $skillFilter === $skillOption['skill_name'] ? 'selected' : ''; ?>><?php echo sanitize($skillOption['skill_name']); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div style="display:flex;align-items:center;padding:0 10px;flex:0 0 auto;min-width:140px;border-right:1px solid var(--border);">
+                        <select name="sort" style="border:none;outline:none;background:transparent;padding:12px 0;width:100%;font-size:0.95rem;cursor:pointer;appearance:auto;">
+                            <option value="rating" <?php echo $sortBy === 'rating' ? 'selected' : ''; ?>>By rating</option>
+                            <option value="completed" <?php echo $sortBy === 'completed' ? 'selected' : ''; ?>>Most jobs done</option>
+                            <option value="newest" <?php echo $sortBy === 'newest' ? 'selected' : ''; ?>>Newest</option>
+                            <option value="distance" <?php echo $sortBy === 'distance' ? 'selected' : ''; ?>>Nearest to me</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="button button-primary" style="border-radius:0 38px 38px 0;padding:12px 24px;font-size:0.95rem;white-space:nowrap;flex-shrink:0;margin:0;border:none;">Search</button>
+                </div>
+                <!-- Near-me row -->
+                <div style="display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap;">
+                    <button type="button" id="find-near-me" class="button button-secondary button-small" style="border-radius:20px;">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="1"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>Find workers near me
+                    </button>
+                    <span class="meta" id="near-me-status" style="font-size:0.82rem;"><?php echo ($userLat !== null) ? '📍 Showing distances from your shared location.' : ''; ?></span>
+                </div>
             </form>
         </section>
 
@@ -188,9 +206,9 @@ $user = current_user();
                 document.getElementById('lat').value = position.coords.latitude;
                 document.getElementById('lng').value = position.coords.longitude;
                 document.querySelector('select[name="sort"]').value = 'distance';
-                document.querySelector('.filter-form').submit();
+                document.getElementById('worker-filter-form').submit();
             }, function () {
-                status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
+                status.textContent = 'Unable to retrieve your location. Please allow location access.';
             });
         });
     </script>
