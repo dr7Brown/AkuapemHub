@@ -58,8 +58,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         } else {
             $pdo->prepare('UPDATE users SET name = ?, username = ?, email = ?, phone = ? WHERE id = ?')->execute([$name, $username, $email, $phone, $user['id']]);
             if (!empty($_FILES['profile_photo']['name'])) {
-                $profilePhotoPath = save_uploaded_image($_FILES['profile_photo'], 'uploads/profiles/' . $user['id']);
-                $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $user['id']]);
+                $profilePhotoPath = process_profile_image($_FILES['profile_photo'], 'uploads/profiles/' . $user['id']);
+                if ($profilePhotoPath) {
+                    $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $user['id']]);
+                }
                 // Points: first time a profile photo is uploaded
                 require_once __DIR__ . '/modules/referrals/service.php';
                 award_points((int)$user['id'], 'profile_photo');
@@ -659,5 +661,9 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
         <?php endif; ?>
     </main>
     <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <script src="assets/js/image-compress.js"></script>
+    <script>
+        setupImageInput(document.querySelector('input[name="profile_photo"]'), 800, 800, 0.82);
+    </script>
 </body>
 </html>

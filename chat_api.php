@@ -40,41 +40,44 @@ if ($action === 'send') {
     $conv = $convStmt->fetch();
     if (!$conv || $conv['status'] !== 'active') json_err('This conversation is no longer active.');
 
-    $msgType  = 'text';
-    $filePath = null;
+    $msgType   = 'text';
+    $filePath  = null;
+    $thumbPath = null;
 
     if (!empty($_FILES['file']['tmp_name'])) {
-        // MIME type determines the allowed extension — never trust the client filename extension
-        $mimeExtMap = [
-            'image/jpeg'      => 'jpg',
-            'image/png'       => 'png',
-            'image/webp'      => 'webp',
-            'image/gif'       => 'gif',
-            'application/pdf' => 'pdf',
-        ];
         $mime = mime_content_type($_FILES['file']['tmp_name']);
-        if (!isset($mimeExtMap[$mime])) json_err('File type not allowed.');
-        if ($_FILES['file']['size'] > 5 * 1024 * 1024) json_err('File too large (max 5 MB).');
-        $ext      = $mimeExtMap[$mime];
-        $saveName = 'chat_' . $user['id'] . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
-        $dir      = __DIR__ . '/uploads/chat/';
-        if (!is_dir($dir)) mkdir($dir, 0755, true);
-        move_uploaded_file($_FILES['file']['tmp_name'], $dir . $saveName);
-        $filePath = 'uploads/chat/' . $saveName;
-        $msgType  = ($ext !== 'pdf') ? 'image' : 'file';
-        if (!$text) $text = $msgType === 'image' ? '[Image]' : '[File attached]';
+
+        if ($mime === 'application/pdf') {
+            // PDF: store raw, no processing
+            if ($_FILES['file']['size'] > 10 * 1024 * 1024) json_err('File too large (max 10 MB).');
+            $saveName = 'chat_' . $user['id'] . '_' . bin2hex(random_bytes(8)) . '.pdf';
+            $dir      = __DIR__ . '/uploads/chat/';
+            if (!is_dir($dir)) mkdir($dir, 0755, true);
+            move_uploaded_file($_FILES['file']['tmp_name'], $dir . $saveName);
+            $filePath = 'uploads/chat/' . $saveName;
+            $msgType  = 'file';
+            if (!$text) $text = '[File attached]';
+        } else {
+            // Image: resize + WebP via GD
+            $imgs = process_chat_image($_FILES['file']);
+            if (!$imgs) json_err('Image upload failed. Use JPEG, PNG, WebP, or GIF (max 10 MB).');
+            $filePath  = $imgs['medium'];
+            $thumbPath = $imgs['thumb'];
+            $msgType   = 'image';
+            if (!$text) $text = '[Image]';
+        }
     }
 
     if (!$text) json_err('Message cannot be empty.');
     if (mb_strlen($text) > 2000) json_err('Message too long (max 2000 chars).');
 
     // Suspicion flags
-    $flags     = detect_suspicious_content($text);
-    $isFlagged = !empty($flags) ? 1 : 0;
+    $flags      = detect_suspicious_content($text);
+    $isFlagged  = !empty($flags) ? 1 : 0;
     $flagReason = $isFlagged ? implode(', ', $flags) : null;
 
-    $pdo->prepare("INSERT INTO chat_messages (conversation_id, sender_id, message, message_type, file_path, is_flagged, flag_reason, created_at) VALUES (?,?,?,?,?,?,?,NOW())")
-        ->execute([$convId, $user['id'], $text, $msgType, $filePath, $isFlagged, $flagReason]);
+    $pdo->prepare("INSERT INTO chat_messages (conversation_id, sender_id, message, message_type, file_path, thumb_path, is_flagged, flag_reason, created_at) VALUES (?,?,?,?,?,?,?,?,NOW())")
+        ->execute([$convId, $user['id'], $text, $msgType, $filePath, $thumbPath, $isFlagged, $flagReason]);
     $msgId = (int)$pdo->lastInsertId();
 
     // Touch conversation updated_at equivalent — update status column to 'active' (no-op, but forces MySQL to register change time)

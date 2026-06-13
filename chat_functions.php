@@ -246,7 +246,10 @@ function get_user_conversations(int $userId, int $limit = 40): array {
 
 function get_conversation_messages(int $convId, int $userId, int $limit = 50, int $afterId = 0): array {
     global $pdo;
-    $sql  = "SELECT cm.*, u.name AS sender_name, u.username AS sender_username
+    $sql  = "SELECT cm.id, cm.conversation_id, cm.sender_id, cm.message, cm.message_type,
+                    cm.file_path, cm.thumb_path, cm.is_read, cm.is_flagged, cm.flag_reason,
+                    cm.deleted_by_sender, cm.deleted_by_receiver, cm.created_at,
+                    u.name AS sender_name, u.username AS sender_username
              FROM chat_messages cm JOIN users u ON cm.sender_id = u.id
              WHERE cm.conversation_id = ?
                AND NOT (cm.deleted_by_sender = 1 AND cm.sender_id = ?)

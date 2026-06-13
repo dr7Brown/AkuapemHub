@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/image_utils.php';
 
 function flash($message, $type = 'success') {
     $_SESSION['flash'] = ['message' => $message, 'type' => $type];

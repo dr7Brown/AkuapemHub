@@ -105,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $userId = $pdo->lastInsertId();
 
             if (!empty($_FILES['profile_photo']['name'])) {
-                $profilePhotoPath = save_uploaded_image($_FILES['profile_photo'], 'uploads/profiles/' . $userId);
+                $profilePhotoPath = process_profile_image($_FILES['profile_photo'], 'uploads/profiles/' . $userId);
                 if ($profilePhotoPath) {
                     $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $userId]);
                 }
@@ -518,6 +518,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
             });
         });
+    </script>
+    <script src="assets/js/image-compress.js"></script>
+    <script>
+        setupImageInput(document.querySelector('input[name="profile_photo"]'), 800, 800, 0.82);
     </script>
 </body>
 </html>

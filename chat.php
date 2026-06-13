@@ -163,7 +163,9 @@ $myStatus = get_user_chat_status($user['id']);
                     <div class="msg-wrap <?php echo $mine ? 'mine' : 'theirs'; ?>" data-id="<?php echo $m['id']; ?>">
                         <div class="msg-bubble <?php echo $mine ? 'msg-mine' : 'msg-theirs'; ?>">
                             <?php if ($m['message_type'] === 'image' && $m['file_path']): ?>
-                                <img src="<?php echo sanitize($m['file_path']); ?>" class="img-msg" alt="Image">
+                                <a href="<?php echo sanitize($m['file_path']); ?>" target="_blank" style="display:block;line-height:0;">
+                                    <img src="<?php echo sanitize($m['thumb_path'] ?: $m['file_path']); ?>" class="img-msg" alt="Image" style="max-width:220px;border-radius:8px;cursor:zoom-in;">
+                                </a>
                             <?php elseif ($m['message_type'] === 'file' && $m['file_path']): ?>
                                 <a href="<?php echo sanitize($m['file_path']); ?>" target="_blank" style="color:inherit;">📎 Download file</a>
                             <?php else: ?>
@@ -216,7 +218,8 @@ function buildBubble(m) {
     const mine = parseInt(m.sender_id) === MY_ID;
     let inner  = '';
     if (m.message_type === 'image' && m.file_path) {
-        inner = `<img src="${escHtml(m.file_path)}" class="img-msg" alt="Image">`;
+        const thumb = m.thumb_path || m.file_path;
+        inner = `<a href="${escHtml(m.file_path)}" target="_blank" style="display:block;line-height:0;"><img src="${escHtml(thumb)}" class="img-msg" alt="Image" style="max-width:220px;border-radius:8px;cursor:zoom-in;"></a>`;
     } else if (m.message_type === 'file' && m.file_path) {
         inner = `<a href="${escHtml(m.file_path)}" target="_blank" style="color:inherit">📎 Download file</a>`;
     } else {
@@ -260,8 +263,13 @@ poll();
 async function sendMessage() {
     const text = document.getElementById('msgText').value.trim();
     const fileInput = document.getElementById('fileInput');
-    const file = fileInput.files[0];
+    let file = fileInput.files[0];
     if (!text && !file) return;
+
+    // Compress images client-side before upload
+    if (file && file.type.startsWith('image/')) {
+        file = await compressImage(file, 1280, 1280, 0.85);
+    }
 
     const fd = new FormData();
     fd.append('action','send');
@@ -326,5 +334,6 @@ document.getElementById('fileInput')?.addEventListener('change', function() {
 window.addEventListener('beforeunload', () => { polling = false; clearTimeout(pollTimer); });
 </script>
 <?php endif; ?>
+<script src="assets/js/image-compress.js"></script>
 </body>
 </html>
