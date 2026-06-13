@@ -31,6 +31,7 @@ if ($request['status'] === 'completed' || $request['status'] === 'cancelled') {
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $reason = trim($_POST['reason'] ?? '');
     
     if ($reason === '') {
@@ -79,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </header>
     <main class="page-shell small-shell">
         <form class="card form-card" method="post" action="cancel_request.php?request_id=<?php echo $requestId; ?>">
+            <?php echo csrf_field(); ?>
             <h2><?php echo sanitize($request['title']); ?></h2>
             <p class="meta">Status: <?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></p>
             

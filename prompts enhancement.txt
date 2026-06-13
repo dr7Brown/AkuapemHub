@@ -1,0 +1,281 @@
+
+The hiring process must be controlled by the Job Owner, NOT by the Admin.
+
+The Admin should only monitor, moderate, and manage the platform.
+
+====================================
+BUSINESS REQUIREMENT
+====================================
+
+When a user posts a job, they must specify how many workers they need.
+
+Applications for a job must go directly to the Job Owner.
+
+The Job Owner is responsible for approving or rejecting applicants.
+
+====================================
+DATABASE CHANGES
+====================================
+
+Update jobs table.
+
+Add:
+
+workers_needed INT DEFAULT 1
+workers_approved INT DEFAULT 0
+
+Add job_status values:
+
+open
+partially_staffed
+fully_staffed
+completed
+cancelled
+
+====================================
+JOB POSTING FORM
+====================================
+
+Add new fields:
+
+Hiring Type
+
+Options:
+
+1. Single Worker
+2. Multiple Workers
+select single worker by default
+
+If Single Worker selected:
+
+workers_needed = 1
+
+If Multiple Workers selected:
+
+Show:
+
+Number of Workers Needed
+
+Input type:
+
+Number
+
+Minimum:
+
+1
+
+====================================
+APPLICATION MANAGEMENT
+====================================
+
+Applications must be sent directly to the Job Owner.
+
+The Job Owner must have a page:
+
+My Job Applications
+
+For each job display:
+
+Job Title
+Workers Needed
+Workers Approved
+Remaining Positions
+
+Formula:
+
+Remaining Positions = workers_needed - workers_approved
+
+====================================
+APPLICATION ACTIONS
+====================================
+
+For every applicant, Job Owner can:
+
+Approve
+Reject
+View Profile
+Send Message
+
+Application statuses:
+
+pending
+approved
+rejected
+withdrawn
+completed
+
+====================================
+APPROVAL LOGIC
+====================================
+
+When Job Owner clicks Approve:
+
+Check:
+
+workers_approved < workers_needed
+
+If TRUE:
+
+Approve applicant
+
+Increase:
+
+workers_approved += 1
+
+If FALSE:
+
+Display:
+
+"This job has reached its worker limit."
+
+Do not approve additional workers.
+
+====================================
+AUTO JOB STATUS LOGIC
+====================================
+
+When:
+
+workers_approved = 0
+
+Status:
+
+open
+
+------------------------------------
+
+When:
+
+workers_approved > 0
+AND
+workers_approved < workers_needed
+
+Status:
+
+partially_staffed
+
+------------------------------------
+
+When:
+
+workers_approved = workers_needed
+
+Status:
+
+fully_staffed
+
+====================================
+FULLY STAFFED BEHAVIOR
+====================================
+
+When job becomes fully staffed:
+
+1. Hide Apply button.
+2. Prevent new applications.
+3. Prevent further approvals.
+4. Display badge:
+
+Fully Staffed
+
+5. Notify Job Owner.
+
+====================================
+WORKER DASHBOARD
+====================================
+
+Workers can view:
+
+Pending Applications
+Approved Applications
+Rejected Applications
+Completed Jobs
+
+====================================
+NOTIFICATIONS
+====================================
+
+Notify Worker when:
+
+- Application Approved
+- Application Rejected
+
+Notify Job Owner when:
+
+- New Application Received
+- Job Fully Staffed
+
+====================================
+ADMIN ROLE
+====================================
+
+Admin DOES NOT approve workers.
+
+Admin responsibilities:
+
+- View jobs
+- View applications
+- Monitor activity
+- Resolve disputes
+- Suspend users
+- Remove fraudulent jobs
+
+Admin should be able to see:
+
+Job Title
+Workers Needed
+Workers Approved
+Remaining Positions
+Job Status
+
+For reporting purposes only.
+
+====================================
+ADMIN DASHBOARD REPORTS
+====================================
+
+Create reports:
+
+Total Jobs
+Open Jobs
+Partially Staffed Jobs
+Fully Staffed Jobs
+Completed Jobs
+
+Display:
+
+Workers Needed
+Workers Approved
+Remaining Positions
+
+for each job.
+
+====================================
+MESSAGING INTEGRATION
+====================================
+
+When an applicant is approved:
+
+Automatically create or enable chat between:
+
+Job Owner ↔ Approved Worker
+
+Rejected applicants should not gain chat access unless platform settings allow it.
+
+====================================
+TESTING REQUIREMENTS
+====================================
+
+Create tests for:
+
+1. Single worker jobs.
+2. Multiple worker jobs.
+3. Approval limit reached.
+4. Automatic status changes.
+5. Fully staffed jobs.
+6. New application blocking after fully staffed.
+7. Notification delivery.
+8. Chat activation after approval.
+
+
+
+Implement the entire workflow so that hiring decisions belong exclusively to the Job Owner while the Admin acts only as a platform administrator and moderator.

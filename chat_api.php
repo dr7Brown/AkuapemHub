@@ -23,6 +23,7 @@ function json_err(string $msg, int $code = 400): void {
 
 // ── send ─────────────────────────────────────────────────────────────────────
 if ($action === 'send') {
+    csrf_check();
     $convId = intval($_POST['conversation_id'] ?? 0);
     $text   = trim($_POST['message'] ?? '');
     if (!$convId) json_err('Invalid conversation.');
@@ -43,18 +44,25 @@ if ($action === 'send') {
     $filePath = null;
 
     if (!empty($_FILES['file']['tmp_name'])) {
-        $allowed = ['image/jpeg','image/png','image/webp','image/gif','application/pdf'];
-        $mime    = mime_content_type($_FILES['file']['tmp_name']);
-        if (!in_array($mime, $allowed)) json_err('File type not allowed.');
+        // MIME type determines the allowed extension — never trust the client filename extension
+        $mimeExtMap = [
+            'image/jpeg'      => 'jpg',
+            'image/png'       => 'png',
+            'image/webp'      => 'webp',
+            'image/gif'       => 'gif',
+            'application/pdf' => 'pdf',
+        ];
+        $mime = mime_content_type($_FILES['file']['tmp_name']);
+        if (!isset($mimeExtMap[$mime])) json_err('File type not allowed.');
         if ($_FILES['file']['size'] > 5 * 1024 * 1024) json_err('File too large (max 5 MB).');
-        $ext      = pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION);
-        $saveName = 'chat_' . $user['id'] . '_' . uniqid() . '.' . $ext;
+        $ext      = $mimeExtMap[$mime];
+        $saveName = 'chat_' . $user['id'] . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
         $dir      = __DIR__ . '/uploads/chat/';
         if (!is_dir($dir)) mkdir($dir, 0755, true);
         move_uploaded_file($_FILES['file']['tmp_name'], $dir . $saveName);
         $filePath = 'uploads/chat/' . $saveName;
-        $msgType  = in_array($mime, ['image/jpeg','image/png','image/webp','image/gif']) ? 'image' : 'file';
-        if (!$text) $text = $msgType === 'image' ? '[Image]' : '[File: ' . htmlspecialchars($_FILES['file']['name'], ENT_QUOTES) . ']';
+        $msgType  = ($ext !== 'pdf') ? 'image' : 'file';
+        if (!$text) $text = $msgType === 'image' ? '[Image]' : '[File attached]';
     }
 
     if (!$text) json_err('Message cannot be empty.');

@@ -18,7 +18,7 @@ if ($user) {
     <main class="page-shell">
         <section class="hero-card">
             <h1>Welcome to AkuapemHub</h1>
-            <p>Request errands, hire skilled workers, and post micro jobs in a single mobile-first system for Ghana.</p>
+            <p class="hero-description">Request errands, hire skilled workers, and post micro jobs in a single mobile-first system for Ghana.</p>
             <div class="hero-actions">
                 <a href="register.php" class="button button-primary">Create account</a>
                 <a href="login.php" class="button button-secondary">Sign in</a>

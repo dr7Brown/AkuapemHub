@@ -14,6 +14,7 @@ $error   = '';
 
 // POST: delete entries
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $action = $_POST['action'] ?? '';
 
     if ($action === 'delete_entry' && !empty($_POST['log_id'])) {
@@ -119,6 +120,7 @@ $logs = $logStmt->fetchAll();
 
         <!-- Bulk actions form -->
         <form method="post" id="bulk-form">
+            <?php echo csrf_field(); ?>
             <div class="panel">
                 <div class="panel-header">
                     <h2 style="margin:0;font-size:1rem;"><?php echo number_format($totalRows); ?> log <?php echo $totalRows === 1 ? 'entry' : 'entries'; ?></h2>

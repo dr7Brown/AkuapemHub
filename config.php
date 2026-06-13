@@ -12,7 +12,7 @@ define('APP_NAME', 'AkuapemHub');
 define('BASE_URL', 'http://localhost:8080/AkuapemHub');
 
 define('ADMIN_EMAIL', 'admin@example.com');
-define('MAIL_FROM', 'noreply@example.com');
+define('MAIL_FROM', 'info@expresslabgh.com');
 
 // ── WhatsApp OTP provider ────────────────────────────────────────────────────
 // Set WHATSAPP_PROVIDER to 'meta' or 'twilio'. Leave blank to disable sending

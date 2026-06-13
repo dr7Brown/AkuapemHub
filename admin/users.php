@@ -9,6 +9,7 @@ if (!is_admin()) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
+    csrf_check();
     if ($_POST['action'] === 'bulk' && !empty($_POST['selected_users']) && is_array($_POST['selected_users'])) {
         $userIds = array_filter(array_map('intval', $_POST['selected_users']));
         $bulkAction = $_POST['bulk_action'] ?? '';
@@ -62,6 +63,7 @@ $users = $stmt->fetchAll();
     <main class="page-shell">
         <section class="panel">
             <form id="bulk-users" method="post" action="users.php" class="filter-form" style="margin-bottom: 16px; gap: 8px; flex-wrap: wrap;">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="bulk" />
                 <label style="display: flex; align-items: center; gap: 8px;">
                     <span>Bulk user action</span>
@@ -100,6 +102,7 @@ $users = $stmt->fetchAll();
                                         <?php echo sanitize($userItem['role']); ?>
                                     <?php else: ?>
                                         <form method="post" class="inline-form" action="users.php" style="display: flex; gap: 6px; align-items: center;">
+                                            <?php echo csrf_field(); ?>
                                             <input type="hidden" name="user_id" value="<?php echo $userItem['id']; ?>" />
                                             <input type="hidden" name="action" value="change_role" />
                                             <select name="role">
@@ -116,6 +119,7 @@ $users = $stmt->fetchAll();
                                 <td>
                                     <?php if ($userItem['role'] !== ADMIN_ROLE): ?>
                                         <form method="post" class="inline-form" action="users.php">
+                                            <?php echo csrf_field(); ?>
                                             <input type="hidden" name="user_id" value="<?php echo $userItem['id']; ?>" />
                                             <input type="hidden" name="action" value="<?php echo $userItem['banned'] ? 'unban' : 'ban'; ?>" />
                                             <button type="submit" class="button button-small <?php echo $userItem['banned'] ? 'button-primary' : 'button-secondary'; ?>">

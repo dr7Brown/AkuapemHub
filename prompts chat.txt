@@ -1,0 +1,278 @@
+====================================
+CHAT & COMMUNICATION MANAGEMENT SYSTEM
+====================================
+
+Project: AkuapemHub
+
+Build a complete in-platform messaging system with strong admin controls.
+
+The platform owner (Admin) must be able to monitor, manage, restrict, and moderate communication between users.
+
+====================================
+PART 1: CHAT RULES
+====================================
+
+Users cannot freely message anyone.
+
+by default: 
+Users may only chat when one of the following exists:
+
+1. User applied to a job.
+2. User owns a job and worker get approval for the job.
+3. User was selected/hired for a job.
+4. Users can freely chat all workers under the worker tab. 
+5. Admin manually grants chat access.
+
+No other chats are allowed.
+Admin must be able to configure: using toggle button, radio buttons or checkboxes 
+for the above.
+
+====================================
+PART 2: CHAT PERMISSIONS
+====================================
+
+Create a chat permissions system.
+
+Admin must be able to configure:
+
+✓ Allow job owner ↔ applicant chat
+✓ Allow hired worker ↔ job owner chat
+✓ Allow worker ↔ worker chat
+✓ Allow direct messaging between all users
+✓ Disable all messaging
+
+Store settings in platform_settings.
+
+====================================
+PART 3: DATABASE STRUCTURE
+====================================
+
+Create tables:
+
+conversations
+
+Fields:
+
+id
+conversation_type
+job_id
+created_by
+status
+
+status values:
+active
+blocked
+closed
+
+created_at
+
+------------------------------------
+
+conversation_participants
+
+Fields:
+
+id
+conversation_id
+user_id
+joined_at
+
+------------------------------------
+
+messages
+
+Fields:
+
+id
+conversation_id
+sender_id
+message
+message_type
+
+values:
+text
+image
+file
+
+is_read
+
+deleted_by_sender
+deleted_by_receiver
+
+created_at
+
+------------------------------------
+
+message_reports
+
+Fields:
+
+id
+message_id
+reported_by
+reason
+status
+created_at
+
+====================================
+PART 4: USER CHAT FEATURES
+====================================
+
+Users can:
+
+- View conversations
+- Send messages
+- Send images
+- Mark messages as read
+- Search conversations
+- Report messages
+
+Users cannot:
+
+- Delete evidence permanently
+- Edit old messages
+- Bypass chat restrictions
+
+====================================
+PART 5: ADMIN CHAT DASHBOARD
+====================================
+
+Create:
+
+Admin Dashboard
+→ Communication Center
+
+Admin can view:
+
+- Total conversations
+- Active conversations
+- Blocked conversations
+- Messages sent today
+- Reported messages
+
+====================================
+PART 6: ADMIN CHAT MONITORING
+====================================
+
+Admin can:
+
+- View every conversation
+- View every message
+- Search messages
+- Search users
+- Filter by date
+- Filter by job
+- Filter by user
+
+Admin can open any conversation and read all messages.
+
+====================================
+PART 7: ADMIN CHAT ACTIONS
+====================================
+
+Admin can:
+
+✓ Block conversation
+✓ Reopen conversation
+✓ Delete conversation
+✓ Mute user
+✓ Suspend messaging privileges
+✓ Ban user from chat
+
+Admin actions must be logged.
+
+====================================
+PART 8: CHAT RESTRICTIONS
+====================================
+
+Create user chat permissions.
+
+Fields:
+
+can_send_messages
+can_receive_messages
+chat_ban_until
+
+Admin can:
+
+- Disable user's messaging
+- Enable user's messaging
+- Temporarily suspend messaging
+- Permanently ban messaging
+
+====================================
+PART 9: CONTENT MODERATION
+====================================
+
+Create moderation tools.
+
+Detect:
+
+- Excessive phone numbers
+- Excessive URLs
+- Spam behavior
+
+Flag suspicious conversations for admin review.
+
+Do NOT automatically delete messages.
+
+Instead:
+
+- Flag
+- Log
+- Notify admin
+
+====================================
+PART 10: AUDIT LOGGING
+====================================
+
+Create chat_audit_logs table.
+
+Track:
+
+- Message deletion
+- User mute
+- User ban
+- Conversation block
+- Conversation reopen
+- Admin message review
+
+Fields:
+
+id
+admin_id
+action
+target_user_id
+conversation_id
+details
+created_at
+
+====================================
+PART 11: SECURITY
+====================================
+
+Requirements:
+
+- Server-side validation
+- Prevent unauthorized chat access
+- Users can only access conversations they belong to
+- Admin override access permitted
+
+====================================
+PART 12: DELIVERABLES
+====================================
+
+Generate:
+
+1. Database schema
+2. SQL migrations
+3. Backend PHP logic
+4. Chat controllers
+5. Admin Communication Center UI
+6. User Messaging UI
+7. Permission middleware
+8. Moderation tools
+9. Audit logging system
+10. Testing scenarios
+
+Build production-ready implementation.

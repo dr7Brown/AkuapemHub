@@ -1,0 +1,335 @@
+You are a senior software architect performing a Monetization Completion Sprint for AkuapemHub.
+
+The core monetization models already exist:
+
+1. Featured Job Posts
+2. Featured Worker Profiles
+3. Verification Badges
+
+The admin settings page already exists and can enable/disable monetization features.
+
+Your task is to perform a full gap analysis and complete ALL missing monetization functionality.
+
+====================================
+PHASE 1: MONETIZATION AUDIT
+====================================
+
+Perform a complete audit of:
+
+- Database tables
+- Admin settings
+- Package management
+- Payment tables
+- Business logic
+- User interfaces
+- Worker interfaces
+- API endpoints
+- Validation logic
+
+Identify:
+
+- Missing functionality
+- Incomplete functionality
+- Unused tables
+- Missing relationships
+- Missing checks
+- Missing UI
+
+Generate a Monetization Audit Report before making changes.
+
+====================================
+PHASE 2: FEATURED JOBS COMPLETION
+====================================
+
+Ensure Featured Jobs support:
+
+- Package selection
+- Package expiry
+- Package renewal
+- Featured badge
+- Featured indicator in listings
+- Featured indicator in job details
+- Automatic expiration
+
+Implement:
+
+Job Position Ranking:
+
+1. Featured active jobs first
+2. Normal jobs second
+
+Create scheduled expiry logic.
+
+Expired featured jobs must automatically revert to normal jobs.
+
+====================================
+PHASE 3: FEATURED WORKERS COMPLETION
+====================================
+
+Ensure Featured Worker Profiles support:
+
+- Package selection
+- Package expiry
+- Package renewal
+- Featured badge
+- Featured search ranking
+- Featured homepage display
+
+Worker ranking order:
+
+1. Featured verified workers
+2. Featured workers
+3. Verified workers
+4. Normal workers
+
+Create automatic expiration logic.
+Generate a Audit Report before making changes.
+
+====================================
+PHASE 4: VERIFICATION SYSTEM COMPLETION
+====================================
+
+Implement full verification workflow.
+
+Verification statuses:
+
+- Pending
+- Approved
+- Rejected
+- Expired
+
+Users submit:
+
+- National ID
+- Profile photo
+- Phone verification
+
+Admin can:
+
+- Approve
+- Reject
+- Request resubmission
+
+Display:
+
+✓ Verified badge
+
+on:
+
+- Profile
+- Search results
+- Job applications
+
+Generate a Audit Report before making changes.
+
+====================================
+PHASE 5: PAYMENT WORKFLOW
+====================================
+
+Build complete payment architecture.
+
+Payment statuses:
+
+- Pending
+- Paid
+- Failed
+- Refunded
+- Expired
+
+Create:
+
+Payment History page
+
+for users.
+
+Display:
+
+- Feature purchased
+- Amount
+- Date
+- Status
+
+Prepare architecture for future integration with:
+
+- MTN Mobile Money
+- Telecel Cash
+- AirtelTigo Money
+- Card Payments
+
+DO NOT integrate payment gateways yet.
+
+Build payment abstraction layer.
+
+====================================
+PHASE 6: PACKAGE MANAGEMENT
+====================================
+
+Admin can manage:
+
+Featured Job Packages
+
+Fields:
+
+- Name
+- Duration
+- Price
+- Active
+
+Featured Worker Packages
+
+Fields:
+
+- Name
+- Duration
+- Price
+- Active
+
+Verification Packages
+
+Fields:
+
+- Name
+- Price
+- Active
+
+Admin actions:
+
+- Create
+- Edit
+- Disable
+- Enable
+- Delete
+
+Generate a Audit Report before making changes.
+
+
+====================================
+PHASE 7: MONETIZATION DASHBOARD
+====================================
+
+Create Monetization Dashboard.
+
+Display:
+
+Total Revenue
+
+Revenue by:
+
+- Featured Jobs
+- Worker Promotions
+- Verification
+
+Active Purchases
+
+Expired Purchases
+
+Top Paying Users
+
+Most Purchased Packages
+
+Charts and statistics.
+
+Generate a Audit Report before making changes.
+
+
+====================================
+PHASE 8: NOTIFICATIONS
+====================================
+
+Implement notifications.
+
+Notify users when:
+
+- Purchase successful
+- Package expiring in 3 days
+- Package expired
+- Verification approved
+- Verification rejected
+
+Create notification center.
+
+====================================
+PHASE 9: ADMIN SAFETY CONTROLS
+====================================
+
+Add:
+
+Global Monetization Mode
+
+Options:
+
+1. Free Mode
+2. Hybrid Mode
+3. Paid Mode
+
+Behavior:
+
+Free Mode:
+- Everything free
+
+Hybrid Mode:
+- Admin chooses which monetization models are active
+
+Paid Mode:
+- All monetization models active
+
+Admin should be able to switch modes without code changes.
+
+Generate a Audit Report before making changes.
+
+
+====================================
+PHASE 10: TESTING
+====================================
+
+Create automated tests proving:
+
+Featured Jobs:
+
+- Free mode works
+- Paid mode works
+- Expiration works
+
+Featured Workers:
+
+- Free mode works
+- Paid mode works
+- Expiration works
+
+Verification:
+
+- Free mode works
+- Paid mode works
+- Approval workflow works
+
+Generate a Audit Report before making changes.
+
+
+====================================
+PHASE 11: FINAL DELIVERABLE
+====================================
+
+Produce:
+
+1. Monetization Completion Report
+2. Updated database schema
+3. New tables created
+4. Files modified
+5. Features completed
+6. Remaining future enhancements
+
+The final system must allow AkuapemHub to operate fully in Free Mode today and switch to monetized operation entirely from the Admin Dashboard in the future without any code modifications.
+Generate a Audit Report before making changes.
+
+
+
+
+
+
+
+
+
+
+
+
+

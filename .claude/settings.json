@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8080/AkuapemHub/migrate.php\" -UseBasicParsing -TimeoutSec 15; \"$\\($r.StatusCode\\)\"; \\($r.Content -replace '<[^>]+>', ' ' -replace '\\\\s+',' '\\).Substring\\(0,[Math]::Min\\(800,$r.Content.Length\\)\\) } catch { $_.Exception.Message })",
+      "PowerShell($r = Invoke-WebRequest -Uri \"http://localhost:8080/AkuapemHub/migrate.php\" -UseBasicParsing -TimeoutSec 15; $text = \\($r.Content -replace '<[^>]+>', ' ' -replace '\\\\s+',' '\\); $text.Substring\\(0,[Math]::Min\\(1500,$text.Length\\)\\))",
+      "PowerShell($r = Invoke-WebRequest -Uri \"http://localhost:8080/AkuapemHub/migrate.php\" -UseBasicParsing -TimeoutSec 30 -Method Post -Body @{action='migrate'}; $text = \\($r.Content -replace '<[^>]+>', ' ' -replace '\\\\s+',' '\\); $text.Substring\\(0,[Math]::Min\\(2000,$text.Length\\)\\))",
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root akuapemhub -e \"SHOW COLUMNS FROM service_requests LIKE 'completion_notes'; SHOW TABLES LIKE 'disputes';\")",
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root akuapemhub -e \"SELECT id, name, email, role, banned FROM users LIMIT 15;\")",
+      "PowerShell($hash = & \"C:\\\\xampp\\\\php\\\\php.exe\" -r \"echo password_hash\\('password123', PASSWORD_DEFAULT\\);\"; \"Hash: $hash\"; & \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root akuapemhub -e \"UPDATE users SET password_hash = '$hash' WHERE id IN \\(1,2,3\\);\")",
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root akuapemhub -e \"SELECT id, status, assigned_worker_id, completion_notes FROM service_requests WHERE id=1;\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(grep -n 'worker_skills\\\\|'\\\\''disputes'\\\\''\\\\|'\\\\''messages'\\\\''\\\\|requiredTables\\\\|initData\\\\|$migrations\\\\[' migrate.php)",
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root akuapemhub -e \"DELETE FROM worker_availability_slots; UPDATE worker_profiles SET bio='', location='Akropong', contact_phone='0244000000' WHERE user_id=2;\" 2>$null)",
+      "PowerShell(& \"C:\\\\xampp\\\\mysql\\\\bin\\\\mysql.exe\" -u root akuapemhub -e \"SELECT user_id, bio, location, contact_phone, availability FROM worker_profiles WHERE user_id=2;\")",
+      "Bash(rm -rf uploads/completions/1)",
+      "Bash(\"/c/xampp/mysql/bin/mysql.exe\" -u root akuapemhub -e \"DELETE FROM completion_photos WHERE request_id=1; UPDATE service_requests SET status='in_progress', completion_notes=NULL WHERE id=1;\")",
+      "Bash(\"/c/xampp/mysql/bin/mysql.exe\" -u root akuapemhub -e \"SELECT id,status,completion_notes FROM service_requests WHERE id=1; SELECT COUNT\\(*\\) FROM completion_photos;\")",
+      "Bash",
+      "PowerShell"
+    ]
+  }
+}

@@ -24,7 +24,7 @@ if (!$request || $request['customer_id'] != $user['id']) {
 $isPaid = is_feature_paid('enable_paid_featured_jobs');
 
 // Check for an existing pending featuring payment for this job
-$existingFeatStmt = $pdo->prepare("SELECT id, reference_code FROM platform_payments WHERE user_id = ? AND payment_type = 'featured_job' AND reference_id = ? AND status = 'pending'");
+$existingFeatStmt = $pdo->prepare("SELECT id, reference_code, COALESCE(gateway,'manual') AS gateway FROM platform_payments WHERE user_id = ? AND payment_type = 'featured_job' AND reference_id = ? AND status = 'pending'");
 $existingFeatStmt->execute([$user['id'], $requestId]);
 $existingFeatPayment = $existingFeatStmt->fetch();
 
@@ -35,6 +35,7 @@ $featRenewSoon = !empty($request['featured']) && $featEndDate !== null && $featE
 $canFeature    = !$featActive || $featRenewSoon;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $packageId = intval($_POST['package_id'] ?? 0);
 
     if ($existingFeatPayment) {
@@ -125,6 +126,7 @@ $packages = get_active_packages('featured_job_packages');
                 <?php if (!$isPaid): ?>
                     <p><?php echo $featRenewSoon ? 'Renew' : 'Feature'; ?> this job for <strong>free</strong> for 30 days. Featured jobs appear at the top of all listings and get more applications.</p>
                     <form method="post" action="feature_job.php">
+                        <?php echo csrf_field(); ?>
                         <input type="hidden" name="request_id" value="<?php echo $requestId; ?>" />
                         <button type="submit" class="button button-primary"><?php echo $featRenewSoon ? 'Renew for free' : 'Feature for free'; ?></button>
                     </form>
@@ -134,6 +136,7 @@ $packages = get_active_packages('featured_job_packages');
                         <div class="alert alert-error">No featuring packages are currently available. Check back later.</div>
                     <?php else: ?>
                         <form method="post" action="feature_job.php">
+                            <?php echo csrf_field(); ?>
                             <input type="hidden" name="request_id" value="<?php echo $requestId; ?>" />
                             <?php foreach ($packages as $pkg): ?>
                                 <label class="list-row" style="display:flex;align-items:center;gap:12px;padding:14px;border:2px solid var(--border);border-radius:10px;margin-bottom:10px;cursor:pointer;">

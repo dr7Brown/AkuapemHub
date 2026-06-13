@@ -105,7 +105,7 @@ a:hover {
 }
 
 .hero-card p {
-  color: rgba(255, 255, 255, 0.88);
+  color: rgba(228, 228, 228, 0.88);
 }
 
 .hero-card .button-secondary {
@@ -138,12 +138,16 @@ h1, .hero-card h1, .card h1, .panel h1 {
   font-size: 1.5rem;
 }
 
-.hero-card p,
+.hero-card p, 
 .card p,
 .panel p {
   margin: 0 0 16px;
   color: var(--muted);
   line-height: 1.65;
+}
+
+.hero-card p{
+  color: var(--surface-muted);
 }
 
 .hero-card p:last-child,
@@ -162,6 +166,13 @@ h1, .hero-card h1, .card h1, .panel h1 {
 
 .panel-header h1 {
   margin: 0;
+}
+
+.hero-description {
+  margin: 0 0 18px;
+  color: var(--surface-muted);
+  line-height: 1.7;
+  font-size: 1.1rem;
 }
 
 /* Buttons */

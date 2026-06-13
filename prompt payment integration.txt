@@ -1,0 +1,270 @@
+====================================
+PHASE 5: PAYSTACK PAYMENT SYSTEM
+====================================
+
+AkuapemHub will use Paystack as the primary payment gateway.
+
+Implement a complete Paystack payment architecture for all monetization features.
+
+Monetized Features: (all paid services)
+
+1. Featured Job Posts
+2. Featured Worker Profiles
+3. Verification Badges
+4. etc
+
+====================================
+PAYMENT FLOW
+====================================
+
+When a user selects a paid package:
+
+1. User selects package
+2. System creates payment record
+3. System generates unique transaction reference
+4. User is redirected to Paystack Checkout
+5. Paystack processes payment
+6. Paystack callback/webhook confirms payment
+7. System updates payment status
+8. Purchased feature is activated automatically
+
+No manual approval should be required after successful payment.
+
+====================================
+DATABASE REQUIREMENTS
+====================================
+
+Create or update payments table.
+
+Fields:
+
+id
+user_id
+payment_type
+
+Possible values:
+
+featured_job
+featured_worker
+verification
+
+related_id
+
+(Links to job, worker profile, or verification request)
+
+package_id
+
+paystack_reference
+
+paystack_transaction_id
+
+amount
+
+currency
+
+default: GHS
+
+status
+
+Possible values:
+
+pending
+paid
+failed
+abandoned
+refunded
+
+payment_method
+
+gateway
+
+default: paystack
+
+created_at
+paid_at
+
+====================================
+PAYSTACK CONFIGURATION
+====================================
+
+Create admin settings for:
+
+Paystack Public Key
+Paystack Secret Key
+Webhook Secret (if used)
+Payment Mode
+
+Options:
+
+- Sandbox/Test
+- Live
+
+Store securely.
+
+Never expose secret keys on frontend.
+
+====================================
+PAYMENT SERVICES
+====================================
+
+Create reusable Payment Service Layer.
+
+Functions:
+
+initializePayment()
+verifyPayment()
+handleWebhook()
+activatePurchasedFeature()
+refundPayment()
+
+Do not place Paystack logic throughout the application.
+
+All Paystack communication must go through a centralized service.
+
+====================================
+FEATURE ACTIVATION RULES
+====================================
+
+FEATURED JOBS
+
+After successful payment:
+
+- Mark job as featured
+- Set featured_start_date
+- Set featured_end_date
+- Display featured badge
+
+FEATURED WORKERS
+
+After successful payment:
+
+- Promote worker profile
+- Set featured_start_date
+- Set featured_end_date
+- Display featured badge
+
+VERIFICATION BADGES
+
+After successful payment:
+
+- Create verification request
+- Send request to admin for review
+- Admin approves or rejects verification
+
+Important:
+
+Payment does NOT automatically verify a user.
+
+Payment only unlocks the verification review process.
+
+====================================
+PAYSTACK WEBHOOKS
+====================================
+
+Implement webhook endpoint.
+
+Requirements:
+
+- Verify Paystack signature
+- Reject invalid requests
+- Prevent duplicate processing
+- Log all webhook events
+
+Supported events:
+
+charge.success
+
+Update payment status to PAID.
+
+Automatically activate purchased feature.
+
+====================================
+PAYMENT HISTORY
+====================================
+
+Create Payment History page.
+
+Display:
+
+Reference
+Package
+Amount
+Status
+Date
+Payment Method
+
+Users can view all transactions.
+
+====================================
+ADMIN PAYMENT MANAGEMENT
+====================================
+
+Create Payment Management page.
+
+Admin can:
+
+- View all payments
+- Search transactions
+- Filter by status
+- View revenue statistics
+- View transaction details
+
+Admin CANNOT manually mark unpaid transactions as paid.
+
+Only Paystack verification or webhook confirmation can do that.
+
+====================================
+REVENUE REPORTING
+====================================
+
+Create Monetization Dashboard.
+
+Display:
+
+Total Revenue
+
+Revenue from:
+- Featured Jobs
+- Featured Workers
+- Verification Requests
+
+Today's Revenue
+Monthly Revenue
+Yearly Revenue
+
+Successful Payments
+Failed Payments
+Pending Payments
+
+====================================
+SECURITY REQUIREMENTS
+====================================
+
+Never trust frontend payment responses.
+
+Every payment must be verified server-side using Paystack Verify Transaction API.
+
+Prevent:
+
+- Fake callbacks
+- Duplicate payments
+- Replay attacks
+- Manual URL manipulation
+
+All monetized features must require a VERIFIED successful Paystack transaction before activation.
+
+====================================
+TESTING REQUIREMENTS
+====================================
+
+Create test scenarios for:
+
+1. Successful payment
+2. Failed payment
+3. Abandoned payment
+4. Duplicate webhook
+5. Invalid webhook signature
+6. Feature activation after payment
+7. Feature expiration after package duration
+
+Generate all necessary database changes, backend logic, API endpoints, admin screens, user screens, and Paystack integration code.

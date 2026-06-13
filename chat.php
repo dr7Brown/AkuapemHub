@@ -199,9 +199,10 @@ $myStatus = get_user_chat_status($user['id']);
 
 <?php if ($convId): ?>
 <script>
-const CONV_ID  = <?php echo $convId; ?>;
-const MY_ID    = <?php echo $user['id']; ?>;
-let lastMsgId  = <?php echo $lastMsgId; ?>;
+const CONV_ID    = <?php echo $convId; ?>;
+const MY_ID      = <?php echo $user['id']; ?>;
+const CSRF_TOKEN = '<?php echo csrf_token(); ?>';
+let lastMsgId    = <?php echo $lastMsgId; ?>;
 let polling    = true;
 let pollTimer  = null;
 
@@ -266,6 +267,7 @@ async function sendMessage() {
     fd.append('action','send');
     fd.append('conversation_id', CONV_ID);
     fd.append('message', text);
+    fd.append('csrf_token', CSRF_TOKEN);
     if (file) fd.append('file', file);
 
     document.getElementById('msgText').value = '';

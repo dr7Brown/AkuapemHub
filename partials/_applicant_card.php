@@ -49,6 +49,7 @@ $returnId   = (int)$app['request_id'];
 
         <?php if ($isPending && !$isFullyStaffed): ?>
             <form method="post" style="display:inline;">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="application_id" value="<?php echo $app['id']; ?>">
                 <input type="hidden" name="return_id" value="<?php echo $returnId; ?>">
                 <button type="submit" name="action" value="approve" class="button button-primary button-small"
@@ -60,6 +61,7 @@ $returnId   = (int)$app['request_id'];
 
         <?php if ($isPending): ?>
             <form method="post" style="display:inline;">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="application_id" value="<?php echo $app['id']; ?>">
                 <input type="hidden" name="return_id" value="<?php echo $returnId; ?>">
                 <button type="submit" name="action" value="reject" class="button button-secondary button-small"
