@@ -185,6 +185,7 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
             <?php else: ?>
                 <span class="avatar"><?php echo sanitize(strtoupper(substr(display_name($user), 0, 1))); ?></span>
             <?php endif; ?>
+            <a href="logout.php" title="Logout" style="display:flex;align-items:center;color:var(--text-muted);font-size:1.2rem;text-decoration:none;" onclick="return confirm('Sign out?')">🚪</a>
         </div>
     </header>
     <main class="page-shell">

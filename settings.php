@@ -29,10 +29,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_profile') {
-    $name = trim($_POST['name'] ?? '');
+    $name     = trim($_POST['name'] ?? '');
     $username = trim($_POST['username'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $phone = trim($_POST['phone'] ?? '');
+    $email    = trim($_POST['email'] ?? '');
+    $phone    = trim($_POST['phone'] ?? '');
 
     if ($name === '' || $username === '' || $email === '' || $phone === '') {
         $error = 'Name, username, email and phone are required.';
@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
     } else {
         $stmtEmail = $pdo->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
         $stmtEmail->execute([$email, $user['id']]);
-        $stmtUser = $pdo->prepare('SELECT id FROM users WHERE username = ? AND id != ?');
+        $stmtUser  = $pdo->prepare('SELECT id FROM users WHERE username = ? AND id != ?');
         $stmtUser->execute([$username, $user['id']]);
         $stmtPhone = $pdo->prepare('SELECT id FROM users WHERE phone = ? AND id != ?');
         $stmtPhone->execute([$phone, $user['id']]);
@@ -56,116 +56,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         } elseif ($stmtPhone->fetch()) {
             $error = 'This phone number is already registered to another account.';
         } else {
-            $pdo->prepare('UPDATE users SET name = ?, username = ?, email = ?, phone = ? WHERE id = ?')->execute([$name, $username, $email, $phone, $user['id']]);
+            $pdo->prepare('UPDATE users SET name=?,username=?,email=?,phone=? WHERE id=?')->execute([$name,$username,$email,$phone,$user['id']]);
             if (!empty($_FILES['profile_photo']['name'])) {
-                $profilePhotoPath = process_profile_image($_FILES['profile_photo'], 'uploads/profiles/' . $user['id']);
-                if ($profilePhotoPath) {
-                    $pdo->prepare('UPDATE users SET profile_photo = ? WHERE id = ?')->execute([$profilePhotoPath, $user['id']]);
-                }
+                $pp = process_profile_image($_FILES['profile_photo'], 'uploads/profiles/' . $user['id']);
+                if ($pp) $pdo->prepare('UPDATE users SET profile_photo=? WHERE id=?')->execute([$pp,$user['id']]);
                 require_once __DIR__ . '/modules/referrals/service.php';
                 award_points((int)$user['id'], 'profile_photo');
             }
-            $user = settings_refresh_user($pdo, $user['id']);
+            $user    = settings_refresh_user($pdo, $user['id']);
             $success = 'Profile updated.';
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'location') {
-    $townId = intval($_POST['town_id'] ?? 0) ?: null;
-    $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : ($user['latitude'] ?? null);
+    $townId    = intval($_POST['town_id'] ?? 0) ?: null;
+    $latitude  = ($_POST['latitude']  ?? '') !== '' ? (float)$_POST['latitude']  : ($user['latitude']  ?? null);
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : ($user['longitude'] ?? null);
-
     if (!$townId) {
         $error = 'Please select your town.';
     } else {
-        $pdo->prepare('UPDATE users SET town_id = ?, latitude = ?, longitude = ? WHERE id = ?')->execute([$townId, $latitude, $longitude, $user['id']]);
-        $user = settings_refresh_user($pdo, $user['id']);
+        $pdo->prepare('UPDATE users SET town_id=?,latitude=?,longitude=? WHERE id=?')->execute([$townId,$latitude,$longitude,$user['id']]);
+        $user    = settings_refresh_user($pdo, $user['id']);
         $success = 'Location updated.';
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'password') {
     $currentPassword = $_POST['current_password'] ?? '';
-    $newPassword = $_POST['new_password'] ?? '';
-
+    $newPassword     = $_POST['new_password']     ?? '';
     if ($newPassword === '' || strlen($newPassword) < 6) {
         $error = 'New password must be at least 6 characters.';
     } else {
-        $stmt = $pdo->prepare('SELECT password_hash FROM users WHERE id = ?');
+        $stmt = $pdo->prepare('SELECT password_hash FROM users WHERE id=?');
         $stmt->execute([$user['id']]);
         $hash = $stmt->fetchColumn();
         if ($currentPassword === '' || !password_verify($currentPassword, $hash)) {
             $error = 'Current password is incorrect.';
         } else {
-            $passwordHash = password_hash($newPassword, PASSWORD_BCRYPT);
-            $pdo->prepare('UPDATE users SET password_hash = ? WHERE id = ?')->execute([$passwordHash, $user['id']]);
+            $pdo->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([password_hash($newPassword, PASSWORD_BCRYPT), $user['id']]);
             $success = 'Password updated.';
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notifications') {
-    $emailNotifications = isset($_POST['email_notifications_enabled']) ? 1 : 0;
-    $pdo->prepare('UPDATE users SET email_notifications_enabled = ? WHERE id = ?')->execute([$emailNotifications, $user['id']]);
-    $user = settings_refresh_user($pdo, $user['id']);
+    $pdo->prepare('UPDATE users SET email_notifications_enabled=? WHERE id=?')->execute([isset($_POST['email_notifications_enabled'])?1:0, $user['id']]);
+    $user    = settings_refresh_user($pdo, $user['id']);
     $success = 'Notification preferences updated.';
 
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_bio') {
     if ($workerProfile) {
-        $bio = trim($_POST['bio'] ?? '');
-        $avail = in_array($_POST['availability'] ?? '', ['available', 'busy', 'on_leave'], true) ? $_POST['availability'] : 'available';
-        $pdo->prepare('UPDATE worker_profiles SET bio = ?, availability = ? WHERE user_id = ?')->execute([$bio, $avail, $user['id']]);
-        $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
-        $wpStmt->execute([$user['id']]);
+        $bio   = trim($_POST['bio'] ?? '');
+        $avail = in_array($_POST['availability'] ?? '', ['available','busy','on_leave'], true) ? $_POST['availability'] : 'available';
+        $pdo->prepare('UPDATE worker_profiles SET bio=?,availability=? WHERE user_id=?')->execute([$bio,$avail,$user['id']]);
+        $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id=?'); $wpStmt->execute([$user['id']]);
         $workerProfile = $wpStmt->fetch() ?: null;
         $success = 'Bio and availability updated.';
     }
-
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_id') {
     if ($workerProfile) {
-        $idType   = $_POST['id_type'] ?? '';
+        $idType   = $_POST['id_type']  ?? '';
         $idNumber = trim($_POST['id_number'] ?? '');
-        if (!in_array($idType, ['ghana_card', 'passport'], true) || $idNumber === '') {
+        if (!in_array($idType, ['ghana_card','passport'], true) || $idNumber === '') {
             $error = 'Select an ID type and enter your ID card number.';
         } elseif (!empty($_FILES['id_document']['name']) && !is_valid_image_upload($_FILES['id_document'])) {
             $error = 'ID photo must be a JPEG, PNG, or WEBP image under 5MB.';
         } else {
             $idDocPath = $workerProfile['id_document_path'];
             if (!empty($_FILES['id_document']['name'])) {
-                $uploaded = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
-                if ($uploaded) $idDocPath = $uploaded;
+                $up = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
+                if ($up) $idDocPath = $up;
             }
-            $pdo->prepare('UPDATE worker_profiles SET id_type = ?, id_number = ?, id_document_path = ? WHERE user_id = ?')->execute([$idType, $idNumber, $idDocPath, $user['id']]);
-            $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
-            $wpStmt->execute([$user['id']]);
+            $pdo->prepare('UPDATE worker_profiles SET id_type=?,id_number=?,id_document_path=? WHERE user_id=?')->execute([$idType,$idNumber,$idDocPath,$user['id']]);
+            $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id=?'); $wpStmt->execute([$user['id']]);
             $workerProfile = $wpStmt->fetch() ?: null;
             $success = 'Identity information updated.';
         }
     }
-
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_remove_skill') {
     if ($workerProfile) {
         $skillId = intval($_POST['skill_id'] ?? 0);
-        if ($skillId > 0) {
-            $pdo->prepare('DELETE FROM worker_skills WHERE id = ? AND worker_profile_id = ?')->execute([$skillId, $workerProfile['id']]);
-        }
+        if ($skillId > 0) $pdo->prepare('DELETE FROM worker_skills WHERE id=? AND worker_profile_id=?')->execute([$skillId,$workerProfile['id']]);
         $success = 'Skill removed.';
     }
-
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_add_skill') {
     if ($workerProfile) {
         $newSkills = json_decode($_POST['skills_json'] ?? '', true);
         if (is_array($newSkills) && $newSkills) {
-            $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id, category_id, skill_name) VALUES (?, ?, ?)');
+            $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id,category_id,skill_name) VALUES (?,?,?)');
             foreach ($newSkills as $entry) {
                 if (!is_array($entry)) continue;
                 $sn  = trim((string)($entry['skill_name'] ?? ''));
                 $cid = intval($entry['category_id'] ?? 0) ?: null;
-                $customCatName = trim((string)($entry['category_name'] ?? ''));
-                if ($cid === null && $customCatName !== '') {
-                    $catCheck = $pdo->prepare('SELECT id FROM skill_categories WHERE LOWER(name) = LOWER(?)');
-                    $catCheck->execute([$customCatName]);
-                    if ($catRow = $catCheck->fetch()) {
-                        $cid = (int)$catRow['id'];
-                    } else {
-                        $pdo->prepare('INSERT INTO skill_categories (name) VALUES (?)')->execute([$customCatName]);
-                        $cid = (int)$pdo->lastInsertId();
-                    }
+                $ccn = trim((string)($entry['category_name'] ?? ''));
+                if ($cid === null && $ccn !== '') {
+                    $cc = $pdo->prepare('SELECT id FROM skill_categories WHERE LOWER(name)=LOWER(?)'); $cc->execute([$ccn]);
+                    $cid = ($cr = $cc->fetch()) ? (int)$cr['id'] : (function() use ($pdo,$ccn) { $pdo->prepare('INSERT INTO skill_categories (name) VALUES (?)')->execute([$ccn]); return (int)$pdo->lastInsertId(); })();
                 }
                 if ($sn !== '') $skillStmt->execute([$workerProfile['id'], $cid, $sn]);
             }
@@ -176,42 +157,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
 
 $workerSkills = [];
 if ($workerProfile) {
-    $wsStmt = $pdo->prepare(
-        'SELECT ws.id, ws.skill_name, ws.category_id, sc.name AS category_name
-         FROM worker_skills ws
-         LEFT JOIN skill_categories sc ON ws.category_id = sc.id
-         WHERE ws.worker_profile_id = ?
-         ORDER BY sc.name, ws.skill_name'
-    );
+    $wsStmt = $pdo->prepare('SELECT ws.id,ws.skill_name,ws.category_id,sc.name AS category_name FROM worker_skills ws LEFT JOIN skill_categories sc ON ws.category_id=sc.id WHERE ws.worker_profile_id=? ORDER BY sc.name,ws.skill_name');
     $wsStmt->execute([$workerProfile['id']]);
     $workerSkills = $wsStmt->fetchAll();
 }
 
 $sectionMeta = [
-    'account'       => ['icon' => '✏️',  'title' => 'Edit Profile'],
-    'location'      => ['icon' => '📍',  'title' => 'Location'],
-    'password'      => ['icon' => '🔑',  'title' => 'Change Password'],
-    'notifications' => ['icon' => '🔔',  'title' => 'Notifications'],
+    'profile'       => ['icon' => '✏️',  'title' => 'Profile Settings'],
     'worker'        => ['icon' => '🛠️', 'title' => 'Worker Profile'],
-    'role'          => ['icon' => '🧰',  'title' => 'Role'],
+    'payments'      => ['icon' => '💳',  'title' => 'My Payments'],
+    'password'      => ['icon' => '🔑',  'title' => 'Change Password'],
     'privacy'       => ['icon' => '🔒',  'title' => 'Privacy & Security'],
+    'privacypolicy' => ['icon' => '📄',  'title' => 'Privacy Policy'],
+    'terms'         => ['icon' => '📋',  'title' => 'Terms of Service'],
     'help'          => ['icon' => '❓',  'title' => 'Help & Support'],
     'about'         => ['icon' => 'ℹ️', 'title' => 'About AkuapemHub'],
 ];
 $activeSection = isset($sectionMeta[$section]) ? $section : '';
 
-// AJAX: return only the panel HTML (no layout wrapper)
-$isAjax = !empty($_GET['ajax']) && $activeSection !== '';
-
-// Helper: sidebar nav link
-function sn_link(string $href, string $icon, string $label, string $section, string $active, bool $external = false): string {
-    $cls  = 'sn-link' . ($section === $active ? ' sn-active' : '');
-    $data = $external ? '' : ' data-section="' . htmlspecialchars($section, ENT_QUOTES) . '"';
-    $chev = '<span class="sn-chev">›</span>';
-    return '<a href="' . htmlspecialchars($href, ENT_QUOTES) . '" class="' . $cls . '"' . $data . '>'
-         . '<span class="sn-icon">' . $icon . '</span>'
-         . htmlspecialchars($label) . $chev . '</a>';
+// Load payments data only when needed
+$myPendingPayments = $myPaidPayments = $myFailedPayments = [];
+if ($activeSection === 'payments') {
+    $pyStmt = $pdo->prepare("
+        SELECT pp.*,
+            CASE pp.payment_type WHEN 'featured_job' THEN sr.title WHEN 'job_post' THEN sr2.title ELSE NULL END AS job_title,
+            CASE pp.payment_type
+                WHEN 'featured_job'    THEN COALESCE(fp.name,'—')
+                WHEN 'featured_worker' THEN COALESCE(wp2.name,'—')
+                WHEN 'verification'    THEN COALESCE(vp.name,'—')
+                WHEN 'job_post'        THEN COALESCE(jp.name,'—')
+                WHEN 'worker_service'  THEN COALESCE(ws.name,'—')
+            END AS package_name
+        FROM platform_payments pp
+        LEFT JOIN service_requests sr  ON pp.payment_type='featured_job' AND sr.id =pp.reference_id
+        LEFT JOIN service_requests sr2 ON pp.payment_type='job_post'     AND sr2.id=pp.reference_id
+        LEFT JOIN featured_job_packages fp      ON pp.payment_type='featured_job'    AND fp.id =pp.package_id
+        LEFT JOIN worker_promotion_packages wp2 ON pp.payment_type='featured_worker' AND wp2.id=pp.package_id
+        LEFT JOIN verification_packages vp      ON pp.payment_type='verification'    AND vp.id =pp.package_id
+        LEFT JOIN job_posting_packages jp       ON pp.payment_type='job_post'        AND jp.id =pp.package_id
+        LEFT JOIN worker_service_packages ws    ON pp.payment_type='worker_service'  AND ws.id =pp.package_id
+        WHERE pp.user_id=? ORDER BY pp.created_at DESC
+    ");
+    $pyStmt->execute([$user['id']]);
+    $allPy = $pyStmt->fetchAll();
+    $myPendingPayments = array_filter($allPy, fn($p) => $p['status'] === 'pending');
+    $myPaidPayments    = array_filter($allPy, fn($p) => $p['status'] === 'paid');
+    $myFailedPayments  = array_filter($allPy, fn($p) => in_array($p['status'],['failed','abandoned','refunded'],true));
 }
+
+$pyTypeLabel = [
+    'featured_job'        => 'Featured Job',
+    'featured_worker'     => 'Featured Profile',
+    'verification'        => 'Verification Badge',
+    'job_post'            => 'Job Posting Fee',
+    'worker_service'      => 'Service Listing',
+    'escrow_payment'      => 'Escrow Payment',
+    'escrow_with_posting' => 'Escrow + Posting Fee',
+];
+
+$isAjax = !empty($_GET['ajax']) && $activeSection !== '';
 
 if (!$isAjax): ?>
 <!DOCTYPE html>
@@ -219,21 +223,17 @@ if (!$isAjax): ?>
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><?php echo $activeSection ? sanitize($sectionMeta[$activeSection]['title']) . ' — ' : ''; ?>Settings — AkuapemHub</title>
+    <title><?php echo $activeSection ? sanitize($sectionMeta[$activeSection]['title']).' — ' : ''; ?>Settings — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         /* ── Settings sidebar layout ──────────────────────── */
         .settings-shell { padding: 0 0 80px; }
 
-        /* Mobile default: sidebar visible, content hidden */
-        .sn-sidebar  { display: block; }
-        .sn-content  { display: none; padding: 10px 12px; min-height: 200px; }
-
-        /* Mobile with section active: hide sidebar, show content */
+        .sn-sidebar { display: block; }
+        .sn-content { display: none; padding: 10px 12px; min-height: 200px; }
         body.has-section .sn-sidebar { display: none; }
         body.has-section .sn-content { display: block; }
 
-        /* Desktop: both side-by-side */
         @media (min-width: 760px) {
             .settings-shell {
                 display: grid;
@@ -253,12 +253,9 @@ if (!$isAjax): ?>
         /* ── Sidebar ─────────────────────────────────────── */
         .sn-user-card {
             display: flex; align-items: center; gap: 12px;
-            padding: 16px 14px;
-            margin: 10px 12px 0;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 10px 10px 0 0;
-            border-bottom: none;
+            padding: 16px 14px; margin: 10px 12px 0;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 10px 10px 0 0; border-bottom: none;
         }
         @media (min-width: 760px) { .sn-user-card { margin: 0; } }
         .sn-user-info { overflow: hidden; min-width: 0; line-height: 1.3; }
@@ -266,30 +263,22 @@ if (!$isAjax): ?>
         .sn-user-info em     { font-style: normal; font-size: .76rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 
         .sn-nav {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 0 0 10px 10px;
-            overflow: hidden;
-            margin: 0 12px;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 0 0 10px 10px; overflow: hidden; margin: 0 12px;
         }
         @media (min-width: 760px) { .sn-nav { margin: 0; } }
 
         .sn-link {
             display: flex; align-items: center; gap: 10px;
-            padding: 11px 14px;
-            color: var(--text); text-decoration: none;
-            font-size: .91rem;
-            transition: background .12s;
-            border-radius: 0;
+            padding: 11px 14px; color: var(--text); text-decoration: none;
+            font-size: .91rem; transition: background .12s;
         }
         .sn-link:hover  { background: var(--surface-muted); }
         .sn-link.sn-active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
         .sn-icon { width: 20px; text-align: center; flex-shrink: 0; }
         .sn-chev { margin-left: auto; color: var(--text-muted); font-size: .85rem; }
         @media (min-width: 760px) { .sn-chev { display: none; } }
-
         .sn-sep { height: 1px; background: var(--border); margin: 3px 0; }
-
         .sn-logout-link { color: #c0392b !important; }
         .sn-logout-link:hover { background: #fff5f5 !important; }
 
@@ -297,10 +286,29 @@ if (!$isAjax): ?>
         .sn-panel-title {
             font-size: 1.05rem; font-weight: 700;
             padding: 0 0 12px; margin: 0 0 14px;
-            border-bottom: 1px solid var(--border);
-            display: none;
+            border-bottom: 1px solid var(--border); display: none;
         }
         @media (min-width: 760px) { .sn-panel-title { display: block; } }
+
+        /* Divider between sub-sections inside a combined panel */
+        .sn-sub-sep {
+            border: none; border-top: 1px solid var(--border);
+            margin: 20px 0;
+        }
+        .sn-sub-title {
+            font-size: .92rem; font-weight: 700; color: var(--text-muted);
+            text-transform: uppercase; letter-spacing: .06em;
+            margin: 0 0 14px;
+        }
+
+        /* Legal / payments scroll box */
+        .sn-scroll-box {
+            max-height: 520px; overflow-y: auto;
+            padding: 20px 22px; line-height: 1.75;
+        }
+        .sn-scroll-box h3 { font-size: .95rem; margin: 18px 0 6px; }
+        .sn-scroll-box h3:first-child { margin-top: 0; }
+        .sn-scroll-box p  { margin: 0 0 10px; font-size: .9rem; color: var(--text); }
 
         .sn-welcome {
             display: flex; flex-direction: column; align-items: center;
@@ -308,13 +316,19 @@ if (!$isAjax): ?>
             gap: 8px; color: var(--text-muted); text-align: center; padding: 24px;
         }
         .sn-welcome-icon { font-size: 2.6rem; margin-bottom: 4px; }
-
         .sn-loading { text-align: center; padding: 64px 0; color: var(--text-muted); font-size: .9rem; }
 
-        /* ── Header chrome ───────────────────────────────── */
+        /* Payment rows */
+        .py-row {
+            display: flex; justify-content: space-between; align-items: flex-start;
+            gap: 8px; padding: 12px; background: var(--surface);
+            border-radius: 8px; border: 1px solid var(--border);
+        }
+        .py-row + .py-row { margin-top: 8px; }
+
+        /* Header back/logout */
         .sn-back-btn {
-            display: none;
-            align-items: center; gap: 4px;
+            display: none; align-items: center; gap: 4px;
             color: var(--primary); font-weight: 600; text-decoration: none; font-size: .95rem;
         }
         body.has-section .sn-back-btn { display: flex; }
@@ -331,7 +345,7 @@ if (!$isAjax): ?>
 
     <div class="settings-shell">
 
-        <!-- ── Sidebar ────────────────────────────────────── -->
+        <!-- ── Sidebar ──────────────────────────────────── -->
         <aside class="sn-sidebar">
             <div class="sn-user-card">
                 <?php if (!empty($user['profile_photo'])): ?>
@@ -347,35 +361,39 @@ if (!$isAjax): ?>
 
             <nav class="sn-nav">
                 <?php
-                // Sidebar nav — one flat list, lines between groups
-                $a = $activeSection; // shorthand
+                $a = $activeSection;
+                function snl(string $href, string $icon, string $label, string $section, string $active): string {
+                    $cls = 'sn-link' . ($section === $active ? ' sn-active' : '');
+                    $da  = $section ? ' data-section="' . htmlspecialchars($section, ENT_QUOTES) . '"' : '';
+                    return '<a href="' . htmlspecialchars($href, ENT_QUOTES) . '" class="' . $cls . '"' . $da . '>'
+                         . '<span class="sn-icon">' . $icon . '</span>'
+                         . htmlspecialchars($label) . '<span class="sn-chev">›</span></a>';
+                }
                 ?>
-
-                <!-- Group: Profile -->
-                <?php echo sn_link('?section=account',       '✏️',  'Edit Profile',    'account',       $a); ?>
-                <?php echo sn_link('?section=location',      '📍',  'Location',         'location',      $a); ?>
-                <?php echo sn_link('?section=notifications', '🔔',  'Notifications',    'notifications', $a); ?>
-                <?php echo sn_link('my_payments.php',        '💳',  'My Payments',      '',              $a, true); ?>
-
-                <div class="sn-sep"></div>
-
-                <!-- Group: Worker / Role -->
+                <!-- Group: Personal -->
+                <?php echo snl('?section=profile',  '✏️',  'Profile Settings', 'profile',  $a); ?>
                 <?php if ($user['role'] === 'worker'): ?>
-                    <?php echo sn_link('?section=worker', '🛠️', 'Worker Profile', 'worker', $a); ?>
+                    <?php echo snl('?section=worker', '🛠️', 'Worker Profile',  'worker',   $a); ?>
                 <?php endif; ?>
-                <?php echo sn_link('?section=role', '🧰', $user['role'] === 'worker' ? 'Role' : 'Become a Worker', 'role', $a); ?>
+                <?php echo snl('?section=payments', '💳',  'My Payments',      'payments', $a); ?>
 
                 <div class="sn-sep"></div>
 
                 <!-- Group: Security -->
-                <?php echo sn_link('?section=password', '🔑', 'Change Password',     'password', $a); ?>
-                <?php echo sn_link('?section=privacy',  '🔒', 'Privacy &amp; Security', 'privacy',  $a); ?>
+                <?php echo snl('?section=password', '🔑', 'Change Password',     'password', $a); ?>
+                <?php echo snl('?section=privacy',  '🔒', 'Privacy &amp; Security', 'privacy',  $a); ?>
+
+                <div class="sn-sep"></div>
+
+                <!-- Group: Legal -->
+                <?php echo snl('?section=privacypolicy', '📄', 'Privacy Policy',   'privacypolicy', $a); ?>
+                <?php echo snl('?section=terms',         '📋', 'Terms of Service', 'terms',         $a); ?>
 
                 <div class="sn-sep"></div>
 
                 <!-- Group: Support -->
-                <?php echo sn_link('?section=help',  '❓',  'Help &amp; Support', 'help',  $a); ?>
-                <?php echo sn_link('?section=about', 'ℹ️', 'About AkuapemHub',  'about', $a); ?>
+                <?php echo snl('?section=help',  '❓',  'Help &amp; Support', 'help',  $a); ?>
+                <?php echo snl('?section=about', 'ℹ️', 'About AkuapemHub',  'about', $a); ?>
 
                 <div class="sn-sep"></div>
 
@@ -385,7 +403,7 @@ if (!$isAjax): ?>
             </nav>
         </aside>
 
-        <!-- ── Content ───────────────────────────────────── -->
+        <!-- ── Content ──────────────────────────────────── -->
         <div id="sn-content" class="sn-content">
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
@@ -394,13 +412,16 @@ if (!$isAjax): ?>
                 <div class="alert alert-success"><?php echo sanitize($success); ?></div>
             <?php endif; ?>
 
-<?php endif; // !$isAjax — layout open ?>
+<?php endif; // !$isAjax — layout wrapper open ?>
 
-<?php /* ═══════════ PANEL CONTENT (shared: full-page + AJAX) ════════════ */ ?>
+<?php /* ═══════════════ PANEL CONTENT ═══════════════ */ ?>
 
-<?php if ($activeSection === 'account'): ?>
-<h2 class="sn-panel-title">✏️ Edit Profile</h2>
-<form class="card form-card" method="post" action="settings.php?section=account" enctype="multipart/form-data">
+<?php if ($activeSection === 'profile'): ?>
+<h2 class="sn-panel-title">✏️ Profile Settings</h2>
+
+<!-- Edit Profile -->
+<h3 class="sn-sub-title">Edit Profile</h3>
+<form class="card form-card" method="post" action="settings.php?section=profile" enctype="multipart/form-data">
     <?php echo csrf_field(); ?>
     <input type="hidden" name="form" value="edit_profile" />
     <?php if (!empty($user['profile_photo'])): ?>
@@ -422,9 +443,11 @@ if (!$isAjax): ?>
     <button type="submit" class="button button-primary">Save profile</button>
 </form>
 
-<?php elseif ($activeSection === 'location'): ?>
-<h2 class="sn-panel-title">📍 Location</h2>
-<form class="card form-card" method="post" action="settings.php?section=location">
+<hr class="sn-sub-sep" />
+
+<!-- Location -->
+<h3 class="sn-sub-title">Location</h3>
+<form class="card form-card" method="post" action="settings.php?section=profile">
     <?php echo csrf_field(); ?>
     <input type="hidden" name="form" value="location" />
     <label>Town</label>
@@ -449,8 +472,7 @@ if (!$isAjax): ?>
 </form>
 <script>
 (function() {
-    var btn = document.getElementById('use-my-location');
-    if (!btn) return;
+    var btn = document.getElementById('use-my-location'); if (!btn) return;
     btn.addEventListener('click', function() {
         var s = document.getElementById('location-status');
         if (!navigator.geolocation) { s.textContent = 'Geolocation is not supported by your browser.'; return; }
@@ -458,29 +480,17 @@ if (!$isAjax): ?>
         navigator.geolocation.getCurrentPosition(function(pos) {
             document.getElementById('latitude').value  = pos.coords.latitude;
             document.getElementById('longitude').value = pos.coords.longitude;
-            s.textContent = 'Location captured: ' + pos.coords.latitude.toFixed(5) + ', ' + pos.coords.longitude.toFixed(5) + '. Click "Save location" to store it.';
-        }, function() {
-            s.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
-        });
+            s.textContent = 'Captured: ' + pos.coords.latitude.toFixed(5) + ', ' + pos.coords.longitude.toFixed(5) + '. Click "Save location" to store.';
+        }, function() { s.textContent = 'Unable to retrieve your location. Please allow location access and try again.'; });
     });
 })();
 </script>
 
-<?php elseif ($activeSection === 'password'): ?>
-<h2 class="sn-panel-title">🔑 Change Password</h2>
-<form class="card form-card" method="post" action="settings.php?section=password">
-    <?php echo csrf_field(); ?>
-    <input type="hidden" name="form" value="password" />
-    <label>Current password</label>
-    <input type="password" name="current_password" placeholder="Required to set a new password" />
-    <label>New password</label>
-    <input type="password" name="new_password" minlength="6" placeholder="At least 6 characters" />
-    <button type="submit" class="button button-primary">Change password</button>
-</form>
+<hr class="sn-sub-sep" />
 
-<?php elseif ($activeSection === 'notifications'): ?>
-<h2 class="sn-panel-title">🔔 Notifications</h2>
-<form class="card form-card" method="post" action="settings.php?section=notifications">
+<!-- Notifications -->
+<h3 class="sn-sub-title">Notifications</h3>
+<form class="card form-card" method="post" action="settings.php?section=profile">
     <?php echo csrf_field(); ?>
     <input type="hidden" name="form" value="notifications" />
     <label class="checkbox-label" style="display:flex;align-items:center;gap:8px;font-weight:normal;">
@@ -491,8 +501,10 @@ if (!$isAjax): ?>
     <button type="submit" class="button button-primary">Save preferences</button>
 </form>
 
-<?php elseif ($activeSection === 'role'): ?>
-<h2 class="sn-panel-title">🧰 Role</h2>
+<hr class="sn-sub-sep" />
+
+<!-- Role -->
+<h3 class="sn-sub-title">Role</h3>
 <section class="card form-card">
     <?php if ($user['role'] === 'customer'): ?>
         <p class="meta">You're registered as a customer. Want to offer services on AkuapemHub?</p>
@@ -513,7 +525,6 @@ if (!$isAjax): ?>
 <?php if (!$workerProfile): ?>
     <div class="alert alert-info">You don't have a worker profile yet. <a href="become_worker.php" style="color:var(--primary);">Become a worker</a> to create one.</div>
 <?php else: ?>
-    <!-- Bio & Availability -->
     <form class="card form-card" method="post" action="settings.php?section=worker" style="margin-bottom:14px;">
         <?php echo csrf_field(); ?>
         <input type="hidden" name="form" value="worker_bio" />
@@ -522,14 +533,13 @@ if (!$isAjax): ?>
         <textarea name="bio" rows="3" placeholder="Briefly describe your experience and what makes you a great worker..."><?php echo sanitize($workerProfile['bio']); ?></textarea>
         <label>Availability</label>
         <select name="availability">
-            <option value="available" <?php echo $workerProfile['availability'] === 'available' ? 'selected' : ''; ?>>Available for work</option>
-            <option value="busy"      <?php echo $workerProfile['availability'] === 'busy'      ? 'selected' : ''; ?>>Busy — not taking new jobs</option>
-            <option value="on_leave"  <?php echo $workerProfile['availability'] === 'on_leave'  ? 'selected' : ''; ?>>On leave</option>
+            <option value="available" <?php echo $workerProfile['availability']==='available'?'selected':''; ?>>Available for work</option>
+            <option value="busy"      <?php echo $workerProfile['availability']==='busy'     ?'selected':''; ?>>Busy — not taking new jobs</option>
+            <option value="on_leave"  <?php echo $workerProfile['availability']==='on_leave' ?'selected':''; ?>>On leave</option>
         </select>
         <button type="submit" class="button button-primary">Save</button>
     </form>
 
-    <!-- Identity Verification -->
     <form class="card form-card" method="post" action="settings.php?section=worker" enctype="multipart/form-data" style="margin-bottom:14px;">
         <?php echo csrf_field(); ?>
         <input type="hidden" name="form" value="worker_id" />
@@ -538,8 +548,8 @@ if (!$isAjax): ?>
         <label>ID type</label>
         <select name="id_type" required>
             <option value="">Select ID type</option>
-            <option value="ghana_card" <?php echo $workerProfile['id_type'] === 'ghana_card' ? 'selected' : ''; ?>>Ghana Card</option>
-            <option value="passport"   <?php echo $workerProfile['id_type'] === 'passport'   ? 'selected' : ''; ?>>Passport</option>
+            <option value="ghana_card" <?php echo $workerProfile['id_type']==='ghana_card'?'selected':''; ?>>Ghana Card</option>
+            <option value="passport"   <?php echo $workerProfile['id_type']==='passport'  ?'selected':''; ?>>Passport</option>
         </select>
         <label>ID card number</label>
         <input type="text" name="id_number" value="<?php echo sanitize($workerProfile['id_number'] ?? ''); ?>" required placeholder="e.g. GHA-000000000-0" />
@@ -551,7 +561,6 @@ if (!$isAjax): ?>
         <button type="submit" class="button button-primary">Update ID</button>
     </form>
 
-    <!-- Skills -->
     <div class="card form-card" style="margin-bottom:14px;">
         <h3 style="font-size:.95rem;margin:0 0 10px;font-weight:600;">Your Skills</h3>
         <?php if ($workerSkills): ?>
@@ -565,7 +574,7 @@ if (!$isAjax): ?>
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="form" value="worker_remove_skill" />
                         <input type="hidden" name="skill_id" value="<?php echo $sk['id']; ?>" />
-                        <button type="submit" title="Remove skill" onclick="return confirm('Remove <?php echo addslashes(sanitize($sk['skill_name'])); ?>?')" style="border:none;background:transparent;cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 2px;color:var(--text-muted);">×</button>
+                        <button type="submit" onclick="return confirm('Remove <?php echo addslashes(sanitize($sk['skill_name'])); ?>?')" style="border:none;background:transparent;cursor:pointer;font-size:1.05rem;line-height:1;padding:0 0 0 2px;color:var(--text-muted);">×</button>
                     </form>
                 </li>
             <?php endforeach; ?>
@@ -590,9 +599,7 @@ if (!$isAjax): ?>
                 <input type="text" id="other-category-input" placeholder="e.g. Welding, Pool cleaning, Borehole drilling" />
             </div>
             <label id="skill-label">Skill</label>
-            <select id="skill-select" disabled>
-                <option value="">Select a category first</option>
-            </select>
+            <select id="skill-select" disabled><option value="">Select a category first</option></select>
             <div id="other-skill-wrap" style="display:none;">
                 <label>Specify your skill</label>
                 <input type="text" id="other-skill-input" placeholder="e.g. Arc welding, Filter cleaning" />
@@ -607,92 +614,130 @@ if (!$isAjax): ?>
 <script>
 (function() {
     var skillTaxonomy = <?php echo json_encode($skillCategories); ?>;
-    var catSel = document.getElementById('skill-category-select');
-    var skillSel = document.getElementById('skill-select');
-    var otherWrap = document.getElementById('other-skill-wrap');
-    var otherInput = document.getElementById('other-skill-input');
-    var otherCatWrap = document.getElementById('other-category-wrap');
-    var otherCatInput = document.getElementById('other-category-input');
-    var skillLabel = document.getElementById('skill-label');
-    var addBtn = document.getElementById('add-skill-button');
-    var skillList = document.getElementById('skill-list');
-    var skillsJson = document.getElementById('skills-json');
-    var saveBtn = document.getElementById('save-skills-button');
-    var pending = [];
-
+    var catSel=document.getElementById('skill-category-select'), skillSel=document.getElementById('skill-select'),
+        otherWrap=document.getElementById('other-skill-wrap'), otherInput=document.getElementById('other-skill-input'),
+        otherCatWrap=document.getElementById('other-category-wrap'), otherCatInput=document.getElementById('other-category-input'),
+        skillLabel=document.getElementById('skill-label'), addBtn=document.getElementById('add-skill-button'),
+        skillList=document.getElementById('skill-list'), skillsJson=document.getElementById('skills-json'),
+        saveBtn=document.getElementById('save-skills-button'), pending=[];
     if (!catSel) return;
-
-    function findCat(id) {
-        for (var i = 0; i < skillTaxonomy.length; i++) {
-            if (String(skillTaxonomy[i].id) === String(id)) return skillTaxonomy[i];
-        }
-        return null;
-    }
-
+    function findCat(id) { for(var i=0;i<skillTaxonomy.length;i++) if(String(skillTaxonomy[i].id)===String(id)) return skillTaxonomy[i]; return null; }
     catSel.addEventListener('change', function() {
-        otherCatWrap.style.display = 'none'; otherCatInput.value = '';
-        otherWrap.style.display = 'none'; otherInput.value = '';
-
-        if (this.value === '__other__') {
-            otherCatWrap.style.display = 'block'; otherCatInput.focus();
-            skillLabel.style.display = 'none'; skillSel.style.display = 'none'; skillSel.disabled = true;
-            otherWrap.style.display = 'block';
-            return;
-        }
-        skillLabel.style.display = ''; skillSel.style.display = ''; skillSel.innerHTML = '';
-        var cat = findCat(this.value);
-        if (!cat) { skillSel.disabled = true; skillSel.innerHTML = '<option value="">Select a category first</option>'; return; }
-        skillSel.disabled = false;
-        var blank = document.createElement('option'); blank.value = ''; blank.textContent = 'Select a skill'; skillSel.appendChild(blank);
-        cat.skills.forEach(function(s) { var o = document.createElement('option'); o.value = s; o.textContent = s; skillSel.appendChild(o); });
-        var oth = document.createElement('option'); oth.value = '__other__'; oth.textContent = 'Other (specify)'; skillSel.appendChild(oth);
+        otherCatWrap.style.display='none'; otherCatInput.value=''; otherWrap.style.display='none'; otherInput.value='';
+        if(this.value==='__other__'){ otherCatWrap.style.display='block'; otherCatInput.focus(); skillLabel.style.display='none'; skillSel.style.display='none'; skillSel.disabled=true; otherWrap.style.display='block'; return; }
+        skillLabel.style.display=''; skillSel.style.display=''; skillSel.innerHTML='';
+        var cat=findCat(this.value);
+        if(!cat){skillSel.disabled=true; skillSel.innerHTML='<option value="">Select a category first</option>'; return;}
+        skillSel.disabled=false;
+        var b=document.createElement('option'); b.value=''; b.textContent='Select a skill'; skillSel.appendChild(b);
+        cat.skills.forEach(function(s){ var o=document.createElement('option'); o.value=s; o.textContent=s; skillSel.appendChild(o); });
+        var oth=document.createElement('option'); oth.value='__other__'; oth.textContent='Other (specify)'; skillSel.appendChild(oth);
     });
-
-    skillSel.addEventListener('change', function() {
-        var isOther = this.value === '__other__';
-        otherWrap.style.display = isOther ? 'block' : 'none';
-        if (isOther) otherInput.focus();
-    });
-
+    skillSel.addEventListener('change', function(){ var io=this.value==='__other__'; otherWrap.style.display=io?'block':'none'; if(io)otherInput.focus(); });
     function renderPending() {
-        skillList.innerHTML = '';
-        saveBtn.style.display = pending.length > 0 ? 'inline-flex' : 'none';
-        pending.forEach(function(sk, idx) {
-            var li = document.createElement('li'); li.className = 'badge';
-            li.style.cssText = 'display:inline-flex;align-items:center;gap:6px;font-size:.88rem;';
-            li.textContent = (sk.category_name ? sk.category_name + ': ' : '') + sk.skill_name;
-            var btn = document.createElement('button'); btn.type = 'button'; btn.textContent = '×';
-            btn.style.cssText = 'border:none;background:transparent;cursor:pointer;font-size:1rem;padding:0 0 0 2px;color:var(--text-muted);';
-            btn.addEventListener('click', function() { pending.splice(idx, 1); renderPending(); });
-            li.appendChild(btn); skillList.appendChild(li);
-        });
-        skillsJson.value = JSON.stringify(pending);
+        skillList.innerHTML=''; saveBtn.style.display=pending.length>0?'inline-flex':'none';
+        pending.forEach(function(sk,idx){
+            var li=document.createElement('li'); li.className='badge'; li.style.cssText='display:inline-flex;align-items:center;gap:6px;font-size:.88rem;';
+            li.textContent=(sk.category_name?sk.category_name+': ':'')+sk.skill_name;
+            var btn=document.createElement('button'); btn.type='button'; btn.textContent='×'; btn.style.cssText='border:none;background:transparent;cursor:pointer;font-size:1rem;padding:0 0 0 2px;color:var(--text-muted);';
+            btn.addEventListener('click',function(){pending.splice(idx,1);renderPending();}); li.appendChild(btn); skillList.appendChild(li);
+        }); skillsJson.value=JSON.stringify(pending);
     }
-
     addBtn.addEventListener('click', function() {
-        var categoryId, categoryName, skillName;
-        if (catSel.value === '__other__') {
-            categoryName = otherCatInput.value.trim(); if (!categoryName) { otherCatInput.focus(); return; }
-            skillName    = otherInput.value.trim();    if (!skillName)    { otherInput.focus();    return; }
-            categoryId   = null;
-        } else {
-            var cat = findCat(catSel.value); if (!cat) { catSel.focus(); return; }
-            categoryId   = cat.id; categoryName = cat.name;
-            skillName    = skillSel.value === '__other__' ? otherInput.value.trim() : skillSel.value;
-            if (!skillName) { skillSel.focus(); return; }
-        }
-        var exists = pending.some(function(s) {
-            return s.category_name.toLowerCase() === categoryName.toLowerCase()
-                && s.skill_name.toLowerCase()    === skillName.toLowerCase();
-        });
-        if (!exists) { pending.push({ category_id: categoryId, category_name: categoryName, skill_name: skillName }); renderPending(); }
-        if (catSel.value === '__other__') { otherInput.value = ''; otherInput.focus(); }
-        else { otherInput.value = ''; otherWrap.style.display = 'none'; skillSel.value = ''; }
+        var cid, cn, sn;
+        if(catSel.value==='__other__'){cn=otherCatInput.value.trim();if(!cn){otherCatInput.focus();return;} sn=otherInput.value.trim();if(!sn){otherInput.focus();return;} cid=null;}
+        else{var cat=findCat(catSel.value);if(!cat){catSel.focus();return;} cid=cat.id;cn=cat.name; sn=skillSel.value==='__other__'?otherInput.value.trim():skillSel.value;if(!sn){skillSel.focus();return;}}
+        if(!pending.some(function(s){return s.category_name.toLowerCase()===cn.toLowerCase()&&s.skill_name.toLowerCase()===sn.toLowerCase();}))
+            {pending.push({category_id:cid,category_name:cn,skill_name:sn});renderPending();}
+        if(catSel.value==='__other__'){otherInput.value='';otherInput.focus();}else{otherInput.value='';otherWrap.style.display='none';skillSel.value='';}
     });
-
     renderPending();
 })();
 </script>
+
+<?php elseif ($activeSection === 'payments'): ?>
+<h2 class="sn-panel-title">💳 My Payments</h2>
+<?php if (empty($myPendingPayments) && empty($myPaidPayments) && empty($myFailedPayments)): ?>
+    <div class="empty-state">You have no platform payment history yet.</div>
+<?php else: ?>
+    <?php if (!empty($myPendingPayments)): ?>
+        <h3 class="sn-sub-title" style="color:#f59e0b;">⏳ Pending</h3>
+        <?php foreach ($myPendingPayments as $p): ?>
+            <?php $isPs = ($p['gateway'] ?? 'manual') === 'paystack'; ?>
+            <div style="padding:14px;border:2px solid #f59e0b;border-radius:10px;margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                    <div>
+                        <strong><?php echo sanitize($pyTypeLabel[$p['payment_type']] ?? $p['payment_type']); ?></strong>
+                        <?php if ($p['package_name'] && $p['package_name'] !== '—'): ?> — <?php echo sanitize($p['package_name']); ?><?php endif; ?>
+                        <?php if ($p['job_title']): ?><br><span class="meta">📋 <?php echo sanitize(mb_strimwidth($p['job_title'],0,50,'…')); ?></span><?php endif; ?>
+                    </div>
+                    <strong style="color:var(--primary);white-space:nowrap;">GH₵ <?php echo number_format($p['amount'],2); ?></strong>
+                </div>
+                <div style="margin-top:10px;padding:10px;background:var(--surface);border-radius:8px;">
+                    <?php if ($isPs): ?>
+                        <p style="margin:0 0 4px;font-size:.85rem;color:#f59e0b;">🔒 Paystack payment initiated — awaiting confirmation</p>
+                    <?php endif; ?>
+                    <p class="meta" style="margin:0;font-size:.8rem;">Ref: <?php echo sanitize($p['reference_code']); ?> · <?php echo date('d M Y, H:i', strtotime($p['created_at'])); ?></p>
+                </div>
+            </div>
+        <?php endforeach; ?>
+        <div class="sn-sub-sep" style="margin:14px 0;"></div>
+    <?php endif; ?>
+
+    <?php if (!empty($myPaidPayments)): ?>
+        <h3 class="sn-sub-title" style="color:#16a34a;">✓ Confirmed</h3>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">
+        <?php foreach ($myPaidPayments as $p): ?>
+            <div class="py-row">
+                <div>
+                    <strong style="font-size:.93rem;"><?php echo sanitize($pyTypeLabel[$p['payment_type']] ?? $p['payment_type']); ?></strong>
+                    <?php if ($p['package_name'] && $p['package_name'] !== '—'): ?><span class="meta"> — <?php echo sanitize($p['package_name']); ?></span><?php endif; ?>
+                    <?php if ($p['job_title']): ?><br><span class="meta">📋 <?php echo sanitize(mb_strimwidth($p['job_title'],0,40,'…')); ?></span><?php endif; ?>
+                    <br><span class="meta" style="font-size:.8rem;">Ref: <?php echo sanitize($p['reference_code']); ?> · <?php echo date('d M Y', strtotime($p['paid_at'] ?: $p['created_at'])); ?></span>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                    <strong style="color:var(--primary);">GH₵ <?php echo number_format($p['amount'],2); ?></strong>
+                    <br><span class="status status-open" style="font-size:.72rem;">PAID</span>
+                    <?php if (!empty($p['paystack_reference'])): ?>
+                        <br><a href="platform_receipt.php?ref=<?php echo urlencode($p['paystack_reference']); ?>" style="font-size:.75rem;color:var(--primary);">View receipt</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+        <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+
+    <?php if (!empty($myFailedPayments)): ?>
+        <h3 class="sn-sub-title" style="color:#c0392b;">✗ Failed / Abandoned</h3>
+        <p class="meta">These payments did not complete. Contact support if you believe this is an error.</p>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+        <?php foreach ($myFailedPayments as $p): ?>
+            <div class="py-row" style="opacity:.75;">
+                <div>
+                    <strong style="font-size:.93rem;"><?php echo sanitize($pyTypeLabel[$p['payment_type']] ?? $p['payment_type']); ?></strong>
+                    <br><span class="meta" style="font-size:.8rem;">Ref: <?php echo sanitize($p['reference_code']); ?> · <?php echo date('d M Y', strtotime($p['created_at'])); ?></span>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                    <strong>GH₵ <?php echo number_format($p['amount'],2); ?></strong>
+                    <br><span class="status status-cancelled" style="font-size:.72rem;"><?php echo strtoupper($p['status']); ?></span>
+                </div>
+            </div>
+        <?php endforeach; ?>
+        </div>
+    <?php endif; ?>
+<?php endif; ?>
+
+<?php elseif ($activeSection === 'password'): ?>
+<h2 class="sn-panel-title">🔑 Change Password</h2>
+<form class="card form-card" method="post" action="settings.php?section=password">
+    <?php echo csrf_field(); ?>
+    <input type="hidden" name="form" value="password" />
+    <label>Current password</label>
+    <input type="password" name="current_password" placeholder="Required to set a new password" />
+    <label>New password</label>
+    <input type="password" name="new_password" minlength="6" placeholder="At least 6 characters" />
+    <button type="submit" class="button button-primary">Change password</button>
+</form>
 
 <?php elseif ($activeSection === 'privacy'): ?>
 <h2 class="sn-panel-title">🔒 Privacy &amp; Security</h2>
@@ -706,33 +751,135 @@ if (!$isAjax): ?>
     </form>
 </section>
 
+<?php elseif ($activeSection === 'privacypolicy'): ?>
+<h2 class="sn-panel-title">📄 Privacy Policy</h2>
+<div class="card sn-scroll-box">
+    <p style="margin:0 0 16px;"><a href="privacy.php" target="_blank" style="color:var(--primary);">Open full page ↗</a> &nbsp;·&nbsp; Last updated: January 2025</p>
+    <h3>Information We Collect</h3>
+    <p>We collect your name, email address, phone number, town, and GPS location (optional). Workers additionally provide a profile bio, ID document type and number, and ID photo for verification. All data is stored on secured servers.</p>
+    <h3>How We Use Your Data</h3>
+    <p>Your data is used to: match customers with nearby workers; process payments via Paystack; send job and account notifications; and maintain platform trust and safety. We do not sell your personal information to third parties.</p>
+    <h3>Payments &amp; Escrow</h3>
+    <p>All payments are processed by <strong>Paystack</strong>. We store transaction IDs, amounts, and statuses for your records but never handle raw card or bank details. Escrow funds are held by the platform until job completion and are then released to the worker.</p>
+    <h3>Data Sharing</h3>
+    <p>Your contact details (name and phone number) are shared only with users you are actively transacting with on a specific job. Your ID documents are reviewed only by the AkuapemHub admin team and are never publicly visible.</p>
+    <h3>Data Retention</h3>
+    <p>Financial transaction records are retained for 7 years in accordance with Ghana Revenue Authority regulations. Account profile data is deleted within 30 days of account closure upon request.</p>
+    <h3>Your Rights</h3>
+    <p>You may update your information at any time in these Settings. To request account and data deletion, use the Privacy &amp; Security section above, or contact us directly.</p>
+    <h3>Cookies</h3>
+    <p>We use only essential session cookies required for login and security (CSRF protection). No advertising or tracking cookies are used.</p>
+    <h3>Third-Party Services</h3>
+    <p>We use <strong>Paystack</strong> for payment processing and <strong>WhatsApp Business API</strong> for optional job notifications. These services have their own privacy policies.</p>
+    <h3>Children</h3>
+    <p>AkuapemHub is intended for users aged 18 and over. We do not knowingly collect data from minors.</p>
+    <h3>Contact</h3>
+    <p>For privacy concerns, email us or use the <a href="contact.php" style="color:var(--primary);">Contact page</a>.</p>
+</div>
+
+<?php elseif ($activeSection === 'terms'): ?>
+<h2 class="sn-panel-title">📋 Terms of Service</h2>
+<div class="card sn-scroll-box">
+    <p style="margin:0 0 16px;"><a href="terms.php" target="_blank" style="color:var(--primary);">Open full page ↗</a> &nbsp;·&nbsp; Last updated: January 2025</p>
+    <h3>1. Acceptance</h3>
+    <p>By using AkuapemHub you agree to these terms. If you do not agree, please do not use the platform.</p>
+    <h3>2. Eligibility</h3>
+    <p>You must be at least 18 years old and legally capable of entering contracts. By registering you confirm this.</p>
+    <h3>3. Your Role</h3>
+    <p><strong>Customers</strong> post jobs and hire workers. <strong>Workers</strong> apply for jobs and perform services. You may hold one role at a time but can switch between them.</p>
+    <h3>4. Job Postings</h3>
+    <p>Job descriptions must be accurate and lawful. Misleading or fraudulent postings will be removed without refund. A posting fee may apply depending on platform settings.</p>
+    <h3>5. Applications &amp; Hiring</h3>
+    <p>Workers apply for open jobs. Customers review applications and select workers. Acceptance of an application creates a binding agreement between customer and worker.</p>
+    <h3>6. Payments &amp; Escrow</h3>
+    <p>Customers fund escrow before work begins. Funds are released to the worker after job completion. The platform charges a commission on escrow payments. All payments are processed by Paystack.</p>
+    <h3>7. Disputes</h3>
+    <p>If a dispute arises, both parties should first communicate directly. Contact AkuapemHub support if resolution cannot be reached. Platform decisions are final.</p>
+    <h3>8. Prohibited Activities</h3>
+    <p>You may not: use the platform for illegal activities; harass or defraud other users; post false reviews; attempt to bypass platform fees; or create multiple accounts.</p>
+    <h3>9. Verification</h3>
+    <p>Workers may submit identity documents for verification. Verification is not a guarantee of trustworthiness but indicates the worker's identity has been reviewed by our team.</p>
+    <h3>10. Liability</h3>
+    <p>AkuapemHub is a marketplace and is not a party to agreements between customers and workers. We are not liable for service quality, property damage, or disputes arising from jobs. Use the platform at your own risk.</p>
+    <h3>11. Termination</h3>
+    <p>We reserve the right to suspend or terminate accounts that violate these terms without prior notice.</p>
+    <h3>12. Governing Law</h3>
+    <p>These terms are governed by the laws of the Republic of Ghana. Any disputes shall be resolved in Ghanaian courts.</p>
+    <h3>Contact</h3>
+    <p>Questions about these terms? Use the <a href="contact.php" style="color:var(--primary);">Contact page</a>.</p>
+</div>
+
 <?php elseif ($activeSection === 'help'): ?>
 <h2 class="sn-panel-title">❓ Help &amp; Support</h2>
 <section class="card form-card">
-    <p class="meta">Have a question, found a bug, or need help with a job or payment? Reach out and our team will get back to you.</p>
+    <p class="meta">Have a question, found a bug, or need help with a job or payment? Reach out and our team will get back to you as soon as possible.</p>
     <a href="contact.php" class="button button-primary" style="margin-bottom:10px;">Contact support</a>
-    <a href="mailto:<?php echo sanitize(ADMIN_EMAIL); ?>" class="button button-secondary">Email support</a>
+    <a href="mailto:<?php echo sanitize(ADMIN_EMAIL); ?>" class="button button-secondary">Email support directly</a>
 </section>
-<section class="card form-card" style="margin-top:0;">
-    <p style="margin:0 0 10px;font-weight:600;font-size:.9rem;">Legal &amp; policies</p>
-    <a href="privacy.php" class="list-row" style="display:block;padding:10px 0;border-bottom:1px solid var(--border);">Privacy Policy</a>
-    <a href="terms.php"   class="list-row" style="display:block;padding:10px 0;">Terms of Service</a>
+<section class="card" style="padding:16px 18px;margin-top:0;">
+    <p style="margin:0 0 4px;font-size:.85rem;font-weight:600;color:var(--text-muted);">Quick links</p>
+    <a href="dashboard.php"   class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">← Back to Dashboard</a>
+    <a href="find_workers.php" class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Find Workers</a>
+    <a href="notifications.php" class="list-row" style="display:block;padding:9px 0;">Notifications</a>
 </section>
 
 <?php elseif ($activeSection === 'about'): ?>
 <h2 class="sn-panel-title">ℹ️ About AkuapemHub</h2>
-<section class="card form-card">
-    <p class="meta">AkuapemHub connects people in Akuapem with trusted workers and services — post errands, skilled work, and micro jobs, or find verified workers nearby.</p>
-    <p class="meta">Version 1.0 · Made for the Akuapem community.</p>
-</section>
-<section class="card form-card" style="margin-top:0;">
-    <a href="contact.php" class="list-row" style="display:block;padding:10px 0;border-bottom:1px solid var(--border);">Contact us</a>
-    <a href="privacy.php" class="list-row" style="display:block;padding:10px 0;border-bottom:1px solid var(--border);">Privacy Policy</a>
-    <a href="terms.php"   class="list-row" style="display:block;padding:10px 0;">Terms of Service</a>
-</section>
+
+<div class="card" style="padding:20px 22px;margin-bottom:0;">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
+        <span style="font-size:2.4rem;line-height:1;">🏔️</span>
+        <div>
+            <h3 style="margin:0 0 3px;font-size:1.1rem;">AkuapemHub</h3>
+            <span class="meta">Version 1.0 · Built for the Akuapem community</span>
+        </div>
+    </div>
+    <p style="margin:0;font-size:.92rem;color:var(--text);line-height:1.7;">AkuapemHub connects people across the Akuapem ridge with skilled workers and service providers. Whether you need a plumber, electrician, cleaner, caterer, delivery rider, or any other service — AkuapemHub helps you find trusted help close to home.</p>
+</div>
+
+<div class="card" style="margin-top:10px;padding:20px 22px;margin-bottom:0;">
+    <h3 style="font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:0 0 12px;">What you can do</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="padding:12px;background:var(--surface);border-radius:8px;font-size:.88rem;">
+            <div style="font-size:1.3rem;margin-bottom:4px;">📋</div>
+            <strong>Post jobs</strong>
+            <p class="meta" style="margin:2px 0 0;">Describe what you need and let workers apply</p>
+        </div>
+        <div style="padding:12px;background:var(--surface);border-radius:8px;font-size:.88rem;">
+            <div style="font-size:1.3rem;margin-bottom:4px;">🔍</div>
+            <strong>Find workers</strong>
+            <p class="meta" style="margin:2px 0 0;">Browse verified local professionals by skill</p>
+        </div>
+        <div style="padding:12px;background:var(--surface);border-radius:8px;font-size:.88rem;">
+            <div style="font-size:1.3rem;margin-bottom:4px;">💰</div>
+            <strong>Secure escrow</strong>
+            <p class="meta" style="margin:2px 0 0;">Pay safely — funds released on completion</p>
+        </div>
+        <div style="padding:12px;background:var(--surface);border-radius:8px;font-size:.88rem;">
+            <div style="font-size:1.3rem;margin-bottom:4px;">✅</div>
+            <strong>Verified workers</strong>
+            <p class="meta" style="margin:2px 0 0;">ID-checked workers for extra peace of mind</p>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:10px;padding:16px 22px;margin-bottom:0;">
+    <h3 style="font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:0 0 10px;">Platform info</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.88rem;">
+        <div><span class="meta">Version</span><strong style="display:block;">1.0</strong></div>
+        <div><span class="meta">Coverage</span><strong style="display:block;">Akuapem Ridge, Ghana</strong></div>
+        <div><span class="meta">Currency</span><strong style="display:block;">Ghana Cedi (GH₵)</strong></div>
+        <div><span class="meta">Payments</span><strong style="display:block;">Paystack</strong></div>
+    </div>
+</div>
+
+<div class="card" style="margin-top:10px;padding:14px 18px;">
+    <a href="contact.php"  class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Contact us</a>
+    <a href="privacy.php"  class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Privacy Policy</a>
+    <a href="terms.php"    class="list-row" style="display:block;padding:9px 0;">Terms of Service</a>
+</div>
 
 <?php else: ?>
-<!-- No section selected — welcome (desktop only; mobile shows sidebar as the menu) -->
 <div class="sn-welcome">
     <span class="sn-welcome-icon">⚙️</span>
     <strong style="font-size:1rem;">Settings</strong>
@@ -748,33 +895,22 @@ if (!$isAjax): ?>
     <script src="assets/js/image-compress.js"></script>
     <script>
     (function() {
-        // Re-execute <script> tags injected via innerHTML
         function runInjectedScripts(container) {
             container.querySelectorAll('script').forEach(function(old) {
-                var s = document.createElement('script');
-                s.textContent = old.textContent;
-                document.head.appendChild(s);
-                document.head.removeChild(s);
+                var s = document.createElement('script'); s.textContent = old.textContent;
+                document.head.appendChild(s); document.head.removeChild(s);
             });
         }
-
-        // Setup image compress for profile photo (call after any panel load)
         function initImageCompress(container) {
             var input = (container || document).querySelector('input[name="profile_photo"]');
-            if (input && typeof setupImageInput === 'function') {
-                setupImageInput(input, 800, 800, 0.82);
-            }
+            if (input && typeof setupImageInput === 'function') setupImageInput(input, 800, 800, 0.82);
         }
-
-        // Load a panel via AJAX and inject it into #sn-content
         function loadPanel(section) {
             var content = document.getElementById('sn-content');
             content.innerHTML = '<div class="sn-loading">Loading…</div>';
-
             document.querySelectorAll('.sn-nav .sn-link[data-section]').forEach(function(a) { a.classList.remove('sn-active'); });
             var active = document.querySelector('.sn-nav a[data-section="' + section + '"]');
             if (active) active.classList.add('sn-active');
-
             fetch('settings.php?section=' + encodeURIComponent(section) + '&ajax=1')
                 .then(function(r) { return r.text(); })
                 .then(function(html) {
@@ -787,22 +923,16 @@ if (!$isAjax): ?>
                     content.innerHTML = '<div class="alert alert-error">Failed to load. Please try again.</div>';
                 });
         }
-
-        // Intercept sidebar nav clicks on desktop
         document.querySelectorAll('.sn-nav a[data-section]').forEach(function(link) {
             link.addEventListener('click', function(e) {
-                if (window.innerWidth < 760) return; // mobile: let browser navigate
+                if (window.innerWidth < 760) return;
                 e.preventDefault();
                 loadPanel(this.dataset.section);
             });
         });
-
-        // On desktop with no section: auto-load Edit Profile
         if (window.innerWidth >= 760 && !<?php echo json_encode((bool)$activeSection); ?>) {
-            loadPanel('account');
+            loadPanel('profile');
         }
-
-        // On initial page load with section (e.g. after form POST): init image compress
         if (<?php echo json_encode((bool)$activeSection); ?>) {
             initImageCompress(document.getElementById('sn-content'));
         }
