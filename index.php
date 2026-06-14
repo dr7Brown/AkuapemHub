@@ -41,5 +41,11 @@ if ($user) {
             </article>
         </section>
     </main>
+    <footer style="text-align:center;padding:20px 16px 32px;font-size:.8rem;color:#6b7280;border-top:1px solid #e5e7eb;margin-top:20px;">
+        &copy; <?php echo date('Y'); ?> AkuapemHub &nbsp;·&nbsp;
+        <a href="contact.php" style="color:#0f766e;">Contact</a> &nbsp;·&nbsp;
+        <a href="privacy.php" style="color:#0f766e;">Privacy Policy</a> &nbsp;·&nbsp;
+        <a href="terms.php" style="color:#0f766e;">Terms of Service</a>
+    </footer>
 </body>
 </html>

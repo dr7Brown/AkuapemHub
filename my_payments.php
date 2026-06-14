@@ -38,11 +38,13 @@ $paid      = array_filter($payments, fn($p) => $p['status'] === 'paid');
 $failed    = array_filter($payments, fn($p) => in_array($p['status'], ['failed', 'abandoned', 'refunded'], true));
 
 $typeLabel = [
-    'featured_job'    => 'Featured Job',
-    'featured_worker' => 'Featured Profile',
-    'verification'    => 'Verification Badge',
-    'job_post'        => 'Job Posting Fee',
-    'worker_service'  => 'Service Listing',
+    'featured_job'       => 'Featured Job',
+    'featured_worker'    => 'Featured Profile',
+    'verification'       => 'Verification Badge',
+    'job_post'           => 'Job Posting Fee',
+    'worker_service'     => 'Service Listing',
+    'escrow_payment'     => 'Escrow Payment',
+    'escrow_with_posting'=> 'Escrow + Posting Fee',
 ];
 ?>
 <!DOCTYPE html>
@@ -104,13 +106,16 @@ $typeLabel = [
                             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:12px;background:var(--surface);border-radius:8px;border:1px solid var(--border);">
                                 <div>
                                     <strong style="font-size:0.93rem;"><?php echo sanitize($typeLabel[$p['payment_type']] ?? $p['payment_type']); ?></strong>
-                                    — <?php echo sanitize($p['package_name']); ?>
+                                    <?php if ($p['package_name']): ?>— <?php echo sanitize($p['package_name']); ?><?php endif; ?>
                                     <?php if ($p['job_title']): ?><br><span class="meta">📋 <?php echo sanitize(substr($p['job_title'], 0, 40)); ?></span><?php endif; ?>
                                     <br><span class="meta" style="font-size:0.8rem;">Ref: <?php echo sanitize($p['reference_code']); ?> · <?php echo sanitize(date('d M Y', strtotime($p['paid_at'] ?: $p['created_at']))); ?></span>
                                 </div>
                                 <div style="text-align:right;flex-shrink:0;">
                                     <strong style="color:var(--primary);">GH₵ <?php echo number_format($p['amount'], 2); ?></strong>
                                     <br><span class="status status-open" style="font-size:0.72rem;">PAID</span>
+                                    <?php if (!empty($p['paystack_reference'])): ?>
+                                        <br><a href="platform_receipt.php?ref=<?php echo urlencode($p['paystack_reference']); ?>" style="font-size:0.75rem;color:var(--primary);">View receipt</a>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         <?php endforeach; ?>

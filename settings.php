@@ -650,13 +650,24 @@ $activeSection = isset($sectionMeta[$section]) ? $section : '';
         <?php elseif ($activeSection === 'help'): ?>
             <section class="card form-card">
                 <p class="meta">Have a question, found a bug, or need help with a job or payment? Reach out and our team will get back to you.</p>
+                <a href="contact.php" class="button button-primary" style="margin-bottom:10px;">Contact support</a>
                 <a href="mailto:<?php echo sanitize(ADMIN_EMAIL); ?>" class="button button-secondary">Email support</a>
+            </section>
+            <section class="card form-card" style="margin-top:0;">
+                <p style="margin:0 0 10px;font-weight:600;font-size:.9rem;">Legal &amp; policies</p>
+                <a href="privacy.php" class="list-row" style="display:block;padding:10px 0;border-bottom:1px solid var(--border);">Privacy Policy</a>
+                <a href="terms.php" class="list-row" style="display:block;padding:10px 0;">Terms of Service</a>
             </section>
 
         <?php elseif ($activeSection === 'about'): ?>
             <section class="card form-card">
                 <p class="meta">AkuapemHub connects people in Akuapem with trusted workers and services — post errands, skilled work, and micro jobs, or find verified workers nearby.</p>
                 <p class="meta">Version 1.0 · Made for the Akuapem community.</p>
+            </section>
+            <section class="card form-card" style="margin-top:0;">
+                <a href="contact.php" class="list-row" style="display:block;padding:10px 0;border-bottom:1px solid var(--border);">Contact us</a>
+                <a href="privacy.php" class="list-row" style="display:block;padding:10px 0;border-bottom:1px solid var(--border);">Privacy Policy</a>
+                <a href="terms.php" class="list-row" style="display:block;padding:10px 0;">Terms of Service</a>
             </section>
         <?php endif; ?>
     </main>

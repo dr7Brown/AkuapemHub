@@ -18,13 +18,22 @@ if ($result['success']) {
     $payment = $result['payment'];
 
     if (!empty($result['already_paid'])) {
+        // Already confirmed — skip receipt, go straight to relevant page
+        $alreadyRedirects = [
+            'featured_job'        => 'request_detail.php?id=' . $payment['reference_id'],
+            'featured_worker'     => 'worker_profile.php',
+            'verification'        => 'worker_profile.php',
+            'job_post'            => 'dashboard.php',
+            'worker_service'      => 'worker_profile.php',
+            'escrow_payment'      => 'request_detail.php?id=' . $payment['reference_id'],
+            'escrow_with_posting' => 'request_detail.php?id=' . $payment['reference_id'],
+        ];
         flash('Payment already confirmed.', 'info');
-        $redirect = 'dashboard.php';
-    } elseif (($payment['payment_type'] ?? '') === 'escrow_with_posting') {
-        flash('Payment confirmed! Your job has been submitted for admin review.', 'success');
-        $redirect = 'request_detail.php?id=' . (int)$payment['reference_id'];
+        $redirect = $alreadyRedirects[$payment['payment_type']] ?? 'dashboard.php';
     } elseif (($payment['payment_type'] ?? '') === 'escrow_payment') {
-        $jobId = (int)$payment['reference_id'];
+        // Special case: if posting fee is still pending and no combined payment was used,
+        // skip the receipt and take the user straight to pay posting fee
+        $jobId  = (int)$payment['reference_id'];
         $pfStmt = $pdo->prepare("SELECT posting_fee_status FROM service_requests WHERE id = ?");
         $pfStmt->execute([$jobId]);
         $pfRow = $pfStmt->fetch();
@@ -32,19 +41,11 @@ if ($result['success']) {
             flash('Escrow payment confirmed! Now pay the job posting fee to submit your job for review.', 'info');
             $redirect = 'pay_job_post.php?id=' . $jobId;
         } else {
-            flash('Escrow payment confirmed! Your job is now pending admin review.', 'success');
-            $redirect = 'request_detail.php?id=' . $jobId;
+            $redirect = 'platform_receipt.php?ref=' . urlencode($payment['paystack_reference']);
         }
     } else {
-        flash('Payment confirmed! Your feature has been activated.', 'success');
-        $redirects = [
-            'featured_job'    => 'request_detail.php?id=' . $payment['reference_id'],
-            'featured_worker' => 'worker_profile.php',
-            'verification'    => 'worker_profile.php',
-            'job_post'        => 'dashboard.php',
-            'worker_service'  => 'worker_profile.php',
-        ];
-        $redirect = $redirects[$payment['payment_type']] ?? 'dashboard.php';
+        // All other payment types — show receipt
+        $redirect = 'platform_receipt.php?ref=' . urlencode($payment['paystack_reference']);
     }
     header('Location: ' . $redirect);
 } else {
