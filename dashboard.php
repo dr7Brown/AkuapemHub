@@ -180,12 +180,57 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
             <a href="notifications.php" class="bottom-nav-item" style="flex: none; flex-direction: row; gap: 6px; color: var(--text);">
                 <span class="nav-icon<?php echo $notificationCount ? ' nav-badge' : ''; ?>" <?php echo $notificationCount ? 'data-count="' . (int)$notificationCount . '"' : ''; ?>>🔔</span>
             </a>
-            <?php if (!empty($user['profile_photo'])): ?>
-                <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile picture" class="avatar" />
-            <?php else: ?>
-                <span class="avatar"><?php echo sanitize(strtoupper(substr(display_name($user), 0, 1))); ?></span>
-            <?php endif; ?>
-            <a href="logout.php" title="Logout" style="display:flex;align-items:center;color:var(--text-muted);font-size:1.2rem;text-decoration:none;" onclick="return confirm('Sign out?')">🚪</a>
+            <!-- Avatar with dropdown -->
+            <div id="avatar-wrap" style="position:relative;">
+                <button id="avatar-btn" aria-expanded="false" aria-haspopup="true"
+                        style="background:none;border:none;padding:0;cursor:pointer;display:flex;align-items:center;border-radius:50%;">
+                    <?php if (!empty($user['profile_photo'])): ?>
+                        <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile" class="avatar" style="pointer-events:none;" />
+                    <?php else: ?>
+                        <span class="avatar" style="pointer-events:none;"><?php echo sanitize(strtoupper(substr(display_name($user), 0, 1))); ?></span>
+                    <?php endif; ?>
+                </button>
+                <div id="avatar-menu" role="menu"
+                     style="display:none;position:absolute;right:0;top:calc(100% + 8px);min-width:180px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:999;overflow:hidden;">
+                    <div style="padding:12px 14px 10px;border-bottom:1px solid #f1f5f9;">
+                        <strong style="display:block;font-size:.88rem;"><?php echo sanitize(display_name($user)); ?></strong>
+                        <span style="font-size:.75rem;color:#6b7280;"><?php echo sanitize($user['email']); ?></span>
+                    </div>
+                    <?php if ($user['role'] === 'worker'): ?>
+                    <a href="worker_profile.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                        <span>👤</span> My Worker Profile
+                    </a>
+                    <?php else: ?>
+                    <a href="dashboard.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                        <span>🏠</span> Dashboard
+                    </a>
+                    <?php endif; ?>
+                    <a href="settings.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                        <span>⚙️</span> Settings
+                    </a>
+                    <div style="border-top:1px solid #f1f5f9;"></div>
+                    <a href="logout.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:#c0392b;text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background=''">
+                        <span>🚪</span> Logout
+                    </a>
+                </div>
+            </div>
+            <script>
+            (function() {
+                var btn  = document.getElementById('avatar-btn');
+                var menu = document.getElementById('avatar-menu');
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var open = menu.style.display === 'block';
+                    menu.style.display = open ? 'none' : 'block';
+                    btn.setAttribute('aria-expanded', String(!open));
+                });
+                document.addEventListener('click', function() {
+                    menu.style.display = 'none';
+                    btn.setAttribute('aria-expanded', 'false');
+                });
+                menu.addEventListener('click', function(e) { e.stopPropagation(); });
+            })();
+            </script>
         </div>
     </header>
     <main class="page-shell">

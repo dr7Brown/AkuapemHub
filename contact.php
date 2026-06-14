@@ -26,6 +26,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pageTitle = 'Contact Us — ' . APP_NAME;
+
+// Contact info from admin-managed settings, with sensible fallbacks
+$ci = [
+    'email'   => get_platform_setting('contact_email')    ?: MAIL_FROM,
+    'phone'   => get_platform_setting('contact_phone')    ?: '',
+    'whatsapp'=> get_platform_setting('contact_whatsapp') ?: '',
+    'address' => get_platform_setting('contact_address')  ?: 'Akuapem Area, Eastern Region, Ghana',
+    'hours'   => get_platform_setting('contact_hours')    ?: 'Monday – Saturday, 8:00 AM – 6:00 PM GMT',
+    'tagline' => get_platform_setting('contact_tagline')  ?: "We're here to help. Reach out through any of the channels below, or fill in the form and we'll get back to you.",
+];
+$waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci['whatsapp']) : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -53,7 +64,7 @@ $pageTitle = 'Contact Us — ' . APP_NAME;
     </header>
     <div class="static-shell">
         <h1 style="margin:0 0 6px;font-size:1.6rem;">Contact Us</h1>
-        <p class="meta" style="margin:0 0 24px;">We're here to help. Reach out through any of the channels below, or fill in the form and we'll get back to you.</p>
+        <p class="meta" style="margin:0 0 24px;"><?php echo sanitize($ci['tagline']); ?></p>
 
         <div class="contact-grid">
             <!-- Contact info -->
@@ -65,10 +76,29 @@ $pageTitle = 'Contact Us — ' . APP_NAME;
                         <div class="info-icon">📧</div>
                         <div>
                             <h4>Email</h4>
-                            <p><a href="mailto:<?php echo sanitize(MAIL_FROM); ?>"><?php echo sanitize(MAIL_FROM); ?></a></p>
+                            <p><a href="mailto:<?php echo sanitize($ci['email']); ?>"><?php echo sanitize($ci['email']); ?></a></p>
                         </div>
                     </div>
 
+                    <?php if ($ci['phone']): ?>
+                    <div class="info-item">
+                        <div class="info-icon">📞</div>
+                        <div>
+                            <h4>Phone</h4>
+                            <p><a href="tel:<?php echo sanitize(preg_replace('/[^0-9+]/', '', $ci['phone'])); ?>"><?php echo sanitize($ci['phone']); ?></a></p>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if ($ci['whatsapp']): ?>
+                    <div class="info-item">
+                        <div class="info-icon">💬</div>
+                        <div>
+                            <h4>WhatsApp support</h4>
+                            <p><a href="<?php echo sanitize($waLink); ?>" target="_blank" rel="noopener"><?php echo sanitize($ci['whatsapp']); ?></a><br><span style="font-size:.82rem;color:var(--text-muted);">Faster response during business hours</span></p>
+                        </div>
+                    </div>
+                    <?php else: ?>
                     <div class="info-item">
                         <div class="info-icon">💬</div>
                         <div>
@@ -76,12 +106,13 @@ $pageTitle = 'Contact Us — ' . APP_NAME;
                             <p>Reach us on WhatsApp for faster response during business hours.</p>
                         </div>
                     </div>
+                    <?php endif; ?>
 
                     <div class="info-item">
                         <div class="info-icon">📍</div>
                         <div>
                             <h4>Location</h4>
-                            <p>Akuapem Area, Eastern Region<br>Ghana, West Africa</p>
+                            <p><?php echo nl2br(sanitize($ci['address'])); ?></p>
                         </div>
                     </div>
 
@@ -89,7 +120,7 @@ $pageTitle = 'Contact Us — ' . APP_NAME;
                         <div class="info-icon">🕐</div>
                         <div>
                             <h4>Support hours</h4>
-                            <p>Monday – Saturday<br>8:00 AM – 6:00 PM GMT</p>
+                            <p><?php echo nl2br(sanitize($ci['hours'])); ?></p>
                         </div>
                     </div>
                 </div>
@@ -164,7 +195,7 @@ $pageTitle = 'Contact Us — ' . APP_NAME;
                         </form>
 
                         <p class="meta" style="margin:12px 0 0;font-size:.8rem;text-align:center;">
-                            Or email us directly at <a href="mailto:<?php echo sanitize(MAIL_FROM); ?>"><?php echo sanitize(MAIL_FROM); ?></a>
+                            Or email us directly at <a href="mailto:<?php echo sanitize($ci['email']); ?>"><?php echo sanitize($ci['email']); ?></a>
                         </p>
                     <?php endif; ?>
                 </div>
