@@ -284,6 +284,48 @@ function activatePurchasedFeature(array $payment): void {
                 'info'
             );
             break;
+
+        case 'escrow_with_posting':
+            $jobId = (int)$payment['reference_id'];
+
+            // Mark escrow as held
+            $pdo->prepare("UPDATE escrow_payments
+                SET status = 'held', platform_payment_id = ?, paystack_reference = ?, paid_at = NOW()
+                WHERE job_id = ? AND status = 'awaiting_payment'")
+                ->execute([$payment['id'], $payment['paystack_reference'], $jobId]);
+
+            // Move job to pending; mark both payment modes satisfied in one shot
+            $pdo->prepare("UPDATE service_requests
+                SET status = 'pending', payment_status = 'escrowed', posting_fee_status = 'paid', updated_at = NOW()
+                WHERE id = ? AND status = 'pending_payment'")
+                ->execute([$jobId]);
+
+            // Credit multi-post packages (same logic as job_post)
+            if (!empty($payment['package_id'])) {
+                $pkg = $pdo->prepare("SELECT post_count FROM job_posting_packages WHERE id = ?");
+                $pkg->execute([$payment['package_id']]);
+                $pkg = $pkg->fetch();
+                $postCount = $pkg ? (int)$pkg['post_count'] : 1;
+                if ($postCount > 1) {
+                    $pdo->prepare('INSERT INTO job_post_credits (user_id, payment_id, posts_total, posts_remaining, created_at) VALUES (?,?,?,?,NOW())')
+                        ->execute([$payment['user_id'], $payment['id'], $postCount, $postCount - 1]);
+                }
+            }
+
+            $jobRow = $pdo->prepare("SELECT title FROM service_requests WHERE id = ?");
+            $jobRow->execute([$jobId]);
+            $jobRow = $jobRow->fetch();
+            $jobTitle = $jobRow ? $jobRow['title'] : "Job #{$jobId}";
+
+            notify_user($payment['user_id'], '💳 Payment confirmed — job submitted',
+                "Your escrow and posting fee payment for \"{$jobTitle}\" has been received. The job is pending admin review — you'll be notified once it goes live.",
+                'success');
+            notify_admins_and_managers(
+                'New escrow job awaiting approval',
+                "Job #{$jobId} \"{$jobTitle}\" was posted with escrow (GH₵ " . number_format($payment['amount'], 2) . ") held and posting fee paid. Review and approve it in the admin panel.",
+                'info'
+            );
+            break;
     }
 
     // Referral milestone: first payment made by a referred user

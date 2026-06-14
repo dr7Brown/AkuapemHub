@@ -20,6 +20,9 @@ if ($result['success']) {
     if (!empty($result['already_paid'])) {
         flash('Payment already confirmed.', 'info');
         $redirect = 'dashboard.php';
+    } elseif (($payment['payment_type'] ?? '') === 'escrow_with_posting') {
+        flash('Payment confirmed! Your job has been submitted for admin review.', 'success');
+        $redirect = 'request_detail.php?id=' . (int)$payment['reference_id'];
     } elseif (($payment['payment_type'] ?? '') === 'escrow_payment') {
         $jobId = (int)$payment['reference_id'];
         $pfStmt = $pdo->prepare("SELECT posting_fee_status FROM service_requests WHERE id = ?");
