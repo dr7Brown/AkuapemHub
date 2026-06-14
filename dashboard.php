@@ -311,7 +311,7 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                         <?php endif; ?>
                     </div>
                 </div>
-            <?php elseif ($listingRequired): ?>
+            <?php elseif ($listingRequired && $svcFeeStatus !== 'free'): ?>
                 <div class="alert alert-info" style="margin-bottom:8px;font-size:0.9rem;">
                     A service listing fee is required to appear in Find Workers.
                     <a href="pay_worker_service.php" style="color:var(--primary);margin-left:4px;">Pay listing fee →</a>
