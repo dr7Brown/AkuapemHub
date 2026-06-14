@@ -117,6 +117,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <td style="text-align:right;font-weight:700;font-size:1.15rem;color:var(--primary);">GH₵ <?php echo number_format($escrow['gross_amount'], 2); ?></td>
                 </tr>
             </table>
+            <?php if (is_feature_paid('enable_paid_job_posting') && ($job['posting_fee_status'] ?? 'pending') === 'pending'): ?>
+                <p class="meta" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+                    ⓘ After this payment a <strong>job posting fee</strong> will also be required before your job goes live for admin review.
+                </p>
+            <?php endif; ?>
         </section>
 
         <section class="card" style="margin-bottom:16px;background:var(--surface-muted);">

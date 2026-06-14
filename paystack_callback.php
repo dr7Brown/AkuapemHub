@@ -19,21 +19,30 @@ if ($result['success']) {
 
     if (!empty($result['already_paid'])) {
         flash('Payment already confirmed.', 'info');
+        $redirect = 'dashboard.php';
     } elseif (($payment['payment_type'] ?? '') === 'escrow_payment') {
-        flash('Escrow payment confirmed! Your job is now pending admin review.', 'success');
+        $jobId = (int)$payment['reference_id'];
+        $pfStmt = $pdo->prepare("SELECT posting_fee_status FROM service_requests WHERE id = ?");
+        $pfStmt->execute([$jobId]);
+        $pfRow = $pfStmt->fetch();
+        if ($pfRow && $pfRow['posting_fee_status'] === 'pending') {
+            flash('Escrow payment confirmed! Now pay the job posting fee to submit your job for review.', 'info');
+            $redirect = 'pay_job_post.php?id=' . $jobId;
+        } else {
+            flash('Escrow payment confirmed! Your job is now pending admin review.', 'success');
+            $redirect = 'request_detail.php?id=' . $jobId;
+        }
     } else {
         flash('Payment confirmed! Your feature has been activated.', 'success');
+        $redirects = [
+            'featured_job'    => 'request_detail.php?id=' . $payment['reference_id'],
+            'featured_worker' => 'worker_profile.php',
+            'verification'    => 'worker_profile.php',
+            'job_post'        => 'dashboard.php',
+            'worker_service'  => 'worker_profile.php',
+        ];
+        $redirect = $redirects[$payment['payment_type']] ?? 'dashboard.php';
     }
-
-    $redirects = [
-        'featured_job'    => 'request_detail.php?id=' . $payment['reference_id'],
-        'featured_worker' => 'worker_profile.php',
-        'verification'    => 'worker_profile.php',
-        'job_post'        => 'dashboard.php',
-        'worker_service'  => 'worker_profile.php',
-        'escrow_payment'  => 'request_detail.php?id=' . $payment['reference_id'],
-    ];
-    $redirect = $redirects[$payment['payment_type']] ?? 'dashboard.php';
     header('Location: ' . $redirect);
 } else {
     $errorMsg = $result['error'] ?? 'Payment could not be confirmed.';

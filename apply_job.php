@@ -29,6 +29,12 @@ if (!$request) {
     exit;
 }
 
+if ((int)$request['customer_id'] === (int)$user['id']) {
+    flash("You can't apply for your own job.", 'error');
+    header('Location: request_detail.php?id=' . $requestId);
+    exit;
+}
+
 if ($request['status'] === 'fully_staffed') {
     flash('This job is fully staffed and no longer accepting applications.', 'error');
     header('Location: request_detail.php?id=' . $requestId);

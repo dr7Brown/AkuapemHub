@@ -160,9 +160,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $postingFeePaid = is_feature_paid('enable_paid_job_posting');
-        // Escrow jobs are exempt from posting fees; escrow payment IS the upfront payment
         $initialStatus    = ($paymentMode === 'escrow') ? 'pending_payment' : 'pending';
-        $postingFeeStatus = ($paymentMode === 'escrow') ? 'free' : ($postingFeePaid ? 'pending' : 'free');
+        $postingFeeStatus = $postingFeePaid ? 'pending' : 'free';
 
         if ($postEditId > 0) {
             // Publishing an existing draft — update in place
@@ -272,7 +271,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             </div>
         <?php elseif ($postingFeeEnabled): ?>
             <div class="alert alert-info" style="margin-bottom:12px;">
-                💳 A posting fee is required for direct-payment jobs. Choose Escrow to waive the posting fee.
+                💳 A posting fee is required to submit this job for review. You will be prompted to pay after submitting.
             </div>
         <?php endif; ?>
         <form class="card form-card" method="post" action="request.php">

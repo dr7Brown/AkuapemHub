@@ -93,6 +93,16 @@ if (is_worker()) {
         $myApplicationStatuses[$appRow['request_id']] = $appRow['status'];
     }
 
+    // Workers can also post jobs, so load their drafts too
+    $draftStmt = $pdo->prepare(
+        "SELECT sr.*, sc.name AS category_name FROM service_requests sr
+         JOIN service_categories sc ON sr.category_id = sc.id
+         WHERE sr.customer_id = ? AND sr.status = 'draft'
+         ORDER BY sr.updated_at DESC"
+    );
+    $draftStmt->execute([$user['id']]);
+    $drafts = $draftStmt->fetchAll();
+
 } elseif (is_customer()) {
     // Drafts — shown separately above main job list
     $draftStmt = $pdo->prepare(
@@ -323,6 +333,33 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
         <?php endif; ?>
 
         <?php if (is_worker()): ?>
+            <?php if (!empty($drafts)): ?>
+            <section class="panel" style="margin-bottom:12px;" id="drafts-section">
+                <div class="panel-header" style="margin-bottom:8px;">
+                    <h2 style="font-size:1rem;margin:0;">My Job Drafts <span id="drafts-count" style="background:var(--text-muted);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.75rem;font-weight:600;"><?php echo count($drafts); ?></span></h2>
+                    <a href="request.php" class="button button-small button-secondary">New job</a>
+                </div>
+                <div class="jobs-grid" id="drafts-grid">
+                    <?php foreach ($drafts as $dr): ?>
+                    <div class="job-card" data-draft-id="<?php echo (int)$dr['id']; ?>" style="border-left:4px solid var(--text-muted);opacity:0.9;">
+                        <div class="job-card-header">
+                            <span class="category-badge"><?php echo sanitize($dr['category_name']); ?></span>
+                            <span class="status" style="background:var(--text-muted);color:#fff;">DRAFT</span>
+                        </div>
+                        <h3 class="job-title"><?php echo sanitize($dr['title']); ?></h3>
+                        <p class="job-description"><?php echo sanitize($dr['description']); ?></p>
+                        <?php if ($dr['location']): ?><p class="meta">📍 <?php echo sanitize($dr['location']); ?></p><?php endif; ?>
+                        <?php if ($dr['budget']): ?><p class="meta">💰 GH₵ <?php echo sanitize($dr['budget']); ?></p><?php endif; ?>
+                        <p class="meta">Last saved: <?php echo date('d M Y', strtotime($dr['updated_at'])); ?></p>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                            <a href="request.php?edit=<?php echo (int)$dr['id']; ?>" class="button button-primary button-small">Edit &amp; Publish</a>
+                            <button type="button" class="button button-secondary button-small" onclick="deleteDraft(<?php echo (int)$dr['id']; ?>, this)">Delete</button>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+            <?php endif; ?>
             <section class="panel" id="open-jobs">
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -460,34 +497,6 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                     <?php endforeach; ?>
                 </div>
             </section>
-            <script>
-            function deleteDraft(id, btn) {
-                if (!confirm('Delete this draft?')) return;
-                btn.disabled = true;
-                fetch('ajax.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: 'action=delete_draft&id=' + id + '&csrf_token=' + encodeURIComponent(CSRF)
-                })
-                .then(function (r) { return r.json(); })
-                .then(function (data) {
-                    if (!data.ok) { btn.disabled = false; return; }
-                    var card = document.querySelector('[data-draft-id="' + id + '"]');
-                    if (card) card.remove();
-                    var countEl = document.getElementById('drafts-count');
-                    if (countEl) {
-                        var n = parseInt(countEl.textContent, 10) - 1;
-                        if (n <= 0) {
-                            var section = document.getElementById('drafts-section');
-                            if (section) section.remove();
-                        } else {
-                            countEl.textContent = n;
-                        }
-                    }
-                })
-                .catch(function () { btn.disabled = false; });
-            }
-            </script>
             <?php endif; ?>
             <section class="panel">
                 <div class="stats-grid">
@@ -656,6 +665,33 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                 this.textContent = expanded ? 'View all categories' : 'Show fewer categories';
                 this.dataset.expanded = expanded ? '0' : '1';
             });
+        }
+
+        function deleteDraft(id, btn) {
+            if (!confirm('Delete this draft?')) return;
+            btn.disabled = true;
+            fetch('ajax.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=delete_draft&id=' + id + '&csrf_token=' + encodeURIComponent(CSRF)
+            })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.ok) { btn.disabled = false; return; }
+                var card = document.querySelector('[data-draft-id="' + id + '"]');
+                if (card) card.remove();
+                var countEl = document.getElementById('drafts-count');
+                if (countEl) {
+                    var n = parseInt(countEl.textContent, 10) - 1;
+                    if (n <= 0) {
+                        var section = document.getElementById('drafts-section');
+                        if (section) section.remove();
+                    } else {
+                        countEl.textContent = n;
+                    }
+                }
+            })
+            .catch(function () { btn.disabled = false; });
         }
     </script>
 </body>

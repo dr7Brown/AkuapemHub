@@ -34,7 +34,8 @@ if (is_worker()) {
 }
 $canApply = is_worker()
     && in_array($request['status'], ['open','partially_staffed'], true)
-    && !in_array($myApplicationStatus, ['pending','approved','accepted'], true);
+    && !in_array($myApplicationStatus, ['pending','approved','accepted'], true)
+    && (int)$request['customer_id'] !== (int)$user['id'];
 $canComplete = is_worker() && $request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id'];
 
 // Escrow: fetch record + lazy auto-release check (must run before can-flags)
