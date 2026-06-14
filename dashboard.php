@@ -431,14 +431,14 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
             </section>
         <?php else: ?>
             <?php if (!empty($drafts)): ?>
-            <section class="panel" style="margin-bottom:16px;">
+            <section class="panel" style="margin-bottom:16px;" id="drafts-section">
                 <div class="panel-header" style="margin-bottom:8px;">
-                    <h2 style="font-size:1rem;margin:0;">Drafts <span style="background:var(--text-muted);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.75rem;font-weight:600;"><?php echo count($drafts); ?></span></h2>
+                    <h2 style="font-size:1rem;margin:0;">Drafts <span id="drafts-count" style="background:var(--text-muted);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.75rem;font-weight:600;"><?php echo count($drafts); ?></span></h2>
                     <a href="request.php" class="button button-small button-secondary">New job</a>
                 </div>
-                <div class="jobs-grid">
+                <div class="jobs-grid" id="drafts-grid">
                     <?php foreach ($drafts as $dr): ?>
-                    <div class="job-card" style="border-left:4px solid var(--text-muted);opacity:0.9;">
+                    <div class="job-card" data-draft-id="<?php echo (int)$dr['id']; ?>" style="border-left:4px solid var(--text-muted);opacity:0.9;">
                         <div class="job-card-header">
                             <span class="category-badge"><?php echo sanitize($dr['category_name']); ?></span>
                             <span class="status" style="background:var(--text-muted);color:#fff;">DRAFT</span>
@@ -454,17 +454,40 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                         <p class="meta">Last saved: <?php echo date('d M Y', strtotime($dr['updated_at'])); ?></p>
                         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
                             <a href="request.php?edit=<?php echo (int)$dr['id']; ?>" class="button button-primary button-small">Edit &amp; Publish</a>
-                            <form method="post" style="margin:0;" onsubmit="return confirm('Delete this draft?')">
-                                <?php echo csrf_field(); ?>
-                                <input type="hidden" name="action" value="delete_draft" />
-                                <input type="hidden" name="draft_id" value="<?php echo (int)$dr['id']; ?>" />
-                                <button type="submit" class="button button-secondary button-small">Delete</button>
-                            </form>
+                            <button type="button" class="button button-secondary button-small" onclick="deleteDraft(<?php echo (int)$dr['id']; ?>, this)">Delete</button>
                         </div>
                     </div>
                     <?php endforeach; ?>
                 </div>
             </section>
+            <script>
+            function deleteDraft(id, btn) {
+                if (!confirm('Delete this draft?')) return;
+                btn.disabled = true;
+                fetch('ajax.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=delete_draft&id=' + id + '&csrf_token=' + encodeURIComponent(CSRF)
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    if (!data.ok) { btn.disabled = false; return; }
+                    var card = document.querySelector('[data-draft-id="' + id + '"]');
+                    if (card) card.remove();
+                    var countEl = document.getElementById('drafts-count');
+                    if (countEl) {
+                        var n = parseInt(countEl.textContent, 10) - 1;
+                        if (n <= 0) {
+                            var section = document.getElementById('drafts-section');
+                            if (section) section.remove();
+                        } else {
+                            countEl.textContent = n;
+                        }
+                    }
+                })
+                .catch(function () { btn.disabled = false; });
+            }
+            </script>
             <?php endif; ?>
             <section class="panel">
                 <div class="stats-grid">

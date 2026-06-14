@@ -31,15 +31,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $appStmt->execute([$appId, $user['id'], is_admin() ? 1 : 0]);
     $app = $appStmt->fetch();
 
+    $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH'])
+        && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+
+    $newAppStatus = null;
+    $newJobStatus = null;
+    $workersApproved = (int)$app['workers_approved'];
+    $errMsg = null;
+
     if ($app && $app['status'] === 'pending') {
         if ($act === 'approve') {
             if ((int)$app['workers_approved'] >= (int)$app['workers_needed']) {
-                flash('This job has reached its worker limit.', 'error');
+                $errMsg = 'This job has reached its worker limit.';
+                if (!$isAjax) flash($errMsg, 'error');
             } else {
                 $pdo->beginTransaction();
                 try {
                     $pdo->prepare("UPDATE applications SET status='approved' WHERE id=?")->execute([$appId]);
-                    $newStatus = update_job_staffing_status((int)$app['request_id']);
+                    $newJobStatus = update_job_staffing_status((int)$app['request_id']);
 
                     if ((int)$app['workers_needed'] === 1) {
                         $pdo->prepare("UPDATE service_requests SET assigned_worker_id=? WHERE id=?")->execute([$app['worker_id'], $app['request_id']]);
@@ -48,29 +57,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     get_or_create_conversation($user['id'], (int)$app['worker_id'], 'job_hired', (int)$app['request_id']);
                     $pdo->commit();
 
-                    // Points: client hired a worker
                     require_once __DIR__ . '/modules/referrals/service.php';
                     award_points((int)$app['customer_id'], 'hire_worker', (int)$app['request_id']);
 
                     notify_user((int)$app['worker_id'], 'Application approved',
                         "Your application for '{$app['job_title']}' was approved by the job owner.", 'success');
 
-                    if ($newStatus === 'fully_staffed') {
+                    if ($newJobStatus === 'fully_staffed') {
                         notify_user($user['id'], 'Job fully staffed',
                             "Your job '{$app['job_title']}' is now fully staffed.", 'success');
                     }
-                    flash('Application approved.' . ($newStatus === 'fully_staffed' ? ' Job is now fully staffed.' : ''));
+
+                    $newAppStatus = 'approved';
+                    // Re-fetch updated workers_approved count
+                    $updatedJob = $pdo->prepare("SELECT workers_approved, workers_needed FROM service_requests WHERE id=?");
+                    $updatedJob->execute([$app['request_id']]);
+                    $updatedJob = $updatedJob->fetch();
+                    $workersApproved = (int)$updatedJob['workers_approved'];
+
+                    if (!$isAjax) flash('Application approved.' . ($newJobStatus === 'fully_staffed' ? ' Job is now fully staffed.' : ''));
                 } catch (Exception $e) {
                     $pdo->rollBack();
-                    flash('Unable to approve. Please try again.', 'error');
+                    $errMsg = 'Unable to approve. Please try again.';
+                    if (!$isAjax) flash($errMsg, 'error');
                 }
             }
         } elseif ($act === 'reject') {
             $pdo->prepare("UPDATE applications SET status='rejected' WHERE id=?")->execute([$appId]);
             notify_user((int)$app['worker_id'], 'Application not accepted',
                 "Your application for '{$app['job_title']}' was not selected this time.", 'warning');
-            flash('Application rejected.');
+            $newAppStatus = 'rejected';
+            if (!$isAjax) flash('Application rejected.');
         }
+    }
+
+    if ($isAjax) {
+        header('Content-Type: application/json; charset=utf-8');
+        if ($errMsg) {
+            echo json_encode(['error' => $errMsg]);
+        } else {
+            echo json_encode([
+                'ok'               => true,
+                'application_id'   => $appId,
+                'new_status'       => $newAppStatus,
+                'job_status'       => $newJobStatus ?? $app['job_status'],
+                'workers_approved' => $workersApproved,
+                'workers_needed'   => (int)$app['workers_needed'],
+                'worker_id'        => (int)$app['worker_id'],
+                'request_id'       => (int)$app['request_id'],
+            ]);
+        }
+        exit;
     }
 
     $redirect = 'manage_applicants.php';
@@ -311,6 +348,87 @@ function toggleTree(id) {
     body.style.display = open ? 'none' : 'block';
     arrow.textContent  = open ? '▶' : '▼';
 }
+
+// Ajax approve/reject for applicant cards
+document.addEventListener('submit', function (e) {
+    var form = e.target;
+    var actionBtn = form.querySelector('button[name="action"]');
+    if (!actionBtn || (actionBtn.value !== 'approve' && actionBtn.value !== 'reject')) return;
+    e.preventDefault();
+
+    var act = actionBtn.value;
+    if (!confirm(act === 'approve' ? 'Approve this worker?' : 'Reject this application?')) return;
+
+    var card = form.closest('.applicant-card');
+    actionBtn.disabled = true;
+
+    var body = new URLSearchParams(new FormData(form));
+    body.set('action', act);
+
+    fetch('manage_applicants.php', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: body.toString()
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+        if (data.error) { alert(data.error); actionBtn.disabled = false; return; }
+
+        // Update card status badge
+        var statusEl = card.querySelector('.status');
+        if (statusEl) {
+            if (data.new_status === 'approved') {
+                statusEl.textContent = 'APPROVED';
+                statusEl.className = 'status status-approved';
+            } else {
+                statusEl.textContent = 'REJECTED';
+                statusEl.className = 'status status-rejected';
+            }
+        }
+
+        // Remove action buttons, add Message link if approved
+        var btnRow = card.querySelector('[style*="display:flex"][style*="gap:8px"]') || card.querySelector('div:last-child');
+        if (btnRow) {
+            // remove approve/reject forms
+            btnRow.querySelectorAll('form').forEach(function (f) { f.remove(); });
+            if (data.new_status === 'approved') {
+                var msgLink = document.createElement('a');
+                msgLink.href = 'chat_start.php?user_id=' + data.worker_id + '&job_id=' + data.request_id;
+                msgLink.className = 'button button-secondary button-small';
+                msgLink.textContent = '💬 Message';
+                btnRow.appendChild(msgLink);
+            }
+        }
+
+        // Update staffing bar if visible
+        var staffingBar = document.querySelector('.staffing-bar');
+        if (staffingBar && data.new_status === 'approved') {
+            var spans = staffingBar.querySelectorAll('span');
+            spans.forEach(function (s) {
+                if (s.textContent.startsWith('Approved:')) s.textContent = 'Approved: ' + data.workers_approved;
+                var remaining = data.workers_needed - data.workers_approved;
+                if (s.textContent.startsWith('Remaining:')) s.textContent = 'Remaining: ' + remaining;
+            });
+        }
+
+        // Fully staffed banner
+        if (data.job_status === 'fully_staffed') {
+            var jobHeader = document.querySelector('.job-focus-header, .job-tree-header');
+            var existing = document.querySelector('.fully-staffed-banner');
+            if (!existing && jobHeader) {
+                var banner = document.createElement('div');
+                banner.className = 'fully-staffed-banner';
+                banner.style.marginTop = '10px';
+                banner.textContent = '✅ This job is fully staffed — all positions filled.';
+                jobHeader.closest('.job-focus-header, .job-tree-node').appendChild(banner);
+            }
+        }
+    })
+    .catch(function () { actionBtn.disabled = false; });
+});
 </script>
 </body>
 </html>

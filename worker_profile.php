@@ -137,6 +137,15 @@ $schedule = get_worker_schedule($profile['id']);
                 </div>
             <?php endif; ?>
         </div>
+        <div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <label style="margin:0;font-weight:600;white-space:nowrap;">Availability</label>
+            <select id="avail-quick" style="flex:1;min-width:140px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:0.95rem;">
+                <?php foreach (get_availability_options() as $key => $label): ?>
+                    <option value="<?php echo sanitize($key); ?>" <?php echo $profile['availability'] === $key ? 'selected' : ''; ?>><?php echo sanitize($label); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span id="avail-status" style="font-size:0.82rem;color:var(--text-muted);"></span>
+        </div>
         <form class="card form-card" method="post" action="worker_profile.php">
             <label>Bio</label>
             <textarea name="bio" rows="4"><?php echo sanitize($profile['bio']); ?></textarea>
@@ -185,6 +194,27 @@ $schedule = get_worker_schedule($profile['id']);
         </form>
     </main>
     <script>
+        // Availability quick-toggle
+        (function () {
+            var sel    = document.getElementById('avail-quick');
+            var status = document.getElementById('avail-status');
+            if (!sel) return;
+            sel.addEventListener('change', function () {
+                status.textContent = 'Saving…';
+                fetch('ajax.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=update_availability&availability=' + encodeURIComponent(sel.value) + '&csrf_token=' + encodeURIComponent(CSRF)
+                })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    status.textContent = d.ok ? 'Saved ✓' : (d.error || 'Failed');
+                    setTimeout(function () { status.textContent = ''; }, 2000);
+                })
+                .catch(function () { status.textContent = 'Failed'; });
+            });
+        })();
+
         document.querySelectorAll('[data-schedule-toggle]').forEach(function (toggle) {
             toggle.addEventListener('change', function () {
                 toggle.closest('[data-schedule-row]').classList.toggle('is-active', toggle.checked);

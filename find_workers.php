@@ -88,6 +88,42 @@ if ($sortBy === 'distance' && $userLat !== null && $userLng !== null) {
 
 $allSkills = $pdo->query('SELECT DISTINCT skill_name FROM worker_skills ORDER BY skill_name')->fetchAll();
 $user = current_user();
+
+// Ajax partial: return only the results grid HTML
+if (!empty($_GET['ajax'])) {
+    header('Content-Type: text/html; charset=utf-8');
+    if (empty($workers)) {
+        echo '<div class="empty-state">No workers found.</div>';
+    } else {
+        foreach ($workers as $worker) {
+            $distHtml = $worker['distance_km'] !== null ? ' • ' . htmlspecialchars(format_distance($worker['distance_km']), ENT_QUOTES, 'UTF-8') : '';
+            $verBadge = $worker['is_verified']
+                ? '<span title="Verified worker" style="display:inline-flex;align-items:center;background:#22a06b;color:#fff;border-radius:4px;padding:1px 6px;font-size:0.78rem;margin-left:4px;vertical-align:middle;"><strong style="font-size:1em;">✓</strong>erified</span>'
+                : '';
+            $featBadge = ($worker['is_featured'] && (!$worker['featured_end_date'] || $worker['featured_end_date'] >= date('Y-m-d')))
+                ? '<span class="badge" style="background:var(--primary);color:#fff;font-size:0.75rem;padding:2px 7px;">Featured</span>'
+                : '';
+            echo '<article class="request-card">';
+            echo '<div class="request-head"><div>';
+            echo '<h2>' . htmlspecialchars(display_name($worker), ENT_QUOTES, 'UTF-8') . $verBadge . $featBadge . '</h2>';
+            echo '<p class="meta">' . htmlspecialchars($worker['location'] ?: 'Location not set', ENT_QUOTES, 'UTF-8') . $distHtml . '</p>';
+            echo '</div>';
+            echo '<span class="status status-' . htmlspecialchars($worker['availability'], ENT_QUOTES, 'UTF-8') . '">' . strtoupper(htmlspecialchars($worker['availability'], ENT_QUOTES, 'UTF-8')) . '</span>';
+            echo '</div>';
+            echo '<div class="request-footer" style="flex-direction:column;gap:8px;align-items:flex-start;">';
+            echo '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+            echo '<span>' . (int)$worker['completed_jobs'] . ' jobs completed</span>';
+            echo '<span>' . number_format($worker['avg_rating'], 1) . '/5 rating</span>';
+            echo '</div>';
+            if (!empty($worker['skills'])) {
+                echo '<p style="margin:0;font-size:0.95rem;color:#333;">Skills: ' . htmlspecialchars($worker['skills'], ENT_QUOTES, 'UTF-8') . '</p>';
+            }
+            echo '<a href="worker_profile_public.php?id=' . (int)$worker['id'] . '" class="button button-primary button-small">View profile</a>';
+            echo '</div></article>';
+        }
+    }
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -189,7 +225,7 @@ $user = current_user();
             </form>
         </section>
 
-        <section class="panel">
+        <section class="panel" id="workers-results">
             <?php if (empty($workers)): ?>
                 <div class="empty-state">No workers found.</div>
             <?php else: ?>
@@ -234,6 +270,30 @@ $user = current_user();
         <?php $activeNav = 'workers'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <?php endif; ?>
     <script>
+        var resultsSection = document.getElementById('workers-results');
+        var filterForm = document.getElementById('worker-filter-form');
+
+        function fetchWorkers(params) {
+            resultsSection.style.opacity = '0.45';
+            var url = 'find_workers.php?' + params.toString() + '&ajax=1';
+            fetch(url)
+                .then(function (r) { return r.text(); })
+                .then(function (html) {
+                    resultsSection.innerHTML = html;
+                    resultsSection.style.opacity = '1';
+                    // update browser URL (without &ajax=1)
+                    var cleanParams = new URLSearchParams(params.toString());
+                    cleanParams.delete('ajax');
+                    history.pushState({}, '', '?' + cleanParams.toString());
+                })
+                .catch(function () { resultsSection.style.opacity = '1'; });
+        }
+
+        filterForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+            fetchWorkers(new URLSearchParams(new FormData(filterForm)));
+        });
+
         document.getElementById('find-near-me').addEventListener('click', function () {
             var status = document.getElementById('near-me-status');
             if (!navigator.geolocation) {
@@ -245,10 +305,17 @@ $user = current_user();
                 document.getElementById('lat').value = position.coords.latitude;
                 document.getElementById('lng').value = position.coords.longitude;
                 document.querySelector('select[name="sort"]').value = 'distance';
-                document.getElementById('worker-filter-form').submit();
+                status.textContent = '📍 Showing distances from your location.';
+                fetchWorkers(new URLSearchParams(new FormData(filterForm)));
             }, function () {
                 status.textContent = 'Unable to retrieve your location. Please allow location access.';
             });
+        });
+
+        // Handle browser back/forward
+        window.addEventListener('popstate', function () {
+            var params = new URLSearchParams(window.location.search);
+            fetchWorkers(params);
         });
     </script>
 </body>

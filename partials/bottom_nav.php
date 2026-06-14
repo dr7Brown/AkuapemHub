@@ -86,3 +86,22 @@ if (!isset($activeNav)) {
         </a>
     <?php endforeach; ?>
 </nav>
+<script>
+var CSRF = <?php echo json_encode(csrf_token()); ?>;
+// Bell icon: optimistically clear badge, mark notifications read in background
+(function () {
+    var bell = document.querySelector('a[href="notifications.php"]');
+    if (!bell) return;
+    bell.addEventListener('click', function () {
+        var badge = bell.querySelector('.nav-badge');
+        if (!badge) return;
+        badge.classList.remove('nav-badge');
+        badge.removeAttribute('data-count');
+        fetch('ajax.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'action=mark_notifications_read&csrf_token=' + encodeURIComponent(CSRF)
+        }).catch(function () {});
+    });
+})();
+</script>
