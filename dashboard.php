@@ -11,6 +11,8 @@ sweep_expired_featured();
 // Banner ad + news teaser for dashboard
 $dashBannerAd  = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
 $dashLatestNews = $pdo->query("SELECT title, slug, featured_image, published_at FROM news WHERE status='published' AND (published_at IS NULL OR published_at<=NOW()) ORDER BY COALESCE(published_at,created_at) DESC LIMIT 3")->fetchAll();
+$dashEvents    = $pdo->query("SELECT * FROM events WHERE status='published' AND start_date>=CURDATE() ORDER BY featured DESC, start_date ASC LIMIT 3")->fetchAll();
+$dashFunerals  = $pdo->query("SELECT * FROM funeral_announcements WHERE status='approved' ORDER BY featured DESC, created_at DESC LIMIT 3")->fetchAll();
 $categories = get_categories();
 $notificationCount = get_unread_notifications_count($user['id']);
 
@@ -415,6 +417,56 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                 <div style="padding:9px 11px 11px;">
                     <p style="margin:0 0 3px;font-weight:700;font-size:.85rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"><?php echo sanitize($dn['title']); ?></p>
                     <?php if ($dnDate): ?><p style="margin:0;font-size:.73rem;color:var(--text-muted);">📅 <?php echo $dnDate; ?></p><?php endif; ?>
+                </div>
+            </a>
+            <?php endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <?php if ($dashEvents): ?>
+        <section style="margin:0 0 20px;" aria-label="Upcoming Events">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <h2 style="margin:0;font-size:1rem;font-weight:700;">📅 Upcoming Events</h2>
+                <a href="events.php" style="font-size:.82rem;color:#2563eb;font-weight:700;text-decoration:none;">View all →</a>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+            <?php foreach ($dashEvents as $ev): ?>
+            <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" style="display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit;">
+                <?php if ($ev['featured_image']): ?>
+                    <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;">
+                <?php else: ?>
+                    <div style="aspect-ratio:16/9;background:linear-gradient(135deg,#1e3a5f,#0f2040);display:flex;align-items:center;justify-content:center;font-size:1.8rem;">📅</div>
+                <?php endif; ?>
+                <div style="padding:10px 12px 12px;">
+                    <p style="margin:0 0 3px;font-weight:700;font-size:.88rem;"><?php echo sanitize($ev['title']); ?></p>
+                    <p style="margin:0;font-size:.75rem;color:var(--text-muted);">📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?><?php if ($ev['venue']): ?> · <?php echo sanitize(mb_substr($ev['venue'],0,30)); ?><?php endif; ?></p>
+                </div>
+            </a>
+            <?php endforeach; ?>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <?php if ($dashFunerals): ?>
+        <section style="margin:0 0 20px;" aria-label="Funeral Announcements">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <h2 style="margin:0;font-size:1rem;font-weight:700;">🕊️ Funeral Announcements</h2>
+                <a href="funerals.php" style="font-size:.82rem;color:var(--text-muted);font-weight:700;text-decoration:none;">View all →</a>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+            <?php foreach ($dashFunerals as $fa): ?>
+            <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" style="display:flex;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit;padding:12px;align-items:center;">
+                <div style="width:44px;height:44px;border-radius:10px;background:#f3f4f6;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+                    <?php if ($fa['photograph']): ?>
+                        <img src="<?php echo sanitize($fa['photograph']); ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                    <?php else: ?>
+                        <span style="font-size:1rem;font-weight:900;color:#d1d5db;"><?php echo sanitize(mb_strtoupper(mb_substr($fa['deceased_name'],0,2))); ?></span>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <p style="margin:0 0 3px;font-weight:700;font-size:.88rem;"><?php echo sanitize($fa['deceased_name']); ?></p>
+                    <?php if ($fa['burial_date']): ?><p style="margin:0;font-size:.75rem;color:var(--text-muted);">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></p><?php endif; ?>
                 </div>
             </a>
             <?php endforeach; ?>

@@ -171,6 +171,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <div class="adm-nav-sep" aria-hidden="true"></div>
         <a href="news.php"              data-page="news.php">📰 News</a>
         <a href="ads.php"               data-page="ads.php">📣 Ads</a>
+        <a href="funerals.php"          data-page="funerals.php">🕊️ Funerals</a>
+        <a href="events.php"            data-page="events.php">📅 Events</a>
         <div class="adm-nav-sep" aria-hidden="true"></div>
         <a href="contact_settings.php"  data-page="contact_settings.php">📞 Contact</a>
         <a href="theme.php"             data-page="theme.php">🎨 Theme</a>
@@ -228,6 +230,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             ['communication.php',   '📣', 'Broadcast',    'Push notifications',         true ],
             ['news.php',            '📰', 'News',         'Articles & blog posts',      true ],
             ['ads.php',             '📣', 'Ads',          'Manage advertisements',      true ],
+            ['funerals.php',        '🕊️', 'Funerals',     'Funeral announcements',      true ],
+            ['events.php',          '📅', 'Events',       'Community events',           true ],
             ['contact_settings.php','📞', 'Contact',      'Contact page information',   true ],
             ['theme.php',           '🎨', 'Theme',        'Colours & branding',         true ],
             ['audit_logs.php',      '📜', 'Audit Logs',   'Admin action history',       true ],
