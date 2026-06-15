@@ -27,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
             }
             $pdo->prepare("UPDATE news SET notification_sent=1 WHERE id=?")->execute([$tid]);
         }
-        admin_log('news_toggle', "Article #$tid → $newStatus");
+        log_audit_action($user['id'], 'news_toggle', "Article #$tid → $newStatus");
     }
     header('Location: news.php?saved=1'); exit;
 }
@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $pdo->prepare("DELETE FROM news_likes    WHERE news_id=?")->execute([$did]);
     $pdo->prepare("DELETE FROM news_saves    WHERE news_id=?")->execute([$did]);
     $pdo->prepare("DELETE FROM news WHERE id=?")->execute([$did]);
-    admin_log('news_delete', "Deleted article #$did");
+    log_audit_action($user['id'], 'news_delete', "Deleted article #$did");
     header('Location: news.php?deleted=1'); exit;
 }
 

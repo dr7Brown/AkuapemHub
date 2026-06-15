@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
     if ($row) {
         $newStatus = $row['status'] === 'active' ? 'inactive' : 'active';
         $pdo->prepare("UPDATE advertisements SET status=? WHERE id=?")->execute([$newStatus, $tid]);
-        admin_log('ad_toggle', "Ad #$tid → $newStatus");
+        log_audit_action($user['id'], 'ad_toggle', "Ad #$tid → $newStatus");
     }
     header('Location: ads.php?saved=1'); exit;
 }
@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     csrf_check();
     $did = (int)$_POST['delete_id'];
     $pdo->prepare("DELETE FROM advertisements WHERE id=?")->execute([$did]);
-    admin_log('ad_delete', "Deleted ad #$did");
+    log_audit_action($user['id'], 'ad_delete', "Deleted ad #$did");
     header('Location: ads.php?deleted=1'); exit;
 }
 

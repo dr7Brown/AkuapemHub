@@ -60,12 +60,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id) {
             $pdo->prepare("UPDATE news SET title=?, slug=?, summary=?, content=?, featured_image=?, status=?, published_at=?, updated_at=NOW() WHERE id=?")
                 ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt, $id]);
-            admin_log('news_edit', "Edited article #$id: $title");
+            log_audit_action($user['id'], 'news_edit', "Edited article #$id: $title");
         } else {
             $pdo->prepare("INSERT INTO news (title, slug, summary, content, featured_image, status, published_at) VALUES (?,?,?,?,?,?,?)")
                 ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt]);
             $id = (int)$pdo->lastInsertId();
-            admin_log('news_create', "Created article #$id: $title");
+            log_audit_action($user['id'], 'news_create', "Created article #$id: $title");
         }
         // Notify all users the first time this article goes live
         if ($status === 'published' && !$wasNotified) {

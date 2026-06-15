@@ -45,12 +45,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id) {
             $pdo->prepare("UPDATE advertisements SET title=?, image=?, destination_url=?, ad_type=?, status=?, start_date=?, end_date=?, updated_at=NOW() WHERE id=?")
                 ->execute([$title, $imagePath, $destUrl, $adType, $status, $startDate, $endDate, $id]);
-            admin_log('ad_edit', "Edited ad #$id: $title");
+            log_audit_action($user['id'], 'ad_edit', "Edited ad #$id: $title");
         } else {
             $pdo->prepare("INSERT INTO advertisements (title, image, destination_url, ad_type, status, start_date, end_date) VALUES (?,?,?,?,?,?,?)")
                 ->execute([$title, $imagePath, $destUrl, $adType, $status, $startDate, $endDate]);
             $id = (int)$pdo->lastInsertId();
-            admin_log('ad_create', "Created ad #$id: $title");
+            log_audit_action($user['id'], 'ad_create', "Created ad #$id: $title");
         }
         header('Location: ads_edit.php?id=' . $id . '&saved=1');
         exit;
