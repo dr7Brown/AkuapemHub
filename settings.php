@@ -153,6 +153,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
             $success = 'Skills added.';
         }
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'contact_message') {
+    $cfName  = trim($_POST['cf_name']    ?? $user['name']);
+    $cfEmail = trim($_POST['cf_email']   ?? $user['email']);
+    $cfSubj  = trim($_POST['cf_subject'] ?? '');
+    $cfMsg   = trim($_POST['cf_body']    ?? '');
+    if (!$cfSubj || strlen($cfMsg) < 10) {
+        $error = 'Please complete all fields (message must be at least 10 characters).';
+    } elseif (!filter_var($cfEmail, FILTER_VALIDATE_EMAIL)) {
+        $error = 'Please enter a valid email address.';
+    } else {
+        $mailBody = "Name: {$cfName}\nEmail: {$cfEmail}\nSubject: {$cfSubj}\n\nMessage:\n{$cfMsg}";
+        @mail(ADMIN_EMAIL, '[AkuapemHub] ' . $cfSubj, $mailBody, "From: " . MAIL_FROM . "\r\nReply-To: {$cfEmail}");
+        $success = 'Message sent! We\'ll get back to you within 1–2 business days.';
+    }
 }
 
 $workerSkills = [];
@@ -171,6 +185,7 @@ $sectionMeta = [
     'privacypolicy' => ['icon' => '📄',  'title' => 'Privacy Policy'],
     'terms'         => ['icon' => '📋',  'title' => 'Terms of Service'],
     'help'          => ['icon' => '❓',  'title' => 'Help & Support'],
+    'contact'       => ['icon' => '📞',  'title' => 'Contact Us'],
     'about'         => ['icon' => 'ℹ️', 'title' => 'About AkuapemHub'],
 ];
 $activeSection = isset($sectionMeta[$section]) ? $section : '';
@@ -381,7 +396,7 @@ if (!$isAjax): ?>
 
                 <!-- Group: Security -->
                 <?php echo snl('?section=password', '🔑', 'Change Password',     'password', $a); ?>
-                <?php echo snl('?section=privacy',  '🔒', 'Privacy &amp; Security', 'privacy',  $a); ?>
+                <?php echo snl('?section=privacy',  '🔒', 'Privacy & Security', 'privacy',  $a); ?>
 
                 <div class="sn-sep"></div>
 
@@ -392,8 +407,9 @@ if (!$isAjax): ?>
                 <div class="sn-sep"></div>
 
                 <!-- Group: Support -->
-                <?php echo snl('?section=help',  '❓',  'Help &amp; Support', 'help',  $a); ?>
-                <?php echo snl('?section=about', 'ℹ️', 'About AkuapemHub',  'about', $a); ?>
+                <?php echo snl('?section=help',    '❓',  'Help & Support',  'help',    $a); ?>
+                <?php echo snl('?section=contact', '📞',  'Contact Us',      'contact', $a); ?>
+                <?php echo snl('?section=about',   'ℹ️', 'About AkuapemHub', 'about',   $a); ?>
 
                 <div class="sn-sep"></div>
 
@@ -822,6 +838,87 @@ if (!$isAjax): ?>
     <a href="find_workers.php" class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Find Workers</a>
     <a href="notifications.php" class="list-row" style="display:block;padding:9px 0;">Notifications</a>
 </section>
+
+<?php elseif ($activeSection === 'contact'): ?>
+<?php
+    $ci = [
+        'email'    => get_platform_setting('contact_email')    ?: MAIL_FROM,
+        'phone'    => get_platform_setting('contact_phone')    ?: '',
+        'whatsapp' => get_platform_setting('contact_whatsapp') ?: '',
+        'address'  => get_platform_setting('contact_address')  ?: 'Akuapem Area, Eastern Region, Ghana',
+        'hours'    => get_platform_setting('contact_hours')    ?: 'Monday – Saturday, 8:00 AM – 6:00 PM GMT',
+        'tagline'  => get_platform_setting('contact_tagline')  ?: "We're here to help. Reach out and we'll respond as soon as possible.",
+    ];
+    $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci['whatsapp']) : '';
+?>
+<h2 class="sn-panel-title">📞 Contact Us</h2>
+
+<div class="card" style="padding:18px 20px;margin-bottom:10px;">
+    <p style="margin:0 0 16px;font-size:.92rem;color:var(--text-muted);"><?php echo sanitize($ci['tagline']); ?></p>
+
+    <?php
+    $contactItems = [
+        ['📧', 'Email', '<a href="mailto:' . sanitize($ci['email']) . '">' . sanitize($ci['email']) . '</a>'],
+    ];
+    if ($ci['phone'])    $contactItems[] = ['📞', 'Phone',     '<a href="tel:' . sanitize(preg_replace('/[^0-9+]/', '', $ci['phone'])) . '">' . sanitize($ci['phone']) . '</a>'];
+    if ($ci['whatsapp']) $contactItems[] = ['💬', 'WhatsApp',  '<a href="' . sanitize($waLink) . '" target="_blank" rel="noopener">' . sanitize($ci['whatsapp']) . '</a>'];
+    $contactItems[] = ['📍', 'Address', nl2br(sanitize($ci['address']))];
+    $contactItems[] = ['🕐', 'Hours',   sanitize($ci['hours'])];
+    ?>
+
+    <?php foreach ($contactItems as [$icon, $label, $value]): ?>
+    <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:14px;">
+        <div style="width:36px;height:36px;border-radius:8px;background:var(--primary-soft,#e6f4f1);display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;"><?php echo $icon; ?></div>
+        <div>
+            <div style="font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-bottom:2px;"><?php echo $label; ?></div>
+            <div style="font-size:.9rem;"><?php echo $value; ?></div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+
+<div class="card form-card">
+    <h3 style="margin:0 0 14px;font-size:1rem;">Send us a message</h3>
+
+    <?php if ($success && ($_POST['form'] ?? '') === 'contact_message'): ?>
+        <div class="alert alert-success"><?php echo sanitize($success); ?></div>
+    <?php else: ?>
+        <?php if ($error && ($_POST['form'] ?? '') === 'contact_message'): ?>
+            <div class="alert alert-error" style="margin-bottom:12px;"><?php echo sanitize($error); ?></div>
+        <?php endif; ?>
+        <form method="post" action="settings.php?section=contact">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="form" value="contact_message">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+                <div>
+                    <label for="sn-cf-name" style="display:block;font-size:.82rem;font-weight:600;margin-bottom:4px;">Your name</label>
+                    <input type="text" id="sn-cf-name" name="cf_name" class="form-control"
+                           value="<?php echo sanitize($_POST['cf_name'] ?? $user['name']); ?>" required>
+                </div>
+                <div>
+                    <label for="sn-cf-email" style="display:block;font-size:.82rem;font-weight:600;margin-bottom:4px;">Email address</label>
+                    <input type="email" id="sn-cf-email" name="cf_email" class="form-control"
+                           value="<?php echo sanitize($_POST['cf_email'] ?? $user['email']); ?>" required>
+                </div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label for="sn-cf-subj" style="display:block;font-size:.82rem;font-weight:600;margin-bottom:4px;">Subject</label>
+                <select id="sn-cf-subj" name="cf_subject" class="form-control" required>
+                    <option value="">— Select a topic —</option>
+                    <?php foreach (['Payment issue','Account help','Worker verification','Job dispute','Report a user','General enquiry','Other'] as $opt): ?>
+                        <option value="<?php echo sanitize($opt); ?>" <?php echo (($_POST['cf_subject'] ?? '') === $opt) ? 'selected' : ''; ?>><?php echo sanitize($opt); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div style="margin-bottom:14px;">
+                <label for="sn-cf-body" style="display:block;font-size:.82rem;font-weight:600;margin-bottom:4px;">Message</label>
+                <textarea id="sn-cf-body" name="cf_body" class="form-control" rows="5"
+                          placeholder="Describe your question or issue in detail…" required><?php echo sanitize($_POST['cf_body'] ?? ''); ?></textarea>
+            </div>
+            <button type="submit" class="button button-primary" style="min-width:140px;">Send message</button>
+        </form>
+    <?php endif; ?>
+</div>
 
 <?php elseif ($activeSection === 'about'): ?>
 <h2 class="sn-panel-title">ℹ️ About AkuapemHub</h2>

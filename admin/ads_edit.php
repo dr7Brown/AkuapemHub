@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $imagePath = $ad['image'] ?? null;
     if (!empty($_FILES['image']['name'])) {
-        $newPath = save_uploaded_image($_FILES['image'], 'uploads/ads');
+        $newPath = save_uploaded_image($_FILES['image'], 'uploads/ads', 1200, 86);
         if ($newPath) {
             $imagePath = $newPath;
         } else {

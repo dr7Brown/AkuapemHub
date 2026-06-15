@@ -360,7 +360,7 @@ function is_ghana_card_duplicate(string $number, int $excludeUserId = 0): bool {
     return (bool)$stmt->fetch();
 }
 
-function save_uploaded_image(array $file, $relativeDir) {
+function save_uploaded_image(array $file, $relativeDir, int $maxWidth = 0, int $quality = 85) {
     $allowedTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
     $maxSize = 5 * 1024 * 1024;
 
@@ -376,8 +376,42 @@ function save_uploaded_image(array $file, $relativeDir) {
     if (!is_dir($uploadDir)) {
         mkdir($uploadDir, 0755, true);
     }
-    $fileName = bin2hex(random_bytes(8)) . '.' . $allowedTypes[$mimeType];
-    if (move_uploaded_file($file['tmp_name'], $uploadDir . '/' . $fileName)) {
+
+    // Always save as JPEG for content images (smaller files, broad support)
+    $ext      = ($maxWidth > 0) ? 'jpg' : $allowedTypes[$mimeType];
+    $fileName = bin2hex(random_bytes(8)) . '.' . $ext;
+    $destPath = $uploadDir . '/' . $fileName;
+
+    if ($maxWidth > 0 && function_exists('imagecreatefromjpeg')) {
+        // GD resize + compress
+        $src = match ($mimeType) {
+            'image/jpeg' => imagecreatefromjpeg($file['tmp_name']),
+            'image/png'  => imagecreatefrompng($file['tmp_name']),
+            'image/webp' => imagecreatefromwebp($file['tmp_name']),
+            default      => null,
+        };
+        if ($src) {
+            [$origW, $origH] = [imagesx($src), imagesy($src)];
+            if ($origW > $maxWidth) {
+                $ratio = $maxWidth / $origW;
+                $newW  = $maxWidth;
+                $newH  = (int)round($origH * $ratio);
+            } else {
+                [$newW, $newH] = [$origW, $origH];
+            }
+            $dst = imagecreatetruecolor($newW, $newH);
+            // Preserve transparency for PNG sources, then fill white for JPEG output
+            imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $origW, $origH);
+            imagejpeg($dst, $destPath, $quality);
+            imagedestroy($src);
+            imagedestroy($dst);
+            return $relativeDir . '/' . $fileName;
+        }
+        // GD failed — fall back to direct move
+    }
+
+    if (move_uploaded_file($file['tmp_name'], $destPath)) {
         return $relativeDir . '/' . $fileName;
     }
     return null;

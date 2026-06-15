@@ -44,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Image upload
     $imagePath = $article['featured_image'] ?? null;
     if (!empty($_FILES['featured_image']['name'])) {
-        $newPath = save_uploaded_image($_FILES['featured_image'], 'uploads/news');
+        $newPath = save_uploaded_image($_FILES['featured_image'], 'uploads/news', 1600, 84);
         if ($newPath) {
             $imagePath = $newPath;
         } else {
