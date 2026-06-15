@@ -7,6 +7,10 @@ require_login();
 $user = current_user();
 $flash = get_flash();
 sweep_expired_featured();
+
+// Banner ad + news teaser for dashboard
+$dashBannerAd  = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$dashLatestNews = $pdo->query("SELECT title, slug, featured_image, published_at FROM news WHERE status='published' AND (published_at IS NULL OR published_at<=NOW()) ORDER BY COALESCE(published_at,created_at) DESC LIMIT 3")->fetchAll();
 $categories = get_categories();
 $notificationCount = get_unread_notifications_count($user['id']);
 
@@ -376,6 +380,46 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
         </div>
         <?php if (count($categories) > 5): ?>
             <button type="button" id="toggle-categories" class="button button-secondary button-small" style="margin-bottom: var(--space-4);" data-expanded="0">View all categories</button>
+        <?php endif; ?>
+
+        <?php if ($dashBannerAd): ?>
+        <div style="text-align:center;margin:16px 0;">
+            <div style="font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);margin-bottom:5px;">Advertisement</div>
+            <a href="ad_click.php?id=<?php echo (int)$dashBannerAd['id']; ?>" target="_blank" rel="noopener sponsored" style="display:inline-block;max-width:728px;width:100%;">
+                <?php if ($dashBannerAd['image']): ?>
+                    <img src="<?php echo sanitize($dashBannerAd['image']); ?>" alt="<?php echo sanitize($dashBannerAd['title']); ?>" style="width:100%;border-radius:10px;">
+                <?php else: ?>
+                    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;font-weight:600;color:var(--text-muted);"><?php echo sanitize($dashBannerAd['title']); ?></div>
+                <?php endif; ?>
+            </a>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($dashLatestNews): ?>
+        <section style="margin:0 0 20px;" aria-label="Latest News">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <h2 style="margin:0;font-size:1rem;font-weight:700;">📰 Latest News</h2>
+                <a href="news.php" style="font-size:.82rem;color:var(--primary);font-weight:600;text-decoration:none;">View all →</a>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+            <?php foreach ($dashLatestNews as $dn):
+                $dnThumb = $dn['featured_image'] ? sanitize($dn['featured_image']) : '';
+                $dnDate  = $dn['published_at'] ? date('M j, Y', strtotime($dn['published_at'])) : '';
+            ?>
+            <a href="news_article.php?slug=<?php echo urlencode($dn['slug']); ?>" style="display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;text-decoration:none;color:inherit;transition:box-shadow .15s,transform .15s;" onmouseover="this.style.boxShadow='0 4px 14px rgba(0,0,0,.09)';this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='';this.style.transform=''">
+                <?php if ($dnThumb): ?>
+                    <img src="<?php echo $dnThumb; ?>" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;">
+                <?php else: ?>
+                    <div style="width:100%;aspect-ratio:16/9;background:linear-gradient(135deg,var(--primary) 0%,#0d5e57 100%);display:flex;align-items:center;justify-content:center;font-size:1.4rem;">📰</div>
+                <?php endif; ?>
+                <div style="padding:9px 11px 11px;">
+                    <p style="margin:0 0 3px;font-weight:700;font-size:.85rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"><?php echo sanitize($dn['title']); ?></p>
+                    <?php if ($dnDate): ?><p style="margin:0;font-size:.73rem;color:var(--text-muted);">📅 <?php echo $dnDate; ?></p><?php endif; ?>
+                </div>
+            </a>
+            <?php endforeach; ?>
+            </div>
+        </section>
         <?php endif; ?>
 
         <?php if (is_worker()): ?>

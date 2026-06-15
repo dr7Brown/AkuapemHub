@@ -9,16 +9,23 @@ if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
     csrf_check();
     $tid = (int)$_POST['toggle_id'];
-    $cur = $pdo->prepare("SELECT status FROM news WHERE id=? LIMIT 1");
+    $cur = $pdo->prepare("SELECT status, title, notification_sent FROM news WHERE id=? LIMIT 1");
     $cur->execute([$tid]);
     $row = $cur->fetch();
     if ($row) {
         $newStatus = $row['status'] === 'published' ? 'draft' : 'published';
-        $pub = ($newStatus === 'published') ? ['published_at' => date('Y-m-d H:i:s')] : [];
-        if ($pub) {
-            $pdo->prepare("UPDATE news SET status=?, published_at=? WHERE id=?")->execute([$newStatus, $pub['published_at'], $tid]);
+        if ($newStatus === 'published') {
+            $pdo->prepare("UPDATE news SET status=?, published_at=? WHERE id=?")->execute([$newStatus, date('Y-m-d H:i:s'), $tid]);
         } else {
             $pdo->prepare("UPDATE news SET status=? WHERE id=?")->execute([$newStatus, $tid]);
+        }
+        // Notify all users the first time an article goes live
+        if ($newStatus === 'published' && !$row['notification_sent']) {
+            $uids = $pdo->query("SELECT id FROM users")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($uids as $uid) {
+                notify_user((int)$uid, '📰 New article published', sanitize($row['title']) . ' — read the latest from ' . APP_NAME . '.', 'info');
+            }
+            $pdo->prepare("UPDATE news SET notification_sent=1 WHERE id=?")->execute([$tid]);
         }
         admin_log('news_toggle', "Article #$tid → $newStatus");
     }

@@ -56,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($status === 'published' && !$pubAt) $pubAt = date('Y-m-d H:i:s');
 
     if (!$errors) {
+        $wasNotified = (int)($article['notification_sent'] ?? 0);
         if ($id) {
             $pdo->prepare("UPDATE news SET title=?, slug=?, summary=?, content=?, featured_image=?, status=?, published_at=?, updated_at=NOW() WHERE id=?")
                 ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt, $id]);
@@ -65,6 +66,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt]);
             $id = (int)$pdo->lastInsertId();
             admin_log('news_create', "Created article #$id: $title");
+        }
+        // Notify all users the first time this article goes live
+        if ($status === 'published' && !$wasNotified) {
+            $uids = $pdo->query("SELECT id FROM users")->fetchAll(PDO::FETCH_COLUMN);
+            foreach ($uids as $uid) {
+                notify_user((int)$uid, '📰 New article published', $title . ' — read the latest from ' . APP_NAME . '.', 'info');
+            }
+            $pdo->prepare("UPDATE news SET notification_sent=1 WHERE id=?")->execute([$id]);
         }
         header('Location: news_edit.php?id=' . $id . '&saved=1');
         exit;
