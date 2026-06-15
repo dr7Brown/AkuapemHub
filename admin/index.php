@@ -303,7 +303,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         var absUrl = new URL(href, window.location.href).href;
 
         homeEl.style.display = 'none';
-        ajaxEl.style.display = '';
+        ajaxEl.style.display = 'block';
         ajaxEl.innerHTML = '<div class="adm-loading"><div class="adm-spinner"></div>Loading…</div>';
         setActive(absUrl);
 
