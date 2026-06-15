@@ -52,8 +52,8 @@ switch ($action) {
         if (strlen($text) > 1000) { echo json_encode(['error' => 'Comment is too long (max 1000 chars).']); exit; }
         $pdo->prepare("INSERT INTO news_comments (news_id, user_id, comment) VALUES (?,?,?)")->execute([$newsId, $user['id'], $text]);
         $initial = mb_strtoupper(mb_substr($user['name'], 0, 1));
-        $avatar  = $user['profile_image']
-            ? '<img src="' . sanitize($user['profile_image']) . '" alt="">'
+        $avatar  = $user['profile_photo']
+            ? '<img src="' . sanitize($user['profile_photo']) . '" alt="">'
             : $initial;
         $html = '<div class="nc-comment">
             <div class="nc-comment-avatar">' . $avatar . '</div>

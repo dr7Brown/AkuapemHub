@@ -46,7 +46,7 @@ $likeStmt->execute([$article['id']]);
 $likeCount = (int)$likeStmt->fetchColumn();
 
 // Comments
-$cStmt = $pdo->prepare("SELECT nc.*, u.name AS user_name, u.profile_image FROM news_comments nc JOIN users u ON u.id=nc.user_id WHERE nc.news_id=? ORDER BY nc.created_at ASC");
+$cStmt = $pdo->prepare("SELECT nc.*, u.name AS user_name, u.profile_photo FROM news_comments nc JOIN users u ON u.id=nc.user_id WHERE nc.news_id=? ORDER BY nc.created_at ASC");
 $cStmt->execute([$article['id']]);
 $comments = $cStmt->fetchAll();
 
@@ -260,7 +260,7 @@ $csrfField = csrf_field();
             ?>
             <div class="nc-comment">
                 <div class="nc-com-av">
-                    <?php if ($c['profile_image']): ?><img src="<?php echo sanitize($c['profile_image']); ?>" alt=""><?php else: ?><?php echo $initial; ?><?php endif; ?>
+                    <?php if ($c['profile_photo']): ?><img src="<?php echo sanitize($c['profile_photo']); ?>" alt=""><?php else: ?><?php echo $initial; ?><?php endif; ?>
                 </div>
                 <div class="nc-com-body">
                     <span class="nc-com-name"><?php echo sanitize($c['user_name']); ?></span>
