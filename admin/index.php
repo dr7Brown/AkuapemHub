@@ -345,8 +345,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                     if (!old.src) document.head.removeChild(s);
                 });
 
-                /* Scroll the content into view smoothly */
-                ajaxEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                /* Scroll to top of the page without hiding content under the sticky bar */
+                window.scrollTo({ top: 0 });
             })
             .catch(function () {
                 ajaxEl.innerHTML =
