@@ -253,22 +253,23 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
 (function () {
     'use strict';
 
-    var homeEl      = document.getElementById('adm-home');
-    var ajaxEl      = document.getElementById('adm-ajax');
-    var pageStyleEl = null;   // reused <style> tag for loaded-page CSS
+    var homeEl         = document.getElementById('adm-home');
+    var ajaxEl         = document.getElementById('adm-ajax');
+    var pageStyleEl    = null;
+    var currentLoadUrl = null; // absolute URL of the currently loaded sub-page
 
     /* ── Helpers ──────────────────────────────────────────────── */
 
-    function setActive(url) {
+    function setActive(absUrl) {
         document.querySelectorAll('.adm-nav a[data-page]').forEach(function (a) {
-            var match = url && (url === a.dataset.page || url.indexOf('/' + a.dataset.page) !== -1);
+            var match = absUrl && absUrl.indexOf('/' + a.dataset.page) !== -1;
             a.classList.toggle('active', !!match);
         });
     }
 
-    function isInternalAdminPage(href) {
+    function isInternalAdminPage(absUrl) {
         try {
-            var u = new URL(href, window.location.href);
+            var u = new URL(absUrl);
             return u.hostname === window.location.hostname
                 && /\/admin\/[a-z0-9_-]+\.php/.test(u.pathname)
                 && !/logout|login/i.test(u.pathname);
@@ -284,12 +285,22 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         return pageStyleEl;
     }
 
+    // 'http://.../admin/requests.php?page=2' → 'requests.php?page=2'
+    function toHashSegment(absUrl) {
+        try {
+            var u = new URL(absUrl);
+            var file = u.pathname.split('/').pop();
+            return file + u.search;
+        } catch (e) { return ''; }
+    }
+
     /* ── Show home dashboard ──────────────────────────────────── */
 
     function showHome(push) {
         homeEl.style.display = '';
         ajaxEl.style.display = 'none';
         ajaxEl.innerHTML = '';
+        currentLoadUrl = null;
         setActive(null);
         document.title = 'Admin Dashboard — AkuapemHub';
         if (push !== false) {
@@ -300,15 +311,20 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     /* ── Load a page into the AJAX panel ─────────────────────── */
 
     function admLoad(href, push) {
-        var absUrl = new URL(href, window.location.href).href;
+        // Resolve relative to the currently loaded sub-page, not window.location
+        // (important for ?query links inside loaded content)
+        var base   = currentLoadUrl || window.location.href;
+        var absUrl = new URL(href, base).href;
+        currentLoadUrl = absUrl;
 
         homeEl.style.display = 'none';
         ajaxEl.style.display = 'block';
         ajaxEl.innerHTML = '<div class="adm-loading"><div class="adm-spinner"></div>Loading…</div>';
         setActive(absUrl);
 
+        // Always stay on index.php; encode the target page in the hash
         if (push !== false) {
-            history.pushState({ adm: 'page', url: absUrl }, '', absUrl);
+            history.pushState({ adm: 'page', url: absUrl }, '', 'index.php#' + toHashSegment(absUrl));
         }
 
         fetch(absUrl, { credentials: 'same-origin' })
@@ -320,32 +336,24 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                 var parser = new DOMParser();
                 var doc    = parser.parseFromString(html, 'text/html');
 
-                /* Page title */
                 var t = doc.querySelector('title');
                 if (t) document.title = t.textContent;
 
-                /* Page-specific <style> blocks from <head> */
                 var css = '';
                 doc.querySelectorAll('head style').forEach(function (s) { css += s.textContent; });
                 ensurePageStyle().textContent = css;
 
-                /* Inject <main> (outerHTML preserves the shell class + its CSS) */
                 var main = doc.querySelector('main');
                 ajaxEl.innerHTML = main ? main.outerHTML : doc.body.innerHTML;
 
-                /* Re-execute inline <script> tags */
                 ajaxEl.querySelectorAll('script').forEach(function (old) {
                     var s = document.createElement('script');
-                    if (old.src) {
-                        s.src = old.src; s.async = false;
-                    } else {
-                        s.textContent = old.textContent;
-                    }
+                    if (old.src) { s.src = old.src; s.async = false; }
+                    else         { s.textContent = old.textContent; }
                     document.head.appendChild(s);
                     if (!old.src) document.head.removeChild(s);
                 });
 
-                /* Scroll to top of the page without hiding content under the sticky bar */
                 window.scrollTo({ top: 0 });
             })
             .catch(function () {
@@ -382,9 +390,13 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     ajaxEl.addEventListener('click', function (e) {
         var a = e.target.closest('a[href]');
         if (!a) return;
-        if (!isInternalAdminPage(a.href)) return;
+        // Resolve relative to currentLoadUrl so '?page=2' resolves against the right file
+        var resolved;
+        try { resolved = new URL(a.getAttribute('href'), currentLoadUrl || window.location.href).href; }
+        catch (ex) { return; }
+        if (!isInternalAdminPage(resolved)) return;
         e.preventDefault();
-        admLoad(a.href);
+        admLoad(resolved);
     });
 
     /* ── Browser back / forward ───────────────────────────────── */
@@ -392,14 +404,21 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         if (!e.state || e.state.adm === 'home') {
             showHome(false);
         } else if (e.state.adm === 'page' && e.state.url) {
+            currentLoadUrl = e.state.url;
             admLoad(e.state.url, false);
         }
     });
 
-    /* Seed the initial history entry so back-button works */
-    history.replaceState({ adm: 'home' }, '', window.location.href);
+    /* ── On refresh: restore from hash ───────────────────────── */
+    var initHash = window.location.hash.slice(1); // e.g. 'requests.php' or 'requests.php?page=2'
+    if (initHash && /^[a-z0-9_-]+\.php/i.test(initHash)) {
+        admLoad(initHash, false);
+        history.replaceState({ adm: 'page', url: new URL(initHash, window.location.href).href }, '', window.location.href);
+    } else {
+        history.replaceState({ adm: 'home' }, '', window.location.href);
+    }
 
-    /* Expose for inline onclick usage (e.g. the payments alert button) */
+    /* Expose for inline onclick (payments alert button) */
     window.admLoad = admLoad;
 }());
 </script>
