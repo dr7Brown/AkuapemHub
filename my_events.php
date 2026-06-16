@@ -42,8 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     $editId    = (int)($_POST['edit_id'] ?? 0);
     $title     = trim($_POST['title']         ?? '');
     $desc      = trim($_POST['description']   ?? '');
-    $venue     = trim($_POST['venue']         ?? '');
-    $gps       = trim($_POST['gps_address']   ?? '');
+    $venue      = trim($_POST['venue']         ?? '');
+    $gps        = trim($_POST['gps_address']   ?? '');
+    $locationId = intval($_POST['location_id'] ?? 0) ?: null;
     $startDate = trim($_POST['start_date']    ?? '');
     $endDate   = trim($_POST['end_date']      ?? '') ?: null;
     $startTime = trim($_POST['start_time']    ?? '') ?: null;
@@ -83,20 +84,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
             $pdo->prepare(
                 "UPDATE events SET title=?,slug=?,featured_image=?,description=?,venue=?,gps_address=?,
                  start_date=?,end_date=?,start_time=?,end_time=?,organizer_name=?,
-                 ticket_type=?,ticket_price=?,registration_link=?,status='draft',updated_at=NOW()
+                 ticket_type=?,ticket_price=?,registration_link=?,location_id=?,status='draft',updated_at=NOW()
                  WHERE id=? AND user_id=?"
             )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,$startTime,$endTime,
-                        $organizer,$ticketType,$ticketPrice,$regLink,$editId,$user['id']]);
+                        $organizer,$ticketType,$ticketPrice,$regLink,$locationId,$editId,$user['id']]);
             $success = 'Event updated. It is under review and will be published once approved.';
         } else {
             $initStatus = $feeEnabled ? 'pending_payment' : 'draft';
             $pdo->prepare(
                 "INSERT INTO events (user_id,title,slug,featured_image,description,venue,gps_address,
                  start_date,end_date,start_time,end_time,organizer_name,ticket_type,ticket_price,
-                 registration_link,status)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                 registration_link,location_id,status)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             )->execute([$user['id'],$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,
-                        $startTime,$endTime,$organizer,$ticketType,$ticketPrice,$regLink,$initStatus]);
+                        $startTime,$endTime,$organizer,$ticketType,$ticketPrice,$regLink,$locationId,$initStatus]);
             $newId = (int)$pdo->lastInsertId();
             if ($feeEnabled) {
                 header('Location: pay_event.php?id=' . $newId); exit;
@@ -121,6 +122,7 @@ if (isset($_GET['edit']) && (int)$_GET['edit']) {
         $editEvent = null; // can't edit published events
     }
 }
+$editEventLoc = $editEvent ? get_location((int)($editEvent['location_id'] ?? 0)) : null;
 
 $myEvents = $pdo->prepare(
     "SELECT * FROM events WHERE user_id=? ORDER BY created_at DESC"
@@ -301,15 +303,35 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                 </div>
 
                 <p class="me-section">Location</p>
+                <input type="hidden" name="location_id" value="<?php echo (int)($editEvent['location_id'] ?? 0) ?: ''; ?>">
                 <div class="me-field">
-                    <label>Venue</label>
+                    <label>Venue / Location Name</label>
                     <input type="text" name="venue" class="form-control"
                            value="<?php echo $v('venue'); ?>" placeholder="Hall name, church, field…">
                 </div>
                 <div class="me-field">
-                    <label>GPS Address</label>
+                    <?php if ($editEventLoc): ?>
+                    <div class="loc-preview loc-has-pin">
+                        <span class="loc-pin-ico">📍</span>
+                        <span class="loc-pin-nm"><?php echo sanitize($editEventLoc['location_name']); ?></span>
+                        <span class="loc-pin-addr"><?php echo sanitize($editEventLoc['formatted_address']); ?></span>
+                    </div>
+                    <?php else: ?>
+                    <div class="loc-preview"></div>
+                    <?php endif; ?>
+                    <button type="button"
+                            data-location-picker
+                            data-field-name="venue"
+                            data-field-address="gps_address"
+                            class="button button-secondary">
+                        📍 <?php echo $editEventLoc ? 'Change Location on Map' : 'Pick Location on Map'; ?>
+                    </button>
+                    <p class="desc" style="margin-top:6px;">Picking on the map saves the exact coordinates and enables directions for attendees.</p>
+                </div>
+                <div class="me-field">
+                    <label>GPS / Formatted Address</label>
                     <input type="text" name="gps_address" class="form-control"
-                           value="<?php echo $v('gps_address'); ?>" placeholder="e.g. GA-123-4567">
+                           value="<?php echo $v('gps_address'); ?>" placeholder="Auto-filled when you pick on map, or enter manually">
                 </div>
 
                 <p class="me-section">Organizer &amp; Tickets</p>

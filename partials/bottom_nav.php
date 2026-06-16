@@ -85,6 +85,7 @@ if (!isset($activeNav)) {
     <?php endforeach; ?>
 </nav>
 <script src="assets/js/rich-editor.js" defer></script>
+<script src="assets/js/location-picker.js" defer></script>
 <script>
 var CSRF = <?php echo json_encode(csrf_token()); ?>;
 // Bell icon: optimistically clear badge, mark notifications read in background

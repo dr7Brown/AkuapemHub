@@ -51,6 +51,34 @@ function render_rich(string $html): string {
     return $clean;
 }
 
+// ── Location & Mapping helpers ─────────────────────────────────────────────────
+
+function haversine_distance(float $lat1, float $lng1, float $lat2, float $lng2): float {
+    $R    = 6371;
+    $dLat = deg2rad($lat2 - $lat1);
+    $dLng = deg2rad($lng2 - $lng1);
+    $a    = sin($dLat / 2) ** 2 + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+    return $R * 2 * atan2(sqrt($a), sqrt(1 - $a));
+}
+
+function get_location(int $id): ?array {
+    global $pdo;
+    if (!$id) return null;
+    $s = $pdo->prepare("SELECT * FROM locations WHERE id=? LIMIT 1");
+    $s->execute([$id]);
+    return $s->fetch(PDO::FETCH_ASSOC) ?: null;
+}
+
+function location_direction_links(float $lat, float $lng, string $name = ''): array {
+    $q = urlencode($lat . ',' . $lng);
+    return [
+        'google' => 'https://www.google.com/maps?q=' . $q,
+        'apple'  => 'https://maps.apple.com/?q=' . $q,
+        'waze'   => 'https://waze.com/ul?ll=' . $q . '&navigate=yes',
+        'osm'    => 'https://www.openstreetmap.org/?mlat=' . $lat . '&mlon=' . $lng . '&zoom=16',
+    ];
+}
+
 function user_wants_email_notifications($userId) {
     global $pdo;
     $stmt = $pdo->prepare('SELECT email_notifications_enabled FROM users WHERE id = ?');
