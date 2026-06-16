@@ -489,9 +489,23 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                 var t = doc.querySelector('title');
                 if (t) document.title = t.textContent;
 
+                // Extract ALL <style> blocks from the fetched page (not just head, to
+                // guard against browsers that move styles around during DOMParser parsing)
                 var css = '';
-                doc.querySelectorAll('head style').forEach(function (s) { css += s.textContent; });
+                doc.querySelectorAll('style').forEach(function (s) { css += s.textContent; });
                 ensurePageStyle().textContent = css;
+
+                // Load any external <script src> from the fetched page's <head>
+                // (e.g. chart.js on payments.php) — only if not already loaded
+                doc.querySelectorAll('head script[src]').forEach(function (old) {
+                    var src = old.getAttribute('src');
+                    if (src && !document.querySelector('script[src="' + src + '"]')) {
+                        var s = document.createElement('script');
+                        s.src = src;
+                        s.async = false;
+                        document.head.appendChild(s);
+                    }
+                });
 
                 var main = doc.querySelector('main');
                 ajaxEl.innerHTML = main ? main.outerHTML : doc.body.innerHTML;

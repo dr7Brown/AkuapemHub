@@ -217,8 +217,8 @@ if ($user) {
 <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
     <a href="community.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">AkuapemHub</a>
     <nav style="display:flex;gap:8px;align-items:center;">
-        <a href="find_workers.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Workers</a>
-        <a href="community.php"    style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Community</a>
+        <a href="find_workers.php" style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Workers</a>
+        <a href="community.php"    style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Community</a>
         <a href="login.php"    class="button button-secondary button-small">Sign in</a>
         <a href="register.php" class="button button-primary button-small">Register</a>
     </nav>
@@ -426,7 +426,7 @@ if ($user) {
             <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:10px;background:var(--surface);border:1px solid var(--border);margin-bottom:8px;">
                 <span style="font-size:1.25rem;">🛡️</span>
                 <div style="flex:1;min-width:0;">
-                    <span style="font-size:0.82rem;color:var(--text-muted);display:block;margin-bottom:3px;">Profile status</span>
+                    <span style="font-size:0.82rem;color:var(--muted,#6b7280);display:block;margin-bottom:3px;">Profile status</span>
                     <?php if ($profile['is_verified']): ?>
                         <span style="display:inline-flex;align-items:center;gap:3px;background:#22a06b;color:#fff;border-radius:5px;padding:2px 9px;font-size:0.92rem;font-weight:600;"><strong style="font-size:1.05em;">✓</strong>erified</span>
                         <?php if ($profile['verification_expiry']): ?>
@@ -435,7 +435,7 @@ if ($user) {
                     <?php elseif ($workerPendingVerif): ?>
                         <a href="my_payments.php" style="display:inline-flex;align-items:center;gap:4px;background:#f59e0b;color:#fff;border-radius:5px;padding:2px 9px;font-size:0.87rem;font-weight:600;text-decoration:none;">⏳ Verification payment pending</a>
                     <?php else: ?>
-                        <span style="color:var(--text-muted);font-size:0.87rem;">Not verified</span>
+                        <span style="color:var(--muted,#6b7280);font-size:0.87rem;">Not verified</span>
                         <a href="<?php echo is_feature_paid('enable_paid_verification_badges') ? 'request_verification.php' : '#'; ?>" class="button button-secondary button-small" style="margin-left:10px;font-size:0.8rem;">Get <strong>✓</strong>erified</a>
                     <?php endif; ?>
                     <?php if ($dbFeatActive && !$dbRenewSoon): ?>
@@ -495,12 +495,12 @@ if ($user) {
 
         <?php if ($dashBannerAd): ?>
         <div style="text-align:center;margin:16px 0;">
-            <div style="font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);margin-bottom:5px;">Advertisement</div>
+            <div style="font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#6b7280);margin-bottom:5px;">Advertisement</div>
             <a href="ad_click.php?id=<?php echo (int)$dashBannerAd['id']; ?>" target="_blank" rel="noopener sponsored" style="display:inline-block;max-width:728px;width:100%;">
                 <?php if ($dashBannerAd['image']): ?>
                     <img src="<?php echo sanitize($dashBannerAd['image']); ?>" alt="<?php echo sanitize($dashBannerAd['title']); ?>" style="width:100%;border-radius:10px;">
                 <?php else: ?>
-                    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;font-weight:600;color:var(--text-muted);"><?php echo sanitize($dashBannerAd['title']); ?></div>
+                    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;font-weight:600;color:var(--muted,#6b7280);"><?php echo sanitize($dashBannerAd['title']); ?></div>
                 <?php endif; ?>
             </a>
         </div>
@@ -525,7 +525,7 @@ if ($user) {
                 <?php endif; ?>
                 <div style="padding:9px 11px 11px;">
                     <p style="margin:0 0 3px;font-weight:700;font-size:.85rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"><?php echo sanitize($dn['title']); ?></p>
-                    <?php if ($dnDate): ?><p style="margin:0;font-size:.73rem;color:var(--text-muted);">📅 <?php echo $dnDate; ?></p><?php endif; ?>
+                    <?php if ($dnDate): ?><p style="margin:0;font-size:.73rem;color:var(--muted,#6b7280);">📅 <?php echo $dnDate; ?></p><?php endif; ?>
                 </div>
             </a>
             <?php endforeach; ?>
@@ -549,7 +549,7 @@ if ($user) {
                 <?php endif; ?>
                 <div style="padding:10px 12px 12px;">
                     <p style="margin:0 0 3px;font-weight:700;font-size:.88rem;"><?php echo sanitize($ev['title']); ?></p>
-                    <p style="margin:0;font-size:.75rem;color:var(--text-muted);">📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?><?php if ($ev['venue']): ?> · <?php echo sanitize(mb_substr($ev['venue'],0,30)); ?><?php endif; ?></p>
+                    <p style="margin:0;font-size:.75rem;color:var(--muted,#6b7280);">📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?><?php if ($ev['venue']): ?> · <?php echo sanitize(mb_substr($ev['venue'],0,30)); ?><?php endif; ?></p>
                 </div>
             </a>
             <?php endforeach; ?>
@@ -561,7 +561,7 @@ if ($user) {
         <section style="margin:0 0 20px;" aria-label="Funeral Announcements">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
                 <h2 style="margin:0;font-size:1rem;font-weight:700;">🕊️ Funeral Announcements</h2>
-                <a href="funerals.php" style="font-size:.82rem;color:var(--text-muted);font-weight:700;text-decoration:none;">View all →</a>
+                <a href="funerals.php" style="font-size:.82rem;color:var(--muted,#6b7280);font-weight:700;text-decoration:none;">View all →</a>
             </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
             <?php foreach ($dashFunerals as $fa): ?>
@@ -575,7 +575,7 @@ if ($user) {
                 </div>
                 <div>
                     <p style="margin:0 0 3px;font-weight:700;font-size:.88rem;"><?php echo sanitize($fa['deceased_name']); ?></p>
-                    <?php if ($fa['burial_date']): ?><p style="margin:0;font-size:.75rem;color:var(--text-muted);">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></p><?php endif; ?>
+                    <?php if ($fa['burial_date']): ?><p style="margin:0;font-size:.75rem;color:var(--muted,#6b7280);">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></p><?php endif; ?>
                 </div>
             </a>
             <?php endforeach; ?>
