@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/db.php';
 
 function current_user() {
@@ -34,7 +34,7 @@ function require_login() {
 function require_role($role) {
     $user = current_user();
     if (!$user || $user['role'] !== $role) {
-        header('Location: dashboard.php');
+        header('Location: jobs.php');
         exit;
     }
 }

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/chat_functions.php';
@@ -8,7 +8,7 @@ $user = current_user();
 
 if (chat_is_disabled() && !in_array($user['role'], ['admin','manager'], true)) {
     flash('Messaging is currently disabled.', 'info');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -94,7 +94,7 @@ $myStatus = get_user_chat_status($user['id']);
     <?php if ($convId): ?>
         <a href="chat.php" class="button button-secondary button-small">← Back</a>
     <?php else: ?>
-        <a href="dashboard.php" class="button button-secondary button-small">← Back</a>
+        <a href="jobs.php" class="button button-secondary button-small">← Back</a>
     <?php endif; ?>
     <span class="brand">💬 Messages</span>
 </header>

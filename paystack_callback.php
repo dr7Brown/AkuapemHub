@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/paystack.php';
@@ -8,7 +8,7 @@ $ref = trim($_GET['reference'] ?? $_GET['trxref'] ?? '');
 
 if (!$ref) {
     flash('No payment reference provided.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -23,13 +23,13 @@ if ($result['success']) {
             'featured_job'        => 'request_detail.php?id=' . $payment['reference_id'],
             'featured_worker'     => 'worker_profile.php',
             'verification'        => 'worker_profile.php',
-            'job_post'            => 'dashboard.php',
+            'job_post'            => 'jobs.php',
             'worker_service'      => 'worker_profile.php',
             'escrow_payment'      => 'request_detail.php?id=' . $payment['reference_id'],
             'escrow_with_posting' => 'request_detail.php?id=' . $payment['reference_id'],
         ];
         flash('Payment already confirmed.', 'info');
-        $redirect = $alreadyRedirects[$payment['payment_type']] ?? 'dashboard.php';
+        $redirect = $alreadyRedirects[$payment['payment_type']] ?? 'jobs.php';
     } elseif (($payment['payment_type'] ?? '') === 'escrow_payment') {
         // Special case: if posting fee is still pending and no combined payment was used,
         // skip the receipt and take the user straight to pay posting fee

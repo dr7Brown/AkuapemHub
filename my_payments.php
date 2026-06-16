@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -57,7 +57,7 @@ $typeLabel = [
 </head>
 <body class="has-bottom-nav">
     <header class="app-topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">← Back</a>
+        <a href="jobs.php" class="button button-secondary button-small">← Back</a>
         <span class="brand">My Payments</span>
     </header>
     <main class="page-shell small-shell">

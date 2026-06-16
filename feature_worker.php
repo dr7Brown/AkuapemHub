@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -12,7 +12,7 @@ $profile = $stmt->fetch();
 
 if (!$profile) {
     flash('Worker profile not found.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

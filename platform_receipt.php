@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -84,12 +84,12 @@ $continueUrls = [
     'featured_job'       => 'request_detail.php?id=' . $p['reference_id'],
     'featured_worker'    => 'worker_profile.php',
     'verification'       => 'worker_profile.php',
-    'job_post'           => 'dashboard.php',
+    'job_post'           => 'jobs.php',
     'worker_service'     => 'worker_profile.php',
     'escrow_payment'     => 'request_detail.php?id=' . $p['reference_id'],
     'escrow_with_posting'=> 'request_detail.php?id=' . $p['reference_id'],
 ];
-$continueUrl = $continueUrls[$type] ?? 'dashboard.php';
+$continueUrl = $continueUrls[$type] ?? 'jobs.php';
 
 // For escrow_with_posting, posting fee = total - escrow gross
 $postingFeeAmount = null;

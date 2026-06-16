@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 $user = current_user();
@@ -24,7 +24,7 @@ $lastUpdated = '1 June 2025';
 </head>
 <body <?php echo $user ? 'class="has-bottom-nav"' : ''; ?>>
     <header class="app-topbar">
-        <a href="<?php echo $user ? 'dashboard.php' : 'index.php'; ?>" class="button button-secondary button-small">← Back</a>
+        <a href="<?php echo $user ? 'jobs.php' : 'index.php'; ?>" class="button button-secondary button-small">← Back</a>
         <span class="brand"><?php echo sanitize(APP_NAME); ?></span>
     </header>
     <div class="legal-shell">

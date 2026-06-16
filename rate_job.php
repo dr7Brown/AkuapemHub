@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -7,7 +7,7 @@ $user = current_user();
 
 $requestId = intval($_GET['request_id'] ?? 0);
 if ($requestId <= 0) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -15,14 +15,14 @@ $stmt = $pdo->prepare('SELECT sr.*, u.name AS assigned_worker_name FROM service_
 $stmt->execute([$requestId, $user['id']]);
 $request = $stmt->fetch();
 if (!$request || $request['status'] !== 'completed' || !$request['assigned_worker_id']) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
 $ratingExists = $pdo->prepare('SELECT id FROM ratings WHERE request_id = ? AND customer_id = ?');
 $ratingExists->execute([$requestId, $user['id']]);
 if ($ratingExists->fetch()) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -46,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         flash('Thank you for rating the worker.');
-        header('Location: dashboard.php');
+        header('Location: jobs.php');
         exit;
     }
 }

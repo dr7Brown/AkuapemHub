@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -6,7 +6,7 @@ require_login();
 $user = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 csrf_check();
@@ -14,7 +14,7 @@ csrf_check();
 $jobId = intval($_POST['job_id'] ?? 0);
 if ($jobId <= 0) {
     flash('Invalid job.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -30,7 +30,7 @@ $row = $stmt->fetch();
 
 if (!$row) {
     flash('Escrow record not found.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

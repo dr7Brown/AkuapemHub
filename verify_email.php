@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/services/EmailService.php';
@@ -80,7 +80,7 @@ $isLoggedIn = (bool) current_user();
           Your email address has been verified. You now have full access to AkuapemHub.
         </p>
         <?php if ($isLoggedIn): ?>
-          <a href="dashboard.php" class="button button-primary">Go to dashboard</a>
+          <a href="jobs.php" class="button button-primary">Go to dashboard</a>
         <?php else: ?>
           <a href="login.php" class="button button-primary">Log in to your account</a>
         <?php endif; ?>

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/paystack.php';
@@ -8,7 +8,7 @@ $user = current_user();
 
 $jobId = intval($_GET['id'] ?? 0);
 if ($jobId <= 0) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -18,7 +18,7 @@ $job = $stmt->fetch();
 
 if (!$job) {
     flash('Job not found or not eligible for escrow checkout.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -35,7 +35,7 @@ $escrow = $escrow->fetch();
 
 if (!$escrow) {
     flash('Escrow record not found. Please contact support.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -198,7 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <p class="meta" style="text-align:center;margin-top:12px;">
-            <a href="dashboard.php">Save for later</a> — your job draft is saved and you can return any time.
+            <a href="jobs.php">Save for later</a> — your job draft is saved and you can return any time.
         </p>
     </main>
     <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>

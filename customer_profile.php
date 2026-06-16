@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -6,7 +6,7 @@ require_login();
 
 $customerId = intval($_GET['id'] ?? 0);
 if ($customerId <= 0) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -15,7 +15,7 @@ $stmt->execute([$customerId]);
 $customer = $stmt->fetch();
 
 if (!$customer) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 $user = current_user();
@@ -59,7 +59,7 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
 </head>
 <body <?php echo $user ? 'class="has-bottom-nav"' : ''; ?>>
     <header class="app-topbar">
-        <a href="<?php echo $user ? 'dashboard.php' : 'index.php'; ?>" class="button button-secondary button-small">← Back</a>
+        <a href="<?php echo $user ? 'jobs.php' : 'index.php'; ?>" class="button button-secondary button-small">← Back</a>
         <span class="brand"><?php echo sanitize(APP_NAME); ?></span>
     </header>
     <div class="static-shell">
@@ -134,7 +134,7 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
                         <?php if ($user['role'] === 'worker'): ?>
                         <li><a href="worker_profile.php">My worker profile</a></li>
                         <?php endif; ?>
-                        <li><a href="dashboard.php">Dashboard</a></li>
+                        <li><a href="jobs.php">Dashboard</a></li>
                         <?php else: ?>
                         <li><a href="register.php">Create an account</a></li>
                         <li><a href="login.php">Sign in</a></li>

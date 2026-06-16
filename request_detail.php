@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -6,7 +6,7 @@ require_login();
 $user = current_user();
 $requestId = intval($_GET['id'] ?? 0);
 if ($requestId <= 0) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -15,13 +15,13 @@ $stmt->execute([$requestId]);
 $request = $stmt->fetch();
 
 if (!$request) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
 $canView = is_admin() || $request['customer_id'] === $user['id'] || (is_worker() && ($request['status'] === 'open' || $request['assigned_worker_id'] === $user['id']));
 if (!$canView) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

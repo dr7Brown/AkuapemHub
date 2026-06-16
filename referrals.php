@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/modules/referrals/service.php';
@@ -8,7 +8,7 @@ $user = current_user();
 
 if (!referrals_enabled()) {
     flash('The referral programme is not currently active.', 'info');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -78,7 +78,7 @@ $eventLabels = [
 </head>
 <body class="has-bottom-nav">
     <header class="app-topbar">
-        <a href="dashboard.php" class="brand" style="text-decoration:none;">‹ Dashboard</a>
+        <a href="jobs.php" class="brand" style="text-decoration:none;">‹ Dashboard</a>
         <span style="font-weight:600;">Points &amp; Referrals</span>
     </header>
     <main class="page-shell" style="padding-bottom:80px;">

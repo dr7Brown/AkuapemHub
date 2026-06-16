@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -7,7 +7,7 @@ $user = current_user();
 
 $requestId = intval($_GET['id'] ?? $_POST['request_id'] ?? 0);
 if (!$requestId) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -17,7 +17,7 @@ $request = $stmt->fetch();
 
 if (!$request || $request['customer_id'] != $user['id']) {
     flash('You can only feature your own jobs.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

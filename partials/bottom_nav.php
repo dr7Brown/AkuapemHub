@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 /**
  * Shared bottom tab bar. Include after $user = current_user(); is set.
  * Optional: set $activeNav to one of 'home','jobs','workers','messages','settings' to force the active tab.
@@ -41,8 +41,6 @@ try {
     // silently skip if DB not available
 }
 
-$jobsHref = $user['role'] === 'worker' ? 'worker_history.php' : 'dashboard.php';
-
 if (function_exists('get_total_unread_chat_count')) {
     $navUnreadMessages = get_total_unread_chat_count($user['id']);
 } else {
@@ -61,11 +59,11 @@ if (function_exists('get_total_unread_chat_count')) {
 }
 
 $navItems = [
-    'home'      => ['href' => 'dashboard.php',  'icon' => '🏠', 'label' => 'Home'],
-    'jobs'      => ['href' => $jobsHref,         'icon' => '🧰', 'label' => 'Services'],
-    'community' => ['href' => 'community.php',  'icon' => '🌍', 'label' => 'Community'],
-    'messages'  => ['href' => 'chat.php',        'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
-    'settings'  => ['href' => 'settings.php',   'icon' => '⚙️', 'label' => 'Settings'],
+    'home'      => ['href' => 'jobs.php',         'icon' => '💼', 'label' => 'Jobs'],
+    'workers'   => ['href' => 'find_workers.php', 'icon' => '🔧', 'label' => 'Workers'],
+    'community' => ['href' => 'community.php',    'icon' => '🌍', 'label' => 'Community'],
+    'messages'  => ['href' => 'chat.php',         'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
+    'settings'  => ['href' => 'settings.php',     'icon' => '⚙️', 'label' => 'Settings'],
 ];
 
 if (!isset($activeNav)) {

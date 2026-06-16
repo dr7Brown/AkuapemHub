@@ -1,10 +1,10 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/services/OtpService.php';
 
 if (current_user()) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

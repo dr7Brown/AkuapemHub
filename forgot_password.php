@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/services/OtpService.php';
@@ -6,7 +6,7 @@ require_once __DIR__ . '/services/EmailService.php';
 require_once __DIR__ . '/services/WhatsAppService.php';
 
 if (current_user()) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

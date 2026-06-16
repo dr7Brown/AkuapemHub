@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/services/EmailService.php';
@@ -6,7 +6,7 @@ require_once __DIR__ . '/services/EmailService.php';
 require_login();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 csrf_check();
@@ -16,7 +16,7 @@ $user = current_user();
 // Already verified
 if (!empty($user['email_verified'])) {
     flash('Your email is already verified.', 'info');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -30,7 +30,7 @@ if ($row && !empty($row['email_verification_sent_at'])) {
     if (time() - $sentAt < 300) {
         $waitSec = 300 - (time() - $sentAt);
         flash('Please wait ' . ceil($waitSec / 60) . ' minute(s) before requesting another verification email.', 'error');
-        header('Location: dashboard.php');
+        header('Location: jobs.php');
         exit;
     }
 }
@@ -45,5 +45,5 @@ EmailService::sendVerificationEmail($user['email'], $user['name'], $token);
 log_security_event($user['id'], 'email_verification_resent', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0', '');
 
 flash('Verification email sent to ' . $user['email'] . '. Please check your inbox.', 'success');
-header('Location: dashboard.php');
+header('Location: jobs.php');
 exit;

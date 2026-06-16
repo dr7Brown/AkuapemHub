@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -6,7 +6,7 @@ require_login();
 $user = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id']) || !isset($_POST['current_status'])) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 csrf_check();
@@ -23,7 +23,7 @@ $stmt->execute([$requestId, $user['id']]);
 $request = $stmt->fetch();
 
 if (!$request) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -51,5 +51,5 @@ try {
     $pdo->rollBack();
     flash('Unable to update payment status. Please try again.', 'error');
 }
-header('Location: dashboard.php');
+header('Location: jobs.php');
 exit;

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/chat_functions.php';
@@ -11,14 +11,14 @@ $jobId   = intval($_GET['job_id']  ?? 0) ?: null;
 
 if (!$theirId) {
     flash('Invalid user.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
 $check = can_chat_with($user['id'], $theirId, $jobId);
 if (!$check['allowed']) {
     flash($check['reason'], 'error');
-    header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? 'dashboard.php'));
+    header('Location: ' . ($_SERVER['HTTP_REFERER'] ?? 'jobs.php'));
     exit;
 }
 

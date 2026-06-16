@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -7,7 +7,7 @@ require_role('worker');
 $user = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id'])) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 csrf_check();
@@ -20,7 +20,7 @@ $request = $stmt->fetch();
 
 if (!$request) {
     flash('Unable to complete this job. Please try again.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -76,5 +76,5 @@ try {
     flash('Unable to complete the job. Please try again.', 'error');
 }
 
-header('Location: dashboard.php');
+header('Location: jobs.php');
 exit;

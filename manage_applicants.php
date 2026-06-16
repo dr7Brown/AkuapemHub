@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/chat_functions.php';
@@ -221,7 +221,7 @@ $jobStatusOptions = [
     <?php if ($focusJobId): ?>
         <a href="manage_applicants.php" class="button button-secondary button-small">← All Jobs</a>
     <?php else: ?>
-        <a href="dashboard.php" class="button button-secondary button-small">← Dashboard</a>
+        <a href="jobs.php" class="button button-secondary button-small">← Dashboard</a>
     <?php endif; ?>
     <span class="brand">
         <?php echo $focusJobId ? '👥 Applicants' : '👥 Manage Applicants'; ?>

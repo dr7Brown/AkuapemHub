@@ -1,11 +1,11 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 require_once __DIR__ . '/../paystack.php';
 
 require_login();
 if (!is_admin() && !is_manager()) {
-    header('Location: ../dashboard.php');
+    header('Location: ../jobs.php');
     exit;
 }
 

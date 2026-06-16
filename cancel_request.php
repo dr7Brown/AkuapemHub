@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -9,7 +9,7 @@ $user = current_user();
 $requestId = intval($_GET['request_id'] ?? 0);
 if ($requestId <= 0) {
     flash('Invalid request.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -19,13 +19,13 @@ $request = $stmt->fetch();
 
 if (!$request) {
     flash('Request not found.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
 if ($request['status'] === 'completed' || $request['status'] === 'cancelled') {
     flash('This request cannot be cancelled.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -56,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $pdo->commit();
             flash('Request cancelled successfully.');
-            header('Location: dashboard.php');
+            header('Location: jobs.php');
             exit;
         } catch (Exception $e) {
             $pdo->rollBack();

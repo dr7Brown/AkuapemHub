@@ -1,10 +1,10 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/modules/referrals/service.php';
 
 if (current_user()) {
-    header('Location: dashboard.php');
+    header('Location: community.php');
     exit;
 }
 
@@ -164,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 flash('Account created! Please complete your service listing payment to appear in search results.', 'info');
                 header('Location: pay_worker_service.php');
             } else {
-                header('Location: dashboard.php');
+                header('Location: community.php');
             }
             exit;
         }

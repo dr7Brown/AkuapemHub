@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -834,7 +834,7 @@ if (!$isAjax): ?>
 </section>
 <section class="card" style="padding:16px 18px;margin-top:0;">
     <p style="margin:0 0 4px;font-size:.85rem;font-weight:600;color:var(--text-muted);">Quick links</p>
-    <a href="dashboard.php"   class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">← Back to Dashboard</a>
+    <a href="jobs.php"   class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">← Back to Dashboard</a>
     <a href="find_workers.php" class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Find Workers</a>
     <a href="notifications.php" class="list-row" style="display:block;padding:9px 0;">Notifications</a>
 </section>

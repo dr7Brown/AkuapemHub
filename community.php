@@ -132,7 +132,7 @@ $openJobs = $pdo->query(
 
 <!-- Module cards -->
 <div class="cm-modules">
-    <a href="find_workers.php" class="cm-mod"><div class="cm-mod-icon">🔧</div><div class="cm-mod-title">Jobs &amp; Services</div><div class="cm-mod-desc">Find workers &amp; post service requests</div></a>
+    <a href="<?php echo $user ? 'jobs.php' : 'login.php'; ?>" class="cm-mod"><div class="cm-mod-icon">💼</div><div class="cm-mod-title">Jobs &amp; Services</div><div class="cm-mod-desc">Browse open jobs &amp; post requests</div></a>
     <a href="news.php"         class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a>
     <a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a>
     <a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a>
@@ -145,12 +145,12 @@ $openJobs = $pdo->query(
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Open Jobs &amp; Services</h2>
-            <a href="find_workers.php">Find Workers →</a>
+            <a href="<?php echo $user ? 'jobs.php' : 'login.php'; ?>">View all →</a>
         </div>
         <?php if ($openJobs): ?>
         <div class="cm-job-row">
             <?php foreach ($openJobs as $job): ?>
-            <a href="request_detail.php?id=<?php echo (int)$job['id']; ?>" class="cm-job-card">
+            <a href="<?php echo $user ? 'request_detail.php?id=' . (int)$job['id'] : 'login.php'; ?>" class="cm-job-card">
                 <?php if ($job['category']): ?><span class="cm-job-cat"><?php echo sanitize($job['category']); ?></span><?php endif; ?>
                 <div class="cm-job-title"><?php echo sanitize($job['title']); ?></div>
                 <?php if ($job['location']): ?><div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($job['location'],0,40)); ?></div><?php endif; ?>
@@ -160,10 +160,11 @@ $openJobs = $pdo->query(
             <?php endforeach; ?>
         </div>
         <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
-            <a href="find_workers.php" class="button button-secondary">🔍 Find Workers</a>
             <?php if ($user): ?>
+            <a href="jobs.php"    class="button button-secondary">📋 Browse Jobs</a>
             <a href="request.php" class="button button-primary">➕ Post a Job</a>
             <?php else: ?>
+            <a href="login.php"   class="button button-secondary">📋 Browse Jobs</a>
             <a href="register.php" class="button button-primary">Sign up to Post a Job</a>
             <?php endif; ?>
         </div>
@@ -261,10 +262,11 @@ $openJobs = $pdo->query(
                 <p>Find skilled workers or post a service request</p>
             </div>
             <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;">
-                <a href="find_workers.php" class="button button-secondary" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;">Find Workers</a>
                 <?php if ($user): ?>
+                <a href="jobs.php" class="button button-secondary" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;">Browse Jobs</a>
                 <a href="request.php" class="button button-primary">Post a Job</a>
                 <?php else: ?>
+                <a href="login.php" class="button button-secondary" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;">Browse Jobs</a>
                 <a href="register.php" class="button button-primary">Sign up</a>
                 <?php endif; ?>
             </div>

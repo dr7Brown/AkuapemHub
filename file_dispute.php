@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -8,7 +8,7 @@ $user = current_user();
 $requestId = intval($_GET['request_id'] ?? 0);
 if ($requestId <= 0) {
     flash('Invalid request.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -18,14 +18,14 @@ $request = $stmt->fetch();
 
 if (!$request) {
     flash('Request not found.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
 $canReport = is_admin() || $user['id'] === $request['customer_id'] || $user['id'] === $request['assigned_worker_id'];
 if (!$canReport) {
     flash('You cannot report this request.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -38,7 +38,7 @@ if (is_customer() && $user['id'] === $request['customer_id']) {
 
 if (!$reportedUserId) {
     flash('Cannot report this request.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -63,7 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             send_email_notification(ADMIN_EMAIL, 'New dispute filed', "A dispute has been filed:\n\nRequest: {$request['title']}\nType: {$disputeType}\n\nDescription:\n{$description}");
             
             flash('Dispute submitted successfully. An admin will review your report.');
-            header('Location: dashboard.php');
+            header('Location: jobs.php');
             exit;
         } catch (Exception $e) {
             $error = 'Unable to file dispute. Please try again.';

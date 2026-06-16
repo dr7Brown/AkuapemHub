@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 require_once __DIR__ . '/../chat_functions.php';
@@ -6,7 +6,7 @@ require_once __DIR__ . '/../chat_functions.php';
 require_login();
 $user = current_user();
 if (!in_array($user['role'], ['admin','manager'], true)) {
-    header('Location: ../dashboard.php'); exit;
+    header('Location: ../jobs.php'); exit;
 }
 
 $tab = $_GET['tab'] ?? 'dashboard';

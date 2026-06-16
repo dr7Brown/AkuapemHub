@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -7,7 +7,7 @@ $user = current_user();
 
 $jobId = intval($_GET['id'] ?? $_POST['job_id'] ?? 0);
 if (!$jobId) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -17,7 +17,7 @@ $job = $stmt->fetch();
 
 if (!$job) {
     flash('Job not found.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -33,7 +33,7 @@ if (!is_feature_paid('enable_paid_job_posting')) {
     // Admin turned off paid posting — update the job and let it through
     $pdo->prepare("UPDATE service_requests SET posting_fee_status = 'free' WHERE id = ?")->execute([$jobId]);
     flash('Job submitted for admin review.', 'success');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -48,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!is_feature_paid('enable_paid_job_posting')) {
         $pdo->prepare("UPDATE service_requests SET posting_fee_status = 'free' WHERE id = ?")->execute([$jobId]);
         flash('Job submitted for admin review.', 'success');
-        header('Location: dashboard.php');
+        header('Location: jobs.php');
         exit;
     }
 
@@ -104,7 +104,7 @@ $packages = get_active_packages('job_posting_packages');
 </head>
 <body class="has-bottom-nav">
     <header class="app-topbar">
-        <a href="dashboard.php" class="button button-secondary button-small">← Back</a>
+        <a href="jobs.php" class="button button-secondary button-small">← Back</a>
         <span class="brand">Job Posting Fee</span>
     </header>
     <main class="page-shell small-shell">

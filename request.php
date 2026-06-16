@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -7,7 +7,7 @@ $user = current_user();
 
 if (!is_email_verified()) {
     flash('Please verify your email address before posting a job. Check your inbox.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 
@@ -28,7 +28,7 @@ if ($editId > 0) {
     $draft = $dStmt->fetch();
     if (!$draft) {
         flash('Draft not found.', 'error');
-        header('Location: dashboard.php');
+        header('Location: jobs.php');
         exit;
     }
 }
@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $deadlineValue,$deadlineUnit,$deadlineDate,$commRate]);
                 flash('Draft saved. Publish it from your dashboard whenever you are ready.', 'info');
             }
-            header('Location: dashboard.php');
+            header('Location: jobs.php');
             exit;
         }
     }
@@ -243,7 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         send_email_notification(ADMIN_EMAIL, 'New AkuapemHub service request', $adminMessage);
 
         flash('Service request created successfully. Admin will approve it before workers can accept.');
-        header('Location: dashboard.php');
+        header('Location: jobs.php');
         exit;
     }
 }

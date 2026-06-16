@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -7,7 +7,7 @@ require_role('worker');
 $user = current_user();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id'])) {
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 csrf_check();
@@ -25,7 +25,7 @@ $request = $stmt->fetch();
 
 if (!$request) {
     flash('This job is no longer accepting applications.', 'error');
-    header('Location: dashboard.php');
+    header('Location: jobs.php');
     exit;
 }
 

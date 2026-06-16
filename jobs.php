@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/modules/referrals/service.php';
@@ -129,7 +129,7 @@ if (is_worker()) {
                 ->execute([$delId, $user['id']]);
             flash('Draft deleted.', 'info');
         }
-        header('Location: dashboard.php');
+        header('Location: jobs.php');
         exit;
     }
 
@@ -207,7 +207,7 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                         <span>👤</span> My Worker Profile
                     </a>
                     <?php else: ?>
-                    <a href="dashboard.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                    <a href="jobs.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
                         <span>🏠</span> Dashboard
                     </a>
                     <?php endif; ?>
@@ -374,7 +374,7 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
         <h2 style="margin: 0 0 12px;">Popular categories</h2>
         <div class="category-grid" id="category-grid">
             <?php foreach ($categories as $index => $category): ?>
-                <a href="<?php echo is_worker() ? 'dashboard.php?category=' . $category['id'] : 'find_workers.php?category=' . $category['id']; ?>" class="chip-pick<?php echo $index >= 5 ? ' category-extra' : ''; ?>"<?php echo $index >= 5 ? ' hidden' : ''; ?>>
+                <a href="<?php echo is_worker() ? 'jobs.php?category=' . $category['id'] : 'find_workers.php?category=' . $category['id']; ?>" class="chip-pick<?php echo $index >= 5 ? ' category-extra' : ''; ?>"<?php echo $index >= 5 ? ' hidden' : ''; ?>>
                     <span class="chip-icon"><?php echo category_icon($category['name']); ?></span>
                     <span><?php echo sanitize($category['name']); ?></span>
                 </a>
@@ -594,7 +594,7 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                                     </div>
                                 <?php endif; ?>
                                 <div class="card-actions">
-                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/jobs.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
                                     <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
                                 </div>
                             </div>
@@ -751,7 +751,7 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                                 </div>
                                 <?php endif; ?>
                                 <div class="card-actions">
-                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                    <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/jobs.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
                                     <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
                                 </div>
                             </div>
@@ -784,7 +784,7 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                                 <a href="become_worker.php" class="button button-secondary" style="font-size:0.85rem;">Become a Worker →</a>
                             </div>
                             <div class="card-actions">
-                                <a href="<?php echo whatsapp_share_link($job['title'], $job['location'], $job['budget'], BASE_URL . '/dashboard.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
+                                <a href="<?php echo whatsapp_share_link($job['title'], $job['location'], $job['budget'], BASE_URL . '/jobs.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
                                 <a href="request_detail.php?id=<?php echo $job['id']; ?>" class="button">Details</a>
                             </div>
                         </div>
