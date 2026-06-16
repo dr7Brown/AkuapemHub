@@ -22,14 +22,14 @@ function ev_slug($pdo, $base, $excludeId = 0) {
     return $t;
 }
 
-// Delete own draft/rejected submission
+// Delete own draft/pending_payment/cancelled submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     csrf_check();
     $did = (int)$_POST['delete_id'];
     $check = $pdo->prepare("SELECT id, status FROM events WHERE id=? AND user_id=? LIMIT 1");
     $check->execute([$did, $user['id']]);
     $row = $check->fetch();
-    if ($row && in_array($row['status'], ['draft','cancelled'])) {
+    if ($row && in_array($row['status'], ['pending_payment','draft','cancelled'])) {
         $pdo->prepare("DELETE FROM events WHERE id=?")->execute([$did]);
         $success = 'Event deleted.';
     }
@@ -89,23 +89,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                         $organizer,$ticketType,$ticketPrice,$regLink,$editId,$user['id']]);
             $success = 'Event updated. It is under review and will be published once approved.';
         } else {
+            $initStatus = $feeEnabled ? 'pending_payment' : 'draft';
             $pdo->prepare(
                 "INSERT INTO events (user_id,title,slug,featured_image,description,venue,gps_address,
                  start_date,end_date,start_time,end_time,organizer_name,ticket_type,ticket_price,
                  registration_link,status)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')"
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             )->execute([$user['id'],$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,
-                        $startTime,$endTime,$organizer,$ticketType,$ticketPrice,$regLink]);
+                        $startTime,$endTime,$organizer,$ticketType,$ticketPrice,$regLink,$initStatus]);
+            $newId = (int)$pdo->lastInsertId();
+            if ($feeEnabled) {
+                header('Location: pay_event.php?id=' . $newId); exit;
+            }
             notify_admins_and_managers(
                 'New event submitted',
                 display_name($user) . ' submitted a new event: "' . $title . '". Review and publish in the Events admin panel.',
                 'info'
             );
-            if ($feeEnabled) {
-                $success = 'Event submitted. Please contact the admin to pay the GH₵ ' . number_format($feeAmount,2) . ' publishing fee.';
-            } else {
-                $success = 'Event submitted! It will appear on the site once an admin publishes it.';
-            }
+            $success = 'Event submitted! It will appear on the site once an admin publishes it.';
         }
     }
 }
@@ -128,9 +129,10 @@ $myEvents->execute([$user['id']]);
 $myList = $myEvents->fetchAll();
 
 $statusLabels = [
-    'draft'     => ['label'=>'Under Review', 'color'=>'#2563eb','bg'=>'#eff6ff'],
-    'published' => ['label'=>'Published',    'color'=>'#059669','bg'=>'#ecfdf5'],
-    'cancelled' => ['label'=>'Cancelled',    'color'=>'#dc2626','bg'=>'#fee2e2'],
+    'pending_payment' => ['label'=>'Awaiting Payment', 'color'=>'#92400e','bg'=>'#fffbeb'],
+    'draft'           => ['label'=>'Under Review',     'color'=>'#2563eb','bg'=>'#eff6ff'],
+    'published'       => ['label'=>'Published',        'color'=>'#059669','bg'=>'#ecfdf5'],
+    'cancelled'       => ['label'=>'Cancelled',        'color'=>'#dc2626','bg'=>'#fee2e2'],
 ];
 
 $v  = fn($k) => sanitize($editEvent[$k] ?? '');
@@ -208,7 +210,10 @@ $dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
                     <?php if ($ev['status'] === 'published' && $ev['slug']): ?>
                         <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="button button-small" target="_blank">View</a>
                     <?php endif; ?>
-                    <?php if (in_array($ev['status'], ['draft','cancelled'])): ?>
+                    <?php if ($ev['status'] === 'pending_payment'): ?>
+                        <a href="pay_event.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">Pay to Publish</a>
+                    <?php endif; ?>
+                    <?php if (in_array($ev['status'], ['pending_payment','draft','cancelled'])): ?>
                         <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-small button-secondary">Edit</a>
                         <form method="post" onsubmit="return confirm('Delete this event?')">
                             <?php echo csrf_field(); ?>
@@ -232,8 +237,8 @@ $dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
 
             <?php if ($feeEnabled && !$editEvent): ?>
             <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.88rem;">
-                💳 A <strong>GH₵ <?php echo number_format($feeAmount,2); ?></strong> fee applies to publish your event.
-                Submit your event and contact the admin to complete payment.
+                💳 A <strong>GH₵ <?php echo number_format($feeAmount,2); ?></strong> publishing fee applies.
+                After submitting, you'll be taken to a secure Paystack checkout to complete payment.
             </div>
             <?php endif; ?>
 

@@ -84,11 +84,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
             $data['venue'], $data['gps_address'], $data['organizer_name'], $data['organizer_phone'],
             $data['organizer_email'], $status, $slug
         ]);
+        $newId = (int)$pdo->lastInsertId();
         if ($feeEnabled) {
-            $success = 'Submission received. Please contact the admin to complete payment of GH₵ ' . number_format($feeAmount, 2) . ' to publish your announcement.';
-        } else {
-            $success = 'Announcement submitted and is pending admin review.';
+            header('Location: pay_funeral.php?id=' . $newId); exit;
         }
+        notify_admins_and_managers(
+            'Funeral announcement submitted',
+            display_name($user) . ' submitted a funeral announcement for "' . $data['deceased_name'] . '". Review in Admin → Funerals.',
+            'info'
+        );
+        $success = 'Announcement submitted and is pending admin review.';
     }
 }
 
@@ -171,13 +176,13 @@ $statusLabels = [
                     <span class="mf-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                         <?php echo $sl['label']; ?>
                     </span>
-                    <?php if ($fa['status'] === 'pending_payment'): ?>
-                    <p style="font-size:.78rem;color:#92400e;margin:6px 0 0;">Contact admin to pay GH₵ <?php echo number_format($feeAmount, 2); ?> for publication.</p>
-                    <?php endif; ?>
                 </div>
                 <div class="mf-actions">
                     <?php if ($fa['status'] === 'approved' && $fa['slug']): ?>
                     <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="button button-small" target="_blank">View</a>
+                    <?php endif; ?>
+                    <?php if ($fa['status'] === 'pending_payment'): ?>
+                    <a href="pay_funeral.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">Pay to Publish</a>
                     <?php endif; ?>
                     <?php if (in_array($fa['status'], ['pending_payment','pending','rejected'])): ?>
                     <form method="post" onsubmit="return confirm('Delete this announcement?')">
@@ -198,8 +203,8 @@ $statusLabels = [
 
             <?php if ($feeEnabled): ?>
             <div class="mf-fee-notice">
-                💳 There is a <strong>GH₵ <?php echo number_format($feeAmount, 2); ?></strong> fee to publish a funeral announcement.
-                Submit your details below and contact the admin to complete payment.
+                💳 A <strong>GH₵ <?php echo number_format($feeAmount, 2); ?></strong> publishing fee applies.
+                After submitting your details, you'll be taken to a secure Paystack checkout to complete payment.
             </div>
             <?php endif; ?>
 

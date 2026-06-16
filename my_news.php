@@ -22,14 +22,14 @@ function mn_slug($pdo, $base, $excludeId = 0) {
     return $t;
 }
 
-// Delete own draft
+// Delete own draft / pending_payment
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     csrf_check();
     $did = (int)$_POST['delete_id'];
     $chk = $pdo->prepare("SELECT id, status FROM news WHERE id=? AND user_id=? LIMIT 1");
     $chk->execute([$did, $user['id']]);
     $row = $chk->fetch();
-    if ($row && $row['status'] === 'draft') {
+    if ($row && in_array($row['status'], ['draft', 'pending_payment'])) {
         $pdo->prepare("DELETE FROM news WHERE id=?")->execute([$did]);
         $success = 'Article deleted.';
     }
@@ -70,25 +70,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
         $slug = mn_slug($pdo, $title . ' ' . date('Y'), $editId);
         if ($editId) {
             $pdo->prepare(
-                "UPDATE news SET title=?,slug=?,summary=?,content=?,featured_image=?,status='draft',updated_at=NOW()
-                 WHERE id=? AND user_id=?"
+                "UPDATE news SET title=?,slug=?,summary=?,content=?,featured_image=?,updated_at=NOW()
+                 WHERE id=? AND user_id=? AND status != 'published'"
             )->execute([$title, $slug, $summary, $content, $imgPath, $editId, $user['id']]);
-            $success = 'Article updated and is pending admin review.';
+            $success = 'Article updated.';
         } else {
+            $initStatus = $feeEnabled ? 'pending_payment' : 'draft';
             $pdo->prepare(
                 "INSERT INTO news (user_id,title,slug,summary,content,featured_image,status,created_at,updated_at)
-                 VALUES (?,?,?,?,?,?,'draft',NOW(),NOW())"
-            )->execute([$user['id'], $title, $slug, $summary, $content, $imgPath]);
+                 VALUES (?,?,?,?,?,?,?,NOW(),NOW())"
+            )->execute([$user['id'], $title, $slug, $summary, $content, $imgPath, $initStatus]);
+            $newId = (int)$pdo->lastInsertId();
+            if ($feeEnabled) {
+                header('Location: pay_news.php?id=' . $newId); exit;
+            }
             notify_admins_and_managers(
                 'New article submitted',
                 display_name($user) . ' submitted a new article: "' . $title . '". Review and publish in the News admin panel.',
                 'info'
             );
-            if ($feeEnabled) {
-                $success = 'Article submitted. Please contact the admin to pay the GH₵ ' . number_format($feeAmount, 2) . ' publishing fee.';
-            } else {
-                $success = 'Article submitted and is pending admin review.';
-            }
+            $success = 'Article submitted and is pending admin review.';
         }
     }
 }
@@ -109,8 +110,9 @@ $myArticles->execute([$user['id']]);
 $myList = $myArticles->fetchAll();
 
 $statusLabels = [
-    'draft'     => ['label' => 'Under Review', 'color' => '#2563eb', 'bg' => '#eff6ff'],
-    'published' => ['label' => 'Published',    'color' => '#059669', 'bg' => '#ecfdf5'],
+    'pending_payment' => ['label' => 'Awaiting Payment', 'color' => '#92400e', 'bg' => '#fffbeb'],
+    'draft'           => ['label' => 'Under Review',     'color' => '#2563eb', 'bg' => '#eff6ff'],
+    'published'       => ['label' => 'Published',        'color' => '#059669', 'bg' => '#ecfdf5'],
 ];
 ?>
 <!DOCTYPE html>
@@ -172,9 +174,7 @@ $statusLabels = [
                     <span class="mn-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                         <?php echo $sl['label']; ?>
                     </span>
-                    <?php if ($art['status'] === 'draft' && $feeEnabled): ?>
-                    <p style="font-size:.77rem;color:#92400e;margin:5px 0 0;">Contact admin to pay GH₵ <?php echo number_format($feeAmount,2); ?> to publish.</p>
-                    <?php elseif ($art['status'] === 'draft'): ?>
+                    <?php if ($art['status'] === 'draft'): ?>
                     <p style="font-size:.77rem;color:#1d4ed8;margin:5px 0 0;">Awaiting admin review before going live.</p>
                     <?php endif; ?>
                 </div>
@@ -182,7 +182,10 @@ $statusLabels = [
                     <?php if ($art['status'] === 'published' && $art['slug']): ?>
                         <a href="news_article.php?slug=<?php echo urlencode($art['slug']); ?>" class="button button-small" target="_blank">View</a>
                     <?php endif; ?>
-                    <?php if ($art['status'] === 'draft'): ?>
+                    <?php if ($art['status'] === 'pending_payment'): ?>
+                        <a href="pay_news.php?id=<?php echo (int)$art['id']; ?>" class="button button-small button-primary">Pay to Publish</a>
+                    <?php endif; ?>
+                    <?php if (in_array($art['status'], ['draft', 'pending_payment'])): ?>
                         <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-small button-secondary">Edit</a>
                         <form method="post" onsubmit="return confirm('Delete this article?')">
                             <?php echo csrf_field(); ?>
@@ -203,8 +206,8 @@ $statusLabels = [
 
             <?php if ($feeEnabled && !$editArticle): ?>
             <div class="mn-fee-notice">
-                💳 A <strong>GH₵ <?php echo number_format($feeAmount,2); ?></strong> fee applies to publish your article.
-                Submit your article and contact the admin to complete payment.
+                💳 A <strong>GH₵ <?php echo number_format($feeAmount,2); ?></strong> publishing fee applies.
+                After submitting, you'll be taken to a secure Paystack checkout to complete payment.
             </div>
             <?php endif; ?>
 

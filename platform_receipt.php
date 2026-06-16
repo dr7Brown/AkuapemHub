@@ -77,6 +77,9 @@ $typeLabels = [
     'worker_service'     => 'Worker Service Listing',
     'escrow_payment'     => 'Escrow Payment',
     'escrow_with_posting'=> 'Escrow + Job Posting Fee',
+    'news_post'          => 'News Article Publishing Fee',
+    'event_post'         => 'Event Publishing Fee',
+    'funeral_post'       => 'Funeral Announcement Fee',
 ];
 $typeLabel = $typeLabels[$type] ?? ucwords(str_replace('_', ' ', $type));
 
@@ -88,6 +91,9 @@ $continueUrls = [
     'worker_service'     => 'worker_profile.php',
     'escrow_payment'     => 'request_detail.php?id=' . $p['reference_id'],
     'escrow_with_posting'=> 'request_detail.php?id=' . $p['reference_id'],
+    'news_post'          => 'my_news.php',
+    'event_post'         => 'my_events.php',
+    'funeral_post'       => 'my_funerals.php',
 ];
 $continueUrl = $continueUrls[$type] ?? 'jobs.php';
 

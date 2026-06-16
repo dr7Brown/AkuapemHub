@@ -285,6 +285,54 @@ function activatePurchasedFeature(array $payment): void {
             );
             break;
 
+        case 'news_post':
+            $newsRow = $pdo->prepare("SELECT title FROM news WHERE id = ?");
+            $newsRow->execute([$payment['reference_id']]);
+            $newsRow = $newsRow->fetch();
+            $newsTitle = $newsRow ? $newsRow['title'] : "Article #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE news SET status = 'draft', updated_at = NOW() WHERE id = ? AND status = 'pending_payment'")
+                ->execute([$payment['reference_id']]);
+            notify_user($payment['user_id'], '✅ Publishing fee confirmed',
+                "Payment for \"{$newsTitle}\" was received. Your article is now queued for admin review.", 'success');
+            notify_admins_and_managers(
+                'News article awaiting review (fee paid)',
+                "\"{$newsTitle}\" — publishing fee paid by user {$payment['user_id']}. Review in Admin → News.",
+                'info'
+            );
+            break;
+
+        case 'event_post':
+            $evRow = $pdo->prepare("SELECT title FROM events WHERE id = ?");
+            $evRow->execute([$payment['reference_id']]);
+            $evRow = $evRow->fetch();
+            $evTitle = $evRow ? $evRow['title'] : "Event #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE events SET status = 'draft', updated_at = NOW() WHERE id = ? AND status = 'pending_payment'")
+                ->execute([$payment['reference_id']]);
+            notify_user($payment['user_id'], '✅ Publishing fee confirmed',
+                "Payment for \"{$evTitle}\" was received. Your event is now queued for admin review.", 'success');
+            notify_admins_and_managers(
+                'Event awaiting review (fee paid)',
+                "\"{$evTitle}\" — publishing fee paid by user {$payment['user_id']}. Review in Admin → Events.",
+                'info'
+            );
+            break;
+
+        case 'funeral_post':
+            $faRow = $pdo->prepare("SELECT deceased_name FROM funeral_announcements WHERE id = ?");
+            $faRow->execute([$payment['reference_id']]);
+            $faRow = $faRow->fetch();
+            $faName = $faRow ? $faRow['deceased_name'] : "Announcement #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE funeral_announcements SET status = 'pending', updated_at = NOW() WHERE id = ? AND status = 'pending_payment'")
+                ->execute([$payment['reference_id']]);
+            notify_user($payment['user_id'], '✅ Publishing fee confirmed',
+                "Payment for the announcement of \"{$faName}\" was received. It is now under admin review.", 'success');
+            notify_admins_and_managers(
+                'Funeral announcement awaiting review (fee paid)',
+                "\"{$faName}\" — publishing fee paid by user {$payment['user_id']}. Review in Admin → Funerals.",
+                'info'
+            );
+            break;
+
         case 'escrow_with_posting':
             $jobId = (int)$payment['reference_id'];
 

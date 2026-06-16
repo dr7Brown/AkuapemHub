@@ -27,6 +27,9 @@ if ($result['success']) {
             'worker_service'      => 'worker_profile.php',
             'escrow_payment'      => 'request_detail.php?id=' . $payment['reference_id'],
             'escrow_with_posting' => 'request_detail.php?id=' . $payment['reference_id'],
+            'news_post'           => 'my_news.php',
+            'event_post'          => 'my_events.php',
+            'funeral_post'        => 'my_funerals.php',
         ];
         flash('Payment already confirmed.', 'info');
         $redirect = $alreadyRedirects[$payment['payment_type']] ?? 'jobs.php';
