@@ -3,10 +3,9 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/modules/referrals/service.php';
 
-require_login();
 $user = current_user();
-$flash = get_flash();
-sweep_expired_featured();
+$flash = $user ? get_flash() : null;
+if ($user) sweep_expired_featured();
 
 // Banner ad + news teaser for dashboard
 $dashBannerAd  = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
@@ -14,7 +13,7 @@ $dashLatestNews = $pdo->query("SELECT title, slug, featured_image, published_at 
 $dashEvents    = $pdo->query("SELECT * FROM events WHERE status='published' AND start_date>=CURDATE() ORDER BY featured DESC, start_date ASC LIMIT 3")->fetchAll();
 $dashFunerals  = $pdo->query("SELECT * FROM funeral_announcements WHERE status='approved' ORDER BY featured DESC, created_at DESC LIMIT 3")->fetchAll();
 $categories = get_categories();
-$notificationCount = get_unread_notifications_count($user['id']);
+$notificationCount = $user ? get_unread_notifications_count((int)$user['id']) : 0;
 
 $categoryFilter = $_GET['category'] ?? '';
 $locationFilter = $_GET['location'] ?? '';
@@ -159,16 +158,49 @@ if (is_worker()) {
     $browseStmt->execute([$user['id']]);
     $browseJobs = $browseStmt->fetchAll();
 
-} else {
+} elseif ($user) {
     header('Location: admin/index.php');
     exit;
+} else {
+    // Guest: public open-job listing with filters
+    $guestWhere  = ["sr.status IN ('open','partially_staffed')", "sr.posting_fee_status != 'pending'"];
+    $guestParams = [];
+    if ($categoryFilter) {
+        $guestWhere[]  = 'sr.category_id = ?';
+        $guestParams[] = $categoryFilter;
+    }
+    if ($locationFilter) {
+        $guestWhere[]  = 'sr.location LIKE ?';
+        $guestParams[] = '%' . $locationFilter . '%';
+    }
+    if ($searchQuery) {
+        $guestWhere[]  = '(sr.title LIKE ? OR sr.description LIKE ? OR sc2.name LIKE ?)';
+        $guestParams[] = '%' . $searchQuery . '%';
+        $guestParams[] = '%' . $searchQuery . '%';
+        $guestParams[] = '%' . $searchQuery . '%';
+    }
+    $guestSql = 'SELECT sr.id, sr.title, sr.description, sr.location, sr.budget, sr.budget_amount,
+                        sr.status, sr.featured, sr.featured_end_date, sr.created_at, sc2.name AS category_name
+                 FROM service_requests sr
+                 JOIN service_categories sc2 ON sr.category_id = sc2.id
+                 WHERE ' . implode(' AND ', $guestWhere) . '
+                 ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 60';
+    $guestStmt = $pdo->prepare($guestSql);
+    $guestStmt->execute($guestParams);
+    $guestJobs = $guestStmt->fetchAll();
 }
 
-// Referral & points data for dashboard banner
-$dashRefEnabled  = referrals_enabled();
-$dashPtsBalance  = $dashRefEnabled ? get_points_balance((int)$user['id']) : 0;
-$dashRefCode     = $dashRefEnabled ? get_or_create_referral_code((int)$user['id']) : '';
-$dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
+// Referral & points data (logged-in users only)
+$dashRefEnabled = false;
+$dashPtsBalance = 0;
+$dashRefCode    = '';
+$dashRefUrl     = '';
+if ($user) {
+    $dashRefEnabled = referrals_enabled();
+    $dashPtsBalance = $dashRefEnabled ? get_points_balance((int)$user['id']) : 0;
+    $dashRefCode    = $dashRefEnabled ? get_or_create_referral_code((int)$user['id']) : '';
+    $dashRefUrl     = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
+}
 
 ?>
 <!DOCTYPE html>
@@ -179,7 +211,19 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
     <title>Home — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body class="has-bottom-nav">
+<body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
+
+<?php if (!$user): ?>
+<header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+    <a href="community.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">AkuapemHub</a>
+    <nav style="display:flex;gap:8px;align-items:center;">
+        <a href="find_workers.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Workers</a>
+        <a href="community.php"    style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Community</a>
+        <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+        <a href="register.php" class="button button-primary button-small">Register</a>
+    </nav>
+</header>
+<?php else: ?>
     <header class="app-topbar">
         <span class="brand"><span class="brand-icon">🏠</span> AkuapemHub</span>
         <div style="display: flex; align-items: center; gap: 10px;">
@@ -239,11 +283,71 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
             </script>
         </div>
     </header>
+<?php endif; ?>
+
     <main class="page-shell">
         <?php if ($flash): ?>
             <div class="alert alert-<?php echo sanitize($flash['type']); ?>"><?php echo sanitize($flash['message']); ?></div>
         <?php endif; ?>
 
+<?php if (!$user): ?>
+        <!-- ── Guest hero + public job listing ──────────────────── -->
+        <section class="hero-card">
+            <h1>Browse Jobs &amp; Services in Akuapem</h1>
+            <p class="meta" style="color:rgba(255,255,255,.85);margin-bottom:12px;">Find open service requests — sign in to apply or post your own job</p>
+            <div class="button-group">
+                <a href="register.php" class="button button-primary">Create free account</a>
+                <a href="find_workers.php" class="button button-secondary">🔧 Find Workers</a>
+            </div>
+        </section>
+
+        <form method="get" class="filter-form" style="margin-bottom:16px;">
+            <select name="category">
+                <option value="">All categories</option>
+                <?php foreach ($categories as $cat): ?>
+                    <option value="<?php echo $cat['id']; ?>" <?php echo $categoryFilter == $cat['id'] ? 'selected' : ''; ?>><?php echo sanitize($cat['name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+            <input type="text" name="q"        value="<?php echo sanitize($searchQuery); ?>"   placeholder="Search jobs" />
+            <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
+            <button type="submit" class="button button-primary">Filter</button>
+        </form>
+
+        <?php if ($guestJobs): ?>
+        <div class="jobs-grid">
+        <?php foreach ($guestJobs as $job): ?>
+            <article class="request-card">
+                <div class="request-head">
+                    <div>
+                        <h2><?php echo sanitize($job['title']); ?></h2>
+                        <?php if (!empty($job['featured']) && (empty($job['featured_end_date']) || $job['featured_end_date'] >= date('Y-m-d'))): ?>
+                            <span class="badge badge-featured">Featured</span>
+                        <?php endif; ?>
+                        <p class="meta"><?php echo sanitize($job['category_name']); ?><?php if ($job['location']): ?> · <?php echo sanitize($job['location']); ?><?php endif; ?></p>
+                    </div>
+                    <span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span>
+                </div>
+                <p><?php echo sanitize($job['description']); ?></p>
+                <?php if ($job['budget'] || $job['budget_amount']): ?>
+                <p class="meta" style="margin:0;">GH₵ <?php echo sanitize($job['budget'] ?: number_format((float)$job['budget_amount'], 2)); ?></p>
+                <?php endif; ?>
+                <div class="card-bottom">
+                    <div class="card-mid-actions">
+                        <a href="login.php" class="button button-primary">Sign in to Apply</a>
+                    </div>
+                    <div class="card-actions">
+                        <a href="request_detail.php?id=<?php echo (int)$job['id']; ?>" class="button">Details</a>
+                    </div>
+                </div>
+            </article>
+        <?php endforeach; ?>
+        </div>
+        <?php else: ?>
+            <div class="empty-state">No open jobs match your filters right now.</div>
+        <?php endif; ?>
+
+<?php else: ?>
+        <!-- ── Logged-in user views ──────────────────────────────── -->
         <?php if (!is_email_verified()): ?>
             <div class="alert alert-warning" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                 <span style="font-size:1.2rem;line-height:1;">📧</span>
@@ -268,12 +372,17 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
                 <h1>Find trusted jobs near you in Akuapem</h1>
                 <div class="button-group">
                     <a href="#open-jobs" class="button button-primary">Browse open jobs</a>
-                    <a href="worker_history.php" class="button button-secondary">📋 My Applications</a>
+                    <a href="my_applications.php" class="button button-secondary">📋 My Applications</a>
+                    <a href="find_workers.php" class="button button-secondary">🔧 Find Workers</a>
                     <a href="request.php" class="button button-secondary">➕ Post Job</a>
                 </div>
             <?php else: ?>
                 <h1>Find trusted workers for any job in Akuapem</h1>
-                <a href="request.php" class="button button-primary">➕ Post Job</a>
+                <div class="button-group">
+                    <a href="my_applications.php" class="button button-secondary">📋 My Applications</a>
+                    <a href="find_workers.php" class="button button-secondary">🔧 Find Workers</a>
+                    <a href="request.php" class="button button-primary">➕ Post Job</a>
+                </div>
             <?php endif; ?>
         </section>
 
@@ -794,8 +903,10 @@ $dashRefUrl      = rtrim(BASE_URL, '/') . '/register.php?ref=' . $dashRefCode;
             </section>
             <?php endif; ?>
         <?php endif; ?>
+
+<?php endif; // end if (!$user) / else ?>
     </main>
-    <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
+    <?php if ($user): $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; endif; ?>
     <script>
         var toggleCategories = document.getElementById('toggle-categories');
         if (toggleCategories) {

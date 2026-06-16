@@ -59,8 +59,8 @@ if (function_exists('get_total_unread_chat_count')) {
 }
 
 $navItems = [
-    'home'      => ['href' => 'jobs.php',         'icon' => '💼', 'label' => 'Jobs'],
-    'workers'   => ['href' => 'find_workers.php', 'icon' => '🔧', 'label' => 'Workers'],
+    'home'      => ['href' => 'jobs.php',            'icon' => '💼', 'label' => 'Jobs'],
+    'myapps'    => ['href' => 'my_applications.php', 'icon' => '📋', 'label' => 'My Apps'],
     'community' => ['href' => 'community.php',    'icon' => '🌍', 'label' => 'Community'],
     'messages'  => ['href' => 'chat.php',         'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
     'settings'  => ['href' => 'settings.php',     'icon' => '⚙️', 'label' => 'Settings'],
