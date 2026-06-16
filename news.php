@@ -40,6 +40,11 @@ $articles = array_slice($all, 0, $perPage);
 $bannerAds    = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 3")->fetchAll();
 $sponsoredAds = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='sponsored' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 2")->fetchAll();
 
+// Sidebar data
+$sidebarPopular = $pdo->query("SELECT id, title, slug, view_count, published_at FROM news WHERE status='published' ORDER BY view_count DESC, COALESCE(published_at,created_at) DESC LIMIT 6")->fetchAll();
+$sidebarEvents  = $pdo->query("SELECT id, title, slug, start_date FROM events WHERE status='published' AND start_date >= CURDATE() ORDER BY start_date ASC LIMIT 4")->fetchAll();
+$sidebarAd      = $bannerAds[1] ?? null;
+
 // ── AJAX fragment: return cards for page 2+ ──────────────────────────────────
 if ($isAjax) {
     header('Content-Type: text/html; charset=utf-8');
@@ -173,6 +178,34 @@ $topAd     = $bannerAds[0] ?? null;
         /* ── Empty state ─────────────────────────────────────── */
         .nc-empty     { text-align:center; padding:60px 20px; color:var(--text-muted); }
         .nc-empty-icon { font-size:3rem; margin-bottom:12px; }
+        /* ── Wide-screen two-column layout ──────────────────── */
+        .nc-layout   { display:block; }
+        .nc-sidebar  { display:none; }
+        @media (min-width:900px) {
+            .nc-shell   { max-width:1200px; }
+            .nc-layout  { display:grid; grid-template-columns:1fr 280px; gap:32px; align-items:start; }
+            .nc-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+        }
+        /* ── Sidebar widgets ─────────────────────────────────── */
+        .nsb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
+        .nsb-head   { padding:12px 16px; border-bottom:1px solid var(--border,#e5e7eb); font-size:.8rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted,#6b7280); }
+        .nsb-list   { list-style:none; margin:0; padding:0; }
+        .nsb-item   { display:flex; gap:10px; align-items:flex-start; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-item:last-child { border-bottom:none; }
+        .nsb-num    { flex-shrink:0; width:22px; height:22px; border-radius:6px; background:var(--primary,#0f766e); color:#fff; font-size:.7rem; font-weight:900; display:flex; align-items:center; justify-content:center; }
+        .nsb-text   { flex:1; min-width:0; }
+        .nsb-text a { font-size:.82rem; font-weight:700; color:var(--text,#111); text-decoration:none; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .nsb-text a:hover { color:var(--primary,#0f766e); }
+        .nsb-meta   { font-size:.72rem; color:var(--text-muted,#6b7280); margin-top:3px; }
+        .nsb-event  { padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-event:last-child { border-bottom:none; }
+        .nsb-ev-date { font-size:.7rem; font-weight:700; color:var(--primary,#0f766e); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+        .nsb-ev-title a { font-size:.82rem; font-weight:600; color:var(--text,#111); text-decoration:none; }
+        .nsb-ev-title a:hover { color:var(--primary,#0f766e); }
+        .nsb-cta    { padding:16px; text-align:center; }
+        .nsb-ad     { padding:10px; text-align:center; }
+        .nsb-ad img { width:100%; border-radius:8px; }
+        .nsb-ad-label { font-size:.65rem; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); margin-bottom:6px; }
         /* ── Responsive ──────────────────────────────────────── */
         @media (max-width:520px) {
             .nc-feat-title { font-size:1.35rem; }
@@ -229,6 +262,10 @@ $topAd     = $bannerAds[0] ?? null;
             <a href="login.php" class="button button-secondary button-small">Sign in to post</a>
             <?php endif; ?>
         </div>
+
+        <div class="nc-layout">
+        <!-- ── Main column ─────────────────────────────────────── -->
+        <div class="nc-main">
 
         <?php if (!$articles && $page === 1): ?>
         <div class="nc-empty">
@@ -334,6 +371,73 @@ $topAd     = $bannerAds[0] ?? null;
         </div>
 
         <?php endif; ?>
+        </div><!-- /nc-main -->
+
+        <!-- ── Sidebar ─────────────────────────────────────────── -->
+        <aside class="nc-sidebar">
+
+            <?php if ($user): ?>
+            <!-- Submit CTA -->
+            <div class="nsb-widget">
+                <div class="nsb-cta">
+                    <p style="font-size:.85rem;font-weight:700;margin:0 0 10px;">Have a story to share?</p>
+                    <a href="my_news.php" class="button button-primary button-small" style="width:100%;justify-content:center;">✍️ Submit an Article</a>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Popular articles -->
+            <?php if ($sidebarPopular): ?>
+            <div class="nsb-widget">
+                <div class="nsb-head">🔥 Most Read</div>
+                <ul class="nsb-list">
+                    <?php foreach ($sidebarPopular as $n => $p): ?>
+                    <li class="nsb-item">
+                        <span class="nsb-num"><?php echo $n + 1; ?></span>
+                        <div class="nsb-text">
+                            <a href="news_article.php?slug=<?php echo urlencode($p['slug']); ?>"><?php echo sanitize($p['title']); ?></a>
+                            <div class="nsb-meta"><?php echo number_format((int)$p['view_count']); ?> views
+                                <?php if ($p['published_at']): ?> · <?php echo date('M j', strtotime($p['published_at'])); ?><?php endif; ?>
+                            </div>
+                        </div>
+                    </li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+            <?php endif; ?>
+
+            <!-- Upcoming events -->
+            <?php if ($sidebarEvents): ?>
+            <div class="nsb-widget">
+                <div class="nsb-head">📅 Upcoming Events</div>
+                <?php foreach ($sidebarEvents as $ev): ?>
+                <div class="nsb-event">
+                    <div class="nsb-ev-date"><?php echo date('D, M j', strtotime($ev['start_date'])); ?></div>
+                    <div class="nsb-ev-title"><a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>"><?php echo sanitize($ev['title']); ?></a></div>
+                </div>
+                <?php endforeach; ?>
+                <div style="padding:10px 14px;"><a href="events.php" style="font-size:.8rem;color:var(--primary);font-weight:700;text-decoration:none;">View all events →</a></div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Sidebar ad -->
+            <?php if ($sidebarAd): ?>
+            <div class="nsb-widget">
+                <div class="nsb-ad">
+                    <div class="nsb-ad-label">Advertisement</div>
+                    <a href="ad_click.php?id=<?php echo (int)$sidebarAd['id']; ?>" target="_blank" rel="noopener sponsored">
+                        <?php if ($sidebarAd['image']): ?>
+                            <img src="<?php echo sanitize($sidebarAd['image']); ?>" alt="<?php echo sanitize($sidebarAd['title']); ?>">
+                        <?php else: ?>
+                            <p style="font-size:.82rem;font-weight:600;color:var(--text-muted);margin:0;"><?php echo sanitize($sidebarAd['title']); ?></p>
+                        <?php endif; ?>
+                    </a>
+                </div>
+            </div>
+            <?php endif; ?>
+
+        </aside>
+        </div><!-- /nc-layout -->
     </div>
 
     <?php if ($user): ?>
