@@ -104,7 +104,15 @@
             if (!self._modal) self._buildModal();
             if (!self._modal.parentNode) document.body.appendChild(self._modal);
             self._modal.classList.add('lm-open');
-            setTimeout(function () { if (self._map) self._map.invalidateSize(); }, 80);
+            // _initMap must run AFTER the modal is in the DOM and visible so
+            // Leaflet can measure the container's real pixel dimensions.
+            if (!self._map) {
+                self._initMap();
+            } else {
+                setTimeout(function () { self._map.invalidateSize(); }, 80);
+            }
+        }).catch(function () {
+            alert('Could not load the map library. Please check your internet connection and try again.');
         });
     };
 
@@ -134,11 +142,71 @@
                     '</div>' +
                 '</div>' +
             '</div>';
-        this._modal = modal;
+        this._modal  = modal;
+        this._mapDiv = modal.querySelector('.lm-map-area');
 
-        // ── Leaflet map ──────────────────────────────────────────────────────
-        var mapDiv = modal.querySelector('.lm-map-area');
-        var map    = L.map(mapDiv, { zoomControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+        // ── Search ───────────────────────────────────────────────────────────
+        var searchInput = modal.querySelector('.lm-sb');
+        var resultsDiv  = modal.querySelector('.lm-sr');
+        var searchTimer;
+
+        searchInput.addEventListener('input', function () {
+            clearTimeout(searchTimer);
+            var q = searchInput.value.trim();
+            if (q.length < 2) { resultsDiv.innerHTML = ''; resultsDiv.classList.remove('lm-sr-open'); return; }
+            searchTimer = setTimeout(function () {
+                apiPost({ action: 'search', q: q }).then(function (r) {
+                    resultsDiv.innerHTML = '';
+                    var items = r.results || [];
+                    if (!items.length) { resultsDiv.classList.remove('lm-sr-open'); return; }
+                    items.forEach(function (item) {
+                        var el = document.createElement('div');
+                        el.className   = 'lm-sr-item';
+                        el.textContent = item.display_name;
+                        el.addEventListener('click', function () {
+                            self._pin(item.lat, item.lng, item.name, item.display_name);
+                            self._map.setView([item.lat, item.lng], 16);
+                            resultsDiv.innerHTML = '';
+                            resultsDiv.classList.remove('lm-sr-open');
+                            searchInput.value = '';
+                        });
+                        resultsDiv.appendChild(el);
+                    });
+                    resultsDiv.classList.add('lm-sr-open');
+                });
+            }, 400);
+        });
+
+        // Close results when clicking elsewhere
+        document.addEventListener('click', function (e) {
+            if (!modal.contains(e.target)) { resultsDiv.innerHTML = ''; resultsDiv.classList.remove('lm-sr-open'); }
+        });
+
+        // ── My Location ──────────────────────────────────────────────────────
+        modal.querySelector('.lm-btn-my').addEventListener('click', function () {
+            if (!navigator.geolocation) { alert('Geolocation is not supported by your browser.'); return; }
+            navigator.geolocation.getCurrentPosition(
+                function (pos) {
+                    var lat = pos.coords.latitude, lng = pos.coords.longitude;
+                    self._map.setView([lat, lng], 17);
+                    self._pin(lat, lng, 'My Location', '');
+                    self._reverseGeocode(lat, lng);
+                },
+                function () { alert('Could not access your location. Check browser permissions.'); }
+            );
+        });
+
+        // ── Confirm ──────────────────────────────────────────────────────────
+        modal.querySelector('.lm-btn-ok').addEventListener('click', function () { self._confirm(); });
+
+        // ── Close ────────────────────────────────────────────────────────────
+        modal.querySelector('.lm-x').addEventListener('click', function () { self._close(); });
+        modal.addEventListener('pointerdown', function (e) { if (e.target === modal) self._close(); });
+    };
+
+    LocationPicker.prototype._initMap = function () {
+        var self = this;
+        var map = L.map(this._mapDiv, { zoomControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
             maxZoom: 19,
@@ -165,63 +233,8 @@
             self._reverseGeocode(lat, lng);
         });
 
-        // ── Search ───────────────────────────────────────────────────────────
-        var searchInput = modal.querySelector('.lm-sb');
-        var resultsDiv  = modal.querySelector('.lm-sr');
-        var searchTimer;
-
-        searchInput.addEventListener('input', function () {
-            clearTimeout(searchTimer);
-            var q = searchInput.value.trim();
-            if (q.length < 2) { resultsDiv.innerHTML = ''; resultsDiv.classList.remove('lm-sr-open'); return; }
-            searchTimer = setTimeout(function () {
-                apiPost({ action: 'search', q: q }).then(function (r) {
-                    resultsDiv.innerHTML = '';
-                    var items = r.results || [];
-                    if (!items.length) { resultsDiv.classList.remove('lm-sr-open'); return; }
-                    items.forEach(function (item) {
-                        var el = document.createElement('div');
-                        el.className   = 'lm-sr-item';
-                        el.textContent = item.display_name;
-                        el.addEventListener('click', function () {
-                            self._pin(item.lat, item.lng, item.name, item.display_name);
-                            map.setView([item.lat, item.lng], 16);
-                            resultsDiv.innerHTML = '';
-                            resultsDiv.classList.remove('lm-sr-open');
-                            searchInput.value = '';
-                        });
-                        resultsDiv.appendChild(el);
-                    });
-                    resultsDiv.classList.add('lm-sr-open');
-                });
-            }, 400);
-        });
-
-        // Close results when clicking elsewhere
-        document.addEventListener('click', function (e) {
-            if (!modal.contains(e.target)) { resultsDiv.innerHTML = ''; resultsDiv.classList.remove('lm-sr-open'); }
-        });
-
-        // ── My Location ──────────────────────────────────────────────────────
-        modal.querySelector('.lm-btn-my').addEventListener('click', function () {
-            if (!navigator.geolocation) { alert('Geolocation is not supported by your browser.'); return; }
-            navigator.geolocation.getCurrentPosition(
-                function (pos) {
-                    var lat = pos.coords.latitude, lng = pos.coords.longitude;
-                    map.setView([lat, lng], 17);
-                    self._pin(lat, lng, 'My Location', '');
-                    self._reverseGeocode(lat, lng);
-                },
-                function () { alert('Could not access your location. Check browser permissions.'); }
-            );
-        });
-
-        // ── Confirm ──────────────────────────────────────────────────────────
-        modal.querySelector('.lm-btn-ok').addEventListener('click', function () { self._confirm(); });
-
-        // ── Close ────────────────────────────────────────────────────────────
-        modal.querySelector('.lm-x').addEventListener('click', function () { self._close(); });
-        modal.addEventListener('pointerdown', function (e) { if (e.target === modal) self._close(); });
+        // Force layout recalculation now that the container is visible
+        setTimeout(function () { map.invalidateSize(); }, 50);
     };
 
     LocationPicker.prototype._pin = function (lat, lng, name, address) {
