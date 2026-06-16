@@ -1389,3 +1389,18 @@ body.has-bottom-nav {
   color: #92400e;
   font-weight: 700;
 }
+
+/* ── Job type badge (remote / on-site / hybrid) ── */
+.job-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: .7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.job-type-badge.remote  { background: #dbeafe; color: #1e40af; }
+.job-type-badge.on-site { background: #d1fae5; color: #065f46; }
+.job-type-badge.hybrid  { background: #ede9fe; color: #5b21b6; }

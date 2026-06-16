@@ -12,12 +12,17 @@ $categories     = get_categories();
 $categoryFilter = $_GET['category'] ?? '';
 $locationFilter = trim($_GET['location'] ?? '');
 $searchQuery    = trim($_GET['q'] ?? '');
+$jobTypeFilter  = $_GET['job_type'] ?? '';
 
 // Build job query
 $where  = ["sr.status IN ('open','partially_staffed')", "sr.posting_fee_status != 'pending'"];
 $params = [];
 if ($categoryFilter) { $where[] = 'sr.category_id = ?';            $params[] = $categoryFilter; }
 if ($locationFilter) { $where[] = 'sr.location LIKE ?';            $params[] = '%' . $locationFilter . '%'; }
+if ($jobTypeFilter && in_array($jobTypeFilter, ['on_site','remote','hybrid'], true)) {
+    $where[] = 'sr.job_type = ?';
+    $params[] = $jobTypeFilter;
+}
 if ($searchQuery)    {
     $where[]  = '(sr.title LIKE ? OR sr.description LIKE ? OR sc.name LIKE ? OR sr.location LIKE ?)';
     $params[] = '%' . $searchQuery . '%';
@@ -29,7 +34,7 @@ if ($searchQuery)    {
 $jobs = $pdo->prepare(
     'SELECT sr.id, sr.title, sr.description, sr.location, sr.budget, sr.budget_amount,
             sr.status, sr.featured, sr.featured_end_date, sr.created_at,
-            sr.workers_needed, sr.workers_approved,
+            sr.workers_needed, sr.workers_approved, sr.job_type,
             sc.name AS category_name
      FROM service_requests sr
      JOIN service_categories sc ON sr.category_id = sc.id
@@ -130,7 +135,11 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
             transition: box-shadow .15s, transform .15s;
         }
         .bj-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.08); transform: translateY(-2px); }
-        .bj-card.featured { border-color: var(--primary, #0f766e); border-width: 2px; }
+        .bj-card.featured { border-color: #f59e0b; border-width: 2px; background: #fffbeb; }
+        .job-type-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 20px; font-size: .7rem; font-weight: 700; }
+        .job-type-badge.remote  { background: #dbeafe; color: #1e40af; }
+        .job-type-badge.on-site { background: #d1fae5; color: #065f46; }
+        .job-type-badge.hybrid  { background: #ede9fe; color: #5b21b6; }
         .bj-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
         .bj-card-title { font-size: .97rem; font-weight: 700; margin: 0 0 3px; color: var(--text, #111827); line-height: 1.3; }
         .bj-card-meta  { font-size: .78rem; color: var(--muted, #6b7280); }
@@ -169,7 +178,7 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 
 <!-- ── Top bar ─────────────────────────────────────────────────────────────── -->
 <header class="bj-topbar">
-    <a href="browse_jobs.php" class="bj-logo">AkuapemHub</a>
+    <a href="index.php" class="bj-logo">AkuapemHub</a>
     <nav class="bj-nav">
         <a href="find_workers.php" class="link">Workers</a>
         <a href="community.php"    class="link">Community</a>
@@ -215,8 +224,14 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
         </select>
         <input type="text" name="q"        value="<?php echo sanitize($searchQuery); ?>"   placeholder="Search jobs…" />
         <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location…" />
+        <select name="job_type">
+            <option value="">Any type</option>
+            <option value="on_site"  <?php echo $jobTypeFilter === 'on_site'  ? 'selected' : ''; ?>>On-site</option>
+            <option value="remote"   <?php echo $jobTypeFilter === 'remote'   ? 'selected' : ''; ?>>Remote</option>
+            <option value="hybrid"   <?php echo $jobTypeFilter === 'hybrid'   ? 'selected' : ''; ?>>Hybrid</option>
+        </select>
         <button type="submit" class="btn-search">Search</button>
-        <?php if ($searchQuery || $locationFilter || $categoryFilter): ?>
+        <?php if ($searchQuery || $locationFilter || $categoryFilter || $jobTypeFilter): ?>
             <a href="browse_jobs.php" class="bj-filter-clear">Clear filters</a>
         <?php endif; ?>
     </form>
@@ -242,6 +257,12 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
             $isPartial  = $job['status'] === 'partially_staffed';
         ?>
         <article class="bj-card <?php echo $isFeatured ? 'featured' : ''; ?>">
+            <?php
+                $jtIcon  = ['on_site' => '📍', 'remote' => '💻', 'hybrid' => '🔄'];
+                $jtLabel = ['on_site' => 'On-site', 'remote' => 'Remote', 'hybrid' => 'Hybrid'];
+                $jtClass = ['on_site' => 'on-site', 'remote' => 'remote', 'hybrid' => 'hybrid'];
+                $jt      = $job['job_type'] ?? 'on_site';
+            ?>
             <div class="bj-card-head">
                 <div style="min-width:0;">
                     <h2 class="bj-card-title">
@@ -254,9 +275,12 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
                         · <?php echo time_ago($job['created_at']); ?>
                     </p>
                 </div>
-                <span class="bj-status <?php echo $isPartial ? 'partial' : 'open'; ?>">
-                    <?php echo $isPartial ? 'PARTIAL' : 'OPEN'; ?>
-                </span>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+                    <span class="bj-status <?php echo $isPartial ? 'partial' : 'open'; ?>">
+                        <?php echo $isPartial ? 'PARTIAL' : 'OPEN'; ?>
+                    </span>
+                    <span class="job-type-badge <?php echo $jtClass[$jt]; ?>"><?php echo $jtIcon[$jt]; ?> <?php echo $jtLabel[$jt]; ?></span>
+                </div>
             </div>
 
             <p class="bj-card-desc"><?php echo sanitize($job['description']); ?></p>

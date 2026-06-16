@@ -19,6 +19,7 @@ $notificationCount = get_unread_notifications_count((int)$user['id']);
 $categoryFilter = $_GET['category'] ?? '';
 $locationFilter = $_GET['location'] ?? '';
 $statusFilter = $_GET['status'] ?? '';
+$jobTypeFilter  = $_GET['job_type'] ?? '';
 $searchQuery = trim($_GET['q'] ?? '');
 
 $where = [];
@@ -35,6 +36,10 @@ if ($locationFilter) {
 if ($statusFilter) {
     $where[] = 'sr.status = ?';
     $params[] = $statusFilter;
+}
+if ($jobTypeFilter && in_array($jobTypeFilter, ['on_site','remote','hybrid'], true)) {
+    $where[] = 'sr.job_type = ?';
+    $params[] = $jobTypeFilter;
 }
 if ($searchQuery) {
     $where[] = '(sr.title LIKE ? OR sr.description LIKE ? OR wc.name LIKE ? OR sr.location LIKE ?)';
@@ -544,6 +549,12 @@ if ($user) {
                                 <option value="<?php echo $category['id']; ?>" <?php echo $categoryFilter == $category['id'] ? 'selected' : ''; ?>><?php echo sanitize($category['name']); ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <select name="job_type">
+                            <option value="">Any type</option>
+                            <option value="on_site" <?php echo $jobTypeFilter === 'on_site' ? 'selected' : ''; ?>>On-site</option>
+                            <option value="remote"  <?php echo $jobTypeFilter === 'remote'  ? 'selected' : ''; ?>>Remote</option>
+                            <option value="hybrid"  <?php echo $jobTypeFilter === 'hybrid'  ? 'selected' : ''; ?>>Hybrid</option>
+                        </select>
                         <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search jobs" />
                         <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
                         <button type="submit" class="button button-primary">Filter</button>
@@ -559,6 +570,11 @@ if ($user) {
                     <div class="jobs-grid">
                     <?php foreach ($displayJobs as $request): ?>
                         <?php $jobDistance = $request['match_distance_km'] ?? distance_km($profile['latitude'] ?? null, $profile['longitude'] ?? null, $request['latitude'], $request['longitude']); ?>
+                        <?php
+                            $wJt = $request['job_type'] ?? 'on_site';
+                            $wJtLabel = ['on_site' => '📍 On-site', 'remote' => '💻 Remote', 'hybrid' => '🔄 Hybrid'];
+                            $wJtClass = ['on_site' => 'on-site', 'remote' => 'remote', 'hybrid' => 'hybrid'];
+                        ?>
                         <article class="request-card">
                             <div class="request-head">
                                 <div>
@@ -571,12 +587,16 @@ if ($user) {
                                         <?php if ($jobDistance !== null): ?>
                                             • <?php echo sanitize(format_distance($jobDistance)); ?>
                                         <?php endif; ?>
+                                        • <?php echo time_ago($request['created_at']); ?>
                                     </p>
                                     <?php if (isset($request['match_score'])): ?>
                                         <p class="meta match-meta">🎯 <?php echo (int)$request['match_score']; ?>% match for you<?php if (!empty($request['match_reasons'])): ?> — <?php echo sanitize(implode(' • ', $request['match_reasons'])); ?><?php endif; ?></p>
                                     <?php endif; ?>
                                 </div>
-                                <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+                                    <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                                    <span class="job-type-badge <?php echo $wJtClass[$wJt]; ?>"><?php echo $wJtLabel[$wJt]; ?></span>
+                                </div>
                             </div>
                             <p><?php echo sanitize($request['description']); ?></p>
                             <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($request['budget']); ?></p>
@@ -693,6 +713,12 @@ if ($user) {
                             <option value="<?php echo $statusOption; ?>" <?php echo $statusFilter === $statusOption ? 'selected' : ''; ?>><?php echo strtoupper(str_replace('_', ' ', $statusOption)); ?></option>
                         <?php endforeach; ?>
                     </select>
+                    <select name="job_type">
+                        <option value="">Any type</option>
+                        <option value="on_site" <?php echo $jobTypeFilter === 'on_site' ? 'selected' : ''; ?>>On-site</option>
+                        <option value="remote"  <?php echo $jobTypeFilter === 'remote'  ? 'selected' : ''; ?>>Remote</option>
+                        <option value="hybrid"  <?php echo $jobTypeFilter === 'hybrid'  ? 'selected' : ''; ?>>Hybrid</option>
+                    </select>
                     <input type="text" name="q" value="<?php echo sanitize($searchQuery); ?>" placeholder="Search requests" />
                     <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location" />
                     <button type="submit" class="button button-primary">Filter</button>
@@ -702,6 +728,11 @@ if ($user) {
                 <?php else: ?>
                     <div class="jobs-grid">
                     <?php foreach ($requests as $request): ?>
+                        <?php
+                            $cJt = $request['job_type'] ?? 'on_site';
+                            $cJtLabel = ['on_site' => '📍 On-site', 'remote' => '💻 Remote', 'hybrid' => '🔄 Hybrid'];
+                            $cJtClass = ['on_site' => 'on-site', 'remote' => 'remote', 'hybrid' => 'hybrid'];
+                        ?>
                         <article class="request-card">
                             <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
                             <?php if ($feeStatus === 'pending'): ?>
@@ -716,9 +747,12 @@ if ($user) {
                                     <?php if (!empty($request['featured']) && (empty($request['featured_end_date']) || $request['featured_end_date'] >= date('Y-m-d'))): ?>
                                         <span class="badge badge-featured">Featured</span>
                                     <?php endif; ?>
-                                    <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?></p>
+                                    <p class="meta"><?php echo sanitize($request['category_name']); ?> • <?php echo sanitize($request['location']); ?> · <?php echo time_ago($request['created_at']); ?></p>
                                 </div>
-                                <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+                                    <span class="status status-<?php echo sanitize($request['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
+                                    <span class="job-type-badge <?php echo $cJtClass[$cJt]; ?>"><?php echo $cJtLabel[$cJt]; ?></span>
+                                </div>
                             </div>
                             <p><?php echo sanitize($request['description']); ?></p>
                             <p class="meta" style="margin: 0;">
@@ -786,7 +820,7 @@ if ($user) {
                         <div class="request-head">
                             <div>
                                 <h2><?php echo sanitize($job['title']); ?></h2>
-                                <p class="meta"><?php echo sanitize($job['category_name']); ?> · <?php echo sanitize($job['location']); ?></p>
+                                <p class="meta"><?php echo sanitize($job['category_name']); ?> · <?php echo sanitize($job['location']); ?> · <?php echo time_ago($job['created_at']); ?></p>
                             </div>
                             <span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span>
                         </div>

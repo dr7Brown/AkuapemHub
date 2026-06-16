@@ -48,6 +48,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $skillsNeeded = trim($_POST['skills_needed'] ?? '');
     $hiringType   = $_POST['hiring_type'] ?? 'single';
     $workersNeeded = $hiringType === 'multiple' ? max(1, intval($_POST['workers_needed'] ?? 1)) : 1;
+    $jobTypeRaw = $_POST['job_type'] ?? 'on_site';
+    $jobType    = in_array($jobTypeRaw, ['on_site','remote','hybrid'], true) ? $jobTypeRaw : 'on_site';
 
     // New fields
     $paymentModeRaw = $_POST['payment_mode'] ?? 'direct';
@@ -98,21 +100,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($postEditId > 0) {
                 $pdo->prepare("UPDATE service_requests SET
                     title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,
-                    budget=?,budget_amount=?,skills_needed=?,workers_needed=?,payment_mode=?,
+                    budget=?,budget_amount=?,skills_needed=?,workers_needed=?,payment_mode=?,job_type=?,
                     deadline_value=?,deadline_unit=?,deadline_date=?,updated_at=NOW()
                     WHERE id=? AND status='draft' AND customer_id=?")
                     ->execute([$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,
-                        $budget,$draftBudgetAmount,$skillsNeeded ?: null,$workersNeeded,$paymentMode,
+                        $budget,$draftBudgetAmount,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
                         $deadlineValue,$deadlineUnit,$deadlineDate,$postEditId,$user['id']]);
                 flash('Draft updated.', 'info');
             } else {
                 $pdo->prepare("INSERT INTO service_requests
                     (customer_id,title,description,category_id,location,latitude,longitude,budget,budget_amount,
-                     contact_info,skills_needed,workers_needed,payment_mode,deadline_value,deadline_unit,deadline_date,
+                     contact_info,skills_needed,workers_needed,payment_mode,job_type,deadline_value,deadline_unit,deadline_date,
                      status,payment_status,commission_percent,featured,posting_fee_status,created_at,updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft','unpaid',?,0,'free',NOW(),NOW())")
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft','unpaid',?,0,'free',NOW(),NOW())")
                     ->execute([$user['id'],$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,
-                        $budget,$draftBudgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,$paymentMode,
+                        $budget,$draftBudgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
                         $deadlineValue,$deadlineUnit,$deadlineDate,$commRate]);
                 flash('Draft saved. Publish it from your dashboard whenever you are ready.', 'info');
             }
@@ -168,27 +170,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("UPDATE service_requests SET
                 title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,
                 budget=?,budget_amount=?,contact_info=?,skills_needed=?,workers_needed=?,
-                payment_mode=?,deadline_value=?,deadline_unit=?,deadline_date=?,
+                payment_mode=?,job_type=?,deadline_value=?,deadline_unit=?,deadline_date=?,
                 status=?,payment_status='unpaid',commission_percent=?,posting_fee_status=?,updated_at=NOW()
                 WHERE id=? AND status='draft' AND customer_id=?")
                 ->execute([$title,$description,$categoryId,$location,$latitude,$longitude,
                     $budget,$budgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,
-                    $paymentMode,$deadlineValue,$deadlineUnit,$deadlineDate,
+                    $paymentMode,$jobType,$deadlineValue,$deadlineUnit,$deadlineDate,
                     $initialStatus,$commRate,$postingFeeStatus,$postEditId,$user['id']]);
             $newJobId = $postEditId;
         } else {
             $stmt = $pdo->prepare('INSERT INTO service_requests
                 (customer_id, title, description, category_id, location, latitude, longitude,
                  budget, budget_amount, contact_info, skills_needed, workers_needed,
-                 payment_mode, deadline_value, deadline_unit, deadline_date,
+                 payment_mode, job_type, deadline_value, deadline_unit, deadline_date,
                  status, payment_status, commission_percent, featured, posting_fee_status,
                  created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
             $stmt->execute([
                 $user['id'], $title, $description, $categoryId, $location, $latitude, $longitude,
                 $budget, $budgetAmount, $contactInfo,
                 $skillsNeeded !== '' ? $skillsNeeded : null, $workersNeeded,
-                $paymentMode, $deadlineValue, $deadlineUnit, $deadlineDate,
+                $paymentMode, $jobType, $deadlineValue, $deadlineUnit, $deadlineDate,
                 $initialStatus, 'unpaid', $commRate, 0, $postingFeeStatus,
             ]);
             $newJobId = (int)$pdo->lastInsertId();
@@ -345,6 +347,20 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             <div id="workers-needed-wrap" style="display:<?php echo $draftHiringType === 'multiple' ? 'block' : 'none'; ?>;margin-bottom:4px;">
                 <label>Number of workers needed</label>
                 <input type="number" name="workers_needed" id="workers-needed-input" min="2" max="50" value="<?php echo $draft ? max(2, (int)($draft['workers_needed'] ?? 2)) : 2; ?>" style="width:100px;" />
+            </div>
+
+            <label style="margin-top:8px;">Work location type</label>
+            <?php $draftJobType = $draft['job_type'] ?? 'on_site'; ?>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px;">
+                <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
+                    <input type="radio" name="job_type" value="on_site" <?php echo $draftJobType === 'on_site' ? 'checked' : ''; ?>> 📍 On-site
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
+                    <input type="radio" name="job_type" value="remote" <?php echo $draftJobType === 'remote' ? 'checked' : ''; ?>> 💻 Remote
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
+                    <input type="radio" name="job_type" value="hybrid" <?php echo $draftJobType === 'hybrid' ? 'checked' : ''; ?>> 🔄 Hybrid
+                </label>
             </div>
 
             <label style="margin-top:8px;">Payment mode</label>
