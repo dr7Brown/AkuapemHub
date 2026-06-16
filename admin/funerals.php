@@ -32,12 +32,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($action === 'approve') {
                     $pdo->prepare("UPDATE funeral_announcements SET status='approved', updated_at=NOW() WHERE id=?")->execute([$tid]);
                     log_audit_action($user['id'], 'funeral_approve', "Approved funeral #{$tid}: {$row['deceased_name']}");
+                    if ($row['user_id']) {
+                        notify_user($row['user_id'], 'Funeral announcement published',
+                            'Your announcement for "' . $row['deceased_name'] . '" has been approved and is now live.', 'success');
+                    }
                 } elseif ($action === 'reject') {
                     $pdo->prepare("UPDATE funeral_announcements SET status='rejected', updated_at=NOW() WHERE id=?")->execute([$tid]);
                     log_audit_action($user['id'], 'funeral_reject', "Rejected funeral #{$tid}: {$row['deceased_name']}");
+                    if ($row['user_id']) {
+                        notify_user($row['user_id'], 'Funeral announcement not approved',
+                            'Your announcement for "' . $row['deceased_name'] . '" was not approved. Contact the admin for details.', 'warning');
+                    }
                 } elseif ($action === 'mark_paid') {
                     $pdo->prepare("UPDATE funeral_announcements SET status='pending', updated_at=NOW() WHERE id=?")->execute([$tid]);
                     log_audit_action($user['id'], 'funeral_paid', "Marked payment received for funeral #{$tid}");
+                    if ($row['user_id']) {
+                        notify_user($row['user_id'], 'Payment received — announcement under review',
+                            'Payment for "' . $row['deceased_name'] . '" has been recorded. Your announcement is now under review.', 'info');
+                    }
                 } elseif ($action === 'feature') {
                     $newFeat = $row['featured'] ? 0 : 1;
                     $pdo->prepare("UPDATE funeral_announcements SET featured=? WHERE id=?")->execute([$newFeat, $tid]);

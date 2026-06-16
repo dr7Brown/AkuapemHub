@@ -84,6 +84,7 @@ $latestNews = $pdo->query(
         .cm-cta h3 { font-size:1rem; font-weight:800; margin:0 0 4px; }
         .cm-cta p  { font-size:.85rem; color:#94a3b8; margin:0; }
         .cm-cta a  { white-space:nowrap; }
+        @media(max-width:600px){ .cm-cta-row { grid-template-columns:1fr !important; } }
     </style>
 </head>
 <body>
@@ -186,17 +187,30 @@ $latestNews = $pdo->query(
     </div>
     <?php endif; ?>
 
-    <!-- Post Funeral CTA -->
-    <div class="cm-cta">
-        <div>
-            <h3>Post a Funeral Announcement</h3>
-            <p>Share memorial information with the <?php echo APP_NAME; ?> community</p>
+    <!-- Community CTAs -->
+    <div class="cm-cta-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="cm-cta">
+            <div>
+                <h3>🕊️ Post a Funeral Announcement</h3>
+                <p>Share memorial information with the community</p>
+            </div>
+            <?php if ($user): ?>
+            <a href="my_funerals.php" class="button button-primary">Post Announcement</a>
+            <?php else: ?>
+            <a href="register.php" class="button button-primary">Sign up to Post</a>
+            <?php endif; ?>
         </div>
-        <?php if ($user): ?>
-        <a href="my_funerals.php" class="button button-primary">Post Announcement</a>
-        <?php else: ?>
-        <a href="register.php" class="button button-primary">Create Account to Post</a>
-        <?php endif; ?>
+        <div class="cm-cta" style="background:linear-gradient(135deg,#1e3a5f,#0f2040);">
+            <div>
+                <h3>📅 Submit a Community Event</h3>
+                <p>Share your event with the <?php echo APP_NAME; ?> community</p>
+            </div>
+            <?php if ($user): ?>
+            <a href="my_events.php" class="button button-primary">Submit Event</a>
+            <?php else: ?>
+            <a href="register.php" class="button button-primary">Sign up to Post</a>
+            <?php endif; ?>
+        </div>
     </div>
 
 </div>

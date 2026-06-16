@@ -17,14 +17,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
             case 'publish':
                 $pdo->prepare("UPDATE events SET status='published', updated_at=NOW() WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_publish', "Published event #{$tid}: {$ev['title']}");
+                if ($ev['user_id']) {
+                    notify_user($ev['user_id'], 'Your event is now live!',
+                        '"' . $ev['title'] . '" has been approved and published on the events page.', 'success');
+                }
                 break;
             case 'cancel':
                 $pdo->prepare("UPDATE events SET status='cancelled', updated_at=NOW() WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_cancel', "Cancelled event #{$tid}: {$ev['title']}");
+                if ($ev['user_id']) {
+                    notify_user($ev['user_id'], 'Event cancelled',
+                        '"' . $ev['title'] . '" has been marked as cancelled. Contact admin for details.', 'warning');
+                }
                 break;
             case 'draft':
                 $pdo->prepare("UPDATE events SET status='draft', updated_at=NOW() WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_draft', "Set event #{$tid} back to draft");
+                if ($ev['user_id']) {
+                    notify_user($ev['user_id'], 'Event returned for revision',
+                        '"' . $ev['title'] . '" has been returned to draft. Please review and resubmit.', 'info');
+                }
                 break;
             case 'feature':
                 $pdo->prepare("UPDATE events SET featured=1-featured WHERE id=?")->execute([$tid]);

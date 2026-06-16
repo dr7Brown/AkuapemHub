@@ -150,6 +150,11 @@ if ($isAjax) {
         <p style="margin:0;color:var(--text-muted);font-size:.9rem;">
             <?php echo $search ? 'Results for "' . sanitize($search) . '"' : ucfirst($filter) . ' events'; ?>
         </p>
+        <?php if ($user): ?>
+        <a href="my_events.php" class="button button-primary button-small">➕ Submit Event</a>
+        <?php else: ?>
+        <a href="login.php" class="button button-secondary button-small">Sign in to post</a>
+        <?php endif; ?>
     </div>
 
     <div class="ev-grid" id="ev-grid">
