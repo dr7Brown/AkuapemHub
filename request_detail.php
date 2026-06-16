@@ -2,7 +2,6 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
-require_login();
 $user = current_user();
 $requestId = intval($_GET['id'] ?? 0);
 if ($requestId <= 0) {
@@ -19,10 +18,20 @@ if (!$request) {
     exit;
 }
 
-$canView = is_admin() || $request['customer_id'] === $user['id'] || (is_worker() && ($request['status'] === 'open' || $request['assigned_worker_id'] === $user['id']));
-if (!$canView) {
-    header('Location: jobs.php');
-    exit;
+if (!$user) {
+    // Guests may view open/partially_staffed public jobs only
+    if (!in_array($request['status'], ['open','partially_staffed'], true)) {
+        header('Location: jobs.php');
+        exit;
+    }
+} else {
+    $canView = is_admin()
+        || $request['customer_id'] === $user['id']
+        || (is_worker() && ($request['status'] === 'open' || $request['assigned_worker_id'] === $user['id']));
+    if (!$canView) {
+        header('Location: jobs.php');
+        exit;
+    }
 }
 
 $myApplicationStatus = null;
@@ -101,20 +110,30 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
     <title>Request details — AkuapemHub</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
-<body class="has-bottom-nav">
+<body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
+    <?php if (!$user): ?>
+    <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <a href="jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← AkuapemHub</a>
+        <nav style="display:flex;gap:8px;align-items:center;">
+            <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+            <a href="register.php" class="button button-primary button-small">Register</a>
+        </nav>
+    </header>
+    <?php else: ?>
     <header class="app-topbar">
         <a href="javascript:history.back()" class="brand" style="text-decoration: none;">
             <span class="brand-icon">‹</span> Job Details
         </a>
     </header>
+    <?php endif; ?>
     <main class="page-shell small-shell">
         <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
-        <?php if ($request['status'] === 'pending_payment' && $request['customer_id'] === $user['id']): ?>
+        <?php if ($user && $request['status'] === 'pending_payment' && $request['customer_id'] === $user['id']): ?>
             <div class="alert alert-warning" style="margin-bottom:12px;">
                 🔒 <strong>Escrow payment required</strong> — complete your payment to submit this job for review.
                 <a href="escrow_checkout.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small" style="margin-left:8px;">Complete payment →</a>
             </div>
-        <?php elseif ($feeStatus === 'pending' && $request['customer_id'] === $user['id']): ?>
+        <?php elseif ($user && $feeStatus === 'pending' && $request['customer_id'] === $user['id']): ?>
             <div class="alert alert-warning" style="margin-bottom:12px;">
                 💳 <strong>Posting fee required</strong> — this job is not yet visible to workers until you confirm your posting fee payment.
                 <a href="pay_job_post.php?id=<?php echo $request['id']; ?>" class="button button-primary button-small" style="margin-left:8px;">Pay posting fee →</a>
@@ -313,7 +332,9 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 
         <?php
         $primaryAction = null;
-        if ($canReleaseEscrow) {
+        if (!$user && in_array($request['status'], ['open','partially_staffed'], true)) {
+            $primaryAction = ['link', 'login.php?redirect=' . urlencode('request_detail.php?id=' . $request['id']), 'Sign in to Apply'];
+        } elseif ($canReleaseEscrow) {
             $primaryAction = ['form_escrow_release', null, '💸 Release Payment to Worker'];
         } elseif (is_customer() && $request['customer_id'] === $user['id']) {
             $primaryAction = ['link', 'manage_applicants.php?id=' . $request['id'], '👥 Manage Applicants'];
@@ -337,7 +358,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             $secondaryActions[] = ['link', 'chat_start.php?user_id=' . $request['assigned_worker_id'] . '&job_id=' . $request['id'], '💬 Message Worker'];
         } elseif (is_worker() && ($request['assigned_worker_id'] === $user['id'] || $myApplicationStatus === 'pending' || $myApplicationStatus === 'accepted')) {
             $secondaryActions[] = ['link', 'chat_start.php?user_id=' . $request['customer_id'] . '&job_id=' . $request['id'], '💬 Message Customer'];
-        } else {
+        } elseif ($user) {
             $secondaryActions[] = ['link', 'chat.php', '💬 Messages'];
         }
         if (is_customer() && $request['customer_id'] === $user['id'] && $request['status'] !== 'completed' && $request['status'] !== 'cancelled') {
