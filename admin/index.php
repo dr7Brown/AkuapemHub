@@ -51,22 +51,77 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             background: var(--primary, #0f766e); color: #fff;
             padding: 2px 7px; border-radius: 20px; text-transform: uppercase;
         }
+
+        /* ── Scroll buttons ──────────────────────────────────────── */
+        .adm-sb {
+            display: none; align-items: center; justify-content: center;
+            width: 30px; flex-shrink: 0; border: none; cursor: pointer;
+            background: none; font-size: 1.2rem; font-weight: 700;
+            color: var(--text-muted, #9ca3af);
+            transition: background .12s, color .12s;
+        }
+        .adm-sb:hover { background: var(--surface-muted, #f3f4f6); color: var(--text, #111); }
+        .adm-sb.vis { display: flex; }
+        #adm-sl { border-right: 1px solid var(--border, #e5e7eb); }
+        #adm-sr { border-left:  1px solid var(--border, #e5e7eb); }
+
+        /* ── Nav rail ───────────────────────────────────────────── */
         .adm-nav {
             display: flex; align-items: center; gap: 2px;
             overflow-x: auto; padding: 0 6px; flex: 1;
             scrollbar-width: none; -webkit-overflow-scrolling: touch;
         }
         .adm-nav::-webkit-scrollbar { display: none; }
-        .adm-nav-sep { width: 1px; height: 22px; background: var(--border, #e5e7eb); margin: 0 4px; flex-shrink: 0; }
-        .adm-nav a {
+
+        /* ── Category buttons ───────────────────────────────────── */
+        .adm-cat-btn {
             display: inline-flex; align-items: center; gap: 5px;
             padding: 6px 11px; border-radius: 8px; white-space: nowrap;
-            font-size: .82rem; font-weight: 600; text-decoration: none;
+            font-size: .82rem; font-weight: 700;
+            background: none; border: none; cursor: pointer;
             color: var(--text-muted, #6b7280);
             transition: background .12s, color .12s;
+            height: 36px;
         }
-        .adm-nav a:hover  { background: var(--surface-muted, #f3f4f6); color: var(--text, #111); }
-        .adm-nav a.active { background: var(--primary-soft, #d1faf4); color: var(--primary, #0f766e); }
+        .adm-cat-btn:hover  { background: var(--surface-muted, #f3f4f6); color: var(--text, #111); }
+        .adm-cat-btn.open   { background: var(--surface-muted, #f3f4f6); color: var(--text, #111); }
+        .adm-cat-btn.active { background: var(--primary-soft, #d1faf4); color: var(--primary, #0f766e); }
+        .adm-caret {
+            font-size: .65rem; transition: transform .18s; display: inline-block; opacity: .6;
+        }
+        .adm-cat-btn.open .adm-caret { transform: rotate(180deg); }
+
+        /* ── Dropdown panels — fixed to viewport below topbar ──── */
+        /* Panels live in #adm-drops (direct body child), positioned fixed */
+        #adm-drops { position: fixed; top: 52px; left: 0; z-index: 500; pointer-events: none; }
+        .adm-drop {
+            position: absolute; top: 4px;
+            background: var(--surface, #fff);
+            border: 1px solid var(--border, #e5e7eb);
+            border-radius: 10px; padding: 6px;
+            box-shadow: 0 8px 28px rgba(0,0,0,.13);
+            min-width: 168px;
+            pointer-events: none; opacity: 0;
+            transform: translateY(-6px);
+            transition: opacity .14s, transform .14s;
+        }
+        .adm-drop.open {
+            pointer-events: auto; opacity: 1; transform: translateY(0);
+        }
+        .adm-drop a {
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; border-radius: 6px;
+            font-size: .83rem; font-weight: 600;
+            text-decoration: none; color: var(--text, #111);
+            transition: background .12s;
+        }
+        .adm-drop a:hover  { background: var(--surface-muted, #f3f4f6); }
+        .adm-drop a.active {
+            background: var(--primary-soft, #d1faf4);
+            color: var(--primary, #0f766e); font-weight: 700;
+        }
+
+        /* ── Bar end ─────────────────────────────────────────────── */
         .adm-bar-end {
             display: flex; align-items: center; gap: 7px;
             padding: 0 12px; border-left: 1px solid var(--border, #e5e7eb); flex-shrink: 0;
@@ -146,45 +201,74 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
 <body>
 
 <!-- ── Top navigation bar ──────────────────────────────────────── -->
-<header class="adm-bar">
+<header class="adm-bar" id="adm-bar">
     <a class="adm-brand" href="index.php" id="adm-home-btn">
         🔧 <?php echo is_admin() ? 'Admin' : 'Manager'; ?>
         <span class="adm-brand-badge"><?php echo is_admin() ? 'admin' : 'mgr'; ?></span>
     </a>
 
+    <button class="adm-sb" id="adm-sl" aria-label="Scroll nav left">‹</button>
+
     <nav class="adm-nav" id="adm-nav" aria-label="Admin sections">
+        <button class="adm-cat-btn" data-cat="jobs">
+            📋 Jobs <span class="adm-caret">▾</span>
+        </button>
         <?php if (is_admin()): ?>
-        <a href="users.php"         data-page="users.php">👥 Users</a>
-        <?php endif; ?>
-        <a href="requests.php"      data-page="requests.php">📋 Requests</a>
-        <a href="applications.php"  data-page="applications.php">📝 Applications</a>
-        <?php if (is_admin()): ?>
-        <div class="adm-nav-sep" aria-hidden="true"></div>
-        <a href="disputes.php"          data-page="disputes.php">⚖️ Disputes</a>
-        <a href="payments.php"          data-page="payments.php">💳 Payments</a>
-        <a href="referrals.php"         data-page="referrals.php">🔗 Referrals</a>
-        <a href="analytics.php"         data-page="analytics.php">📊 Analytics</a>
-        <div class="adm-nav-sep" aria-hidden="true"></div>
-        <a href="business_messages.php" data-page="business_messages.php">💬 Messages</a>
-        <a href="monetization.php"      data-page="monetization.php">💰 Monetize</a>
-        <a href="communication.php"     data-page="communication.php">📣 Broadcast</a>
-        <div class="adm-nav-sep" aria-hidden="true"></div>
-        <a href="news.php"              data-page="news.php">📰 News</a>
-        <a href="ads.php"               data-page="ads.php">📣 Ads</a>
-        <a href="funerals.php"          data-page="funerals.php">🕊️ Funerals</a>
-        <a href="events.php"            data-page="events.php">📅 Events</a>
-        <div class="adm-nav-sep" aria-hidden="true"></div>
-        <a href="contact_settings.php"  data-page="contact_settings.php">📞 Contact</a>
-        <a href="theme.php"             data-page="theme.php">🎨 Theme</a>
-        <a href="audit_logs.php"        data-page="audit_logs.php">📜 Audit</a>
+        <button class="adm-cat-btn" data-cat="users">
+            👥 Users <span class="adm-caret">▾</span>
+        </button>
+        <button class="adm-cat-btn" data-cat="finance">
+            💳 Finance <span class="adm-caret">▾</span>
+        </button>
+        <button class="adm-cat-btn" data-cat="community">
+            🌍 Community <span class="adm-caret">▾</span>
+        </button>
+        <button class="adm-cat-btn" data-cat="platform">
+            ⚙️ Platform <span class="adm-caret">▾</span>
+        </button>
         <?php endif; ?>
     </nav>
+
+    <button class="adm-sb" id="adm-sr" aria-label="Scroll nav right">›</button>
 
     <div class="adm-bar-end">
         <a href="../settings.php" class="button button-secondary button-small">Settings</a>
         <a href="../logout.php"   class="button button-secondary button-small">Logout</a>
     </div>
 </header>
+
+<!-- ── Dropdown panels (outside nav to avoid overflow clipping) ── -->
+<div id="adm-drops">
+    <div class="adm-drop" data-cat="jobs">
+        <a href="requests.php"     data-page="requests.php">📋 Requests</a>
+        <a href="applications.php" data-page="applications.php">📝 Applications</a>
+    </div>
+    <?php if (is_admin()): ?>
+    <div class="adm-drop" data-cat="users">
+        <a href="users.php"     data-page="users.php">👥 Users</a>
+        <a href="disputes.php"  data-page="disputes.php">⚖️ Disputes</a>
+        <a href="referrals.php" data-page="referrals.php">🔗 Referrals</a>
+    </div>
+    <div class="adm-drop" data-cat="finance">
+        <a href="payments.php"       data-page="payments.php">💳 Payments</a>
+        <a href="monetization.php"   data-page="monetization.php">💰 Monetize</a>
+    </div>
+    <div class="adm-drop" data-cat="community">
+        <a href="news.php"     data-page="news.php">📰 News</a>
+        <a href="ads.php"      data-page="ads.php">📣 Ads</a>
+        <a href="funerals.php" data-page="funerals.php">🕊️ Funerals</a>
+        <a href="events.php"   data-page="events.php">📅 Events</a>
+    </div>
+    <div class="adm-drop" data-cat="platform">
+        <a href="analytics.php"         data-page="analytics.php">📊 Analytics</a>
+        <a href="business_messages.php" data-page="business_messages.php">💬 Messages</a>
+        <a href="communication.php"     data-page="communication.php">📣 Broadcast</a>
+        <a href="contact_settings.php"  data-page="contact_settings.php">📞 Contact</a>
+        <a href="theme.php"             data-page="theme.php">🎨 Theme</a>
+        <a href="audit_logs.php"        data-page="audit_logs.php">📜 Audit</a>
+    </div>
+    <?php endif; ?>
+</div>
 
 <!-- ── Body ────────────────────────────────────────────────────── -->
 <div class="adm-body">
@@ -218,20 +302,20 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <div class="adm-cards">
         <?php
         $cards = [
-            ['users.php',           '👥', 'Users',        'Manage accounts & roles',   true ],
             ['requests.php',        '📋', 'Requests',     'Service request queue',      false],
             ['applications.php',    '📝', 'Applications', 'Job applications',           false],
+            ['users.php',           '👥', 'Users',        'Manage accounts & roles',   true ],
             ['disputes.php',        '⚖️', 'Disputes',     'Resolve user conflicts',     true ],
-            ['payments.php',        '💳', 'Payments',     'Platform payment records',   true ],
             ['referrals.php',       '🔗', 'Referrals',    'Referral programme',         true ],
-            ['analytics.php',       '📊', 'Analytics',    'Stats & growth trends',      true ],
-            ['business_messages.php','💬','Messages',     'Business enquiries',         true ],
+            ['payments.php',        '💳', 'Payments',     'Platform payment records',   true ],
             ['monetization.php',    '💰', 'Monetize',     'Pricing, plans & fees',      true ],
-            ['communication.php',   '📣', 'Broadcast',    'Push notifications',         true ],
             ['news.php',            '📰', 'News',         'Articles & blog posts',      true ],
             ['ads.php',             '📣', 'Ads',          'Manage advertisements',      true ],
             ['funerals.php',        '🕊️', 'Funerals',     'Funeral announcements',      true ],
             ['events.php',          '📅', 'Events',       'Community events',           true ],
+            ['analytics.php',       '📊', 'Analytics',    'Stats & growth trends',      true ],
+            ['business_messages.php','💬','Messages',     'Business enquiries',         true ],
+            ['communication.php',   '📣', 'Broadcast',    'Push notifications',         true ],
             ['contact_settings.php','📞', 'Contact',      'Contact page information',   true ],
             ['theme.php',           '🎨', 'Theme',        'Colours & branding',         true ],
             ['audit_logs.php',      '📜', 'Audit Logs',   'Admin action history',       true ],
@@ -259,17 +343,85 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
 
     var homeEl         = document.getElementById('adm-home');
     var ajaxEl         = document.getElementById('adm-ajax');
+    var navEl          = document.getElementById('adm-nav');
+    var slBtn          = document.getElementById('adm-sl');
+    var srBtn          = document.getElementById('adm-sr');
     var pageStyleEl    = null;
-    var currentLoadUrl = null; // absolute URL of the currently loaded sub-page
+    var currentLoadUrl = null;
+    var currentCat     = null;
 
-    /* ── Helpers ──────────────────────────────────────────────── */
+    /* ── Scroll buttons ───────────────────────────────────────── */
+
+    function updateScrollBtns() {
+        var sl = navEl.scrollLeft;
+        var max = navEl.scrollWidth - navEl.clientWidth;
+        slBtn.classList.toggle('vis', sl > 4);
+        srBtn.classList.toggle('vis', max > 4 && sl < max - 4);
+    }
+
+    slBtn.addEventListener('click', function () {
+        navEl.scrollBy({ left: -200, behavior: 'smooth' });
+    });
+    srBtn.addEventListener('click', function () {
+        navEl.scrollBy({ left: 200, behavior: 'smooth' });
+    });
+    navEl.addEventListener('scroll', updateScrollBtns, { passive: true });
+    window.addEventListener('resize', updateScrollBtns);
+    updateScrollBtns();
+
+    /* ── Dropdown open / close ────────────────────────────────── */
+
+    function openDrop(cat) {
+        closeDrop(true);
+        var btn  = document.querySelector('.adm-cat-btn[data-cat="' + cat + '"]');
+        var drop = document.querySelector('.adm-drop[data-cat="' + cat + '"]');
+        if (!btn || !drop) return;
+        var rect = btn.getBoundingClientRect();
+        drop.style.left = rect.left + 'px';
+        btn.classList.add('open');
+        drop.classList.add('open');
+        currentCat = cat;
+    }
+
+    function closeDrop(silent) {
+        if (!currentCat) return;
+        document.querySelectorAll('.adm-cat-btn.open').forEach(function (b) { b.classList.remove('open'); });
+        document.querySelectorAll('.adm-drop.open').forEach(function (d)   { d.classList.remove('open'); });
+        currentCat = null;
+    }
+
+    document.querySelectorAll('.adm-cat-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var cat = btn.dataset.cat;
+            if (currentCat === cat) { closeDrop(); } else { openDrop(cat); }
+        });
+    });
+
+    document.addEventListener('click', function (e) {
+        if (!e.target.closest('#adm-drops') && !e.target.closest('.adm-cat-btn')) {
+            closeDrop();
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeDrop();
+    });
+
+    /* ── Active state ─────────────────────────────────────────── */
 
     function setActive(absUrl) {
-        document.querySelectorAll('.adm-nav a[data-page]').forEach(function (a) {
+        document.querySelectorAll('.adm-drop a[data-page]').forEach(function (a) {
             var match = absUrl && absUrl.indexOf('/' + a.dataset.page) !== -1;
             a.classList.toggle('active', !!match);
         });
+        document.querySelectorAll('.adm-cat-btn').forEach(function (btn) {
+            var drop = document.querySelector('.adm-drop[data-cat="' + btn.dataset.cat + '"]');
+            btn.classList.toggle('active', !!(drop && drop.querySelector('a.active')));
+        });
     }
+
+    /* ── Helpers ──────────────────────────────────────────────── */
 
     function isInternalAdminPage(absUrl) {
         try {
@@ -289,12 +441,10 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         return pageStyleEl;
     }
 
-    // 'http://.../admin/requests.php?page=2' → 'requests.php?page=2'
     function toHashSegment(absUrl) {
         try {
             var u = new URL(absUrl);
-            var file = u.pathname.split('/').pop();
-            return file + u.search;
+            return u.pathname.split('/').pop() + u.search;
         } catch (e) { return ''; }
     }
 
@@ -307,16 +457,13 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         currentLoadUrl = null;
         setActive(null);
         document.title = 'Admin Dashboard — AkuapemHub';
-        if (push !== false) {
-            history.pushState({ adm: 'home' }, '', 'index.php');
-        }
+        if (push !== false) history.pushState({ adm: 'home' }, '', 'index.php');
     }
 
     /* ── Load a page into the AJAX panel ─────────────────────── */
 
     function admLoad(href, push) {
-        // Resolve relative to the currently loaded sub-page, not window.location
-        // (important for ?query links inside loaded content)
+        closeDrop();
         var base   = currentLoadUrl || window.location.href;
         var absUrl = new URL(href, base).href;
         currentLoadUrl = absUrl;
@@ -326,7 +473,6 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         ajaxEl.innerHTML = '<div class="adm-loading"><div class="adm-spinner"></div>Loading…</div>';
         setActive(absUrl);
 
-        // Always stay on index.php; encode the target page in the hash
         if (push !== false) {
             history.pushState({ adm: 'page', url: absUrl }, '', 'index.php#' + toHashSegment(absUrl));
         }
@@ -368,8 +514,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             });
     }
 
-    /* ── Wire topbar nav links ────────────────────────────────── */
-    document.querySelectorAll('.adm-nav a[data-page]').forEach(function (a) {
+    /* ── Wire dropdown links ──────────────────────────────────── */
+    document.querySelectorAll('.adm-drop a[data-page]').forEach(function (a) {
         a.addEventListener('click', function (e) {
             e.preventDefault();
             admLoad(a.getAttribute('href'));
@@ -394,7 +540,6 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     ajaxEl.addEventListener('click', function (e) {
         var a = e.target.closest('a[href]');
         if (!a) return;
-        // Resolve relative to currentLoadUrl so '?page=2' resolves against the right file
         var resolved;
         try { resolved = new URL(a.getAttribute('href'), currentLoadUrl || window.location.href).href; }
         catch (ex) { return; }
@@ -414,7 +559,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     });
 
     /* ── On refresh: restore from hash ───────────────────────── */
-    var initHash = window.location.hash.slice(1); // e.g. 'requests.php' or 'requests.php?page=2'
+    var initHash = window.location.hash.slice(1);
     if (initHash && /^[a-z0-9_-]+\.php/i.test(initHash)) {
         admLoad(initHash, false);
         history.replaceState({ adm: 'page', url: new URL(initHash, window.location.href).href }, '', window.location.href);
