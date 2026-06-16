@@ -62,7 +62,8 @@ $user = current_user();
         <a href="javascript:history.back()" class="button button-secondary button-small">← Back</a>
         <span class="brand">Worker Profile</span>
         <?php if (!$user): ?>
-            <a href="login.php" class="button button-primary button-small">Login</a>
+            <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+            <a href="register.php" class="button button-primary button-small">Register</a>
         <?php endif; ?>
     </header>
     <main class="page-shell small-shell">

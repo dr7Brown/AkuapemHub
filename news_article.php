@@ -158,7 +158,10 @@ $csrfField = csrf_field();
     <header class="app-topbar">
         <a href="news.php" class="button button-secondary button-small">← News</a>
         <span class="brand"><?php echo sanitize(APP_NAME); ?></span>
-        <?php if (!$user): ?><a href="login.php" class="button button-primary button-small">Sign in</a><?php endif; ?>
+        <?php if (!$user): ?>
+            <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+            <a href="register.php" class="button button-primary button-small">Register</a>
+        <?php endif; ?>
     </header>
 
     <div class="na-wrap">

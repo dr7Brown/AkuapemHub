@@ -86,8 +86,9 @@ $isCancelled = $ev['status'] === 'cancelled';
 <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;"><?php echo APP_NAME; ?></a>
     <div style="display:flex;gap:8px;">
-        <a href="events.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Events</a>
-        <a href="login.php" class="button button-secondary button-small">Sign in</a>
+        <a href="events.php"   style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Events</a>
+        <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+        <a href="register.php" class="button button-primary button-small">Register</a>
     </div>
 </header>
 <?php endif; ?>

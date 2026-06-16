@@ -139,7 +139,8 @@ if (!empty($_GET['ajax'])) {
         <div style="display: flex; align-items: center; gap: 8px;">
             <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>
             <?php if (!$user): ?>
-                <a href="login.php" class="button button-primary button-small">Login</a>
+                <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+                <a href="register.php" class="button button-primary button-small">Register</a>
             <?php endif; ?>
         </div>
     </header>

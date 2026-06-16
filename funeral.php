@@ -95,7 +95,8 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;"><?php echo APP_NAME; ?></a>
     <div style="display:flex;gap:8px;">
         <a href="funerals.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Announcements</a>
-        <a href="login.php" class="button button-secondary button-small">Sign in</a>
+        <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+        <a href="register.php" class="button button-primary button-small">Register</a>
     </div>
 </header>
 <?php endif; ?>

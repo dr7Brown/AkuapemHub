@@ -20,7 +20,8 @@ $trendingCategories = get_trending_categories(5, 30);
         <?php if ($user): ?>
             <a href="logout.php" class="button button-secondary button-small">Logout</a>
         <?php else: ?>
-            <a href="login.php" class="button button-primary button-small">Login</a>
+            <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+            <a href="register.php" class="button button-primary button-small">Register</a>
         <?php endif; ?>
     </header>
     <main class="page-shell">
