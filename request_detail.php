@@ -113,7 +113,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
     <?php if (!$user): ?>
     <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <a href="jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← AkuapemHub</a>
+        <a href="browse_jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← AkuapemHub</a>
         <nav style="display:flex;gap:8px;align-items:center;">
             <a href="login.php"    class="button button-secondary button-small">Sign in</a>
             <a href="register.php" class="button button-primary button-small">Register</a>
