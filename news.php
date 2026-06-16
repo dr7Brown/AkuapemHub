@@ -26,7 +26,7 @@ if ($search) {
 $stmt = $pdo->prepare("
     SELECT id, title, slug, summary, featured_image, view_count, published_at
     FROM news
-    WHERE status='published' AND (published_at IS NULL OR published_at <= NOW())
+    WHERE status='published'
     $whereExtra
     ORDER BY $orderBy
     LIMIT ? OFFSET ?

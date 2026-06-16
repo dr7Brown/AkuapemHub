@@ -6,7 +6,7 @@ $user = current_user();
 $slug = trim($_GET['slug'] ?? '');
 if (!$slug) { header('Location: news.php'); exit; }
 
-$stmt = $pdo->prepare("SELECT * FROM news WHERE slug=? AND status='published' AND (published_at IS NULL OR published_at<=NOW()) LIMIT 1");
+$stmt = $pdo->prepare("SELECT * FROM news WHERE slug=? AND status='published' LIMIT 1");
 $stmt->execute([$slug]);
 $article = $stmt->fetch();
 if (!$article) {
