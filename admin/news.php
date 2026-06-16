@@ -4,6 +4,7 @@ require_once __DIR__ . '/../functions.php';
 
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
+$user = current_user();
 
 // Fee settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
@@ -120,7 +121,7 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
         <!-- Fee settings panel -->
         <div class="an-fee-panel">
             <h3>⚙️ Article Submission Fee</h3>
-            <form method="post" class="an-fee-row">
+            <form method="post" action="news.php" class="an-fee-row">
                 <?php echo csrf_field(); ?>
                 <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;">
                     <input type="checkbox" name="fee_enabled" value="1" <?php echo $feeEnabled ? 'checked' : ''; ?>>

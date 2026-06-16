@@ -4,6 +4,7 @@ require_once __DIR__ . '/../functions.php';
 
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
+$user = current_user();
 
 $feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0');
 $feeAmount  = (float)get_platform_setting('funeral_fee_amount', '20');
@@ -140,7 +141,7 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
         <!-- Fee settings -->
         <div class="af-fee-box">
             <h2>Fee Settings</h2>
-            <form method="post" class="af-fee-row">
+            <form method="post" action="funerals.php" class="af-fee-row">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="save_fee" value="1">
                 <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;font-weight:600;cursor:pointer;">

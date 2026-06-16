@@ -4,6 +4,7 @@ require_once __DIR__ . '/../functions.php';
 
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
+$user = current_user();
 
 // Event fee settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
@@ -132,7 +133,7 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
         <!-- Fee settings panel -->
         <div style="background:var(--surface,#fff);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:20px;">
             <h3 style="font-size:.88rem;font-weight:800;margin:0 0 12px;">⚙️ Event Submission Fee</h3>
-            <form method="post" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <form method="post" action="events.php" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                 <?php echo csrf_field(); ?>
                 <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;">
                     <input type="checkbox" name="fee_enabled" value="1" <?php echo $feeEnabled ? 'checked' : ''; ?>>

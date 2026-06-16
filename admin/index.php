@@ -565,6 +565,29 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         admLoad(resolved);
     });
 
+    /* ── Delegate: intercept POST forms inside AJAX content ──── */
+    // Resolves the action against currentLoadUrl so forms without an explicit
+    // action attribute (which would otherwise POST to index.php) hit the
+    // correct admin page (funerals.php, events.php, news.php, etc.)
+    ajaxEl.addEventListener('submit', function (e) {
+        var form = e.target.closest('form');
+        if (!form || form.method.toLowerCase() === 'get') return;
+        var actionRaw  = form.getAttribute('action') || '';
+        var actionBase = currentLoadUrl || window.location.href;
+        var resolved;
+        try { resolved = new URL(actionRaw || actionBase, actionBase).href; }
+        catch (ex) { return; }
+        if (!isInternalAdminPage(resolved)) return;
+        e.preventDefault();
+        var fd  = new FormData(form);
+        // Include the clicked submit button's name/value (e.g. "save_fee", bulk actions)
+        var sub = e.submitter;
+        if (sub && sub.name) fd.append(sub.name, sub.value);
+        fetch(resolved, { method: 'POST', body: fd, credentials: 'same-origin' })
+            .then(function (r) { admLoad(r.url || resolved); })
+            .catch(function ()  { admLoad(currentLoadUrl);   });
+    });
+
     /* ── Browser back / forward ───────────────────────────────── */
     window.addEventListener('popstate', function (e) {
         if (!e.state || e.state.adm === 'home') {
