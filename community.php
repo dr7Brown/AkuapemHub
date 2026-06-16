@@ -19,14 +19,23 @@ $latestNews = $pdo->query(
     "SELECT * FROM news WHERE status='published'
      ORDER BY published_at DESC LIMIT 3"
 )->fetchAll();
+
+$openJobs = $pdo->query(
+    "SELECT sr.id, sr.title, sr.budget_amount, sr.location, sr.created_at,
+            c.name AS category
+     FROM service_requests sr
+     LEFT JOIN service_categories c ON sr.category_id = c.id
+     WHERE sr.status = 'open'
+     ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 4"
+)->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Community — <?php echo APP_NAME; ?></title>
-    <meta name="description" content="News, events, funeral announcements and more from the <?php echo APP_NAME; ?> community.">
+    <title><?php echo APP_NAME; ?> — Community, Jobs &amp; Services</title>
+    <meta name="description" content="<?php echo APP_NAME; ?> — Find skilled workers, post service requests, discover community events, news &amp; announcements in Ghana.">
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .cm-hero { background:linear-gradient(135deg,#0f766e 0%,#065f46 100%); color:#fff; padding:40px 20px 36px; text-align:center; }
@@ -79,7 +88,16 @@ $latestNews = $pdo->query(
 
         .cm-empty { text-align:center; color:var(--text-muted); font-size:.88rem; padding:24px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; }
 
-        /* Post funeral CTA */
+        /* Job cards */
+        .cm-job-row   { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
+        .cm-job-card  { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:14px; text-decoration:none; color:inherit; display:flex; flex-direction:column; gap:5px; transition:box-shadow .15s; }
+        .cm-job-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); }
+        .cm-job-cat   { display:inline-block; font-size:.7rem; font-weight:700; padding:3px 8px; border-radius:20px; background:#f0fdf4; color:#065f46; align-self:flex-start; }
+        .cm-job-title { font-weight:700; font-size:.9rem; line-height:1.35; }
+        .cm-job-meta  { font-size:.75rem; color:var(--text-muted,#6b7280); }
+        .cm-job-budget{ font-size:.82rem; font-weight:700; color:var(--primary,#0f766e); }
+
+        /* Community CTAs */
         .cm-cta { background:linear-gradient(135deg,#1e293b,#0f172a); color:#fff; border-radius:16px; padding:24px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
         .cm-cta h3 { font-size:1rem; font-weight:800; margin:0 0 4px; }
         .cm-cta p  { font-size:.85rem; color:#94a3b8; margin:0; }
@@ -89,29 +107,77 @@ $latestNews = $pdo->query(
 </head>
 <body>
 <?php if (!$user): ?>
-<header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;"><?php echo APP_NAME; ?></a>
-    <div style="display:flex;gap:8px;">
+<header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+    <a href="community.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;"><?php echo APP_NAME; ?></a>
+    <nav style="display:flex;gap:12px;align-items:center;">
+        <a href="find_workers.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Workers</a>
+        <a href="events.php"       style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Events</a>
+        <a href="news.php"         style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">News</a>
         <a href="login.php"    class="button button-secondary button-small">Sign in</a>
         <a href="register.php" class="button button-primary button-small">Register</a>
-    </div>
+    </nav>
 </header>
 <?php endif; ?>
 
 <div class="cm-hero">
-    <h1>🌍 Community Hub</h1>
-    <p>News, events, announcements and more from the <?php echo APP_NAME; ?> community</p>
+    <h1>Welcome to <?php echo APP_NAME; ?></h1>
+    <p>Find workers, post jobs, explore events, news &amp; community announcements — all in one place for Ghana</p>
+    <?php if (!$user): ?>
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap;">
+        <a href="register.php"    class="button button-primary">Create free account</a>
+        <a href="find_workers.php" style="background:rgba(255,255,255,.15);color:#fff;padding:10px 20px;border-radius:10px;text-decoration:none;font-weight:700;font-size:.9rem;border:1px solid rgba(255,255,255,.3);">Browse Workers</a>
+    </div>
+    <?php endif; ?>
 </div>
 
 <!-- Module cards -->
 <div class="cm-modules">
-    <a href="news.php"      class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a>
-    <a href="events.php"    class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a>
-    <a href="funerals.php"  class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a>
-    <a href="news.php#ads"  class="cm-mod"><div class="cm-mod-icon">📣</div><div class="cm-mod-title">Advertisements</div><div class="cm-mod-desc">Sponsored posts &amp; promotions</div></a>
+    <a href="find_workers.php" class="cm-mod"><div class="cm-mod-icon">🔧</div><div class="cm-mod-title">Jobs &amp; Services</div><div class="cm-mod-desc">Find workers &amp; post service requests</div></a>
+    <a href="news.php"         class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a>
+    <a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a>
+    <a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a>
+    <a href="news.php#ads"     class="cm-mod"><div class="cm-mod-icon">📣</div><div class="cm-mod-title">Advertisements</div><div class="cm-mod-desc">Sponsored posts &amp; promotions</div></a>
 </div>
 
 <div class="cm-shell">
+
+    <!-- Open Jobs & Services -->
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>Open Jobs &amp; Services</h2>
+            <a href="find_workers.php">Find Workers →</a>
+        </div>
+        <?php if ($openJobs): ?>
+        <div class="cm-job-row">
+            <?php foreach ($openJobs as $job): ?>
+            <a href="request_detail.php?id=<?php echo (int)$job['id']; ?>" class="cm-job-card">
+                <?php if ($job['category']): ?><span class="cm-job-cat"><?php echo sanitize($job['category']); ?></span><?php endif; ?>
+                <div class="cm-job-title"><?php echo sanitize($job['title']); ?></div>
+                <?php if ($job['location']): ?><div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($job['location'],0,40)); ?></div><?php endif; ?>
+                <?php if ($job['budget_amount']): ?><div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?></div><?php endif; ?>
+                <div class="cm-job-meta">🕐 <?php echo date('d M Y', strtotime($job['created_at'])); ?></div>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+            <a href="find_workers.php" class="button button-secondary">🔍 Find Workers</a>
+            <?php if ($user): ?>
+            <a href="request.php" class="button button-primary">➕ Post a Job</a>
+            <?php else: ?>
+            <a href="register.php" class="button button-primary">Sign up to Post a Job</a>
+            <?php endif; ?>
+        </div>
+        <?php else: ?>
+        <div class="cm-empty">
+            No open jobs right now.
+            <?php if ($user): ?>
+            <a href="request.php" style="color:var(--primary,#0f766e);font-weight:700;">Be the first to post →</a>
+            <?php else: ?>
+            <a href="register.php" style="color:var(--primary,#0f766e);font-weight:700;">Sign up &amp; post a job →</a>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+    </div>
 
     <!-- Upcoming Events -->
     <div class="cm-section">
@@ -187,8 +253,22 @@ $latestNews = $pdo->query(
     </div>
     <?php endif; ?>
 
-    <!-- Community CTAs (3-up grid, 1-col on mobile) -->
-    <div class="cm-cta-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+    <!-- Community CTAs (2×2 grid, 1-col on mobile) -->
+    <div class="cm-cta-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="cm-cta" style="background:linear-gradient(135deg,#1e3a5f,#0f2040);">
+            <div>
+                <h3>🔧 Jobs &amp; Services</h3>
+                <p>Find skilled workers or post a service request</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;">
+                <a href="find_workers.php" class="button button-secondary" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;">Find Workers</a>
+                <?php if ($user): ?>
+                <a href="request.php" class="button button-primary">Post a Job</a>
+                <?php else: ?>
+                <a href="register.php" class="button button-primary">Sign up</a>
+                <?php endif; ?>
+            </div>
+        </div>
         <div class="cm-cta">
             <div>
                 <h3>🕊️ Post Funeral Announcement</h3>
@@ -200,7 +280,7 @@ $latestNews = $pdo->query(
             <a href="register.php" class="button button-primary">Sign up to Post</a>
             <?php endif; ?>
         </div>
-        <div class="cm-cta" style="background:linear-gradient(135deg,#1e3a5f,#0f2040);">
+        <div class="cm-cta" style="background:linear-gradient(135deg,#1a3a20,#14532d);">
             <div>
                 <h3>📅 Submit a Community Event</h3>
                 <p>Share your event with the <?php echo APP_NAME; ?> community</p>
@@ -225,6 +305,15 @@ $latestNews = $pdo->query(
     </div>
 
 </div>
+
+<footer style="text-align:center;padding:20px 16px 32px;font-size:.8rem;color:#6b7280;border-top:1px solid #e5e7eb;margin-top:0;">
+    &copy; <?php echo date('Y'); ?> <?php echo APP_NAME; ?> &nbsp;·&nbsp;
+    <a href="find_workers.php" style="color:#0f766e;">Find Workers</a> &nbsp;·&nbsp;
+    <a href="leaderboard.php"  style="color:#0f766e;">Leaderboard</a> &nbsp;·&nbsp;
+    <a href="contact.php"      style="color:#0f766e;">Contact</a> &nbsp;·&nbsp;
+    <a href="privacy.php"      style="color:#0f766e;">Privacy Policy</a> &nbsp;·&nbsp;
+    <a href="terms.php"        style="color:#0f766e;">Terms of Service</a>
+</footer>
 
 <?php if ($user): $activeNav = 'community'; require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 </body>
