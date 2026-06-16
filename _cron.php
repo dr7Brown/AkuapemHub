@@ -36,6 +36,8 @@ $beforeCounts = [
 ];
 
 sweep_expired_featured();
+$expiredJobs      = sweep_expired_jobs();
+$remindersSent    = send_job_deadline_reminders();
 
 $elapsed = round((microtime(true) - $before) * 1000);
 
@@ -47,6 +49,8 @@ $summary = [
     'expired_verifications'       => $beforeCounts['expired_verifications'],
     'expired_service_listings'    => $beforeCounts['expired_service_listings'],
     'renewal_notices_sent'        => $beforeCounts['renewal_notices_pending'],
+    'jobs_auto_expired'           => $expiredJobs,
+    'deadline_reminders_sent'     => $remindersSent,
 ];
 
 // Log to audit_logs
@@ -58,7 +62,9 @@ log_audit_action(
     'Workers expired: ' . $summary['expired_featured_workers'] . '. ' .
     'Verifications expired: ' . $summary['expired_verifications'] . '. ' .
     'Service listings expired: ' . $summary['expired_service_listings'] . '. ' .
-    'Renewal notices sent: ' . $summary['renewal_notices_sent'] . '.'
+    'Renewal notices sent: ' . $summary['renewal_notices_sent'] . '. ' .
+    'Job vacancies auto-expired: ' . $expiredJobs . '. ' .
+    'Deadline reminders sent: ' . $remindersSent . '.'
 );
 
 // ── Output ───────────────────────────────────────────────────────────────────

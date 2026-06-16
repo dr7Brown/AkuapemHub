@@ -56,11 +56,11 @@ switch ($action) {
             ? '<img src="' . sanitize($user['profile_photo']) . '" alt="">'
             : $initial;
         $html = '<div class="nc-comment">
-            <div class="nc-comment-avatar">' . $avatar . '</div>
-            <div class="nc-comment-body">
-                <span class="nc-comment-name">' . sanitize($user['name']) . '</span>
-                <span class="nc-comment-date">&nbsp;·&nbsp;just now</span>
-                <p class="nc-comment-text">' . nl2br(sanitize($text)) . '</p>
+            <div class="nc-com-av">' . $avatar . '</div>
+            <div class="nc-com-body">
+                <span class="nc-com-name">' . sanitize($user['name']) . '</span>
+                <span class="nc-com-date">&nbsp;·&nbsp;just now</span>
+                <p class="nc-com-text">' . nl2br(sanitize($text)) . '</p>
             </div>
         </div>';
         echo json_encode(['success' => true, 'html' => $html]);

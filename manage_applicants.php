@@ -36,8 +36,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $newAppStatus = null;
     $newJobStatus = null;
-    $workersApproved = (int)$app['workers_approved'];
+    $workersApproved = (int)($app['workers_approved'] ?? 0);
     $errMsg = null;
+
+    // ── mark_hiring_completed (no application needed) ────────────────────────
+    if ($act === 'mark_hiring_completed') {
+        $reqId = intval($_POST['request_id'] ?? 0);
+        if (mark_hiring_completed($reqId, $user['id'])) {
+            if (!$isAjax) flash('Job marked as Hiring Completed. Remaining applicants notified.');
+        } else {
+            $errMsg = 'Could not mark hiring as completed.';
+            if (!$isAjax) flash($errMsg, 'error');
+        }
+        if ($isAjax) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode($errMsg ? ['error' => $errMsg] : ['ok' => true, 'hiring_completed' => true]);
+            exit;
+        }
+        $redirect = 'manage_applicants.php';
+        if ($reqId) $redirect .= '?id=' . $reqId;
+        header('Location: ' . $redirect);
+        exit;
+    }
+
+    // ── update_status (intermediate status changes by employer) ─────────────
+    if ($app && $act === 'update_status') {
+        $newStatus = $_POST['new_status'] ?? '';
+        $allowed   = ['under_review','shortlisted','interview_scheduled','offered','rejected'];
+        if (!in_array($newStatus, $allowed, true)) {
+            $errMsg = 'Invalid status.';
+        } else {
+            $oldStatus = $app['status'];
+            $pdo->prepare("UPDATE applications SET status = ? WHERE id = ?")
+                ->execute([$newStatus, $appId]);
+            log_application_status_change($appId, $oldStatus, $newStatus, $user['id'], 'Employer updated status');
+
+            $msgs = [
+                'under_review'        => "Your application for \"{$app['job_title']}\" is now under review.",
+                'shortlisted'         => "Great news! You've been shortlisted for \"{$app['job_title']}\".",
+                'interview_scheduled' => "An interview has been scheduled for your application to \"{$app['job_title']}\". Check your messages.",
+                'offered'             => "Congratulations! You've received a job offer for \"{$app['job_title']}\".",
+                'rejected'            => "We regret that your application for \"{$app['job_title']}\" was not selected.",
+            ];
+            $types = ['shortlisted' => 'success', 'interview_scheduled' => 'success', 'offered' => 'success',
+                      'rejected' => 'warning'];
+            notify_user((int)$app['worker_id'], 'Application Status Update',
+                $msgs[$newStatus] ?? "Your application status for \"{$app['job_title']}\" has been updated.",
+                $types[$newStatus] ?? 'info');
+
+            $newAppStatus = $newStatus;
+            if (!$isAjax) flash('Status updated to ' . str_replace('_', ' ', $newStatus) . '.');
+        }
+        if ($errMsg && !$isAjax) flash($errMsg, 'error');
+        if ($isAjax) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode($errMsg ? ['error' => $errMsg] : [
+                'ok' => true, 'application_id' => $appId, 'new_status' => $newAppStatus,
+            ]);
+            exit;
+        }
+        $redirect = 'manage_applicants.php';
+        if ((int)($_POST['return_id'] ?? 0)) $redirect .= '?id=' . (int)$_POST['return_id'];
+        header('Location: ' . $redirect);
+        exit;
+    }
 
     if ($app && $app['status'] === 'pending') {
         if ($act === 'approve') {
@@ -183,6 +245,23 @@ if ($focusJobId) {
     }
 }
 
+$statusLabels = [
+    'pending'              => ['label' => 'Pending',              'class' => 'status-pending'],
+    'under_review'         => ['label' => 'Under Review',         'class' => 'status-in_progress'],
+    'shortlisted'          => ['label' => 'Shortlisted',          'class' => 'status-partially_staffed'],
+    'interview_scheduled'  => ['label' => 'Interview Scheduled',  'class' => 'status-open'],
+    'offered'              => ['label' => 'Offered',              'class' => 'status-fully_staffed'],
+    'approved'             => ['label' => 'Approved',             'class' => 'status-fully_staffed'],
+    'hired'                => ['label' => 'Hired',                'class' => 'status-completed'],
+    'rejected'             => ['label' => 'Rejected',             'class' => 'status-cancelled'],
+    'withdrawn'            => ['label' => 'Withdrawn',            'class' => 'status-cancelled'],
+    'expired'              => ['label' => 'Expired',              'class' => 'status-cancelled'],
+    'position_filled'      => ['label' => 'Position Filled',      'class' => 'status-cancelled'],
+    'completed'            => ['label' => 'Completed',            'class' => 'status-completed'],
+    'accepted'             => ['label' => 'Accepted',             'class' => 'status-completed'],
+    'declined'             => ['label' => 'Declined',             'class' => 'status-cancelled'],
+];
+
 $jobStatusOptions = [
     ''                  => 'All statuses',
     'open'              => 'Open',
@@ -190,8 +269,32 @@ $jobStatusOptions = [
     'fully_staffed'     => 'Fully Staffed',
     'in_progress'       => 'In Progress',
     'completed'         => 'Completed',
+    'expired'           => 'Expired',
+    'hiring_completed'  => 'Hiring Completed',
     'cancelled'         => 'Cancelled',
 ];
+
+// ── Employer stats (list view only) ─────────────────────────────────────────
+$employerStats = [];
+if (!$focusJobId) {
+    $statsStmt = $pdo->prepare("
+        SELECT
+          SUM(sr.status IN ('open','partially_staffed')) AS active_jobs,
+          SUM(sr.status = 'expired')                     AS expired_jobs,
+          SUM(sr.status = 'hiring_completed')            AS completed_jobs,
+          SUM(a.status = 'pending')                      AS pending_decisions,
+          SUM(sr.deadline_date IS NOT NULL
+              AND sr.deadline_date > NOW()
+              AND sr.deadline_date < DATE_ADD(NOW(), INTERVAL 7 DAY)
+              AND sr.status IN ('open','partially_staffed')) AS expiring_soon
+        FROM service_requests sr
+        LEFT JOIN applications a ON a.request_id = sr.id
+        WHERE " . (is_admin() ? '1=1' : 'sr.customer_id = ?') . "
+    ");
+    $statsStmt->execute(is_admin() ? [] : [$user['id']]);
+    $employerStats = $statsStmt->fetch();
+    $employerScore = get_employer_activity_score((int)$user['id']);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -214,6 +317,19 @@ $jobStatusOptions = [
         .filter-strip input { flex:1; min-width:140px; }
         .badge-count { background:var(--primary); color:#fff; border-radius:20px; padding:1px 8px; font-size:0.72rem; font-weight:700; }
         .job-focus-header { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:20px; }
+        .emp-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; margin-bottom:20px; }
+        .emp-stat-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:10px; padding:12px 14px; text-align:center; }
+        .emp-stat-card .num { font-size:1.5rem; font-weight:700; color:var(--primary,#0f766e); display:block; }
+        .emp-stat-card .lbl { font-size:0.73rem; color:var(--muted,#6b7280); margin-top:2px; }
+        .emp-stat-card.warn .num { color:#d97706; }
+        .emp-stat-card.danger .num { color:#dc2626; }
+        .emp-stat-card.good .num { color:#16a34a; }
+        .score-badge { display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:20px; font-size:0.8rem; font-weight:700; }
+        .score-badge.good { background:#d1fae5; color:#065f46; }
+        .score-badge.ok   { background:#fef9c3; color:#92400e; }
+        .score-badge.poor { background:#fee2e2; color:#991b1b; }
+        .status-select { padding:4px 8px; border:1px solid var(--border,#e5e7eb); border-radius:6px; font-size:0.82rem; background:var(--surface,#fff); }
+        .hiring-completed-banner { background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:10px 14px; color:#0369a1; font-weight:600; margin-top:10px; }
     </style>
 </head>
 <body class="has-bottom-nav">
@@ -231,6 +347,40 @@ $jobStatusOptions = [
     <?php foreach (get_flashes() as $f): ?>
         <div class="alert alert-<?php echo sanitize($f['type']); ?>"><?php echo sanitize($f['message']); ?></div>
     <?php endforeach; ?>
+
+    <?php if (!$focusJobId && !empty($employerStats)): ?>
+        <div class="emp-stats">
+            <div class="emp-stat-card">
+                <span class="num"><?php echo (int)($employerStats['active_jobs'] ?? 0); ?></span>
+                <div class="lbl">Active Jobs</div>
+            </div>
+            <div class="emp-stat-card <?php echo (int)($employerStats['pending_decisions'] ?? 0) > 0 ? 'warn' : ''; ?>">
+                <span class="num"><?php echo (int)($employerStats['pending_decisions'] ?? 0); ?></span>
+                <div class="lbl">Pending Decisions</div>
+            </div>
+            <div class="emp-stat-card <?php echo (int)($employerStats['expiring_soon'] ?? 0) > 0 ? 'warn' : ''; ?>">
+                <span class="num"><?php echo (int)($employerStats['expiring_soon'] ?? 0); ?></span>
+                <div class="lbl">Expiring in 7 Days</div>
+            </div>
+            <div class="emp-stat-card good">
+                <span class="num"><?php echo (int)($employerStats['completed_jobs'] ?? 0); ?></span>
+                <div class="lbl">Hiring Completed</div>
+            </div>
+            <div class="emp-stat-card <?php echo (int)($employerStats['expired_jobs'] ?? 0) > 0 ? 'danger' : ''; ?>">
+                <span class="num"><?php echo (int)($employerStats['expired_jobs'] ?? 0); ?></span>
+                <div class="lbl">Expired</div>
+            </div>
+            <?php if (!is_admin()):
+                $sc = $employerScore;
+                $scoreClass = $sc >= 80 ? 'good' : ($sc >= 50 ? 'ok' : 'poor');
+            ?>
+            <div class="emp-stat-card">
+                <span class="num"><span class="score-badge <?php echo $scoreClass; ?>"><?php echo $sc; ?></span></span>
+                <div class="lbl">Activity Score</div>
+            </div>
+            <?php endif; ?>
+        </div>
+    <?php endif; ?>
 
     <?php if ($focusJobId): ?>
         <?php
@@ -253,8 +403,31 @@ $jobStatusOptions = [
                 </div>
                 <span class="status status-<?php echo sanitize($focusJob['status']); ?>"><?php echo strtoupper(str_replace('_',' ',$focusJob['status'])); ?></span>
             </div>
+            <?php if (!empty($focusJob['deadline_date'])): ?>
+                <div style="font-size:0.82rem;color:var(--muted,#6b7280);margin-top:6px;">
+                    ⏰ Deadline: <strong><?php echo date('d M Y', strtotime($focusJob['deadline_date'])); ?></strong>
+                    <?php
+                    $dlDiff = (strtotime($focusJob['deadline_date']) - time()) / 86400;
+                    if ($dlDiff < 0): ?><span style="color:#dc2626;"> · expired</span>
+                    <?php elseif ($dlDiff <= 3): ?><span style="color:#d97706;"> · <?php echo ceil($dlDiff); ?> day(s) left</span>
+                    <?php elseif ($dlDiff <= 7): ?><span style="color:#ca8a04;"> · <?php echo ceil($dlDiff); ?> days left</span>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
             <?php if ($isFullyStaffed): ?>
                 <div class="fully-staffed-banner" style="margin-top:10px;margin-bottom:0;">✅ This job is fully staffed — all positions filled.</div>
+            <?php endif; ?>
+            <?php if ($focusJob['status'] === 'hiring_completed'): ?>
+                <div class="hiring-completed-banner">🎉 Hiring completed — recruitment closed.</div>
+            <?php elseif (in_array($focusJob['status'], ['open','partially_staffed','fully_staffed','in_progress'], true)): ?>
+                <div style="margin-top:12px;">
+                    <form method="post" style="display:inline;" onsubmit="return confirm('Mark hiring as completed? Remaining applicants will be notified that the position is filled.');">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="action" value="mark_hiring_completed">
+                        <input type="hidden" name="request_id" value="<?php echo $focusJob['id']; ?>">
+                        <button type="submit" class="button button-secondary button-small" style="border-color:#0369a1;color:#0369a1;">🎉 Mark Hiring Completed</button>
+                    </form>
+                </div>
             <?php endif; ?>
         </div>
 
@@ -349,50 +522,89 @@ function toggleTree(id) {
     arrow.textContent  = open ? '▶' : '▼';
 }
 
-// Ajax approve/reject for applicant cards
+var STATUS_LABELS = {
+    pending: 'PENDING', under_review: 'UNDER REVIEW', shortlisted: 'SHORTLISTED',
+    interview_scheduled: 'INTERVIEW SCHEDULED', offered: 'OFFERED', approved: 'APPROVED',
+    hired: 'HIRED', rejected: 'REJECTED', withdrawn: 'WITHDRAWN',
+    expired: 'EXPIRED', position_filled: 'POSITION FILLED'
+};
+var STATUS_CLASSES = {
+    pending: 'status-pending', under_review: 'status-in_progress', shortlisted: 'status-partially_staffed',
+    interview_scheduled: 'status-open', offered: 'status-fully_staffed', approved: 'status-fully_staffed',
+    hired: 'status-completed', rejected: 'status-cancelled', withdrawn: 'status-cancelled',
+    expired: 'status-cancelled', position_filled: 'status-cancelled'
+};
+
+// Ajax form handler: approve, reject, update_status
 document.addEventListener('submit', function (e) {
     var form = e.target;
-    var actionBtn = form.querySelector('button[name="action"]');
-    if (!actionBtn || (actionBtn.value !== 'approve' && actionBtn.value !== 'reject')) return;
+
+    // update_status: select + button with data-action="update_status"
+    var actionInput = form.querySelector('input[name="action"]');
+    var actionBtn   = form.querySelector('button[name="action"]');
+    var act = (actionInput ? actionInput.value : null) || (actionBtn ? actionBtn.value : null);
+
+    if (!act || !['approve','reject','update_status'].includes(act)) return;
     e.preventDefault();
 
-    var act = actionBtn.value;
-    if (!confirm(act === 'approve' ? 'Approve this worker?' : 'Reject this application?')) return;
+    // update_status via select
+    if (act === 'update_status') {
+        var sel = form.querySelector('select[name="new_status"]');
+        if (!sel || !sel.value) { alert('Please select a status.'); return; }
+        var submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
 
+        var body = new URLSearchParams(new FormData(form));
+        fetch('manage_applicants.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+            body: body.toString()
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (submitBtn) submitBtn.disabled = false;
+            if (data.error) { alert(data.error); return; }
+            var card = form.closest('.applicant-card');
+            if (card) {
+                var statusEl = card.querySelector('.status');
+                if (statusEl && data.new_status) {
+                    statusEl.textContent = STATUS_LABELS[data.new_status] || data.new_status.toUpperCase().replace(/_/g,' ');
+                    statusEl.className   = 'status ' + (STATUS_CLASSES[data.new_status] || '');
+                }
+                // Update the select to remove chosen option and reset
+                sel.value = '';
+            }
+        })
+        .catch(function () { if (submitBtn) submitBtn.disabled = false; });
+        return;
+    }
+
+    // approve / reject
+    if (!confirm(act === 'approve' ? 'Approve this worker?' : 'Reject this application?')) return;
     var card = form.closest('.applicant-card');
-    actionBtn.disabled = true;
+    if (actionBtn) actionBtn.disabled = true;
 
     var body = new URLSearchParams(new FormData(form));
     body.set('action', act);
 
     fetch('manage_applicants.php', {
         method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
         body: body.toString()
     })
     .then(function (r) { return r.json(); })
     .then(function (data) {
-        if (data.error) { alert(data.error); actionBtn.disabled = false; return; }
+        if (data.error) { alert(data.error); if (actionBtn) actionBtn.disabled = false; return; }
 
-        // Update card status badge
-        var statusEl = card.querySelector('.status');
+        var statusEl = card ? card.querySelector('.status') : null;
         if (statusEl) {
-            if (data.new_status === 'approved') {
-                statusEl.textContent = 'APPROVED';
-                statusEl.className = 'status status-approved';
-            } else {
-                statusEl.textContent = 'REJECTED';
-                statusEl.className = 'status status-rejected';
-            }
+            statusEl.textContent = STATUS_LABELS[data.new_status] || data.new_status.toUpperCase();
+            statusEl.className   = 'status ' + (STATUS_CLASSES[data.new_status] || '');
         }
 
-        // Remove action buttons, add Message link if approved
-        var btnRow = card.querySelector('[style*="display:flex"][style*="gap:8px"]') || card.querySelector('div:last-child');
+        // Remove approve/reject/update forms, add Message link if approved
+        var btnRow = card ? (card.querySelector('.card-actions') || card.querySelector('div:last-child')) : null;
         if (btnRow) {
-            // remove approve/reject forms
             btnRow.querySelectorAll('form').forEach(function (f) { f.remove(); });
             if (data.new_status === 'approved') {
                 var msgLink = document.createElement('a');
@@ -403,31 +615,26 @@ document.addEventListener('submit', function (e) {
             }
         }
 
-        // Update staffing bar if visible
         var staffingBar = document.querySelector('.staffing-bar');
         if (staffingBar && data.new_status === 'approved') {
-            var spans = staffingBar.querySelectorAll('span');
-            spans.forEach(function (s) {
+            staffingBar.querySelectorAll('span').forEach(function (s) {
                 if (s.textContent.startsWith('Approved:')) s.textContent = 'Approved: ' + data.workers_approved;
-                var remaining = data.workers_needed - data.workers_approved;
-                if (s.textContent.startsWith('Remaining:')) s.textContent = 'Remaining: ' + remaining;
+                if (s.textContent.startsWith('Remaining:')) s.textContent = 'Remaining: ' + (data.workers_needed - data.workers_approved);
             });
         }
 
-        // Fully staffed banner
-        if (data.job_status === 'fully_staffed') {
-            var jobHeader = document.querySelector('.job-focus-header, .job-tree-header');
-            var existing = document.querySelector('.fully-staffed-banner');
-            if (!existing && jobHeader) {
+        if (data.job_status === 'fully_staffed' && !document.querySelector('.fully-staffed-banner')) {
+            var header = document.querySelector('.job-focus-header');
+            if (header) {
                 var banner = document.createElement('div');
                 banner.className = 'fully-staffed-banner';
                 banner.style.marginTop = '10px';
                 banner.textContent = '✅ This job is fully staffed — all positions filled.';
-                jobHeader.closest('.job-focus-header, .job-tree-node').appendChild(banner);
+                header.appendChild(banner);
             }
         }
     })
-    .catch(function () { actionBtn.disabled = false; });
+    .catch(function () { if (actionBtn) actionBtn.disabled = false; });
 });
 </script>
 </body>

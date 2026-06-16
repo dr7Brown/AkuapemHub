@@ -1055,6 +1055,159 @@ function get_worker_schedule($workerProfileId) {
     return $slots;
 }
 
+// ── Smart Application Tracking ───────────────────────────────────────────────
+
+function log_application_status_change($appId, $oldStatus, $newStatus, $changedBy = null, $reason = null) {
+    global $pdo;
+    try {
+        $pdo->prepare("INSERT INTO application_status_logs (application_id, old_status, new_status, changed_by, reason) VALUES (?,?,?,?,?)")
+            ->execute([$appId, $oldStatus, $newStatus, $changedBy, $reason]);
+    } catch (Exception $e) {}
+}
+
+function update_employer_score($userId, $delta, $reason = '') {
+    global $pdo;
+    try {
+        $isNeg = $delta < 0 ? 1 : 0;
+        $pdo->prepare("
+            INSERT INTO employer_activity_scores (user_id, score, jobs_expired_without_review)
+            VALUES (?, GREATEST(0, LEAST(200, 100 + ?)), ?)
+            ON DUPLICATE KEY UPDATE
+              score = GREATEST(0, LEAST(200, score + ?)),
+              jobs_expired_without_review = jobs_expired_without_review + ?,
+              updated_at = NOW()
+        ")->execute([$userId, $delta, $isNeg, $delta, $isNeg]);
+    } catch (Exception $e) {}
+}
+
+function get_employer_activity_score($userId) {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT score FROM employer_activity_scores WHERE user_id = ?");
+        $stmt->execute([$userId]);
+        $result = $stmt->fetchColumn();
+        return $result !== false ? (int)$result : 100;
+    } catch (Exception $e) {
+        return 100;
+    }
+}
+
+function sweep_expired_jobs() {
+    global $pdo;
+    $stmt = $pdo->query("
+        SELECT sr.id, sr.customer_id, sr.title
+        FROM service_requests sr
+        WHERE sr.deadline_date IS NOT NULL
+          AND sr.deadline_date < NOW()
+          AND sr.status IN ('open','partially_staffed','pending','pending_payment','in_progress')
+    ");
+    $expiredJobs = $stmt->fetchAll();
+    $count = 0;
+
+    foreach ($expiredJobs as $job) {
+        $pdo->prepare("UPDATE service_requests SET status = 'expired' WHERE id = ?")
+            ->execute([$job['id']]);
+
+        $appStmt = $pdo->prepare("
+            SELECT a.id, a.worker_id, a.status
+            FROM applications a
+            WHERE a.request_id = ?
+              AND a.status NOT IN ('approved','hired','rejected','withdrawn','position_filled','expired','completed')
+        ");
+        $appStmt->execute([$job['id']]);
+        $apps = $appStmt->fetchAll();
+
+        foreach ($apps as $app) {
+            $pdo->prepare("UPDATE applications SET status = 'expired' WHERE id = ?")
+                ->execute([$app['id']]);
+            log_application_status_change($app['id'], $app['status'], 'expired', null, 'Job deadline passed');
+            notify_user((int)$app['worker_id'], 'Job Application Closed',
+                "The recruitment for \"{$job['title']}\" has ended. Your application has been automatically closed.",
+                'warning');
+        }
+
+        update_employer_score((int)$job['customer_id'], -5, 'Job expired without completing hiring');
+        log_audit_action(0, 'job_auto_expired',
+            "Job #{$job['id']} '{$job['title']}' auto-expired. " . count($apps) . " application(s) closed.");
+        $count++;
+    }
+
+    return $count;
+}
+
+function send_job_deadline_reminders() {
+    global $pdo;
+    $sent = 0;
+    $reminders = [
+        ['days' => 7, 'col' => 'reminder_7_sent'],
+        ['days' => 3, 'col' => 'reminder_3_sent'],
+        ['days' => 1, 'col' => 'reminder_1_sent'],
+    ];
+
+    foreach ($reminders as $r) {
+        $col = $r['col'];
+        $days = $r['days'];
+        $stmt = $pdo->query("
+            SELECT sr.id, sr.customer_id, sr.title
+            FROM service_requests sr
+            WHERE sr.deadline_date IS NOT NULL
+              AND sr.{$col} = 0
+              AND sr.status IN ('open','partially_staffed')
+              AND DATE(sr.deadline_date) = DATE_ADD(CURDATE(), INTERVAL {$days} DAY)
+        ");
+        $jobs = $stmt->fetchAll();
+
+        foreach ($jobs as $job) {
+            notify_user((int)$job['customer_id'], 'Job Vacancy Expiring Soon',
+                "Your job \"{$job['title']}\" will expire in {$days} day(s). Review applicants before the deadline.",
+                'warning');
+            $pdo->prepare("UPDATE service_requests SET {$col} = 1 WHERE id = ?")
+                ->execute([$job['id']]);
+            $sent++;
+        }
+    }
+
+    return $sent;
+}
+
+function mark_hiring_completed($requestId, $userId) {
+    global $pdo;
+
+    $stmt = $pdo->prepare("
+        SELECT id, title, customer_id FROM service_requests
+        WHERE id = ? AND (customer_id = ? OR ? = 1)
+    ");
+    $stmt->execute([$requestId, $userId, is_admin() ? 1 : 0]);
+    $job = $stmt->fetch();
+    if (!$job) return false;
+
+    $pdo->prepare("UPDATE service_requests SET status = 'hiring_completed' WHERE id = ?")
+        ->execute([$requestId]);
+
+    $appStmt = $pdo->prepare("
+        SELECT id, worker_id, status FROM applications
+        WHERE request_id = ?
+          AND status NOT IN ('approved','hired','rejected','withdrawn','expired','completed','position_filled')
+    ");
+    $appStmt->execute([$requestId]);
+
+    foreach ($appStmt->fetchAll() as $app) {
+        $pdo->prepare("UPDATE applications SET status = 'position_filled' WHERE id = ?")
+            ->execute([$app['id']]);
+        log_application_status_change($app['id'], $app['status'], 'position_filled', $userId,
+            'Employer marked hiring as completed');
+        notify_user((int)$app['worker_id'], 'Vacancy Filled',
+            "The vacancy \"{$job['title']}\" has been filled. Thank you for applying.",
+            'info');
+    }
+
+    update_employer_score((int)$job['customer_id'], 10, 'Job hiring completed');
+    log_audit_action($userId, 'hiring_completed',
+        "Job #{$requestId} '{$job['title']}' marked as hiring completed.");
+
+    return true;
+}
+
 function save_worker_schedule($workerProfileId, array $days, array $startTimes, array $endTimes) {
     global $pdo;
     $pdo->prepare('DELETE FROM worker_availability_slots WHERE worker_profile_id = ?')->execute([$workerProfileId]);

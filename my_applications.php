@@ -60,6 +60,16 @@ $myNews = $newsStmt->fetchAll();
 
 $notificationCount = get_unread_notifications_count((int)$user['id']);
 
+// ── Job application stats for dashboard ─────────────────────────────────────
+$jobAppStats = ['total' => 0, 'under_review' => 0, 'shortlisted' => 0, 'offered' => 0, 'approved' => 0, 'hired' => 0, 'rejected' => 0, 'expired' => 0];
+if (is_worker() && $myJobApps) {
+    foreach ($myJobApps as $a) {
+        $jobAppStats['total']++;
+        $s = $a['app_status'];
+        if (isset($jobAppStats[$s])) $jobAppStats[$s]++;
+    }
+}
+
 $activeTab = $_GET['tab'] ?? 'jobs';
 ?>
 <!DOCTYPE html>
@@ -76,12 +86,26 @@ $activeTab = $_GET['tab'] ?? 'jobs';
         .tab-panel { display:none; }
         .tab-panel.active { display:block; }
         .app-badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:.75rem; font-weight:700; }
-        .app-badge.pending,.app-badge.under_review { background:#fef9c3; color:#a16207; }
-        .app-badge.approved { background:#d1fae5; color:#065f46; }
-        .app-badge.rejected { background:#fee2e2; color:#991b1b; }
+        .app-badge.pending { background:#fef9c3; color:#a16207; }
+        .app-badge.under_review { background:#dbeafe; color:#1d4ed8; }
+        .app-badge.shortlisted { background:#ede9fe; color:#6d28d9; }
+        .app-badge.interview_scheduled { background:#fae8ff; color:#86198f; }
+        .app-badge.offered { background:#d1fae5; color:#065f46; }
+        .app-badge.approved,.app-badge.hired,.app-badge.accepted { background:#d1fae5; color:#065f46; }
+        .app-badge.rejected,.app-badge.declined,.app-badge.position_filled { background:#fee2e2; color:#991b1b; }
+        .app-badge.expired,.app-badge.withdrawn { background:#f3f4f6; color:#6b7280; }
         .app-badge.draft    { background:#f3f4f6; color:#6b7280; }
         .app-badge.published,.app-badge.active { background:#d1fae5; color:#065f46; }
         .app-badge.cancelled { background:#f3f4f6; color:#6b7280; }
+        .stat-strip { display:grid; grid-template-columns:repeat(auto-fit,minmax(90px,1fr)); gap:8px; margin-bottom:20px; }
+        .stat-chip { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:10px; padding:10px 8px; text-align:center; }
+        .stat-chip .n { font-size:1.4rem; font-weight:700; color:var(--primary,#0f766e); display:block; }
+        .stat-chip .l { font-size:0.7rem; color:var(--muted,#6b7280); }
+        .stat-chip.blue .n { color:#1d4ed8; }
+        .stat-chip.purple .n { color:#6d28d9; }
+        .stat-chip.green .n { color:#16a34a; }
+        .stat-chip.red .n { color:#dc2626; }
+        .stat-chip.grey .n { color:#6b7280; }
         .app-row { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:14px 0; border-bottom:1px solid var(--border,#e5e7eb); flex-wrap:wrap; }
         .app-row:last-child { border-bottom:none; }
         .app-info h3 { margin:0 0 3px; font-size:.95rem; }
@@ -131,19 +155,72 @@ $activeTab = $_GET['tab'] ?? 'jobs';
             <?php elseif (!$myJobApps): ?>
                 <div class="empty-state">You haven't applied for any jobs yet. <a href="jobs.php">Browse open jobs →</a></div>
             <?php else: ?>
+
+                <?php if ($jobAppStats['total'] > 0): ?>
+                <div class="stat-strip">
+                    <div class="stat-chip">
+                        <span class="n"><?php echo $jobAppStats['total']; ?></span>
+                        <div class="l">Total</div>
+                    </div>
+                    <?php if ($jobAppStats['under_review']): ?>
+                    <div class="stat-chip blue">
+                        <span class="n"><?php echo $jobAppStats['under_review']; ?></span>
+                        <div class="l">Under Review</div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($jobAppStats['shortlisted']): ?>
+                    <div class="stat-chip purple">
+                        <span class="n"><?php echo $jobAppStats['shortlisted']; ?></span>
+                        <div class="l">Shortlisted</div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($jobAppStats['offered'] || $jobAppStats['approved'] || $jobAppStats['hired']): ?>
+                    <div class="stat-chip green">
+                        <span class="n"><?php echo $jobAppStats['offered'] + $jobAppStats['approved'] + $jobAppStats['hired']; ?></span>
+                        <div class="l">Offered/Hired</div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($jobAppStats['rejected']): ?>
+                    <div class="stat-chip red">
+                        <span class="n"><?php echo $jobAppStats['rejected']; ?></span>
+                        <div class="l">Rejected</div>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($jobAppStats['expired']): ?>
+                    <div class="stat-chip grey">
+                        <span class="n"><?php echo $jobAppStats['expired']; ?></span>
+                        <div class="l">Expired</div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+
                 <div class="panel">
                 <?php
-                $jobStatusGroups = ['pending' => [], 'under_review' => [], 'approved' => [], 'rejected' => []];
+                $groupOrder = ['offered','shortlisted','interview_scheduled','under_review','approved','hired','pending','rejected','position_filled','expired','withdrawn'];
+                $jobStatusGroups = [];
                 foreach ($myJobApps as $app) {
                     $s = $app['app_status'];
-                    if (!isset($jobStatusGroups[$s])) $jobStatusGroups[$s] = [];
                     $jobStatusGroups[$s][] = $app;
                 }
-                $statusLabels = ['approved' => '✅ Approved', 'under_review' => '🔍 Under Review', 'pending' => '⏳ Pending', 'rejected' => '❌ Rejected'];
-                foreach ($statusLabels as $status => $label):
+                $groupLabels = [
+                    'offered'              => '🎉 Offered',
+                    'shortlisted'          => '⭐ Shortlisted',
+                    'interview_scheduled'  => '📅 Interview Scheduled',
+                    'under_review'         => '🔍 Under Review',
+                    'approved'             => '✅ Approved',
+                    'hired'                => '🏆 Hired',
+                    'pending'              => '⏳ Pending',
+                    'rejected'             => '❌ Rejected',
+                    'position_filled'      => '🔒 Position Filled',
+                    'expired'              => '⌛ Expired',
+                    'withdrawn'            => '↩ Withdrawn',
+                ];
+                foreach ($groupOrder as $status):
                     if (empty($jobStatusGroups[$status])) continue;
+                    $label = $groupLabels[$status] ?? ucfirst(str_replace('_', ' ', $status));
                 ?>
-                    <h3 style="font-size:.9rem;color:var(--text-muted);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;"><?php echo $label; ?></h3>
+                    <h3 style="font-size:.9rem;color:var(--muted,#6b7280);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.05em;"><?php echo $label; ?></h3>
                     <?php foreach ($jobStatusGroups[$status] as $app): ?>
                     <div class="app-row">
                         <div class="app-info">
