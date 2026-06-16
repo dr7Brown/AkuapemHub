@@ -177,7 +177,7 @@ $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : 
             </div>
             <div class="afe-field">
                 <label>Biography</label>
-                <textarea name="biography" class="form-control" rows="6"><?php echo $v('biography'); ?></textarea>
+                <textarea name="biography" class="form-control rich-editor" rows="6" placeholder="Brief biography or tribute…"><?php echo $v('biography'); ?></textarea>
             </div>
 
             <p class="afe-section">Funeral Schedule</p>

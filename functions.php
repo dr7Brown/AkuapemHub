@@ -24,6 +24,33 @@ function sanitize($value) {
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
+/**
+ * Safely render HTML stored by the RichEditor.
+ * Strips everything except safe formatting tags; removes on* attributes and
+ * javascript: hrefs; adds target/rel to all links.
+ * Falls back gracefully for legacy plain-text content.
+ */
+function render_rich(string $html): string {
+    if (empty(trim($html))) return '';
+    // Legacy plain text (no HTML tags) — convert to paragraphs
+    if (!preg_match('/<[a-z][^>]*>/i', $html)) {
+        $paras = preg_split('/\n{2,}/', trim($html));
+        return '<p>' . implode('</p><p>', array_map(
+            fn($p) => nl2br(htmlspecialchars(trim($p), ENT_QUOTES, 'UTF-8')),
+            array_filter($paras)
+        )) . '</p>';
+    }
+    $allowed = '<p><br><strong><b><em><i><u><s><del><h2><h3><ul><ol><li><a><blockquote><span>';
+    $clean   = strip_tags($html, $allowed);
+    // Strip dangerous event attributes
+    $clean = preg_replace('/\s+on\w+\s*=\s*(?:"[^"]*"|\'[^\']*\')/i', '', $clean);
+    // Strip javascript: and data: hrefs
+    $clean = preg_replace('/\bhref\s*=\s*["\']?\s*(?:javascript|data):[^"\'>\s]*/i', 'href="#"', $clean);
+    // Add target/rel to all links (idempotent)
+    $clean = preg_replace('/<a\b(?![^>]*\btarget\s*=)/i', '<a target="_blank" rel="noopener noreferrer"', $clean);
+    return $clean;
+}
+
 function user_wants_email_notifications($userId) {
     global $pdo;
     $stmt = $pdo->prepare('SELECT email_notifications_enabled FROM users WHERE id = ?');

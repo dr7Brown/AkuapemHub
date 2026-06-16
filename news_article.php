@@ -208,8 +208,8 @@ $csrfField = csrf_field();
         <?php endif; ?>
 
         <!-- Body -->
-        <div class="na-content">
-            <?php echo $article['content']; // Admin-authored HTML — trusted ?>
+        <div class="na-content rich-content">
+            <?php echo render_rich($article['content']); ?>
         </div>
 
         <!-- Share -->

@@ -175,7 +175,7 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
     <?php if ($fa['biography']): ?>
     <div class="fd-section">
         <h2>Biography</h2>
-        <div class="fd-bio"><?php echo sanitize($fa['biography']); ?></div>
+        <div class="fd-bio rich-content"><?php echo render_rich($fa['biography']); ?></div>
     </div>
     <?php endif; ?>
 

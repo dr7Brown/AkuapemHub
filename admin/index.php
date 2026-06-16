@@ -611,5 +611,6 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     window.admLoad = admLoad;
 }());
 </script>
+<script src="../assets/js/rich-editor.js" defer></script>
 </body>
 </html>

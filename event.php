@@ -151,7 +151,7 @@ $isCancelled = $ev['status'] === 'cancelled';
     <?php if ($ev['description']): ?>
     <div class="ed-section" style="margin-bottom:20px;">
         <h2>About this Event</h2>
-        <div class="ed-desc"><?php echo nl2br(sanitize($ev['description'])); ?></div>
+        <div class="ed-desc rich-content"><?php echo render_rich($ev['description']); ?></div>
     </div>
     <?php endif; ?>
 

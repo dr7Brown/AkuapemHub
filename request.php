@@ -289,7 +289,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             <label>Title</label>
             <input type="text" name="title" required value="<?php echo $draft ? sanitize($draft['title']) : ''; ?>" />
             <label>Description</label>
-            <textarea name="description" rows="4" required><?php echo $draft ? sanitize($draft['description']) : ''; ?></textarea>
+            <textarea name="description" class="rich-editor" rows="4" required><?php echo $draft ? $draft['description'] : ''; ?></textarea>
             <label>Category</label>
             <select name="category_id" required>
                 <option value="">Select category</option>

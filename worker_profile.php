@@ -148,7 +148,7 @@ $schedule = get_worker_schedule($profile['id']);
         </div>
         <form class="card form-card" method="post" action="worker_profile.php">
             <label>Bio</label>
-            <textarea name="bio" rows="4"><?php echo sanitize($profile['bio']); ?></textarea>
+            <textarea name="bio" class="rich-editor" rows="4" placeholder="Describe your experience, skills, and what makes you a great worker…"><?php echo $profile['bio']; ?></textarea>
             <label>Location</label>
             <input type="text" name="location" value="<?php echo sanitize($profile['location']); ?>" required />
             <input type="hidden" name="latitude" id="latitude" value="<?php echo $profile['latitude'] !== null ? sanitize($profile['latitude']) : ''; ?>" />

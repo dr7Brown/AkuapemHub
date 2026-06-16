@@ -148,8 +148,8 @@ $pageTitle = $isNew ? 'New Article' : 'Edit: ' . sanitize($article['title'] ?? '
 
             <div class="ne-field">
                 <label for="content-area">Content *</label>
-                <div class="desc">HTML is supported. Use &lt;p&gt;, &lt;h2&gt;, &lt;strong&gt;, &lt;a href="..."&gt;, &lt;img src="..."&gt;, etc.</div>
-                <textarea id="content-area" name="content" class="form-control" rows="16"><?php echo htmlspecialchars($article['content'] ?? '', ENT_QUOTES); ?></textarea>
+                <div class="desc">Select any text to format it — Bold, Italic, Headings, Lists, and more.</div>
+                <textarea id="content-area" name="content" class="form-control rich-editor" rows="16"><?php echo $article['content'] ?? ''; ?></textarea>
             </div>
 
             <div class="ne-field">

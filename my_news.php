@@ -238,8 +238,8 @@ $statusLabels = [
 
                 <div class="mn-field">
                     <label>Article Body *</label>
-                    <textarea name="content" class="form-control" rows="12" required
-                              placeholder="Write your full article here…"><?php echo $editArticle ? sanitize($editArticle['content']) : ''; ?></textarea>
+                    <textarea name="content" class="form-control rich-editor" rows="12" required
+                              placeholder="Write your full article here…"><?php echo $editArticle ? $editArticle['content'] : ''; ?></textarea>
                 </div>
 
                 <div class="mn-field">

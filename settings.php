@@ -546,7 +546,7 @@ if (!$isAjax): ?>
         <input type="hidden" name="form" value="worker_bio" />
         <h3 style="font-size:.95rem;margin:0 0 10px;font-weight:600;">Bio &amp; Availability</h3>
         <label>About you <span class="meta">(optional)</span></label>
-        <textarea name="bio" rows="3" placeholder="Briefly describe your experience and what makes you a great worker..."><?php echo sanitize($workerProfile['bio']); ?></textarea>
+        <textarea name="bio" class="rich-editor" rows="3" placeholder="Briefly describe your experience and what makes you a great worker…"><?php echo $workerProfile['bio']; ?></textarea>
         <label>Availability</label>
         <select name="availability">
             <option value="available" <?php echo $workerProfile['availability']==='available'?'selected':''; ?>>Available for work</option>

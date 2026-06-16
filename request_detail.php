@@ -283,7 +283,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             <hr style="border: none; border-top: 1px solid var(--border); margin: 0 0 18px;">
 
             <p class="detail-label">Description</p>
-            <p style="line-height: 1.7; margin-bottom: 18px;"><?php echo nl2br(sanitize($request['description'])); ?></p>
+            <div class="rich-content" style="line-height: 1.7; margin-bottom: 18px;"><?php echo render_rich($request['description']); ?></div>
 
             <p class="detail-label">Skills needed</p>
             <div style="display: flex; flex-wrap: wrap; gap: 6px;">

@@ -257,7 +257,7 @@ $statusLabels = [
                 </div>
                 <div class="mf-field">
                     <label>Biography</label>
-                    <textarea name="biography" class="form-control" rows="5" placeholder="Brief biography or tribute…"></textarea>
+                    <textarea name="biography" class="form-control rich-editor" rows="5" placeholder="Brief biography or tribute…"></textarea>
                 </div>
 
                 <p class="mf-section-label">Funeral Schedule</p>

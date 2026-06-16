@@ -110,7 +110,8 @@ foreach (array_keys($fields) as $key) {
                     <p class="cs-desc"><?php echo sanitize($meta['desc']); ?></p>
                     <?php if ($meta['type'] === 'textarea'): ?>
                         <textarea id="cs-<?php echo $key; ?>" name="<?php echo $key; ?>"
-                                  placeholder="<?php echo sanitize($meta['placeholder']); ?>"><?php echo sanitize($current[$key]); ?></textarea>
+                                  class="rich-editor"
+                                  placeholder="<?php echo sanitize($meta['placeholder']); ?>"><?php echo $current[$key]; ?></textarea>
                     <?php else: ?>
                         <input type="<?php echo $meta['type']; ?>" id="cs-<?php echo $key; ?>" name="<?php echo $key; ?>"
                                value="<?php echo sanitize($current[$key]); ?>"

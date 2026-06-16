@@ -272,8 +272,8 @@ $dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
 
                 <div class="me-field">
                     <label>Description</label>
-                    <textarea name="description" class="form-control" rows="5"
-                              placeholder="Describe the event…"><?php echo $editEvent ? sanitize($editEvent['description']) : ''; ?></textarea>
+                    <textarea name="description" class="form-control rich-editor" rows="5"
+                              placeholder="Describe the event…"><?php echo $editEvent ? $editEvent['description'] : ''; ?></textarea>
                 </div>
 
                 <p class="me-section">Date &amp; Time</p>
