@@ -29,6 +29,7 @@ function fa_unique_slug($pdo, $base, $excludeId = 0) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
+    $locationId = intval($_POST['location_id'] ?? 0) ?: null;
     $fields = ['deceased_name','gender','age','date_of_birth','date_of_death','biography',
                'wake_keeping_date','burial_date','thanksgiving_date','venue','gps_address',
                'organizer_name','organizer_phone','organizer_email','status','featured'];
@@ -62,14 +63,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare(
                 "UPDATE funeral_announcements SET deceased_name=?,gender=?,age=?,photograph=?,funeral_poster=?,
                  date_of_birth=?,date_of_death=?,biography=?,wake_keeping_date=?,burial_date=?,thanksgiving_date=?,
-                 venue=?,gps_address=?,organizer_name=?,organizer_phone=?,organizer_email=?,status=?,featured=?,slug=?,updated_at=NOW()
+                 venue=?,gps_address=?,organizer_name=?,organizer_phone=?,organizer_email=?,location_id=?,status=?,featured=?,slug=?,updated_at=NOW()
                  WHERE id=?"
             )->execute([
                 $data['deceased_name'], $data['gender'] ?? 'male', $data['age'],
                 $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
                 $data['wake_keeping_date'], $data['burial_date'], $data['thanksgiving_date'],
                 $data['venue'], $data['gps_address'], $data['organizer_name'],
-                $data['organizer_phone'], $data['organizer_email'], $data['status'], $data['featured'], $slug, $id
+                $data['organizer_phone'], $data['organizer_email'], $locationId, $data['status'], $data['featured'], $slug, $id
             ]);
             log_audit_action($user['id'], 'funeral_edit', "Edited funeral #{$id}: {$data['deceased_name']}");
         } else {
@@ -77,14 +78,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "INSERT INTO funeral_announcements
                  (deceased_name,gender,age,photograph,funeral_poster,date_of_birth,date_of_death,biography,
                   wake_keeping_date,burial_date,thanksgiving_date,venue,gps_address,
-                  organizer_name,organizer_phone,organizer_email,status,featured,slug)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                  organizer_name,organizer_phone,organizer_email,location_id,status,featured,slug)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             )->execute([
                 $data['deceased_name'], $data['gender'] ?? 'male', $data['age'],
                 $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
                 $data['wake_keeping_date'], $data['burial_date'], $data['thanksgiving_date'],
                 $data['venue'], $data['gps_address'], $data['organizer_name'],
-                $data['organizer_phone'], $data['organizer_email'], $data['status'], $data['featured'], $slug
+                $data['organizer_phone'], $data['organizer_email'], $locationId, $data['status'], $data['featured'], $slug
             ]);
             $id = (int)$pdo->lastInsertId();
             log_audit_action($user['id'], 'funeral_create', "Created funeral #{$id}: {$data['deceased_name']}");
@@ -96,6 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $isNew = !$id;
+$faLoc = $fa ? get_location((int)($fa['location_id'] ?? 0)) : null;
 $v = fn($k) => sanitize($fa[$k] ?? '');
 $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : '';
 ?>
@@ -186,8 +188,33 @@ $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : 
                 <div class="afe-field"><label>Burial</label><input type="datetime-local" name="burial_date" class="form-control" value="<?php echo $dt('burial_date','Y-m-d\TH:i'); ?>"></div>
             </div>
             <div class="afe-field"><label>Thanksgiving Service</label><input type="datetime-local" name="thanksgiving_date" class="form-control" value="<?php echo $dt('thanksgiving_date','Y-m-d\TH:i'); ?>"></div>
-            <div class="afe-field"><label>Venue</label><input type="text" name="venue" class="form-control" value="<?php echo $v('venue'); ?>"></div>
-            <div class="afe-field"><label>GPS Address</label><input type="text" name="gps_address" class="form-control" value="<?php echo $v('gps_address'); ?>"></div>
+            <input type="hidden" name="location_id" value="<?php echo (int)($fa['location_id'] ?? 0) ?: ''; ?>">
+            <div class="afe-field">
+                <label>Venue / Location Name</label>
+                <input type="text" name="venue" class="form-control" value="<?php echo $v('venue'); ?>">
+            </div>
+            <div class="afe-field">
+                <?php if ($faLoc): ?>
+                <div class="loc-preview loc-has-pin">
+                    <span class="loc-pin-ico">📍</span>
+                    <span class="loc-pin-nm"><?php echo sanitize($faLoc['location_name']); ?></span>
+                    <span class="loc-pin-addr"><?php echo sanitize($faLoc['formatted_address']); ?></span>
+                </div>
+                <?php else: ?>
+                <div class="loc-preview"></div>
+                <?php endif; ?>
+                <button type="button"
+                        data-location-picker
+                        data-field-name="venue"
+                        data-field-address="gps_address"
+                        class="button button-secondary button-small">
+                    📍 <?php echo $faLoc ? 'Change Location on Map' : 'Pick Location on Map'; ?>
+                </button>
+            </div>
+            <div class="afe-field">
+                <label>GPS / Formatted Address</label>
+                <input type="text" name="gps_address" class="form-control" value="<?php echo $v('gps_address'); ?>" placeholder="Auto-filled from map or enter manually">
+            </div>
 
             <p class="afe-section">Organizer</p>
             <div class="afe-field"><label>Organizer Name</label><input type="text" name="organizer_name" class="form-control" value="<?php echo $v('organizer_name'); ?>"></div>
@@ -219,5 +246,8 @@ $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : 
             </div>
         </form>
     </div>
+    <script>window.LOCATION_API = '../location_api.php';</script>
+    <script src="../assets/js/rich-editor.js" defer></script>
+    <script src="../assets/js/location-picker.js" defer></script>
 </body>
 </html>
