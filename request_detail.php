@@ -18,6 +18,14 @@ if (!$request) {
     exit;
 }
 
+// Inline expiry: if deadline has passed and job is still open, expire it now
+if (!empty($request['deadline_date'])
+    && $request['deadline_date'] < date('Y-m-d H:i:s')
+    && in_array($request['status'], ['open','partially_staffed'], true)) {
+    $pdo->prepare("UPDATE service_requests SET status='expired' WHERE id=?")->execute([$requestId]);
+    $request['status'] = 'expired';
+}
+
 if (!$user) {
     // Guests may view open/partially_staffed public jobs only
     if (!in_array($request['status'], ['open','partially_staffed'], true)) {

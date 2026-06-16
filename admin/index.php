@@ -510,7 +510,10 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                 var main = doc.querySelector('main');
                 ajaxEl.innerHTML = main ? main.outerHTML : doc.body.innerHTML;
 
-                ajaxEl.querySelectorAll('script').forEach(function (old) {
+                // Scan the full body (not just main) so scripts placed after </main>
+                // but before </body> are also executed — this fixes toggleDetail,
+                // tab switching, and any other page-level JS in admin pages.
+                doc.querySelectorAll('body script').forEach(function (old) {
                     var s = document.createElement('script');
                     if (old.src) { s.src = old.src; s.async = false; }
                     else         { s.textContent = old.textContent; }

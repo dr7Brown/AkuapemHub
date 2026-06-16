@@ -29,6 +29,14 @@ if (!$request) {
     exit;
 }
 
+// Inline deadline check — expire the job immediately if its deadline has passed
+if (!empty($request['deadline_date']) && $request['deadline_date'] < date('Y-m-d H:i:s')) {
+    $pdo->prepare("UPDATE service_requests SET status='expired' WHERE id=? AND status IN ('open','partially_staffed')")->execute([$requestId]);
+    flash('This job has passed its application deadline and is no longer accepting applications.', 'error');
+    header('Location: request_detail.php?id=' . $requestId);
+    exit;
+}
+
 if ((int)$request['customer_id'] === (int)$user['id']) {
     flash("You can't apply for your own job.", 'error');
     header('Location: request_detail.php?id=' . $requestId);
@@ -60,6 +68,19 @@ if ($existingStmt->fetch()) {
     flash('You have already applied for this job.', 'error');
     header('Location: request_detail.php?id=' . $requestId);
     exit;
+}
+
+// Enforce daily application limit
+$maxDaily = (int)get_platform_setting('max_daily_applications', '0');
+if ($maxDaily > 0) {
+    $todayStmt = $pdo->prepare("SELECT COUNT(*) FROM applications WHERE worker_id = ? AND DATE(applied_at) = CURDATE()");
+    $todayStmt->execute([$user['id']]);
+    $todayCount = (int)$todayStmt->fetchColumn();
+    if ($todayCount >= $maxDaily) {
+        flash("You've reached your daily limit of {$maxDaily} application" . ($maxDaily !== 1 ? 's' : '') . ". Try again tomorrow.", 'error');
+        header('Location: request_detail.php?id=' . $requestId);
+        exit;
+    }
 }
 
 $pdo->prepare('INSERT INTO applications (request_id, worker_id, status, applied_at) VALUES (?, ?, ?, NOW())')->execute([$requestId, $user['id'], 'pending']);

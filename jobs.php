@@ -104,6 +104,12 @@ if (is_worker()) {
         $myApplicationStatuses[$appRow['request_id']] = $appRow['status'];
     }
 
+    // Daily application count
+    $maxDailyApps = (int)get_platform_setting('max_daily_applications', '0');
+    $todayAppStmt = $pdo->prepare("SELECT COUNT(*) FROM applications WHERE worker_id = ? AND DATE(applied_at) = CURDATE()");
+    $todayAppStmt->execute([$user['id']]);
+    $todayAppCount = (int)$todayAppStmt->fetchColumn();
+
     // Workers can also post jobs, so load their drafts too
     $draftStmt = $pdo->prepare(
         "SELECT sr.*, sc.name AS category_name FROM service_requests sr
@@ -539,6 +545,17 @@ if ($user) {
                         <h2>GH₵ <?php echo number_format($workerEarnings, 2); ?></h2>
                         <p>Paid earnings</p>
                     </div>
+                    <?php if ($maxDailyApps > 0): ?>
+                    <div class="stat-card" style="<?php echo $todayAppCount >= $maxDailyApps ? 'border-color:#ef4444;' : ($todayAppCount >= $maxDailyApps - 1 ? 'border-color:#f59e0b;' : ''); ?>">
+                        <h2 style="<?php echo $todayAppCount >= $maxDailyApps ? 'color:#ef4444;' : ''; ?>"><?php echo $todayAppCount; ?>/<?php echo $maxDailyApps; ?></h2>
+                        <p>Applications today</p>
+                    </div>
+                    <?php else: ?>
+                    <div class="stat-card">
+                        <h2><?php echo $todayAppCount; ?></h2>
+                        <p>Applications today</p>
+                    </div>
+                    <?php endif; ?>
                 </div>
                 <div class="panel-header">
                     <h1>Jobs for you</h1>

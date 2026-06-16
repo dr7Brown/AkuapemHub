@@ -8,6 +8,20 @@ if (!is_admin_or_manager()) {
     exit;
 }
 
+// Handle daily-limit save
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_app_limit') {
+    csrf_check();
+    $adminUser = current_user();
+    $limit = max(0, intval($_POST['max_daily_applications'] ?? 0));
+    set_platform_setting('max_daily_applications', (string)$limit);
+    log_audit_action((int)$adminUser['id'], 'app_limit_updated', "Daily application limit set to {$limit} (0 = unlimited)");
+    header('Location: applications.php?saved=1');
+    exit;
+}
+
+$savedFlash = !empty($_GET['saved']);
+$maxDailyApps = (int)get_platform_setting('max_daily_applications', '0');
+
 $filterStatus = $_GET['status'] ?? '';
 $searchQ      = strtolower(trim($_GET['q'] ?? ''));
 
@@ -182,6 +196,32 @@ $statusMeta = [
     </header>
 
     <main class="page-shell">
+
+        <?php if ($savedFlash): ?>
+            <div class="alert alert-success" style="margin-bottom:12px;">Daily application limit saved.</div>
+        <?php endif; ?>
+
+        <!-- Daily limit setting -->
+        <section class="panel" style="margin-bottom:14px;padding:14px 16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <div>
+                    <strong>Daily application limit</strong>
+                    <p class="meta" style="margin:2px 0 0;">Max number of jobs a worker can apply for per day. Set to 0 for unlimited.</p>
+                </div>
+                <form method="post" action="applications.php" style="display:flex;gap:8px;align-items:center;">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="save_app_limit" />
+                    <input type="number" name="max_daily_applications" value="<?php echo $maxDailyApps; ?>"
+                           min="0" max="100" style="width:80px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:.9rem;" />
+                    <button type="submit" class="button button-primary button-small">Save</button>
+                </form>
+            </div>
+            <?php if ($maxDailyApps > 0): ?>
+                <p class="meta" style="margin:8px 0 0;">Current limit: <strong><?php echo $maxDailyApps; ?> application<?php echo $maxDailyApps !== 1 ? 's' : ''; ?> per day</strong> per worker.</p>
+            <?php else: ?>
+                <p class="meta" style="margin:8px 0 0;">Current limit: <strong>Unlimited</strong> — workers may apply for any number of jobs per day.</p>
+            <?php endif; ?>
+        </section>
 
         <!-- Stats -->
         <div class="stat-row">
