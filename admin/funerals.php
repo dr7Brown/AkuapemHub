@@ -219,16 +219,16 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
                             <div class="af-actions">
                                 <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small">Edit</a>
                                 <?php if ($fa['status'] === 'pending_payment'): ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="mark_paid"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fffbeb;color:#92400e;border-color:#f59e0b;">Mark Paid</button></form>
+                                <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="mark_paid"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fffbeb;color:#92400e;border-color:#f59e0b;">Mark Paid</button></form>
                                 <?php endif; ?>
                                 <?php if (in_array($fa['status'],['pending_payment','pending','rejected'])): ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="approve"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Approve</button></form>
+                                <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="approve"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Approve</button></form>
                                 <?php endif; ?>
                                 <?php if ($fa['status'] === 'pending'): ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="reject"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject</button></form>
+                                <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="reject"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject</button></form>
                                 <?php endif; ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $fa['featured'] ? 'Unfeature' : 'Feature'; ?></button></form>
-                                <form method="post" onsubmit="return confirm('Delete this announcement?')"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
+                                <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $fa['featured'] ? 'Unfeature' : 'Feature'; ?></button></form>
+                                <form method="post" action="funerals.php" onsubmit="return confirm('Delete this announcement?')"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
                             </div>
                         </td>
                     </tr>

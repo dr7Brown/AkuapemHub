@@ -221,16 +221,16 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
                             <div class="ae-actions">
                                 <a href="event_edit.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small">Edit</a>
                                 <?php if ($ev['status'] !== 'published'): ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="publish"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Publish</button></form>
+                                <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="publish"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Publish</button></form>
                                 <?php endif; ?>
                                 <?php if ($ev['status'] === 'published'): ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="cancel"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;">Cancel</button></form>
+                                <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="cancel"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;">Cancel</button></form>
                                 <?php endif; ?>
                                 <?php if ($ev['status'] === 'cancelled'): ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="draft"><?php echo csrf_field(); ?><button class="button button-small">↩ Draft</button></form>
+                                <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="draft"><?php echo csrf_field(); ?><button class="button button-small">↩ Draft</button></form>
                                 <?php endif; ?>
-                                <form method="post"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $ev['featured'] ? 'Unfeature' : '⭐ Feature'; ?></button></form>
-                                <form method="post" onsubmit="return confirm('Delete this event?')"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
+                                <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $ev['featured'] ? 'Unfeature' : '⭐ Feature'; ?></button></form>
+                                <form method="post" action="events.php" onsubmit="return confirm('Delete this event?')"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
                             </div>
                         </td>
                     </tr>

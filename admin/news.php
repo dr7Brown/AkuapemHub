@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
     if ($row) {
         $newStatus = $row['status'] === 'published' ? 'draft' : 'published';
         if ($newStatus === 'published') {
-            $pdo->prepare("UPDATE news SET status=?, published_at=? WHERE id=?")->execute([$newStatus, date('Y-m-d H:i:s'), $tid]);
+            $pdo->prepare("UPDATE news SET status=?, published_at=NOW() WHERE id=?")->execute([$newStatus, $tid]);
         } else {
             $pdo->prepare("UPDATE news SET status=? WHERE id=?")->execute([$newStatus, $tid]);
         }
@@ -182,14 +182,14 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                     <td>
                         <div class="an-actions">
                             <a href="news_edit.php?id=<?php echo (int)$a['id']; ?>" class="button button-small">Edit</a>
-                            <form method="post" style="display:inline;">
+                            <form method="post" action="news.php" style="display:inline;">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="toggle_id" value="<?php echo (int)$a['id']; ?>">
                                 <button type="submit" class="button button-small button-secondary">
                                     <?php echo $a['status'] === 'published' ? 'Unpublish' : 'Publish'; ?>
                                 </button>
                             </form>
-                            <form method="post" style="display:inline;" onsubmit="return confirm('Delete this article permanently?')">
+                            <form method="post" action="news.php" style="display:inline;" onsubmit="return confirm('Delete this article permanently?')">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="delete_id" value="<?php echo (int)$a['id']; ?>">
                                 <button type="submit" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
