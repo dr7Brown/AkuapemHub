@@ -135,8 +135,10 @@ $statusLabels = [
     'cancelled'       => ['label'=>'Cancelled',        'color'=>'#dc2626','bg'=>'#fee2e2'],
 ];
 
-$v  = fn($k) => sanitize($editEvent[$k] ?? '');
-$dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
+// On validation error for a new submission, fall back to $_POST so fields retain their values
+$_errPost = ($errors && !$editEvent) ? $_POST : [];
+$v  = fn($k) => sanitize($editEvent[$k] ?? $_errPost[$k] ?? '');
+$dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -256,7 +258,7 @@ $dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
                 <div class="me-field">
                     <label>Event Title *</label>
                     <input type="text" name="title" class="form-control" required
-                           value="<?php echo $editEvent ? sanitize($editEvent['title']) : ''; ?>"
+                           value="<?php echo $v('title'); ?>"
                            placeholder="e.g. Annual Community Festival 2025">
                 </div>
 
@@ -273,7 +275,7 @@ $dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
                 <div class="me-field">
                     <label>Description</label>
                     <textarea name="description" class="form-control rich-editor" rows="5"
-                              placeholder="Describe the event…"><?php echo $editEvent ? $editEvent['description'] : ''; ?></textarea>
+                              placeholder="Describe the event…"><?php echo $editEvent ? $editEvent['description'] : ($_errPost['description'] ?? ''); ?></textarea>
                 </div>
 
                 <p class="me-section">Date &amp; Time</p>
@@ -320,15 +322,16 @@ $dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
                     <div class="me-field">
                         <label>Ticket Type</label>
                         <select name="ticket_type" id="ticket-type-sel" class="form-control">
-                            <option value="free"         <?php echo ($editEvent['ticket_type']??'free')==='free'         ?'selected':''; ?>>Free Entry</option>
-                            <option value="paid"         <?php echo ($editEvent['ticket_type']??'')==='paid'         ?'selected':''; ?>>Paid Entry</option>
-                            <option value="registration" <?php echo ($editEvent['ticket_type']??'')==='registration' ?'selected':''; ?>>Registration Required</option>
+                            <?php $selTicket = $editEvent['ticket_type'] ?? $_errPost['ticket_type'] ?? 'free'; ?>
+                            <option value="free"         <?php echo $selTicket==='free'         ?'selected':''; ?>>Free Entry</option>
+                            <option value="paid"         <?php echo $selTicket==='paid'         ?'selected':''; ?>>Paid Entry</option>
+                            <option value="registration" <?php echo $selTicket==='registration' ?'selected':''; ?>>Registration Required</option>
                         </select>
                     </div>
                     <div class="me-field" id="price-row">
                         <label>Ticket Price (GH₵)</label>
                         <input type="number" name="ticket_price" class="form-control" min="0" step="0.01"
-                               value="<?php echo number_format((float)($editEvent['ticket_price'] ?? 0), 2, '.', ''); ?>">
+                               value="<?php echo number_format((float)($editEvent['ticket_price'] ?? $_errPost['ticket_price'] ?? 0), 2, '.', ''); ?>">
                     </div>
                 </div>
                 <div class="me-field">

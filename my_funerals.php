@@ -215,34 +215,36 @@ $statusLabels = [
             <form method="post" enctype="multipart/form-data">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="form_submit" value="1">
+                <?php $fp = $errors ? $_POST : []; $fv = fn($k) => sanitize($fp[$k] ?? ''); ?>
 
                 <!-- Deceased info -->
                 <div class="mf-field">
                     <label>Deceased Name *</label>
-                    <input type="text" name="deceased_name" class="form-control" required placeholder="Full name">
+                    <input type="text" name="deceased_name" class="form-control" required placeholder="Full name" value="<?php echo $fv('deceased_name'); ?>">
                 </div>
                 <div class="mf-row">
                     <div class="mf-field">
                         <label>Gender</label>
+                        <?php $selGender = $fp['gender'] ?? 'male'; ?>
                         <select name="gender" class="form-control">
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                            <option value="other">Other</option>
+                            <option value="male"   <?php echo $selGender==='male'   ?'selected':''; ?>>Male</option>
+                            <option value="female" <?php echo $selGender==='female' ?'selected':''; ?>>Female</option>
+                            <option value="other"  <?php echo $selGender==='other'  ?'selected':''; ?>>Other</option>
                         </select>
                     </div>
                     <div class="mf-field">
                         <label>Age at Death</label>
-                        <input type="number" name="age" class="form-control" min="0" max="150" placeholder="e.g. 72">
+                        <input type="number" name="age" class="form-control" min="0" max="150" placeholder="e.g. 72" value="<?php echo $fv('age'); ?>">
                     </div>
                 </div>
                 <div class="mf-row">
                     <div class="mf-field">
                         <label>Date of Birth</label>
-                        <input type="date" name="date_of_birth" class="form-control">
+                        <input type="date" name="date_of_birth" class="form-control" value="<?php echo $fv('date_of_birth'); ?>">
                     </div>
                     <div class="mf-field">
                         <label>Date of Death</label>
-                        <input type="date" name="date_of_death" class="form-control">
+                        <input type="date" name="date_of_death" class="form-control" value="<?php echo $fv('date_of_death'); ?>">
                     </div>
                 </div>
                 <div class="mf-field">
@@ -257,7 +259,7 @@ $statusLabels = [
                 </div>
                 <div class="mf-field">
                     <label>Biography</label>
-                    <textarea name="biography" class="form-control rich-editor" rows="5" placeholder="Brief biography or tribute…"></textarea>
+                    <textarea name="biography" class="form-control rich-editor" rows="5" placeholder="Brief biography or tribute…"><?php echo $fp['biography'] ?? ''; ?></textarea>
                 </div>
 
                 <p class="mf-section-label">Funeral Schedule</p>
@@ -265,40 +267,40 @@ $statusLabels = [
                 <div class="mf-row">
                     <div class="mf-field">
                         <label>Wake Keeping Date &amp; Time</label>
-                        <input type="datetime-local" name="wake_keeping_date" class="form-control">
+                        <input type="datetime-local" name="wake_keeping_date" class="form-control" value="<?php echo $fv('wake_keeping_date'); ?>">
                     </div>
                     <div class="mf-field">
                         <label>Burial Date &amp; Time</label>
-                        <input type="datetime-local" name="burial_date" class="form-control">
+                        <input type="datetime-local" name="burial_date" class="form-control" value="<?php echo $fv('burial_date'); ?>">
                     </div>
                 </div>
                 <div class="mf-field">
                     <label>Thanksgiving Service Date &amp; Time</label>
-                    <input type="datetime-local" name="thanksgiving_date" class="form-control">
+                    <input type="datetime-local" name="thanksgiving_date" class="form-control" value="<?php echo $fv('thanksgiving_date'); ?>">
                 </div>
                 <div class="mf-field">
                     <label>Venue</label>
-                    <input type="text" name="venue" class="form-control" placeholder="Church, hall or location name">
+                    <input type="text" name="venue" class="form-control" placeholder="Church, hall or location name" value="<?php echo $fv('venue'); ?>">
                 </div>
                 <div class="mf-field">
                     <label>GPS Address</label>
-                    <input type="text" name="gps_address" class="form-control" placeholder="e.g. GA-123-4567">
+                    <input type="text" name="gps_address" class="form-control" placeholder="e.g. GA-123-4567" value="<?php echo $fv('gps_address'); ?>">
                 </div>
 
                 <p class="mf-section-label">Organizer Contact</p>
 
                 <div class="mf-field">
                     <label>Organizer / Family Contact Name</label>
-                    <input type="text" name="organizer_name" class="form-control" placeholder="Name of point of contact">
+                    <input type="text" name="organizer_name" class="form-control" placeholder="Name of point of contact" value="<?php echo $fv('organizer_name'); ?>">
                 </div>
                 <div class="mf-row">
                     <div class="mf-field">
                         <label>Phone</label>
-                        <input type="tel" name="organizer_phone" class="form-control" placeholder="+233 …">
+                        <input type="tel" name="organizer_phone" class="form-control" placeholder="+233 …" value="<?php echo $fv('organizer_phone'); ?>">
                     </div>
                     <div class="mf-field">
                         <label>Email</label>
-                        <input type="email" name="organizer_email" class="form-control" placeholder="contact@example.com">
+                        <input type="email" name="organizer_email" class="form-control" placeholder="contact@example.com" value="<?php echo $fv('organizer_email'); ?>">
                     </div>
                 </div>
 

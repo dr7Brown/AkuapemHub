@@ -388,20 +388,29 @@ function is_ghana_card_duplicate(string $number, int $excludeUserId = 0): bool {
 }
 
 function save_uploaded_image(array $file, $relativeDir, int $maxWidth = 0, int $quality = 85) {
+    // Normalize MIME aliases (Windows may return image/x-png or image/pjpeg)
+    $mimeAliases = [
+        'image/x-png'  => 'image/png',
+        'image/pjpeg'  => 'image/jpeg',
+        'image/jpg'    => 'image/jpeg',
+    ];
     $allowedTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
     $maxSize = 5 * 1024 * 1024;
 
     if (empty($file['name']) || $file['error'] !== UPLOAD_ERR_OK) {
         return null;
     }
+
     $mimeType = mime_content_type($file['tmp_name']);
+    $mimeType = $mimeAliases[$mimeType] ?? $mimeType;
+
     if (!isset($allowedTypes[$mimeType]) || $file['size'] > $maxSize) {
         return null;
     }
 
     $uploadDir = __DIR__ . '/' . $relativeDir;
-    if (!is_dir($uploadDir)) {
-        mkdir($uploadDir, 0755, true);
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+        return null; // could not create directory
     }
 
     // Always save as JPEG for content images (smaller files, broad support)
@@ -409,13 +418,13 @@ function save_uploaded_image(array $file, $relativeDir, int $maxWidth = 0, int $
     $fileName = bin2hex(random_bytes(8)) . '.' . $ext;
     $destPath = $uploadDir . '/' . $fileName;
 
-    if ($maxWidth > 0 && function_exists('imagecreatefromjpeg')) {
+    if ($maxWidth > 0 && extension_loaded('gd')) {
         // GD resize + compress
         $src = match ($mimeType) {
-            'image/jpeg' => imagecreatefromjpeg($file['tmp_name']),
-            'image/png'  => imagecreatefrompng($file['tmp_name']),
-            'image/webp' => imagecreatefromwebp($file['tmp_name']),
-            default      => null,
+            'image/jpeg' => @imagecreatefromjpeg($file['tmp_name']),
+            'image/png'  => @imagecreatefrompng($file['tmp_name']),
+            'image/webp' => @imagecreatefromwebp($file['tmp_name']),
+            default      => false,
         };
         if ($src) {
             [$origW, $origH] = [imagesx($src), imagesy($src)];
@@ -427,15 +436,15 @@ function save_uploaded_image(array $file, $relativeDir, int $maxWidth = 0, int $
                 [$newW, $newH] = [$origW, $origH];
             }
             $dst = imagecreatetruecolor($newW, $newH);
-            // Preserve transparency for PNG sources, then fill white for JPEG output
             imagefill($dst, 0, 0, imagecolorallocate($dst, 255, 255, 255));
             imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $origW, $origH);
-            imagejpeg($dst, $destPath, $quality);
+            $ok = imagejpeg($dst, $destPath, $quality);
             imagedestroy($src);
             imagedestroy($dst);
-            return $relativeDir . '/' . $fileName;
+            if ($ok) return $relativeDir . '/' . $fileName;
+            // imagejpeg failed — fall through to move_uploaded_file
         }
-        // GD failed — fall back to direct move
+        // GD load failed — fall through to move_uploaded_file
     }
 
     if (move_uploaded_file($file['tmp_name'], $destPath)) {

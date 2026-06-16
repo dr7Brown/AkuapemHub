@@ -224,8 +224,9 @@ $statusLabels = [
 
                 <div class="mn-field">
                     <label>Article Title *</label>
+                    <?php $_errN = ($errors && !$editArticle) ? $_POST : []; ?>
                     <input type="text" name="title" class="form-control" required
-                           value="<?php echo $editArticle ? sanitize($editArticle['title']) : ''; ?>"
+                           value="<?php echo sanitize($editArticle['title'] ?? $_errN['title'] ?? ''); ?>"
                            placeholder="Enter a clear, descriptive title">
                 </div>
 
@@ -233,13 +234,13 @@ $statusLabels = [
                     <label>Summary / Teaser</label>
                     <div class="desc">One or two sentences shown in article cards. Leave blank to auto-generate from body.</div>
                     <textarea name="summary" class="form-control" rows="2"
-                              placeholder="Brief description of the article…"><?php echo $editArticle ? sanitize($editArticle['summary']) : ''; ?></textarea>
+                              placeholder="Brief description of the article…"><?php echo sanitize($editArticle['summary'] ?? $_errN['summary'] ?? ''); ?></textarea>
                 </div>
 
                 <div class="mn-field">
                     <label>Article Body *</label>
                     <textarea name="content" class="form-control rich-editor" rows="12" required
-                              placeholder="Write your full article here…"><?php echo $editArticle ? $editArticle['content'] : ''; ?></textarea>
+                              placeholder="Write your full article here…"><?php echo $editArticle ? $editArticle['content'] : ($_errN['content'] ?? ''); ?></textarea>
                 </div>
 
                 <div class="mn-field">
