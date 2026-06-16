@@ -5,6 +5,9 @@ require_once __DIR__ . '/functions.php';
 require_login();
 $user = current_user();
 
+$feeEnabled = (bool)(int)get_platform_setting('event_fee_enabled', '0');
+$feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
+
 $errors  = [];
 $success = '';
 
@@ -98,7 +101,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                 display_name($user) . ' submitted a new event: "' . $title . '". Review and publish in the Events admin panel.',
                 'info'
             );
-            $success = 'Event submitted! It will appear on the site once an admin publishes it.';
+            if ($feeEnabled) {
+                $success = 'Event submitted. Please contact the admin to pay the GH₵ ' . number_format($feeAmount,2) . ' publishing fee.';
+            } else {
+                $success = 'Event submitted! It will appear on the site once an admin publishes it.';
+            }
         }
     }
 }
@@ -222,6 +229,13 @@ $dt = fn($k) => !empty($editEvent[$k]) ? $editEvent[$k] : '';
             <p style="font-size:.83rem;color:var(--text-muted);margin:-4px 0 16px;">
                 Events are reviewed by an admin before going live on the platform.
             </p>
+
+            <?php if ($feeEnabled && !$editEvent): ?>
+            <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:.88rem;">
+                💳 A <strong>GH₵ <?php echo number_format($feeAmount,2); ?></strong> fee applies to publish your event.
+                Submit your event and contact the admin to complete payment.
+            </div>
+            <?php endif; ?>
 
             <?php foreach ($errors as $e): ?>
             <div class="alert alert-error" style="margin-bottom:10px;"><?php echo sanitize($e); ?></div>

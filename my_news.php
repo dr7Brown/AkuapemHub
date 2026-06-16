@@ -1,0 +1,266 @@
+<?php
+require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/functions.php';
+
+require_login();
+$user = current_user();
+
+$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0');
+$feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
+
+$errors  = [];
+$success = '';
+
+// Unique slug
+function mn_slug($pdo, $base, $excludeId = 0) {
+    $s = preg_replace('/[^a-z0-9]+/', '-', strtolower(trim($base)));
+    $s = trim($s, '-') ?: 'article';
+    $t = $s; $i = 2;
+    while ($pdo->query("SELECT id FROM news WHERE slug='$t' AND id!=$excludeId LIMIT 1")->fetch()) {
+        $t = $s . '-' . $i++;
+    }
+    return $t;
+}
+
+// Delete own draft
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
+    csrf_check();
+    $did = (int)$_POST['delete_id'];
+    $chk = $pdo->prepare("SELECT id, status FROM news WHERE id=? AND user_id=? LIMIT 1");
+    $chk->execute([$did, $user['id']]);
+    $row = $chk->fetch();
+    if ($row && $row['status'] === 'draft') {
+        $pdo->prepare("DELETE FROM news WHERE id=?")->execute([$did]);
+        $success = 'Article deleted.';
+    }
+}
+
+// Submit / update article
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
+    csrf_check();
+
+    $editId  = (int)($_POST['edit_id'] ?? 0);
+    $title   = trim($_POST['title']   ?? '');
+    $summary = trim($_POST['summary'] ?? '');
+    $content = trim($_POST['content'] ?? '');
+
+    if (!$title)   $errors[] = 'Title is required.';
+    if (!$content) $errors[] = 'Article body is required.';
+
+    // Verify ownership if editing
+    $existingImg = null;
+    if ($editId) {
+        $chk = $pdo->prepare("SELECT * FROM news WHERE id=? AND user_id=? LIMIT 1");
+        $chk->execute([$editId, $user['id']]);
+        $existingRow = $chk->fetch();
+        if (!$existingRow || $existingRow['status'] === 'published') {
+            $errors[] = 'Cannot edit this article.';
+        } else {
+            $existingImg = $existingRow['featured_image'];
+        }
+    }
+
+    $imgPath = $existingImg;
+    if (!empty($_FILES['featured_image']['name'])) {
+        $p = save_uploaded_image($_FILES['featured_image'], 'uploads/news', 1200, 85);
+        if ($p) $imgPath = $p; else $errors[] = 'Image upload failed. JPEG/PNG/WebP, max 5 MB.';
+    }
+
+    if (!$errors) {
+        $slug = mn_slug($pdo, $title . ' ' . date('Y'), $editId);
+        if ($editId) {
+            $pdo->prepare(
+                "UPDATE news SET title=?,slug=?,summary=?,content=?,featured_image=?,status='draft',updated_at=NOW()
+                 WHERE id=? AND user_id=?"
+            )->execute([$title, $slug, $summary, $content, $imgPath, $editId, $user['id']]);
+            $success = 'Article updated and is pending admin review.';
+        } else {
+            $pdo->prepare(
+                "INSERT INTO news (user_id,title,slug,summary,content,featured_image,status,created_at,updated_at)
+                 VALUES (?,?,?,?,?,?,'draft',NOW(),NOW())"
+            )->execute([$user['id'], $title, $slug, $summary, $content, $imgPath]);
+            notify_admins_and_managers(
+                'New article submitted',
+                display_name($user) . ' submitted a new article: "' . $title . '". Review and publish in the News admin panel.',
+                'info'
+            );
+            if ($feeEnabled) {
+                $success = 'Article submitted. Please contact the admin to pay the GH₵ ' . number_format($feeAmount, 2) . ' publishing fee.';
+            } else {
+                $success = 'Article submitted and is pending admin review.';
+            }
+        }
+    }
+}
+
+// Edit mode pre-fill
+$editArticle = null;
+if (isset($_GET['edit']) && (int)$_GET['edit']) {
+    $chk = $pdo->prepare("SELECT * FROM news WHERE id=? AND user_id=? LIMIT 1");
+    $chk->execute([(int)$_GET['edit'], $user['id']]);
+    $editArticle = $chk->fetch();
+    if ($editArticle && $editArticle['status'] === 'published') {
+        $editArticle = null;
+    }
+}
+
+$myArticles = $pdo->prepare("SELECT * FROM news WHERE user_id=? ORDER BY created_at DESC");
+$myArticles->execute([$user['id']]);
+$myList = $myArticles->fetchAll();
+
+$statusLabels = [
+    'draft'     => ['label' => 'Under Review', 'color' => '#2563eb', 'bg' => '#eff6ff'],
+    'published' => ['label' => 'Published',    'color' => '#059669', 'bg' => '#ecfdf5'],
+];
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Articles — <?php echo APP_NAME; ?></title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        .mn-shell  { max-width:800px; margin:0 auto; padding:20px 16px 60px; }
+        .mn-list   { display:flex; flex-direction:column; gap:12px; margin-bottom:28px; }
+        .mn-item   { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:14px 16px; display:flex; align-items:flex-start; gap:14px; }
+        .mn-thumb  { width:64px; height:48px; border-radius:8px; background:#f3f4f6; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.4rem; }
+        .mn-thumb img { width:100%; height:100%; object-fit:cover; }
+        .mn-info   { flex:1; min-width:0; }
+        .mn-title  { font-weight:800; font-size:.95rem; margin:0 0 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mn-meta   { font-size:.78rem; color:var(--text-muted,#6b7280); }
+        .mn-status { display:inline-block; font-size:.68rem; font-weight:800; padding:3px 9px; border-radius:20px; margin-top:5px; }
+        .mn-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; flex-wrap:wrap; }
+
+        .mn-form-wrap { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:20px; }
+        .mn-form-wrap h2 { font-size:1rem; font-weight:800; margin:0 0 6px; }
+        .mn-form-wrap > p { font-size:.83rem; color:var(--text-muted); margin:0 0 16px; }
+        .mn-field  { margin-bottom:16px; }
+        .mn-field label { display:block; font-weight:600; font-size:.86rem; margin-bottom:4px; }
+        .mn-field .desc { font-size:.76rem; color:var(--text-muted); margin-bottom:5px; }
+        .mn-field input, .mn-field textarea { width:100%; box-sizing:border-box; }
+        .mn-field textarea { resize:vertical; }
+        .mn-fee-notice { background:#fffbeb; border:1px solid #f59e0b; border-radius:10px; padding:12px 16px; margin-bottom:18px; font-size:.88rem; }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <a href="community.php" class="button button-secondary button-small">← Community</a>
+        <h1>My Articles</h1>
+        <a href="news.php" class="button button-small">All News</a>
+    </header>
+
+    <div class="mn-shell">
+        <?php if ($success): ?><div class="alert alert-success" style="margin-bottom:16px;"><?php echo sanitize($success); ?></div><?php endif; ?>
+
+        <!-- Existing submissions -->
+        <?php if ($myList): ?>
+        <div class="mn-list">
+            <?php foreach ($myList as $art): ?>
+            <?php $sl = $statusLabels[$art['status']] ?? $statusLabels['draft']; ?>
+            <div class="mn-item">
+                <div class="mn-thumb">
+                    <?php if ($art['featured_image']): ?>
+                        <img src="<?php echo sanitize($art['featured_image']); ?>" alt="">
+                    <?php else: ?>
+                        📰
+                    <?php endif; ?>
+                </div>
+                <div class="mn-info">
+                    <p class="mn-title"><?php echo sanitize($art['title']); ?></p>
+                    <p class="mn-meta">Submitted <?php echo date('d M Y', strtotime($art['created_at'])); ?></p>
+                    <span class="mn-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
+                        <?php echo $sl['label']; ?>
+                    </span>
+                    <?php if ($art['status'] === 'draft' && $feeEnabled): ?>
+                    <p style="font-size:.77rem;color:#92400e;margin:5px 0 0;">Contact admin to pay GH₵ <?php echo number_format($feeAmount,2); ?> to publish.</p>
+                    <?php elseif ($art['status'] === 'draft'): ?>
+                    <p style="font-size:.77rem;color:#1d4ed8;margin:5px 0 0;">Awaiting admin review before going live.</p>
+                    <?php endif; ?>
+                </div>
+                <div class="mn-actions">
+                    <?php if ($art['status'] === 'published' && $art['slug']): ?>
+                        <a href="news_article.php?slug=<?php echo urlencode($art['slug']); ?>" class="button button-small" target="_blank">View</a>
+                    <?php endif; ?>
+                    <?php if ($art['status'] === 'draft'): ?>
+                        <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-small button-secondary">Edit</a>
+                        <form method="post" onsubmit="return confirm('Delete this article?')">
+                            <?php echo csrf_field(); ?>
+                            <input type="hidden" name="delete_id" value="<?php echo (int)$art['id']; ?>">
+                            <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Submit / Edit form -->
+        <div class="mn-form-wrap">
+            <h2><?php echo $editArticle ? 'Edit Article' : 'Submit a News Article'; ?></h2>
+            <p>Articles are reviewed by an admin before appearing on the news page.</p>
+
+            <?php if ($feeEnabled && !$editArticle): ?>
+            <div class="mn-fee-notice">
+                💳 A <strong>GH₵ <?php echo number_format($feeAmount,2); ?></strong> fee applies to publish your article.
+                Submit your article and contact the admin to complete payment.
+            </div>
+            <?php endif; ?>
+
+            <?php foreach ($errors as $e): ?>
+            <div class="alert alert-error" style="margin-bottom:10px;"><?php echo sanitize($e); ?></div>
+            <?php endforeach; ?>
+
+            <form method="post" enctype="multipart/form-data">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="form_submit" value="1">
+                <?php if ($editArticle): ?>
+                <input type="hidden" name="edit_id" value="<?php echo (int)$editArticle['id']; ?>">
+                <?php endif; ?>
+
+                <div class="mn-field">
+                    <label>Article Title *</label>
+                    <input type="text" name="title" class="form-control" required
+                           value="<?php echo $editArticle ? sanitize($editArticle['title']) : ''; ?>"
+                           placeholder="Enter a clear, descriptive title">
+                </div>
+
+                <div class="mn-field">
+                    <label>Summary / Teaser</label>
+                    <div class="desc">One or two sentences shown in article cards. Leave blank to auto-generate from body.</div>
+                    <textarea name="summary" class="form-control" rows="2"
+                              placeholder="Brief description of the article…"><?php echo $editArticle ? sanitize($editArticle['summary']) : ''; ?></textarea>
+                </div>
+
+                <div class="mn-field">
+                    <label>Article Body *</label>
+                    <textarea name="content" class="form-control" rows="12" required
+                              placeholder="Write your full article here…"><?php echo $editArticle ? sanitize($editArticle['content']) : ''; ?></textarea>
+                </div>
+
+                <div class="mn-field">
+                    <label>Featured Image</label>
+                    <div class="desc">Recommended 1200×630 px · JPEG/PNG/WebP · Max 5 MB</div>
+                    <input type="file" name="featured_image" accept="image/jpeg,image/png,image/webp">
+                    <?php if ($editArticle && !empty($editArticle['featured_image'])): ?>
+                        <img src="<?php echo sanitize($editArticle['featured_image']); ?>" alt=""
+                             style="max-width:220px;border-radius:8px;margin-top:6px;">
+                    <?php endif; ?>
+                </div>
+
+                <div style="display:flex;gap:10px;margin-top:4px;flex-wrap:wrap;">
+                    <button type="submit" class="button button-primary">
+                        <?php echo $editArticle ? 'Save Changes' : 'Submit Article'; ?>
+                    </button>
+                    <?php if ($editArticle): ?>
+                    <a href="my_news.php" class="button button-secondary">Cancel</a>
+                    <?php endif; ?>
+                </div>
+            </form>
+        </div>
+    </div>
+
+<?php $activeNav = 'community'; require_once __DIR__ . '/partials/bottom_nav.php'; ?>
+</body>
+</html>

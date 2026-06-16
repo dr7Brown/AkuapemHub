@@ -84,7 +84,7 @@ $latestNews = $pdo->query(
         .cm-cta h3 { font-size:1rem; font-weight:800; margin:0 0 4px; }
         .cm-cta p  { font-size:.85rem; color:#94a3b8; margin:0; }
         .cm-cta a  { white-space:nowrap; }
-        @media(max-width:600px){ .cm-cta-row { grid-template-columns:1fr !important; } }
+        @media(max-width:760px){ .cm-cta-row { grid-template-columns:1fr !important; } }
     </style>
 </head>
 <body>
@@ -187,11 +187,11 @@ $latestNews = $pdo->query(
     </div>
     <?php endif; ?>
 
-    <!-- Community CTAs -->
-    <div class="cm-cta-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+    <!-- Community CTAs (3-up grid, 1-col on mobile) -->
+    <div class="cm-cta-row" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
         <div class="cm-cta">
             <div>
-                <h3>🕊️ Post a Funeral Announcement</h3>
+                <h3>🕊️ Post Funeral Announcement</h3>
                 <p>Share memorial information with the community</p>
             </div>
             <?php if ($user): ?>
@@ -207,6 +207,17 @@ $latestNews = $pdo->query(
             </div>
             <?php if ($user): ?>
             <a href="my_events.php" class="button button-primary">Submit Event</a>
+            <?php else: ?>
+            <a href="register.php" class="button button-primary">Sign up to Post</a>
+            <?php endif; ?>
+        </div>
+        <div class="cm-cta" style="background:linear-gradient(135deg,#14532d,#166534);">
+            <div>
+                <h3>✍️ Submit a News Article</h3>
+                <p>Share a story or update with the community</p>
+            </div>
+            <?php if ($user): ?>
+            <a href="my_news.php" class="button button-primary">Submit Article</a>
             <?php else: ?>
             <a href="register.php" class="button button-primary">Sign up to Post</a>
             <?php endif; ?>

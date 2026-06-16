@@ -11,14 +11,27 @@ $offset  = ($page - 1) * $perPage;
 // If page 1 we show 1 featured + 8 cards = 9 DB rows; page 2+ just 8 cards
 $fetchLimit = ($page === 1) ? $perPage + 1 : $perPage + 1; // +1 to detect hasMore
 
+$search  = trim($_GET['q'] ?? '');
+$nFilter = in_array($_GET['filter'] ?? '', ['latest','popular']) ? $_GET['filter'] : 'latest';
+$orderBy = $nFilter === 'popular' ? 'view_count DESC, COALESCE(published_at, created_at) DESC'
+                                  : 'COALESCE(published_at, created_at) DESC';
+
+$whereExtra = '';
+$stmtParams = [$fetchLimit, $offset];
+if ($search) {
+    $whereExtra  = " AND (title LIKE ? OR summary LIKE ?)";
+    $stmtParams  = ["%$search%", "%$search%", $fetchLimit, $offset];
+}
+
 $stmt = $pdo->prepare("
     SELECT id, title, slug, summary, featured_image, view_count, published_at
     FROM news
     WHERE status='published' AND (published_at IS NULL OR published_at <= NOW())
-    ORDER BY COALESCE(published_at, created_at) DESC
+    $whereExtra
+    ORDER BY $orderBy
     LIMIT ? OFFSET ?
 ");
-$stmt->execute([$fetchLimit, $offset]);
+$stmt->execute($stmtParams);
 $all      = $stmt->fetchAll();
 $hasMore  = count($all) > $perPage;
 $articles = array_slice($all, 0, $perPage);
@@ -101,11 +114,21 @@ $topAd     = $bannerAds[0] ?? null;
     <style>
         /* ── Layout ─────────────────────────────────────────── */
         .nc-shell    { max-width:1060px; margin:0 auto; padding:24px 16px 88px; }
-        /* ── Page header ─────────────────────────────────────── */
-        .nc-page-hd  { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
-        .nc-page-hd h1 { margin:0; font-size:1.75rem; font-weight:900; letter-spacing:-.5px; }
-        .nc-page-hd p  { margin:4px 0 0; color:var(--text-muted); font-size:.9rem; }
-        .nc-page-hd-right { display:flex; gap:8px; align-items:center; flex-shrink:0; }
+        /* ── Hero ─────────────────────────────────────────────── */
+        .nc-hero { background:linear-gradient(135deg,#14532d 0%,#166534 60%,#0f766e 100%); color:#fff; padding:36px 20px 32px; text-align:center; }
+        .nc-hero h1 { font-size:clamp(1.4rem,4vw,2rem); font-weight:900; margin:0 0 8px; }
+        .nc-hero p  { font-size:.95rem; color:#bbf7d0; margin:0 0 20px; }
+        .nc-search-wrap { display:flex; gap:8px; max-width:440px; margin:0 auto; }
+        .nc-search-wrap input  { flex:1; padding:10px 14px; border-radius:10px; border:1px solid #14532d; background:#166534; color:#fff; font-size:.9rem; }
+        .nc-search-wrap input::placeholder { color:#6ee7b7; }
+        .nc-search-wrap button { padding:10px 18px; border-radius:10px; background:var(--primary,#0f766e); color:#fff; border:none; font-weight:700; cursor:pointer; white-space:nowrap; }
+        /* ── Filter tabs ──────────────────────────────────────── */
+        .nc-filters { background:var(--surface,#fff); border-bottom:1px solid var(--border,#e5e7eb); padding:0 16px; display:flex; gap:0; overflow-x:auto; }
+        .nc-filter-btn { padding:12px 18px; border:none; background:none; font-size:.85rem; font-weight:700; color:var(--text-muted,#6b7280); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; }
+        .nc-filter-btn.active { color:var(--primary,#0f766e); border-bottom-color:var(--primary,#0f766e); }
+        .nc-filter-btn:hover  { color:var(--text,#111); }
+        /* ── Toolbar ──────────────────────────────────────────── */
+        .nc-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
         /* ── Featured story ──────────────────────────────────── */
         .nc-featured { position:relative; border-radius:20px; overflow:hidden; margin-bottom:32px; min-height:380px; background:var(--surface); display:block; text-decoration:none; color:inherit; }
         .nc-featured-bg { width:100%; height:420px; object-fit:cover; display:block; }
@@ -160,24 +183,51 @@ $topAd     = $bannerAds[0] ?? null;
 </head>
 <body <?php echo $user ? 'class="has-bottom-nav"' : ''; ?>>
 
-    <header class="app-topbar">
-        <a href="<?php echo $user ? 'dashboard.php' : 'index.php'; ?>" class="button button-secondary button-small">← Back</a>
-        <span class="brand"><?php echo sanitize(APP_NAME); ?></span>
-        <?php if ($user): ?>
-            <a href="news_saved.php" class="button button-secondary button-small" title="Saved &amp; History">🔖 Saved</a>
-        <?php else: ?>
-            <a href="login.php" class="button button-primary button-small">Sign in</a>
-        <?php endif; ?>
+    <?php if (!$user): ?>
+    <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;"><?php echo sanitize(APP_NAME); ?></a>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="community.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Community</a>
+            <a href="events.php"    style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Events</a>
+            <a href="login.php"     class="button button-secondary button-small">Sign in</a>
+            <a href="register.php"  class="button button-primary button-small">Register</a>
+        </div>
     </header>
+    <?php endif; ?>
+
+    <!-- Hero -->
+    <div class="nc-hero">
+        <h1>📰 News &amp; Updates</h1>
+        <p>The latest stories and updates from <?php echo sanitize(APP_NAME); ?></p>
+        <form class="nc-search-wrap" method="get" action="news.php">
+            <input type="hidden" name="filter" value="<?php echo sanitize($nFilter); ?>">
+            <input type="search" name="q" placeholder="Search articles…" value="<?php echo sanitize($search); ?>">
+            <button type="submit">Search</button>
+        </form>
+    </div>
+
+    <!-- Filter tabs -->
+    <div class="nc-filters">
+        <?php $baseQ = $search ? '&q=' . urlencode($search) : ''; ?>
+        <a href="news.php?filter=latest<?php echo $baseQ; ?>"  class="nc-filter-btn <?php echo $nFilter === 'latest'  ? 'active' : ''; ?>">Latest</a>
+        <a href="news.php?filter=popular<?php echo $baseQ; ?>" class="nc-filter-btn <?php echo $nFilter === 'popular' ? 'active' : ''; ?>">Popular</a>
+        <?php if ($user): ?>
+        <a href="news_saved.php" class="nc-filter-btn">🔖 Saved</a>
+        <?php endif; ?>
+    </div>
 
     <div class="nc-shell">
 
-        <!-- Page heading -->
-        <div class="nc-page-hd">
-            <div>
-                <h1>📰 News &amp; Updates</h1>
-                <p>The latest stories from <?php echo sanitize(APP_NAME); ?></p>
-            </div>
+        <!-- Toolbar: result label + submit button -->
+        <div class="nc-toolbar">
+            <p style="margin:0;color:var(--text-muted);font-size:.9rem;">
+                <?php echo $search ? 'Results for "' . sanitize($search) . '"' : ucfirst($nFilter) . ' articles'; ?>
+            </p>
+            <?php if ($user): ?>
+            <a href="my_news.php" class="button button-primary button-small">✍️ Submit Article</a>
+            <?php else: ?>
+            <a href="login.php" class="button button-secondary button-small">Sign in to post</a>
+            <?php endif; ?>
         </div>
 
         <?php if (!$articles && $page === 1): ?>
@@ -301,7 +351,10 @@ $topAd     = $bannerAds[0] ?? null;
         if (!wrap) return;
         var btn = wrap.querySelector('button');
         if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-        fetch('news.php?ajax=1&page=' + page)
+        var params = new URLSearchParams(window.location.search);
+        params.set('ajax', '1');
+        params.set('page', page);
+        fetch('news.php?' + params.toString())
             .then(function(r){ return r.text(); })
             .then(function(html) {
                 wrap.remove();

@@ -5,11 +5,20 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
+// Fee settings update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
+    csrf_check();
+    set_platform_setting('news_fee_enabled', (int)isset($_POST['fee_enabled']));
+    set_platform_setting('news_fee_amount', max(0, (float)($_POST['fee_amount'] ?? 0)));
+    log_audit_action($user['id'], 'news_fee_update', 'Updated news article submission fee settings');
+    header('Location: news.php?saved=1'); exit;
+}
+
 // Toggle publish/unpublish
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
     csrf_check();
     $tid = (int)$_POST['toggle_id'];
-    $cur = $pdo->prepare("SELECT status, title, notification_sent FROM news WHERE id=? LIMIT 1");
+    $cur = $pdo->prepare("SELECT status, title, notification_sent, user_id FROM news WHERE id=? LIMIT 1");
     $cur->execute([$tid]);
     $row = $cur->fetch();
     if ($row) {
@@ -19,13 +28,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
         } else {
             $pdo->prepare("UPDATE news SET status=? WHERE id=?")->execute([$newStatus, $tid]);
         }
+        // Notify submitter (user-submitted article) when published
+        if ($newStatus === 'published' && $row['user_id']) {
+            notify_user((int)$row['user_id'], 'Your article is now live!',
+                '"' . $row['title'] . '" has been reviewed and published on the news page.', 'success');
+        }
         // Notify all users the first time an article goes live
         if ($newStatus === 'published' && !$row['notification_sent']) {
             $uids = $pdo->query("SELECT id FROM users")->fetchAll(PDO::FETCH_COLUMN);
             foreach ($uids as $uid) {
-                notify_user((int)$uid, '📰 New article published', sanitize($row['title']) . ' — read the latest from ' . APP_NAME . '.', 'info');
+                if ((int)$uid !== (int)($row['user_id'] ?? 0)) { // skip submitter (already notified)
+                    notify_user((int)$uid, '📰 New article published', $row['title'] . ' — read the latest from ' . APP_NAME . '.', 'info');
+                }
             }
             $pdo->prepare("UPDATE news SET notification_sent=1 WHERE id=?")->execute([$tid]);
+        }
+        // Notify submitter when returned to draft
+        if ($newStatus === 'draft' && $row['user_id']) {
+            notify_user((int)$row['user_id'], 'Article returned for revision',
+                '"' . $row['title'] . '" has been unpublished and returned to draft.', 'info');
         }
         log_audit_action($user['id'], 'news_toggle', "Article #$tid → $newStatus");
     }
@@ -44,7 +65,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     header('Location: news.php?deleted=1'); exit;
 }
 
-$articles = $pdo->query("SELECT id, title, slug, status, view_count, published_at, created_at FROM news ORDER BY created_at DESC")->fetchAll();
+$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0');
+$feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
+
+$articles = $pdo->query("
+    SELECT n.id, n.title, n.slug, n.status, n.view_count, n.published_at, n.created_at, n.user_id,
+           u.name AS submitter_name
+    FROM news n LEFT JOIN users u ON u.id = n.user_id
+    ORDER BY n.created_at DESC")->fetchAll();
 $total     = count($articles);
 $published = count(array_filter($articles, fn($a) => $a['status'] === 'published'));
 $drafts    = $total - $published;
@@ -72,6 +100,10 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
         .badge-pub  { background:#d1fae5; color:#065f46; font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:10px; }
         .badge-dft  { background:#f3f4f6; color:#6b7280; font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:10px; }
         .an-actions { display:flex; gap:6px; align-items:center; }
+        .an-fee-panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:20px; }
+        .an-fee-panel h3 { font-size:.88rem; font-weight:800; margin:0 0 12px; }
+        .an-fee-row   { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+        .badge-user { background:#eff6ff; color:#1d4ed8; font-size:.65rem; font-weight:800; padding:2px 7px; border-radius:10px; }
     </style>
 </head>
 <body>
@@ -82,8 +114,29 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
     </header>
 
     <main class="an-shell">
-        <?php if (isset($_GET['saved'])):  ?><div class="alert alert-success" style="margin-bottom:12px;">Article status updated.</div><?php endif; ?>
+        <?php if (isset($_GET['saved'])):  ?><div class="alert alert-success" style="margin-bottom:12px;">Saved.</div><?php endif; ?>
         <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success" style="margin-bottom:12px;">Article deleted.</div><?php endif; ?>
+
+        <!-- Fee settings panel -->
+        <div class="an-fee-panel">
+            <h3>⚙️ Article Submission Fee</h3>
+            <form method="post" class="an-fee-row">
+                <?php echo csrf_field(); ?>
+                <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;">
+                    <input type="checkbox" name="fee_enabled" value="1" <?php echo $feeEnabled ? 'checked' : ''; ?>>
+                    Charge a fee for user-submitted articles
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;">
+                    Amount: <strong>GH₵</strong>
+                    <input type="number" name="fee_amount" value="<?php echo number_format($feeAmount,2,'.',''); ?>"
+                           min="0" step="0.01" style="width:90px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;">
+                </label>
+                <button type="submit" name="save_fee" class="button button-primary button-small">Save</button>
+                <span style="font-size:.78rem;color:var(--text-muted);">
+                    <?php echo $feeEnabled ? '⚠️ Users must pay GH₵ ' . number_format($feeAmount,2) . ' per submission.' : 'Currently free for all users.'; ?>
+                </span>
+            </form>
+        </div>
 
         <div class="an-stats">
             <div class="an-stat"><strong><?php echo $total; ?></strong><span>Total Articles</span></div>
@@ -100,6 +153,7 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                 <thead>
                     <tr>
                         <th>Title</th>
+                        <th>Submitter</th>
                         <th>Status</th>
                         <th>Views</th>
                         <th>Published</th>
@@ -112,6 +166,14 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                     <td class="an-title">
                         <a href="../news_article.php?slug=<?php echo urlencode($a['slug']); ?>" target="_blank"><?php echo sanitize($a['title']); ?> ↗</a>
                         <div style="font-size:.75rem;color:var(--text-muted);">/<?php echo sanitize($a['slug']); ?></div>
+                    </td>
+                    <td style="font-size:.82rem;">
+                        <?php if ($a['user_id'] && $a['submitter_name']): ?>
+                            <span class="badge-user">User</span>
+                            <div style="color:var(--text-muted);font-size:.75rem;margin-top:2px;"><?php echo sanitize($a['submitter_name']); ?></div>
+                        <?php else: ?>
+                            <span style="color:var(--text-muted);">Admin</span>
+                        <?php endif; ?>
                     </td>
                     <td><span class="badge-<?php echo $a['status'] === 'published' ? 'pub' : 'dft'; ?>"><?php echo $a['status']; ?></span></td>
                     <td><?php echo number_format((int)$a['view_count']); ?></td>

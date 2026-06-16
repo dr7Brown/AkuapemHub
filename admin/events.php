@@ -5,6 +5,15 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
+// Event fee settings update
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
+    csrf_check();
+    set_platform_setting('event_fee_enabled', (int)isset($_POST['fee_enabled']));
+    set_platform_setting('event_fee_amount', max(0, (float)($_POST['fee_amount'] ?? 0)));
+    log_audit_action($user['id'], 'event_fee_update', 'Updated event submission fee settings');
+    header('Location: events.php?saved=1'); exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'])) {
     csrf_check();
     $tid = (int)$_POST['id'];
@@ -75,7 +84,9 @@ $stmt = $pdo->prepare(
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
-$counts = $pdo->query("SELECT status, COUNT(*) FROM events GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
+$counts     = $pdo->query("SELECT status, COUNT(*) FROM events GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
+$feeEnabled = (bool)(int)get_platform_setting('event_fee_enabled', '0');
+$feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -116,6 +127,29 @@ $counts = $pdo->query("SELECT status, COUNT(*) FROM events GROUP BY status")->fe
     </header>
 
     <div class="ae-shell">
+        <?php if (isset($_GET['saved'])): ?><div class="alert alert-success" style="margin-bottom:12px;">Saved.</div><?php endif; ?>
+
+        <!-- Fee settings panel -->
+        <div style="background:var(--surface,#fff);border:1px solid var(--border);border-radius:12px;padding:16px 18px;margin-bottom:20px;">
+            <h3 style="font-size:.88rem;font-weight:800;margin:0 0 12px;">⚙️ Event Submission Fee</h3>
+            <form method="post" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+                <?php echo csrf_field(); ?>
+                <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer;">
+                    <input type="checkbox" name="fee_enabled" value="1" <?php echo $feeEnabled ? 'checked' : ''; ?>>
+                    Charge a fee for user-submitted events
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;">
+                    Amount: <strong>GH₵</strong>
+                    <input type="number" name="fee_amount" value="<?php echo number_format($feeAmount,2,'.',''); ?>"
+                           min="0" step="0.01" style="width:90px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;">
+                </label>
+                <button type="submit" name="save_fee" class="button button-primary button-small">Save</button>
+                <span style="font-size:.78rem;color:var(--text-muted);">
+                    <?php echo $feeEnabled ? '⚠️ Users must pay GH₵ ' . number_format($feeAmount,2) . ' per submission.' : 'Currently free for all users.'; ?>
+                </span>
+            </form>
+        </div>
+
         <!-- Stats -->
         <div class="ae-stats">
             <a href="events.php?status=published" class="ae-stat"><strong><?php echo (int)($counts['published'] ?? 0); ?></strong><span>Published</span></a>
