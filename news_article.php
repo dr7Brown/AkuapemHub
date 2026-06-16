@@ -53,6 +53,19 @@ $comments = $cStmt->fetchAll();
 // Related/sidebar banner ad
 $bannerAd = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
 
+// Sidebar data
+$sidebarRelated = $pdo->prepare("SELECT id, title, slug, featured_image, view_count, published_at FROM news WHERE status='published' AND id != ? ORDER BY COALESCE(published_at,created_at) DESC LIMIT 5");
+$sidebarRelated->execute([$article['id']]);
+$sidebarRelated = $sidebarRelated->fetchAll();
+
+$sidebarPopular = $pdo->prepare("SELECT id, title, slug, view_count FROM news WHERE status='published' AND id != ? ORDER BY view_count DESC, COALESCE(published_at,created_at) DESC LIMIT 5");
+$sidebarPopular->execute([$article['id']]);
+$sidebarPopular = $sidebarPopular->fetchAll();
+
+$sidebarEvents = $pdo->query("SELECT id, title, slug, start_date FROM events WHERE status='published' AND start_date >= CURDATE() ORDER BY start_date ASC LIMIT 3")->fetchAll();
+
+$sidebarAd2 = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+
 // Estimated read time
 $wordCount = str_word_count(strip_tags($article['content'] ?? ''));
 $readMins  = max(1, ceil($wordCount / 200));
@@ -84,12 +97,20 @@ $csrfField = csrf_field();
     <link rel="canonical" href="<?php echo sanitize($pageUrl); ?>">
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
-        /* ── Article layout ──────────────────────────────────── */
-        .na-wrap      { max-width:760px; margin:0 auto; padding:0 16px 88px; }
+        /* ── Outer shell + two-column layout ────────────────── */
+        .na-shell     { max-width:1200px; margin:0 auto; padding:0 16px 88px; }
+        .na-layout    { display:block; }
+        .na-main      { min-width:0; }
+        .na-sidebar   { display:none; }
+        @media (min-width:960px) {
+            .na-layout  { display:grid; grid-template-columns:1fr 280px; gap:36px; align-items:start; }
+            .na-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+            .na-main    { max-width:760px; }
+        }
         /* ── Hero image ──────────────────────────────────────── */
-        .na-hero      { margin:0 -16px 32px; overflow:hidden; }
+        .na-hero      { margin:0 0 32px; overflow:hidden; border-radius:16px; }
         .na-hero img  { width:100%; max-height:460px; object-fit:cover; display:block; }
-        .na-hero-placeholder { height:200px; background:linear-gradient(135deg,var(--primary) 0%,#0d5e57 100%); }
+        .na-hero-placeholder { height:200px; border-radius:16px; background:linear-gradient(135deg,var(--primary) 0%,#0d5e57 100%); }
         /* ── Breadcrumb ──────────────────────────────────────── */
         .na-breadcrumb { font-size:.8rem; color:var(--text-muted); margin-bottom:14px; }
         .na-breadcrumb a { color:var(--primary); text-decoration:none; }
@@ -149,6 +170,27 @@ $csrfField = csrf_field();
         .na-com-form  { margin-top:20px; }
         .na-com-form textarea { width:100%; box-sizing:border-box; border-radius:12px; }
         .na-login-prompt { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:20px; text-align:center; color:var(--text-muted); margin-top:16px; }
+        /* ── Sidebar widgets (reuse nsb-* from news.php style) ─ */
+        .nsb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
+        .nsb-head   { padding:12px 16px; border-bottom:1px solid var(--border,#e5e7eb); font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted,#6b7280); }
+        .nsb-item   { display:flex; gap:10px; align-items:flex-start; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-item:last-child { border-bottom:none; }
+        .nsb-num    { flex-shrink:0; width:22px; height:22px; border-radius:6px; background:var(--primary,#0f766e); color:#fff; font-size:.7rem; font-weight:900; display:flex; align-items:center; justify-content:center; }
+        .nsb-thumb  { flex-shrink:0; width:56px; height:38px; border-radius:6px; object-fit:cover; background:var(--surface-muted,#f3f4f6); }
+        .nsb-thumb-ph { flex-shrink:0; width:56px; height:38px; border-radius:6px; background:var(--surface-muted,#f3f4f6); display:flex; align-items:center; justify-content:center; font-size:1.1rem; }
+        .nsb-text   { flex:1; min-width:0; }
+        .nsb-text a { font-size:.82rem; font-weight:700; color:var(--text,#111); text-decoration:none; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .nsb-text a:hover { color:var(--primary,#0f766e); }
+        .nsb-meta   { font-size:.72rem; color:var(--text-muted,#6b7280); margin-top:3px; }
+        .nsb-event  { padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-event:last-child { border-bottom:none; }
+        .nsb-ev-date  { font-size:.7rem; font-weight:700; color:var(--primary,#0f766e); text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+        .nsb-ev-title a { font-size:.82rem; font-weight:600; color:var(--text,#111); text-decoration:none; }
+        .nsb-ev-title a:hover { color:var(--primary,#0f766e); }
+        .nsb-cta    { padding:16px; text-align:center; }
+        .nsb-ad     { padding:10px; text-align:center; }
+        .nsb-ad img { width:100%; border-radius:8px; }
+        .nsb-ad-label { font-size:.65rem; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted); margin-bottom:6px; }
         /* ── Responsive ──────────────────────────────────────── */
         @media (max-width:520px) { .na-hero img { max-height:240px; } }
     </style>
@@ -164,7 +206,10 @@ $csrfField = csrf_field();
         <?php endif; ?>
     </header>
 
-    <div class="na-wrap">
+    <div class="na-shell">
+    <div class="na-layout">
+    <!-- ── Main article column ───────────────────────────────── -->
+    <div class="na-main">
 
         <!-- Hero image -->
         <div class="na-hero">
@@ -290,7 +335,93 @@ $csrfField = csrf_field();
             <?php endif; ?>
         </div>
 
-    </div><!-- .na-wrap -->
+    </div><!-- /na-main -->
+
+    <!-- ── Sidebar ──────────────────────────────────────────── -->
+    <aside class="na-sidebar">
+
+        <?php if ($user): ?>
+        <!-- Submit CTA -->
+        <div class="nsb-widget">
+            <div class="nsb-cta">
+                <p style="font-size:.85rem;font-weight:700;margin:0 0 10px;">Have a story to share?</p>
+                <a href="my_news.php" class="button button-primary button-small" style="width:100%;justify-content:center;">✍️ Submit an Article</a>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Related articles -->
+        <?php if ($sidebarRelated): ?>
+        <div class="nsb-widget">
+            <div class="nsb-head">📰 More Articles</div>
+            <?php foreach ($sidebarRelated as $r): ?>
+            <div class="nsb-item">
+                <?php if ($r['featured_image']): ?>
+                    <img src="<?php echo sanitize($r['featured_image']); ?>" class="nsb-thumb" alt="">
+                <?php else: ?>
+                    <div class="nsb-thumb-ph">📰</div>
+                <?php endif; ?>
+                <div class="nsb-text">
+                    <a href="news_article.php?slug=<?php echo urlencode($r['slug']); ?>"><?php echo sanitize($r['title']); ?></a>
+                    <div class="nsb-meta">
+                        <?php echo number_format((int)$r['view_count']); ?> views
+                        <?php if ($r['published_at']): ?> · <?php echo date('M j', strtotime($r['published_at'])); ?><?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Most read -->
+        <?php if ($sidebarPopular): ?>
+        <div class="nsb-widget">
+            <div class="nsb-head">🔥 Most Read</div>
+            <?php foreach ($sidebarPopular as $n => $p): ?>
+            <div class="nsb-item">
+                <span class="nsb-num"><?php echo $n + 1; ?></span>
+                <div class="nsb-text">
+                    <a href="news_article.php?slug=<?php echo urlencode($p['slug']); ?>"><?php echo sanitize($p['title']); ?></a>
+                    <div class="nsb-meta"><?php echo number_format((int)$p['view_count']); ?> views</div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Upcoming events -->
+        <?php if ($sidebarEvents): ?>
+        <div class="nsb-widget">
+            <div class="nsb-head">📅 Upcoming Events</div>
+            <?php foreach ($sidebarEvents as $ev): ?>
+            <div class="nsb-event">
+                <div class="nsb-ev-date"><?php echo date('D, M j', strtotime($ev['start_date'])); ?></div>
+                <div class="nsb-ev-title"><a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>"><?php echo sanitize($ev['title']); ?></a></div>
+            </div>
+            <?php endforeach; ?>
+            <div style="padding:10px 14px;"><a href="events.php" style="font-size:.8rem;color:var(--primary);font-weight:700;text-decoration:none;">View all events →</a></div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Sidebar ad -->
+        <?php if ($sidebarAd2): ?>
+        <div class="nsb-widget">
+            <div class="nsb-ad">
+                <div class="nsb-ad-label">Advertisement</div>
+                <a href="ad_click.php?id=<?php echo (int)$sidebarAd2['id']; ?>" target="_blank" rel="noopener sponsored">
+                    <?php if ($sidebarAd2['image']): ?>
+                        <img src="<?php echo sanitize($sidebarAd2['image']); ?>" alt="<?php echo sanitize($sidebarAd2['title']); ?>">
+                    <?php else: ?>
+                        <p style="font-size:.82rem;font-weight:600;color:var(--text-muted);margin:0;"><?php echo sanitize($sidebarAd2['title']); ?></p>
+                    <?php endif; ?>
+                </a>
+            </div>
+        </div>
+        <?php endif; ?>
+
+    </aside>
+    </div><!-- /na-layout -->
+    </div><!-- /na-shell -->
 
     <?php if ($user): ?>
         <?php $activeNav = 'news'; require __DIR__ . '/partials/bottom_nav.php'; ?>
