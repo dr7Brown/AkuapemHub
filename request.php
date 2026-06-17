@@ -23,7 +23,7 @@ $escrowMinBudget = (float)get_platform_setting('escrow_min_budget', 0);
 $draft  = null;
 $editId = intval($_GET['edit'] ?? 0);
 if ($editId > 0) {
-    $dStmt = $pdo->prepare("SELECT * FROM service_requests WHERE id = ? AND status = 'draft' AND customer_id = ?");
+    $dStmt = $pdo->prepare("SELECT * FROM service_requests WHERE id = ? AND status IN ('draft','rejected') AND customer_id = ?");
     $dStmt->execute([$editId, $user['id']]);
     $draft = $dStmt->fetch();
     if (!$draft) {
@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,google_maps_link=?,
                     budget=?,budget_amount=?,skills_needed=?,workers_needed=?,payment_mode=?,job_type=?,
                     deadline_value=?,deadline_unit=?,deadline_date=?,updated_at=NOW()
-                    WHERE id=? AND status='draft' AND customer_id=?")
+                    WHERE id=? AND status IN ('draft','rejected') AND customer_id=?")
                     ->execute([$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,$googleMapsLink,
                         $budget,$draftBudgetAmount,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
                         $deadlineValue,$deadlineUnit,$deadlineDate,$postEditId,$user['id']]);
@@ -167,13 +167,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $postingFeeStatus = $postingFeePaid ? 'pending' : 'free';
 
         if ($postEditId > 0) {
-            // Publishing an existing draft — update in place
+            // Publishing an existing draft or rejected request — update in place
             $pdo->prepare("UPDATE service_requests SET
                 title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,google_maps_link=?,
                 budget=?,budget_amount=?,contact_info=?,skills_needed=?,workers_needed=?,
                 payment_mode=?,job_type=?,deadline_value=?,deadline_unit=?,deadline_date=?,
-                status=?,payment_status='unpaid',commission_percent=?,posting_fee_status=?,updated_at=NOW()
-                WHERE id=? AND status='draft' AND customer_id=?")
+                status=?,payment_status='unpaid',commission_percent=?,posting_fee_status=?,
+                rejection_reason=NULL,updated_at=NOW()
+                WHERE id=? AND status IN ('draft','rejected') AND customer_id=?")
                 ->execute([$title,$description,$categoryId,$location,$latitude,$longitude,$googleMapsLink,
                     $budget,$budgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,
                     $paymentMode,$jobType,$deadlineValue,$deadlineUnit,$deadlineDate,
@@ -282,7 +283,17 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             <input type="hidden" name="submit_type" id="submit-type-input" value="publish" />
             <?php if ($draft): ?>
                 <input type="hidden" name="edit_id" value="<?php echo (int)$draft['id']; ?>" />
+                <?php if ($draft['status'] === 'rejected'): ?>
+                <div class="alert alert-error" style="margin-bottom:8px;">
+                    <strong>Not approved.</strong>
+                    <?php if ($draft['rejection_reason']): ?>
+                        Reason: <?php echo sanitize($draft['rejection_reason']); ?>
+                    <?php endif; ?>
+                    Please update your listing and resubmit.
+                </div>
+                <?php else: ?>
                 <div class="alert alert-info" style="margin-bottom:8px;">Editing draft — publish when you're ready.</div>
+                <?php endif; ?>
             <?php endif; ?>
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>

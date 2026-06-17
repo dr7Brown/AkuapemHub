@@ -66,17 +66,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     header('Location: news.php?deleted=1'); exit;
 }
 
+// Reject article
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reject') {
+    csrf_check();
+    $tid    = (int)($_POST['id'] ?? 0);
+    $reason = trim($_POST['rejection_reason'] ?? '');
+    $row    = $pdo->prepare("SELECT id, title, user_id FROM news WHERE id=? LIMIT 1");
+    $row->execute([$tid]);
+    $art = $row->fetch();
+    if ($art) {
+        $pdo->prepare("UPDATE news SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")
+            ->execute([$reason ?: null, $tid]);
+        log_audit_action($user['id'], 'news_reject', "Rejected article #{$tid}: {$art['title']}");
+        if ($art['user_id']) {
+            $reasonNote = $reason ? ' Reason: ' . $reason : '';
+            notify_user((int)$art['user_id'], 'Article not approved',
+                '"' . $art['title'] . '" was not approved.' . $reasonNote . ' You can edit and resubmit it.', 'warning');
+        }
+    }
+    header('Location: news.php?saved=1'); exit;
+}
+
 $feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0');
 $feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
 
 $articles = $pdo->query("
     SELECT n.id, n.title, n.slug, n.status, n.view_count, n.published_at, n.created_at, n.user_id,
-           u.name AS submitter_name
+           n.rejection_reason, u.name AS submitter_name
     FROM news n LEFT JOIN users u ON u.id = n.user_id
     ORDER BY n.created_at DESC")->fetchAll();
-$total     = count($articles);
-$published = count(array_filter($articles, fn($a) => $a['status'] === 'published'));
-$drafts    = $total - $published;
+$total      = count($articles);
+$published  = count(array_filter($articles, fn($a) => $a['status'] === 'published'));
+$rejected   = count(array_filter($articles, fn($a) => $a['status'] === 'rejected'));
+$drafts     = $total - $published - $rejected;
 $totalViews = array_sum(array_column($articles, 'view_count'));
 ?>
 <!DOCTYPE html>
@@ -100,6 +122,7 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
         .an-title a:hover { color:var(--primary); }
         .badge-pub  { background:#d1fae5; color:#065f46; font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:10px; }
         .badge-dft  { background:#f3f4f6; color:#6b7280; font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:10px; }
+        .badge-rej  { background:#fee2e2; color:#991b1b; font-size:.72rem; font-weight:700; padding:2px 8px; border-radius:10px; }
         .an-actions { display:flex; gap:6px; align-items:center; }
         .an-fee-panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:20px; }
         .an-fee-panel h3 { font-size:.88rem; font-weight:800; margin:0 0 12px; }
@@ -143,6 +166,7 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
             <div class="an-stat"><strong><?php echo $total; ?></strong><span>Total Articles</span></div>
             <div class="an-stat"><strong><?php echo $published; ?></strong><span>Published</span></div>
             <div class="an-stat"><strong><?php echo $drafts; ?></strong><span>Drafts</span></div>
+            <div class="an-stat"><strong style="color:#dc2626;"><?php echo $rejected; ?></strong><span>Rejected</span></div>
             <div class="an-stat"><strong><?php echo number_format($totalViews); ?></strong><span>Total Views</span></div>
         </div>
 
@@ -167,6 +191,11 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                     <td class="an-title">
                         <a href="../news_article.php?slug=<?php echo urlencode($a['slug']); ?>" target="_blank"><?php echo sanitize($a['title']); ?> ↗</a>
                         <div style="font-size:.75rem;color:var(--text-muted);">/<?php echo sanitize($a['slug']); ?></div>
+                        <?php if ($a['status'] === 'rejected' && $a['rejection_reason']): ?>
+                        <div style="font-size:.74rem;color:#991b1b;margin-top:4px;background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:4px 8px;">
+                            <strong>Reason:</strong> <?php echo sanitize($a['rejection_reason']); ?>
+                        </div>
+                        <?php endif; ?>
                     </td>
                     <td style="font-size:.82rem;">
                         <?php if ($a['user_id'] && $a['submitter_name']): ?>
@@ -176,12 +205,16 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                             <span style="color:var(--text-muted);">Admin</span>
                         <?php endif; ?>
                     </td>
-                    <td><span class="badge-<?php echo $a['status'] === 'published' ? 'pub' : 'dft'; ?>"><?php echo $a['status']; ?></span></td>
+                    <td><?php
+                        $bc = match($a['status']) { 'published' => 'badge-pub', 'rejected' => 'badge-rej', default => 'badge-dft' };
+                        echo '<span class="' . $bc . '">' . sanitize($a['status']) . '</span>';
+                    ?></td>
                     <td><?php echo number_format((int)$a['view_count']); ?></td>
                     <td><?php echo $a['published_at'] ? date('M j, Y', strtotime($a['published_at'])) : '—'; ?></td>
                     <td>
                         <div class="an-actions">
                             <a href="news_edit.php?id=<?php echo (int)$a['id']; ?>" class="button button-small">Edit</a>
+                            <?php if ($a['status'] !== 'rejected'): ?>
                             <form method="post" action="news.php" style="display:inline;">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="toggle_id" value="<?php echo (int)$a['id']; ?>">
@@ -189,6 +222,19 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                                     <?php echo $a['status'] === 'published' ? 'Unpublish' : 'Publish'; ?>
                                 </button>
                             </form>
+                            <?php endif; ?>
+                            <?php if ($a['status'] === 'rejected'): ?>
+                            <form method="post" action="news.php" style="display:inline;">
+                                <?php echo csrf_field(); ?>
+                                <input type="hidden" name="toggle_id" value="<?php echo (int)$a['id']; ?>">
+                                <button type="submit" class="button button-small button-secondary">↩ Draft</button>
+                            </form>
+                            <?php endif; ?>
+                            <?php if ($a['status'] !== 'published' && $a['user_id']): ?>
+                            <button onclick="openRejectModal(<?php echo (int)$a['id']; ?>)"
+                                    class="button button-small"
+                                    style="background:#fff7ed;color:#c2410c;border-color:#fdba74;">Reject</button>
+                            <?php endif; ?>
                             <form method="post" action="news.php" style="display:inline;" onsubmit="return confirm('Delete this article permanently?')">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="delete_id" value="<?php echo (int)$a['id']; ?>">
@@ -203,5 +249,35 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
         </div>
         <?php endif; ?>
     </main>
+
+<!-- Reject modal -->
+<div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeRejectModal()">
+    <div style="background:#fff;border-radius:14px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="margin:0 0 6px;font-size:1rem;">Reject Article</h3>
+        <p style="font-size:.85rem;color:#6b7280;margin:0 0 14px;">Optionally explain why. The author will see this and can edit and resubmit.</p>
+        <form method="post" action="news.php">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="reject">
+            <input type="hidden" name="id" id="reject-target-id" value="">
+            <textarea name="rejection_reason" rows="4"
+                      placeholder="e.g. Needs more detail, incorrect information, unrelated to the community…"
+                      style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:.88rem;resize:vertical;margin-bottom:12px;"></textarea>
+            <div style="display:flex;gap:10px;">
+                <button type="submit" class="button button-primary" style="background:#dc2626;border-color:#dc2626;">Reject article</button>
+                <button type="button" onclick="closeRejectModal()" class="button button-secondary">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+function openRejectModal(id) {
+    document.getElementById('reject-target-id').value = id;
+    var m = document.getElementById('reject-modal');
+    m.style.display = 'flex';
+}
+function closeRejectModal() {
+    document.getElementById('reject-modal').style.display = 'none';
+}
+</script>
 </body>
 </html>

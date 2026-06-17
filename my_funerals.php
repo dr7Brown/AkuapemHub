@@ -12,6 +12,7 @@ $errors  = [];
 $success = match($_GET['msg'] ?? '') {
     'deleted'   => 'Announcement deleted.',
     'submitted' => 'Announcement submitted and is pending admin review.',
+    'updated'   => 'Announcement updated and resubmitted for review.',
     default     => '',
 };
 
@@ -41,9 +42,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     }
 }
 
-// Submit new announcement
+// Submit / update announcement
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     csrf_check();
+    $postEditId     = (int)($_POST['edit_id'] ?? 0);
     $googleMapsLink = trim($_POST['google_maps_link'] ?? '') ?: null;
     $fields = ['deceased_name','gender','age','date_of_birth','date_of_death','biography',
                'wake_keeping_date','burial_date','thanksgiving_date','venue','gps_address',
@@ -62,18 +64,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
         $errors[] = 'Invalid email address.';
     }
 
-    $photoPath  = null;
-    $posterPath = null;
+    // For edit mode, fetch existing photos as fallback
+    $existingPhoto  = null;
+    $existingPoster = null;
+    if ($postEditId) {
+        $exRow = $pdo->prepare("SELECT photograph, funeral_poster FROM funeral_announcements WHERE id=? AND user_id=? AND status='rejected' LIMIT 1");
+        $exRow->execute([$postEditId, $user['id']]);
+        $exData = $exRow->fetch();
+        if ($exData) {
+            $existingPhoto  = $exData['photograph'];
+            $existingPoster = $exData['funeral_poster'];
+        } else {
+            $errors[] = 'Cannot edit this announcement.';
+        }
+    }
+
+    $photoPath  = $existingPhoto;
+    $posterPath = $existingPoster;
     if (!empty($_FILES['photograph']['name'])) {
-        $photoPath = save_uploaded_image($_FILES['photograph'], 'uploads/funerals', 800, 85);
-        if (!$photoPath) $errors[] = 'Photograph upload failed. JPEG/PNG/WebP, max 5 MB.';
+        $p = save_uploaded_image($_FILES['photograph'], 'uploads/funerals', 800, 85);
+        if ($p) $photoPath = $p; else $errors[] = 'Photograph upload failed. JPEG/PNG/WebP, max 5 MB.';
     }
     if (!empty($_FILES['funeral_poster']['name'])) {
-        $posterPath = save_uploaded_image($_FILES['funeral_poster'], 'uploads/funerals', 1200, 85);
-        if (!$posterPath) $errors[] = 'Poster upload failed. JPEG/PNG/WebP, max 5 MB.';
+        $p2 = save_uploaded_image($_FILES['funeral_poster'], 'uploads/funerals', 1200, 85);
+        if ($p2) $posterPath = $p2; else $errors[] = 'Poster upload failed. JPEG/PNG/WebP, max 5 MB.';
     }
 
     if (!$errors) {
+        if ($postEditId) {
+            $pdo->prepare(
+                "UPDATE funeral_announcements SET
+                 deceased_name=?,gender=?,age=?,photograph=?,funeral_poster=?,date_of_birth=?,date_of_death=?,biography=?,
+                 wake_keeping_date=?,burial_date=?,thanksgiving_date=?,venue=?,gps_address=?,
+                 organizer_name=?,organizer_phone=?,organizer_email=?,google_maps_link=?,
+                 status='pending',rejection_reason=NULL,updated_at=NOW()
+                 WHERE id=? AND user_id=?"
+            )->execute([
+                $data['deceased_name'], $data['gender'] ?: 'male', $data['age'] ?: null,
+                $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
+                $data['wake_keeping_date'] ?: null, $data['burial_date'] ?: null, $data['thanksgiving_date'] ?: null,
+                $data['venue'], $data['gps_address'], $data['organizer_name'], $data['organizer_phone'],
+                $data['organizer_email'], $googleMapsLink, $postEditId, $user['id']
+            ]);
+            notify_admins_and_managers(
+                'Funeral announcement resubmitted',
+                display_name($user) . ' resubmitted a funeral announcement for "' . $data['deceased_name'] . '". Review in Admin → Funerals.',
+                'info'
+            );
+            header('Location: my_funerals.php?msg=updated'); exit;
+        }
+
         $status = $feeEnabled ? 'pending_payment' : 'pending';
         $slug   = fa_slug($pdo, $data['deceased_name'] . ' ' . date('Y'));
         $pdo->prepare(
@@ -100,6 +140,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
         );
         header('Location: my_funerals.php?msg=submitted'); exit;
     }
+}
+
+// Edit pre-fill (only rejected announcements can be edited)
+$editAnnouncement = null;
+if (isset($_GET['edit']) && (int)$_GET['edit']) {
+    $editStmt = $pdo->prepare("SELECT * FROM funeral_announcements WHERE id=? AND user_id=? AND status='rejected' LIMIT 1");
+    $editStmt->execute([(int)$_GET['edit'], $user['id']]);
+    $editAnnouncement = $editStmt->fetch() ?: null;
 }
 
 $myAnnouncements = $pdo->prepare(
@@ -169,9 +217,16 @@ $statusLabels = [
             <!-- Submit form -->
             <div class="mf-main">
             <div class="mf-form-wrap">
-            <h2>Submit a Funeral Announcement</h2>
+            <h2><?php echo $editAnnouncement ? 'Edit Announcement' : 'Submit a Funeral Announcement'; ?></h2>
 
-            <?php if ($feeEnabled): ?>
+            <?php if ($editAnnouncement && !empty($editAnnouncement['rejection_reason'])): ?>
+            <div class="alert alert-error" style="margin-bottom:14px;">
+                <strong>Not approved.</strong> Reason: <?php echo sanitize($editAnnouncement['rejection_reason']); ?>
+                Please update and resubmit.
+            </div>
+            <?php endif; ?>
+
+            <?php if ($feeEnabled && !$editAnnouncement): ?>
             <div class="mf-fee-notice">
                 💳 A <strong>GH₵ <?php echo number_format($feeAmount, 2); ?></strong> publishing fee applies.
                 After submitting your details, you'll be taken to a secure Paystack checkout to complete payment.
@@ -185,7 +240,10 @@ $statusLabels = [
             <form method="post" enctype="multipart/form-data">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="form_submit" value="1">
-                <?php $fp = $errors ? $_POST : []; $fv = fn($k) => sanitize($fp[$k] ?? ''); ?>
+                <?php if ($editAnnouncement): ?>
+                <input type="hidden" name="edit_id" value="<?php echo (int)$editAnnouncement['id']; ?>">
+                <?php endif; ?>
+                <?php $fp = $errors ? $_POST : ($editAnnouncement ?: []); $fv = fn($k) => sanitize($fp[$k] ?? ''); ?>
 
                 <!-- Deceased info -->
                 <div class="mf-field">
@@ -280,7 +338,14 @@ $statusLabels = [
                     </div>
                 </div>
 
-                <button type="submit" class="button button-primary">Submit Announcement</button>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+                    <button type="submit" class="button button-primary">
+                        <?php echo $editAnnouncement ? 'Save & Resubmit' : 'Submit Announcement'; ?>
+                    </button>
+                    <?php if ($editAnnouncement): ?>
+                    <a href="my_funerals.php" class="button button-secondary">Cancel</a>
+                    <?php endif; ?>
+                </div>
             </form>
         </div>
             </div><!-- /.mf-main -->
@@ -308,12 +373,20 @@ $statusLabels = [
                             <span class="mf-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                                 <?php echo $sl['label']; ?>
                             </span>
+                            <?php if ($fa['status'] === 'rejected' && !empty($fa['rejection_reason'])): ?>
+                            <p style="font-size:.72rem;color:#991b1b;margin:4px 0 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:4px 8px;">
+                                <strong>Reason:</strong> <?php echo sanitize($fa['rejection_reason']); ?>
+                            </p>
+                            <?php endif; ?>
                             <div class="mf-actions">
                                 <?php if ($fa['status'] === 'approved' && $fa['slug']): ?>
                                 <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="button button-small" target="_blank">View</a>
                                 <?php endif; ?>
                                 <?php if ($fa['status'] === 'pending_payment'): ?>
                                 <a href="pay_funeral.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">Pay</a>
+                                <?php endif; ?>
+                                <?php if ($fa['status'] === 'rejected'): ?>
+                                <a href="my_funerals.php?edit=<?php echo (int)$fa['id']; ?>" class="button button-small button-secondary">Edit</a>
                                 <?php endif; ?>
                                 <?php if (in_array($fa['status'], ['pending_payment','pending','rejected'])): ?>
                                 <form method="post" onsubmit="return confirm('Delete this announcement?')">

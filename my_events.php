@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $check = $pdo->prepare("SELECT id, status FROM events WHERE id=? AND user_id=? LIMIT 1");
     $check->execute([$did, $user['id']]);
     $row = $check->fetch();
-    if ($row && in_array($row['status'], ['pending_payment','draft','cancelled'])) {
+    if ($row && in_array($row['status'], ['pending_payment','draft','cancelled','rejected'])) {
         $pdo->prepare("DELETE FROM events WHERE id=?")->execute([$did]);
         header('Location: my_events.php?msg=deleted'); exit;
     }
@@ -89,7 +89,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
             $pdo->prepare(
                 "UPDATE events SET title=?,slug=?,featured_image=?,description=?,venue=?,gps_address=?,
                  start_date=?,end_date=?,start_time=?,end_time=?,organizer_name=?,
-                 ticket_type=?,ticket_price=?,registration_link=?,google_maps_link=?,status='draft',updated_at=NOW()
+                 ticket_type=?,ticket_price=?,registration_link=?,google_maps_link=?,
+                 status='draft',rejection_reason=NULL,updated_at=NOW()
                  WHERE id=? AND user_id=?"
             )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,$startTime,$endTime,
                         $organizer,$ticketType,$ticketPrice,$regLink,$googleMapsLink,$editId,$user['id']]);
@@ -139,6 +140,7 @@ $statusLabels = [
     'draft'           => ['label'=>'Under Review',     'color'=>'#2563eb','bg'=>'#eff6ff'],
     'published'       => ['label'=>'Published',        'color'=>'#059669','bg'=>'#ecfdf5'],
     'cancelled'       => ['label'=>'Cancelled',        'color'=>'#dc2626','bg'=>'#fee2e2'],
+    'rejected'        => ['label'=>'Rejected',         'color'=>'#dc2626','bg'=>'#fee2e2'],
 ];
 
 // On validation error for a new submission, fall back to $_POST so fields retain their values
@@ -348,6 +350,11 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                             <span class="me-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                                 <?php echo $sl['label']; ?>
                             </span>
+                            <?php if ($ev['status'] === 'rejected' && !empty($ev['rejection_reason'])): ?>
+                            <p style="font-size:.72rem;color:#991b1b;margin:4px 0 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:4px 8px;">
+                                <strong>Reason:</strong> <?php echo sanitize($ev['rejection_reason']); ?>
+                            </p>
+                            <?php endif; ?>
                             <div class="me-actions">
                                 <?php if ($ev['status'] === 'published' && $ev['slug']): ?>
                                     <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="button button-small" target="_blank">View</a>
@@ -355,7 +362,7 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                                 <?php if ($ev['status'] === 'pending_payment'): ?>
                                     <a href="pay_event.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">Pay</a>
                                 <?php endif; ?>
-                                <?php if (in_array($ev['status'], ['pending_payment','draft','cancelled'])): ?>
+                                <?php if (in_array($ev['status'], ['pending_payment','draft','cancelled','rejected'])): ?>
                                     <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-small button-secondary">Edit</a>
                                     <form method="post" onsubmit="return confirm('Delete this event?')">
                                         <?php echo csrf_field(); ?>

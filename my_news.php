@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $chk = $pdo->prepare("SELECT id, status FROM news WHERE id=? AND user_id=? LIMIT 1");
     $chk->execute([$did, $user['id']]);
     $row = $chk->fetch();
-    if ($row && in_array($row['status'], ['draft', 'pending_payment'])) {
+    if ($row && in_array($row['status'], ['draft', 'pending_payment', 'rejected'])) {
         $pdo->prepare("DELETE FROM news WHERE id=?")->execute([$did]);
         header('Location: my_news.php?msg=deleted'); exit;
     }
@@ -75,7 +75,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
         $slug = mn_slug($pdo, $title . ' ' . date('Y'), $editId);
         if ($editId) {
             $pdo->prepare(
-                "UPDATE news SET title=?,slug=?,summary=?,content=?,featured_image=?,updated_at=NOW()
+                "UPDATE news SET title=?,slug=?,summary=?,content=?,featured_image=?,
+                 status='draft',rejection_reason=NULL,updated_at=NOW()
                  WHERE id=? AND user_id=? AND status != 'published'"
             )->execute([$title, $slug, $summary, $content, $imgPath, $editId, $user['id']]);
             header('Location: my_news.php?msg=updated'); exit;
@@ -118,6 +119,7 @@ $statusLabels = [
     'pending_payment' => ['label' => 'Awaiting Payment', 'color' => '#92400e', 'bg' => '#fffbeb'],
     'draft'           => ['label' => 'Under Review',     'color' => '#2563eb', 'bg' => '#eff6ff'],
     'published'       => ['label' => 'Published',        'color' => '#059669', 'bg' => '#ecfdf5'],
+    'rejected'        => ['label' => 'Rejected',         'color' => '#dc2626', 'bg' => '#fee2e2'],
 ];
 ?>
 <!DOCTYPE html>
@@ -256,6 +258,11 @@ $statusLabels = [
                             <span class="mn-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                                 <?php echo $sl['label']; ?>
                             </span>
+                            <?php if ($art['status'] === 'rejected' && !empty($art['rejection_reason'])): ?>
+                            <p style="font-size:.72rem;color:#991b1b;margin:4px 0 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:4px 8px;">
+                                <strong>Reason:</strong> <?php echo sanitize($art['rejection_reason']); ?>
+                            </p>
+                            <?php endif; ?>
                             <div class="mn-actions">
                                 <?php if ($art['status'] === 'published' && $art['slug']): ?>
                                     <a href="news_article.php?slug=<?php echo urlencode($art['slug']); ?>" class="button button-small" target="_blank">View</a>
@@ -263,7 +270,7 @@ $statusLabels = [
                                 <?php if ($art['status'] === 'pending_payment'): ?>
                                     <a href="pay_news.php?id=<?php echo (int)$art['id']; ?>" class="button button-small button-primary">Pay</a>
                                 <?php endif; ?>
-                                <?php if (in_array($art['status'], ['draft', 'pending_payment'])): ?>
+                                <?php if (in_array($art['status'], ['draft', 'pending_payment', 'rejected'])): ?>
                                     <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-small button-secondary">Edit</a>
                                     <form method="post" onsubmit="return confirm('Delete this article?')">
                                         <?php echo csrf_field(); ?>
