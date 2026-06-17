@@ -9,7 +9,12 @@ $feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0');
 $feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
 
 $errors  = [];
-$success = '';
+$success = match($_GET['msg'] ?? '') {
+    'deleted'   => 'Article deleted.',
+    'updated'   => 'Article updated.',
+    'submitted' => 'Article submitted and is pending admin review.',
+    default     => '',
+};
 
 // Unique slug
 function mn_slug($pdo, $base, $excludeId = 0) {
@@ -31,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $row = $chk->fetch();
     if ($row && in_array($row['status'], ['draft', 'pending_payment'])) {
         $pdo->prepare("DELETE FROM news WHERE id=?")->execute([$did]);
-        $success = 'Article deleted.';
+        header('Location: my_news.php?msg=deleted'); exit;
     }
 }
 
@@ -73,7 +78,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                 "UPDATE news SET title=?,slug=?,summary=?,content=?,featured_image=?,updated_at=NOW()
                  WHERE id=? AND user_id=? AND status != 'published'"
             )->execute([$title, $slug, $summary, $content, $imgPath, $editId, $user['id']]);
-            $success = 'Article updated.';
+            header('Location: my_news.php?msg=updated'); exit;
         } else {
             $initStatus = $feeEnabled ? 'pending_payment' : 'draft';
             $pdo->prepare(
@@ -89,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                 display_name($user) . ' submitted a new article: "' . $title . '". Review and publish in the News admin panel.',
                 'info'
             );
-            $success = 'Article submitted and is pending admin review.';
+            header('Location: my_news.php?msg=submitted'); exit;
         }
     }
 }

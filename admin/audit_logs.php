@@ -9,8 +9,14 @@ if (!is_admin()) {
 }
 
 $user = current_user();
-$success = '';
 $error   = '';
+$_n      = (int)($_GET['n'] ?? 0);
+$success = match($_GET['msg'] ?? '') {
+    'deleted'      => 'Log entry deleted.',
+    'bulk_deleted' => $_n . ' log ' . ($_n === 1 ? 'entry' : 'entries') . ' deleted.',
+    'cleared'      => 'All audit logs cleared.',
+    default        => '',
+};
 
 // POST: delete entries
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -21,7 +27,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $logId = intval($_POST['log_id']);
         $pdo->prepare('DELETE FROM audit_logs WHERE id = ?')->execute([$logId]);
         log_audit_action($user['id'], 'audit_log_deleted', "Deleted audit log entry #{$logId}");
-        $success = 'Log entry deleted.';
+        header('Location: audit_logs.php?msg=deleted'); exit;
 
     } elseif ($action === 'delete_bulk' && !empty($_POST['selected_logs']) && is_array($_POST['selected_logs'])) {
         $ids = array_filter(array_map('intval', $_POST['selected_logs']));
@@ -29,13 +35,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
             $pdo->prepare("DELETE FROM audit_logs WHERE id IN ($placeholders)")->execute($ids);
             log_audit_action($user['id'], 'audit_log_bulk_deleted', 'Deleted ' . count($ids) . ' audit log entries');
-            $success = count($ids) . ' log ' . (count($ids) === 1 ? 'entry' : 'entries') . ' deleted.';
+            header('Location: audit_logs.php?msg=bulk_deleted&n=' . count($ids)); exit;
         }
 
     } elseif ($action === 'delete_all') {
         $pdo->exec('DELETE FROM audit_logs');
         log_audit_action($user['id'], 'audit_log_cleared', 'All audit log entries cleared');
-        $success = 'All audit logs cleared.';
+        header('Location: audit_logs.php?msg=cleared'); exit;
     }
 }
 

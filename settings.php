@@ -6,8 +6,19 @@ require_login();
 $user = current_user();
 $towns = get_towns();
 $error = '';
-$success = '';
 $section = $_GET['section'] ?? '';
+$success = match($_GET['msg'] ?? '') {
+    'profile_updated'       => 'Profile updated.',
+    'location_updated'      => 'Location updated.',
+    'password_updated'      => 'Password updated.',
+    'notifications_updated' => 'Notification preferences updated.',
+    'bio_updated'           => 'Bio and availability updated.',
+    'id_updated'            => 'Identity information updated.',
+    'skill_removed'         => 'Skill removed.',
+    'skills_added'          => 'Skills added.',
+    'message_sent'          => 'Message sent! We\'ll get back to you within 1–2 business days.',
+    default                 => '',
+};
 $skillCategories = get_skill_categories_with_skills();
 $workerProfile = null;
 if ($user['role'] === 'worker') {
@@ -63,8 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
                 require_once __DIR__ . '/modules/referrals/service.php';
                 award_points((int)$user['id'], 'profile_photo');
             }
-            $user    = settings_refresh_user($pdo, $user['id']);
-            $success = 'Profile updated.';
+            $user = settings_refresh_user($pdo, $user['id']);
+            header("Location: settings.php?section={$section}&msg=profile_updated"); exit;
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'location') {
@@ -75,8 +86,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         $error = 'Please select your town.';
     } else {
         $pdo->prepare('UPDATE users SET town_id=?,latitude=?,longitude=? WHERE id=?')->execute([$townId,$latitude,$longitude,$user['id']]);
-        $user    = settings_refresh_user($pdo, $user['id']);
-        $success = 'Location updated.';
+        $user = settings_refresh_user($pdo, $user['id']);
+        header("Location: settings.php?section={$section}&msg=location_updated"); exit;
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'password') {
     $currentPassword = $_POST['current_password'] ?? '';
@@ -91,13 +102,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
             $error = 'Current password is incorrect.';
         } else {
             $pdo->prepare('UPDATE users SET password_hash=? WHERE id=?')->execute([password_hash($newPassword, PASSWORD_BCRYPT), $user['id']]);
-            $success = 'Password updated.';
+            header("Location: settings.php?section={$section}&msg=password_updated"); exit;
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'notifications') {
     $pdo->prepare('UPDATE users SET email_notifications_enabled=? WHERE id=?')->execute([isset($_POST['email_notifications_enabled'])?1:0, $user['id']]);
-    $user    = settings_refresh_user($pdo, $user['id']);
-    $success = 'Notification preferences updated.';
+    $user = settings_refresh_user($pdo, $user['id']);
+    header("Location: settings.php?section={$section}&msg=notifications_updated"); exit;
 
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_bio') {
     if ($workerProfile) {
@@ -106,7 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         $pdo->prepare('UPDATE worker_profiles SET bio=?,availability=? WHERE user_id=?')->execute([$bio,$avail,$user['id']]);
         $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id=?'); $wpStmt->execute([$user['id']]);
         $workerProfile = $wpStmt->fetch() ?: null;
-        $success = 'Bio and availability updated.';
+        header("Location: settings.php?section={$section}&msg=bio_updated"); exit;
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_id') {
     if ($workerProfile) {
@@ -125,14 +136,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
             $pdo->prepare('UPDATE worker_profiles SET id_type=?,id_number=?,id_document_path=? WHERE user_id=?')->execute([$idType,$idNumber,$idDocPath,$user['id']]);
             $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id=?'); $wpStmt->execute([$user['id']]);
             $workerProfile = $wpStmt->fetch() ?: null;
-            $success = 'Identity information updated.';
+            header("Location: settings.php?section={$section}&msg=id_updated"); exit;
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_remove_skill') {
     if ($workerProfile) {
         $skillId = intval($_POST['skill_id'] ?? 0);
         if ($skillId > 0) $pdo->prepare('DELETE FROM worker_skills WHERE id=? AND worker_profile_id=?')->execute([$skillId,$workerProfile['id']]);
-        $success = 'Skill removed.';
+        header("Location: settings.php?section={$section}&msg=skill_removed"); exit;
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'worker_add_skill') {
     if ($workerProfile) {
@@ -150,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
                 }
                 if ($sn !== '') $skillStmt->execute([$workerProfile['id'], $cid, $sn]);
             }
-            $success = 'Skills added.';
+            header("Location: settings.php?section={$section}&msg=skills_added"); exit;
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'contact_message') {
@@ -165,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
     } else {
         $mailBody = "Name: {$cfName}\nEmail: {$cfEmail}\nSubject: {$cfSubj}\n\nMessage:\n{$cfMsg}";
         @mail(ADMIN_EMAIL, '[AkuapemHub] ' . $cfSubj, $mailBody, "From: " . MAIL_FROM . "\r\nReply-To: {$cfEmail}");
-        $success = 'Message sent! We\'ll get back to you within 1–2 business days.';
+        header("Location: settings.php?section={$section}&msg=message_sent"); exit;
     }
 }
 

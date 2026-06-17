@@ -10,7 +10,7 @@ $stmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
 $stmt->execute([$user['id']]);
 $profile = $stmt->fetch();
 $error = '';
-$success = '';
+$success = ($_GET['msg'] ?? '') === 'updated' ? 'Profile updated.' : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bio = trim($_POST['bio'] ?? '');
@@ -38,10 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         save_worker_schedule($profile['id'], $_POST['schedule_day'] ?? [], $_POST['schedule_start'] ?? [], $_POST['schedule_end'] ?? []);
 
-        $success = 'Profile updated.';
-        $stmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
-        $stmt->execute([$user['id']]);
-        $profile = $stmt->fetch();
+        header('Location: worker_profile.php?msg=updated'); exit;
     }
 }
 

@@ -3,7 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 $user = current_user();
 
-$sent    = false;
+$sent    = isset($_GET['sent']);
 $fError  = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $body = "Name: {$fname}\nEmail: {$femail}\nSubject: {$fsubj}\n\n{$fmsg}";
         @mail(ADMIN_EMAIL, '[AkuapemHub Contact] ' . $fsubj, $body, "From: " . MAIL_FROM . "\r\nReply-To: {$femail}");
-        $sent = true;
+        header('Location: contact.php?sent=1'); exit;
     }
 }
 
