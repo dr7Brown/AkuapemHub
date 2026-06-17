@@ -110,6 +110,7 @@ $openJobs = $pdo->query(
         <a href="find_workers.php" style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Workers</a>
         <a href="events.php"       style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Events</a>
         <a href="news.php"         style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">News</a>
+        <a href="about.php"        style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">About</a>
         <a href="login.php"    class="button button-secondary button-small">Sign in</a>
         <a href="register.php" class="button button-primary button-small">Register</a>
     </nav>
@@ -308,6 +309,15 @@ $openJobs = $pdo->query(
     </div>
 
 </div>
+
+<footer style="text-align:center;padding:20px 16px <?php echo $user ? '80px' : '32px'; ?>;font-size:.8rem;color:#6b7280;border-top:1px solid #e5e7eb;margin-top:8px;">
+    &copy; <?php echo date('Y'); ?> <?php echo sanitize(APP_NAME); ?> &nbsp;·&nbsp;
+    <a href="about.php"   style="color:#6b7280;">About</a> &nbsp;·&nbsp;
+    <a href="support.php" style="color:#6b7280;">Support</a> &nbsp;·&nbsp;
+    <a href="terms.php"   style="color:#6b7280;">Terms</a> &nbsp;·&nbsp;
+    <a href="privacy.php" style="color:#6b7280;">Privacy</a> &nbsp;·&nbsp;
+    <a href="contact.php" style="color:#6b7280;">Contact</a>
+</footer>
 
 <?php if ($user): $activeNav = 'community'; require __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 </body>

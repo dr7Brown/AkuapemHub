@@ -2,7 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 $user = current_user();
-$lastUpdated = '1 June 2025';
+$lastUpdated = '17 June 2025';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -56,7 +56,12 @@ $lastUpdated = '1 June 2025';
             <li><strong>Profile information:</strong> profile photo, skills, availability, worker bio.</li>
             <li><strong>Identity verification:</strong> ID type (Ghana Card, passport, or other), ID number, and uploaded document photos (required for workers seeking a verified badge).</li>
             <li><strong>Job postings:</strong> job title, description, location, category, budget, payment mode, and scheduling preferences.</li>
+            <li><strong>Community events:</strong> event title, description, date, time, venue, organiser name, ticket information, and any featured image you upload.</li>
+            <li><strong>Funeral announcements:</strong> name of the deceased, dates, biography, venue, organiser contact details, photograph of the deceased, and funeral poster image.</li>
+            <li><strong>News articles:</strong> article title, body content, summary, and any featured image you submit for publication.</li>
             <li><strong>Messages:</strong> content of in-platform conversations between users.</li>
+            <li><strong>Ratings and reviews:</strong> star ratings and written feedback you leave after a completed job.</li>
+            <li><strong>Referrals:</strong> referral code usage and the email or username of the person you invited.</li>
         </ul>
         <h3>Information collected automatically</h3>
         <ul>
@@ -69,12 +74,16 @@ $lastUpdated = '1 June 2025';
         <h2 id="how-we-use">2. How we use your information</h2>
         <ul>
             <li>Create and manage your account.</li>
-            <li>Match customers with suitable workers.</li>
+            <li>Match customers with suitable workers based on skills, location, and availability.</li>
             <li>Process payments and hold escrow funds securely.</li>
-            <li>Send transactional notifications (job updates, payment confirmations, application status).</li>
-            <li>Send OTP codes for phone verification via WhatsApp or SMS.</li>
-            <li>Review worker identity documents for verification.</li>
-            <li>Detect and prevent fraud, abuse, and prohibited activities.</li>
+            <li>Send transactional notifications (job updates, payment confirmations, application status, submission approvals or rejections).</li>
+            <li>Send OTP codes for password reset via email.</li>
+            <li>Review and moderate community submissions — events, funeral announcements, and news articles — before they go live.</li>
+            <li>Display approved community content (events, funeral notices, articles) publicly on the Platform.</li>
+            <li>Review worker identity documents for verification badge issuance.</li>
+            <li>Calculate and display leaderboard rankings based on completed jobs and ratings.</li>
+            <li>Track referral activity to award points and manage the referral programme.</li>
+            <li>Detect and prevent fraud, spam, and prohibited activities (including risk signals on job listings).</li>
             <li>Improve the platform through aggregated, anonymous analytics.</li>
             <li>Comply with legal obligations under Ghanaian law.</li>
         </ul>
@@ -82,8 +91,9 @@ $lastUpdated = '1 June 2025';
         <h2 id="sharing">3. Sharing your information</h2>
         <p>We do <strong>not</strong> sell your personal data. We may share information with:</p>
         <ul>
-            <li><strong>Other users:</strong> your public profile (name, photo, skills, location area, rating) is visible to other users. Your full address, phone number, and ID details are never publicly displayed.</li>
-            <li><strong>Service providers:</strong> Paystack (payment processing), WhatsApp / SMS gateway providers (OTP delivery). These providers process data only as instructed by us.</li>
+            <li><strong>Other users:</strong> your public profile (name, username, photo, skills, location area, rating) is visible to other users. Your full address, phone number, and ID details are never publicly displayed.</li>
+            <li><strong>General public (unauthenticated visitors):</strong> approved events, funeral announcements, and published news articles are visible to anyone visiting the Platform, including the organiser name and contact details you voluntarily include in community submissions.</li>
+            <li><strong>Service providers:</strong> Paystack (payment processing) and, where configured, WhatsApp or SMS gateway providers. These providers process data only as instructed by us.</li>
             <li><strong>Law enforcement:</strong> if required by a valid legal order or to protect the safety of users and the platform.</li>
             <li><strong>Business transfers:</strong> in the event of a merger or acquisition, user data may transfer to the successor entity, with notice provided to you.</li>
         </ul>
@@ -118,7 +128,7 @@ $lastUpdated = '1 June 2025';
         <p>To exercise any of these rights, contact us at <a href="mailto:<?php echo sanitize(MAIL_FROM); ?>"><?php echo sanitize(MAIL_FROM); ?></a>. We will respond within 30 days.</p>
 
         <h2 id="retention">8. Data retention</h2>
-        <p>We retain your account data for as long as your account is active. If you delete your account, we remove your personal profile within 30 days. Financial transaction records are retained for a minimum of 7 years as required by Ghanaian financial regulations. Anonymised usage analytics may be retained indefinitely.</p>
+        <p>We retain your account data for as long as your account is active. If you delete your account, we remove your personal profile within 30 days. Community content (events, funeral announcements, articles) that has been published will be removed from public view within 30 days of account closure; content that was never published is deleted immediately. Financial transaction records are retained for a minimum of 7 years as required by Ghanaian financial regulations. Anonymised usage analytics may be retained indefinitely.</p>
 
         <h2 id="children">9. Children's privacy</h2>
         <p><?php echo sanitize(APP_NAME); ?> is intended for users aged 18 and older. We do not knowingly collect personal information from children under 18. If you believe a child has registered without parental consent, contact us immediately and we will delete the account.</p>
@@ -136,6 +146,8 @@ $lastUpdated = '1 June 2025';
 
         <p class="meta" style="margin-top:32px;padding-top:16px;border-top:1px solid var(--border,#e5e7eb);">
             <a href="terms.php">Terms of Service</a> &nbsp;·&nbsp;
+            <a href="support.php">Help &amp; Support</a> &nbsp;·&nbsp;
+            <a href="about.php">About</a> &nbsp;·&nbsp;
             <a href="contact.php">Contact us</a>
         </p>
     </div>
