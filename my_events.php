@@ -154,17 +154,24 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
     <title>My Events — <?php echo APP_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .me-shell  { max-width:800px; margin:0 auto; padding:20px 16px 60px; }
-        .me-list   { display:flex; flex-direction:column; gap:12px; margin-bottom:28px; }
-        .me-item   { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:14px 16px; display:flex; align-items:flex-start; gap:14px; }
-        .me-thumb  { width:56px; height:56px; border-radius:10px; background:#f3f4f6; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.5rem; }
+        .me-shell   { max-width:1080px; margin:0 auto; padding:20px 16px 60px; }
+        .me-layout  { display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start; }
+        @media(max-width:860px){ .me-layout { grid-template-columns:1fr; } }
+
+        /* Sidebar */
+        .me-sidebar { position:sticky; top:16px; }
+        .me-sidebar-hd { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted,#6b7280); margin-bottom:12px; }
+        .me-list   { display:flex; flex-direction:column; gap:10px; }
+        .me-item   { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:12px 14px; display:flex; align-items:flex-start; gap:12px; }
+        .me-thumb  { width:48px; height:48px; border-radius:8px; background:#f3f4f6; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.3rem; }
         .me-thumb img { width:100%; height:100%; object-fit:cover; }
         .me-info   { flex:1; min-width:0; }
-        .me-name   { font-weight:800; font-size:.95rem; margin:0 0 4px; }
-        .me-meta   { font-size:.78rem; color:var(--text-muted,#6b7280); }
-        .me-status { display:inline-block; font-size:.68rem; font-weight:800; padding:3px 9px; border-radius:20px; margin-top:5px; }
-        .me-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; flex-wrap:wrap; }
+        .me-name   { font-weight:700; font-size:.88rem; margin:0 0 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .me-meta   { font-size:.75rem; color:var(--text-muted,#6b7280); }
+        .me-status { display:inline-block; font-size:.66rem; font-weight:800; padding:2px 8px; border-radius:20px; margin-top:4px; }
+        .me-actions { display:flex; gap:6px; align-items:center; flex-shrink:0; flex-wrap:wrap; margin-top:8px; }
 
+        /* Form */
         .me-form-wrap { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:20px; }
         .me-form-wrap h2 { font-size:1rem; font-weight:800; margin:0 0 16px; }
         .me-field  { margin-bottom:16px; }
@@ -188,55 +195,10 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
     <div class="me-shell">
         <?php if ($success): ?><div class="alert alert-success" style="margin-bottom:16px;"><?php echo sanitize($success); ?></div><?php endif; ?>
 
-        <!-- Existing submissions -->
-        <?php if ($myList): ?>
-        <div class="me-list">
-            <?php foreach ($myList as $ev): ?>
-            <?php $sl = $statusLabels[$ev['status']] ?? $statusLabels['draft']; ?>
-            <div class="me-item">
-                <div class="me-thumb">
-                    <?php if ($ev['featured_image']): ?>
-                        <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="">
-                    <?php else: ?>
-                        📅
-                    <?php endif; ?>
-                </div>
-                <div class="me-info">
-                    <p class="me-name"><?php echo sanitize($ev['title']); ?></p>
-                    <p class="me-meta">
-                        📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?>
-                        <?php if ($ev['venue']): ?>&nbsp;·&nbsp;<?php echo sanitize(mb_substr($ev['venue'],0,40)); ?><?php endif; ?>
-                    </p>
-                    <span class="me-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
-                        <?php echo $sl['label']; ?>
-                    </span>
-                    <?php if ($ev['status'] === 'draft'): ?>
-                    <p style="font-size:.77rem;color:#1d4ed8;margin:5px 0 0;">Awaiting admin review before going live.</p>
-                    <?php endif; ?>
-                </div>
-                <div class="me-actions">
-                    <?php if ($ev['status'] === 'published' && $ev['slug']): ?>
-                        <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="button button-small" target="_blank">View</a>
-                    <?php endif; ?>
-                    <?php if ($ev['status'] === 'pending_payment'): ?>
-                        <a href="pay_event.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">Pay to Publish</a>
-                    <?php endif; ?>
-                    <?php if (in_array($ev['status'], ['pending_payment','draft','cancelled'])): ?>
-                        <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-small button-secondary">Edit</a>
-                        <form method="post" onsubmit="return confirm('Delete this event?')">
-                            <?php echo csrf_field(); ?>
-                            <input type="hidden" name="delete_id" value="<?php echo (int)$ev['id']; ?>">
-                            <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
-                        </form>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-        <?php endif; ?>
-
-        <!-- Submit / Edit form -->
-        <div class="me-form-wrap">
+        <div class="me-layout">
+            <!-- Submit / Edit form -->
+            <div class="me-main">
+            <div class="me-form-wrap">
             <h2><?php echo $editEvent ? 'Edit Event' : 'Submit a Community Event'; ?></h2>
 
             <p style="font-size:.83rem;color:var(--text-muted);margin:-4px 0 16px;">
@@ -363,6 +325,54 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                 </div>
             </form>
         </div>
+        </div><!-- /.me-main -->
+
+            <!-- Sidebar: submissions list -->
+            <aside class="me-sidebar">
+                <?php if ($myList): ?>
+                <div class="me-sidebar-hd">My Events (<?php echo count($myList); ?>)</div>
+                <div class="me-list">
+                    <?php foreach ($myList as $ev): ?>
+                    <?php $sl = $statusLabels[$ev['status']] ?? $statusLabels['draft']; ?>
+                    <div class="me-item">
+                        <div class="me-thumb">
+                            <?php if ($ev['featured_image']): ?>
+                                <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="">
+                            <?php else: ?>
+                                📅
+                            <?php endif; ?>
+                        </div>
+                        <div class="me-info">
+                            <p class="me-name"><?php echo sanitize($ev['title']); ?></p>
+                            <p class="me-meta">📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?></p>
+                            <span class="me-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
+                                <?php echo $sl['label']; ?>
+                            </span>
+                            <div class="me-actions">
+                                <?php if ($ev['status'] === 'published' && $ev['slug']): ?>
+                                    <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="button button-small" target="_blank">View</a>
+                                <?php endif; ?>
+                                <?php if ($ev['status'] === 'pending_payment'): ?>
+                                    <a href="pay_event.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">Pay</a>
+                                <?php endif; ?>
+                                <?php if (in_array($ev['status'], ['pending_payment','draft','cancelled'])): ?>
+                                    <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-small button-secondary">Edit</a>
+                                    <form method="post" onsubmit="return confirm('Delete this event?')">
+                                        <?php echo csrf_field(); ?>
+                                        <input type="hidden" name="delete_id" value="<?php echo (int)$ev['id']; ?>">
+                                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Del</button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php else: ?>
+                <p style="font-size:.83rem;color:var(--text-muted,#6b7280);">No events submitted yet.</p>
+                <?php endif; ?>
+            </aside>
+        </div><!-- /.me-layout -->
     </div>
 
     <script>

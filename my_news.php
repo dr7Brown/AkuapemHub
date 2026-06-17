@@ -128,17 +128,24 @@ $statusLabels = [
     <title>My Articles — <?php echo APP_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .mn-shell  { max-width:800px; margin:0 auto; padding:20px 16px 60px; }
-        .mn-list   { display:flex; flex-direction:column; gap:12px; margin-bottom:28px; }
-        .mn-item   { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:14px 16px; display:flex; align-items:flex-start; gap:14px; }
-        .mn-thumb  { width:64px; height:48px; border-radius:8px; background:#f3f4f6; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.4rem; }
+        .mn-shell  { max-width:1080px; margin:0 auto; padding:20px 16px 60px; }
+        .mn-layout { display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start; }
+        @media(max-width:860px){ .mn-layout { grid-template-columns:1fr; } }
+
+        /* Sidebar */
+        .mn-sidebar { position:sticky; top:16px; }
+        .mn-sidebar-hd { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted,#6b7280); margin-bottom:12px; }
+        .mn-list   { display:flex; flex-direction:column; gap:10px; }
+        .mn-item   { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:12px 14px; display:flex; align-items:flex-start; gap:12px; }
+        .mn-thumb  { width:56px; height:42px; border-radius:6px; background:#f3f4f6; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:1.2rem; }
         .mn-thumb img { width:100%; height:100%; object-fit:cover; }
         .mn-info   { flex:1; min-width:0; }
-        .mn-title  { font-weight:800; font-size:.95rem; margin:0 0 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .mn-meta   { font-size:.78rem; color:var(--text-muted,#6b7280); }
-        .mn-status { display:inline-block; font-size:.68rem; font-weight:800; padding:3px 9px; border-radius:20px; margin-top:5px; }
-        .mn-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; flex-wrap:wrap; }
+        .mn-title  { font-weight:700; font-size:.88rem; margin:0 0 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mn-meta   { font-size:.75rem; color:var(--text-muted,#6b7280); }
+        .mn-status { display:inline-block; font-size:.66rem; font-weight:800; padding:2px 8px; border-radius:20px; margin-top:4px; }
+        .mn-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px; }
 
+        /* Form */
         .mn-form-wrap { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:20px; }
         .mn-form-wrap h2 { font-size:1rem; font-weight:800; margin:0 0 6px; }
         .mn-form-wrap > p { font-size:.83rem; color:var(--text-muted); margin:0 0 16px; }
@@ -160,52 +167,10 @@ $statusLabels = [
     <div class="mn-shell">
         <?php if ($success): ?><div class="alert alert-success" style="margin-bottom:16px;"><?php echo sanitize($success); ?></div><?php endif; ?>
 
-        <!-- Existing submissions -->
-        <?php if ($myList): ?>
-        <div class="mn-list">
-            <?php foreach ($myList as $art): ?>
-            <?php $sl = $statusLabels[$art['status']] ?? $statusLabels['draft']; ?>
-            <div class="mn-item">
-                <div class="mn-thumb">
-                    <?php if ($art['featured_image']): ?>
-                        <img src="<?php echo sanitize($art['featured_image']); ?>" alt="">
-                    <?php else: ?>
-                        📰
-                    <?php endif; ?>
-                </div>
-                <div class="mn-info">
-                    <p class="mn-title"><?php echo sanitize($art['title']); ?></p>
-                    <p class="mn-meta">Submitted <?php echo date('d M Y', strtotime($art['created_at'])); ?></p>
-                    <span class="mn-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
-                        <?php echo $sl['label']; ?>
-                    </span>
-                    <?php if ($art['status'] === 'draft'): ?>
-                    <p style="font-size:.77rem;color:#1d4ed8;margin:5px 0 0;">Awaiting admin review before going live.</p>
-                    <?php endif; ?>
-                </div>
-                <div class="mn-actions">
-                    <?php if ($art['status'] === 'published' && $art['slug']): ?>
-                        <a href="news_article.php?slug=<?php echo urlencode($art['slug']); ?>" class="button button-small" target="_blank">View</a>
-                    <?php endif; ?>
-                    <?php if ($art['status'] === 'pending_payment'): ?>
-                        <a href="pay_news.php?id=<?php echo (int)$art['id']; ?>" class="button button-small button-primary">Pay to Publish</a>
-                    <?php endif; ?>
-                    <?php if (in_array($art['status'], ['draft', 'pending_payment'])): ?>
-                        <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-small button-secondary">Edit</a>
-                        <form method="post" onsubmit="return confirm('Delete this article?')">
-                            <?php echo csrf_field(); ?>
-                            <input type="hidden" name="delete_id" value="<?php echo (int)$art['id']; ?>">
-                            <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
-                        </form>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-        <?php endif; ?>
-
-        <!-- Submit / Edit form -->
-        <div class="mn-form-wrap">
+        <div class="mn-layout">
+            <!-- Submit / Edit form -->
+            <div class="mn-main">
+            <div class="mn-form-wrap">
             <h2><?php echo $editArticle ? 'Edit Article' : 'Submit a News Article'; ?></h2>
             <p>Articles are reviewed by an admin before appearing on the news page.</p>
 
@@ -268,6 +233,54 @@ $statusLabels = [
                 </div>
             </form>
         </div>
+            </div><!-- /.mn-main -->
+
+            <!-- Sidebar: submissions list -->
+            <aside class="mn-sidebar">
+                <?php if ($myList): ?>
+                <div class="mn-sidebar-hd">My Articles (<?php echo count($myList); ?>)</div>
+                <div class="mn-list">
+                    <?php foreach ($myList as $art): ?>
+                    <?php $sl = $statusLabels[$art['status']] ?? $statusLabels['draft']; ?>
+                    <div class="mn-item">
+                        <div class="mn-thumb">
+                            <?php if ($art['featured_image']): ?>
+                                <img src="<?php echo sanitize($art['featured_image']); ?>" alt="">
+                            <?php else: ?>
+                                📰
+                            <?php endif; ?>
+                        </div>
+                        <div class="mn-info">
+                            <p class="mn-title"><?php echo sanitize($art['title']); ?></p>
+                            <p class="mn-meta">Submitted <?php echo date('d M Y', strtotime($art['created_at'])); ?></p>
+                            <span class="mn-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
+                                <?php echo $sl['label']; ?>
+                            </span>
+                            <div class="mn-actions">
+                                <?php if ($art['status'] === 'published' && $art['slug']): ?>
+                                    <a href="news_article.php?slug=<?php echo urlencode($art['slug']); ?>" class="button button-small" target="_blank">View</a>
+                                <?php endif; ?>
+                                <?php if ($art['status'] === 'pending_payment'): ?>
+                                    <a href="pay_news.php?id=<?php echo (int)$art['id']; ?>" class="button button-small button-primary">Pay</a>
+                                <?php endif; ?>
+                                <?php if (in_array($art['status'], ['draft', 'pending_payment'])): ?>
+                                    <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-small button-secondary">Edit</a>
+                                    <form method="post" onsubmit="return confirm('Delete this article?')">
+                                        <?php echo csrf_field(); ?>
+                                        <input type="hidden" name="delete_id" value="<?php echo (int)$art['id']; ?>">
+                                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Del</button>
+                                    </form>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php else: ?>
+                <p style="font-size:.83rem;color:var(--text-muted,#6b7280);">No articles submitted yet.</p>
+                <?php endif; ?>
+            </aside>
+        </div><!-- /.mn-layout -->
     </div>
 
 <?php $activeNav = 'community'; require_once __DIR__ . '/partials/bottom_nav.php'; ?>

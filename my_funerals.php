@@ -123,17 +123,23 @@ $statusLabels = [
     <title>My Funeral Announcements — <?php echo APP_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .mf-shell   { max-width:800px; margin:0 auto; padding:20px 16px 60px; }
-        .mf-list    { display:flex; flex-direction:column; gap:12px; margin-bottom:28px; }
-        .mf-item    { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:14px 16px; display:flex; align-items:flex-start; gap:14px; }
-        .mf-thumb   { width:56px; height:56px; border-radius:10px; background:#f3f4f6; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        .mf-shell   { max-width:1080px; margin:0 auto; padding:20px 16px 60px; }
+        .mf-layout  { display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start; }
+        @media(max-width:860px){ .mf-layout { grid-template-columns:1fr; } }
+
+        /* Sidebar */
+        .mf-sidebar { position:sticky; top:16px; }
+        .mf-sidebar-hd { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted,#6b7280); margin-bottom:12px; }
+        .mf-list    { display:flex; flex-direction:column; gap:10px; }
+        .mf-item    { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:12px 14px; display:flex; align-items:flex-start; gap:12px; }
+        .mf-thumb   { width:48px; height:48px; border-radius:8px; background:#f3f4f6; flex-shrink:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
         .mf-thumb img { width:100%; height:100%; object-fit:cover; }
-        .mf-thumb-init { font-size:1.3rem; font-weight:900; color:#d1d5db; }
+        .mf-thumb-init { font-size:1.1rem; font-weight:900; color:#d1d5db; }
         .mf-info    { flex:1; min-width:0; }
-        .mf-name    { font-weight:800; font-size:.95rem; margin:0 0 4px; }
-        .mf-meta    { font-size:.78rem; color:var(--text-muted,#6b7280); }
-        .mf-status  { display:inline-block; font-size:.68rem; font-weight:800; padding:3px 9px; border-radius:20px; margin-top:5px; }
-        .mf-actions { display:flex; gap:8px; align-items:center; flex-shrink:0; flex-wrap:wrap; }
+        .mf-name    { font-weight:700; font-size:.88rem; margin:0 0 3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .mf-meta    { font-size:.75rem; color:var(--text-muted,#6b7280); }
+        .mf-status  { display:inline-block; font-size:.66rem; font-weight:800; padding:2px 8px; border-radius:20px; margin-top:4px; }
+        .mf-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:8px; }
 
         /* Form */
         .mf-form-wrap { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:20px; }
@@ -159,51 +165,10 @@ $statusLabels = [
     <div class="mf-shell">
         <?php if ($success): ?><div class="alert alert-success" style="margin-bottom:16px;"><?php echo sanitize($success); ?></div><?php endif; ?>
 
-        <!-- Existing submissions -->
-        <?php if ($myList): ?>
-        <div class="mf-list">
-            <?php foreach ($myList as $fa): ?>
-            <?php $sl = $statusLabels[$fa['status']] ?? $statusLabels['pending']; ?>
-            <div class="mf-item">
-                <div class="mf-thumb">
-                    <?php if ($fa['photograph']): ?>
-                        <img src="<?php echo sanitize($fa['photograph']); ?>" alt="">
-                    <?php else: ?>
-                        <span class="mf-thumb-init"><?php echo mb_strtoupper(mb_substr($fa['deceased_name'],0,2)); ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="mf-info">
-                    <p class="mf-name"><?php echo sanitize($fa['deceased_name']); ?></p>
-                    <p class="mf-meta">
-                        <?php if ($fa['burial_date']): ?>⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?> &nbsp;·&nbsp;<?php endif; ?>
-                        Submitted <?php echo date('d M Y', strtotime($fa['created_at'])); ?>
-                    </p>
-                    <span class="mf-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
-                        <?php echo $sl['label']; ?>
-                    </span>
-                </div>
-                <div class="mf-actions">
-                    <?php if ($fa['status'] === 'approved' && $fa['slug']): ?>
-                    <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="button button-small" target="_blank">View</a>
-                    <?php endif; ?>
-                    <?php if ($fa['status'] === 'pending_payment'): ?>
-                    <a href="pay_funeral.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">Pay to Publish</a>
-                    <?php endif; ?>
-                    <?php if (in_array($fa['status'], ['pending_payment','pending','rejected'])): ?>
-                    <form method="post" onsubmit="return confirm('Delete this announcement?')">
-                        <?php echo csrf_field(); ?>
-                        <input type="hidden" name="delete_id" value="<?php echo (int)$fa['id']; ?>">
-                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
-                    </form>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <?php endforeach; ?>
-        </div>
-        <?php endif; ?>
-
-        <!-- Submit form -->
-        <div class="mf-form-wrap">
+        <div class="mf-layout">
+            <!-- Submit form -->
+            <div class="mf-main">
+            <div class="mf-form-wrap">
             <h2>Submit a Funeral Announcement</h2>
 
             <?php if ($feeEnabled): ?>
@@ -318,6 +283,55 @@ $statusLabels = [
                 <button type="submit" class="button button-primary">Submit Announcement</button>
             </form>
         </div>
+            </div><!-- /.mf-main -->
+
+            <!-- Sidebar: submissions list -->
+            <aside class="mf-sidebar">
+                <?php if ($myList): ?>
+                <div class="mf-sidebar-hd">My Announcements (<?php echo count($myList); ?>)</div>
+                <div class="mf-list">
+                    <?php foreach ($myList as $fa): ?>
+                    <?php $sl = $statusLabels[$fa['status']] ?? $statusLabels['pending']; ?>
+                    <div class="mf-item">
+                        <div class="mf-thumb">
+                            <?php if ($fa['photograph']): ?>
+                                <img src="<?php echo sanitize($fa['photograph']); ?>" alt="">
+                            <?php else: ?>
+                                <span class="mf-thumb-init"><?php echo mb_strtoupper(mb_substr($fa['deceased_name'],0,2)); ?></span>
+                            <?php endif; ?>
+                        </div>
+                        <div class="mf-info">
+                            <p class="mf-name"><?php echo sanitize($fa['deceased_name']); ?></p>
+                            <p class="mf-meta">
+                                <?php if ($fa['burial_date']): ?>⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?><?php endif; ?>
+                            </p>
+                            <span class="mf-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
+                                <?php echo $sl['label']; ?>
+                            </span>
+                            <div class="mf-actions">
+                                <?php if ($fa['status'] === 'approved' && $fa['slug']): ?>
+                                <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="button button-small" target="_blank">View</a>
+                                <?php endif; ?>
+                                <?php if ($fa['status'] === 'pending_payment'): ?>
+                                <a href="pay_funeral.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">Pay</a>
+                                <?php endif; ?>
+                                <?php if (in_array($fa['status'], ['pending_payment','pending','rejected'])): ?>
+                                <form method="post" onsubmit="return confirm('Delete this announcement?')">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="delete_id" value="<?php echo (int)$fa['id']; ?>">
+                                    <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Del</button>
+                                </form>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php else: ?>
+                <p style="font-size:.83rem;color:var(--text-muted,#6b7280);">No announcements submitted yet.</p>
+                <?php endif; ?>
+            </aside>
+        </div><!-- /.mf-layout -->
     </div>
 
 <?php $activeNav = 'community'; require_once __DIR__ . '/partials/bottom_nav.php'; ?>
