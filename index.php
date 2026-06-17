@@ -86,13 +86,13 @@ $openJobs = $pdo->query(
 
         /* ── Funeral Announcement cards ── */
         .cm-fa-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
-        .cm-fa-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; align-items:center; text-align:center; padding:22px 16px 18px; transition:box-shadow .2s,transform .2s; }
-        .cm-fa-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-2px); }
-        .cm-fa-photo { width:72px; height:72px; border-radius:50%; background:#f3f4f6; display:flex; align-items:center; justify-content:center; overflow:hidden; border:3px solid var(--border,#e5e7eb); flex-shrink:0; }
-        .cm-fa-photo img { width:100%; height:100%; object-fit:cover; }
-        .cm-fa-initials { font-size:1.35rem; font-weight:900; color:#9ca3af; }
-        .cm-fa-divider  { width:32px; height:2px; background:var(--border,#e5e7eb); border-radius:2px; margin:10px auto; }
-        .cm-fa-name { font-weight:800; font-size:.9rem; margin-bottom:5px; }
+        .cm-fa-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .2s,transform .2s; }
+        .cm-fa-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-3px); }
+        .cm-fa-img  { aspect-ratio:4/3; background:linear-gradient(135deg,#f5f0eb,#ede4d8); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .cm-fa-img img { width:100%; height:100%; object-fit:cover; object-position:top; }
+        .cm-fa-initials { font-size:3rem; font-weight:900; color:#c4b09a; }
+        .cm-fa-info { padding:12px 14px 14px; display:flex; flex-direction:column; gap:3px; }
+        .cm-fa-name { font-weight:800; font-size:.92rem; margin-bottom:2px; }
         .cm-fa-meta { font-size:.73rem; color:var(--muted,#6b7280); line-height:1.55; }
 
         /* ── News cards ── */
@@ -245,17 +245,18 @@ $openJobs = $pdo->query(
         <div class="cm-fa-row">
             <?php foreach ($recentFunerals as $fa): ?>
             <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="cm-fa-card">
-                <div class="cm-fa-photo">
+                <div class="cm-fa-img">
                     <?php if ($fa['photograph']): ?>
                         <img src="<?php echo sanitize($fa['photograph']); ?>" alt="">
                     <?php else: ?>
                         <span class="cm-fa-initials"><?php echo mb_strtoupper(mb_substr($fa['deceased_name'],0,2)); ?></span>
                     <?php endif; ?>
                 </div>
-                <div class="cm-fa-divider"></div>
-                <div class="cm-fa-name"><?php echo sanitize($fa['deceased_name']); ?></div>
-                <?php if ($fa['burial_date']): ?><div class="cm-fa-meta">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></div><?php endif; ?>
-                <?php if ($fa['venue']): ?><div class="cm-fa-meta">📍 <?php echo sanitize(mb_substr($fa['venue'],0,40)); ?></div><?php endif; ?>
+                <div class="cm-fa-info">
+                    <div class="cm-fa-name"><?php echo sanitize($fa['deceased_name']); ?></div>
+                    <?php if ($fa['burial_date']): ?><div class="cm-fa-meta">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></div><?php endif; ?>
+                    <?php if ($fa['venue']): ?><div class="cm-fa-meta">📍 <?php echo sanitize(mb_substr($fa['venue'],0,40)); ?></div><?php endif; ?>
+                </div>
             </a>
             <?php endforeach; ?>
         </div>
