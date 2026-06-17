@@ -61,43 +61,55 @@ $openJobs = $pdo->query(
         .cm-section-head h2 { font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--muted,#6b7280); margin:0; }
         .cm-section-head a  { font-size:.82rem; font-weight:700; color:var(--primary,#0f766e); text-decoration:none; }
 
-        .cm-ev-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
-        .cm-ev-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .15s; }
-        .cm-ev-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); }
-        .cm-ev-img  { aspect-ratio:16/9; background:#f3f4f6; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        /* ── Jobs cards ── */
+        .cm-job-row   { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
+        .cm-job-card  { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:16px 16px 16px 20px; text-decoration:none; color:inherit; display:flex; flex-direction:column; position:relative; overflow:hidden; transition:box-shadow .2s,transform .2s; }
+        .cm-job-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--primary,#0f766e); border-radius:4px 0 0 4px; }
+        .cm-job-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-2px); }
+        .cm-job-cat   { display:inline-block; font-size:.67rem; font-weight:800; padding:3px 9px; border-radius:20px; background:#f0fdf4; color:#065f46; align-self:flex-start; margin-bottom:8px; letter-spacing:.04em; text-transform:uppercase; }
+        .cm-job-title { font-weight:800; font-size:.92rem; line-height:1.4; flex:1; padding-bottom:10px; }
+        .cm-job-footer{ display:flex; align-items:flex-end; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border,#e5e7eb); gap:8px; }
+        .cm-job-budget{ font-size:.88rem; font-weight:900; color:var(--primary,#0f766e); white-space:nowrap; }
+        .cm-job-meta  { font-size:.72rem; color:var(--muted,#6b7280); line-height:1.6; }
+
+        /* ── Events cards ── */
+        .cm-ev-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; }
+        .cm-ev-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .2s,transform .2s; }
+        .cm-ev-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-3px); }
+        .cm-ev-img  { aspect-ratio:16/9; background:linear-gradient(135deg,#f0fdf4,#d1fae5); display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative; flex-shrink:0; }
         .cm-ev-img img { width:100%; height:100%; object-fit:cover; }
-        .cm-ev-body { padding:10px 12px 12px; }
-        .cm-ev-title { font-weight:700; font-size:.88rem; margin:0 0 4px; }
-        .cm-ev-meta  { font-size:.76rem; color:var(--muted,#6b7280); }
+        .cm-ev-img-icon { font-size:2.2rem; opacity:.45; }
+        .cm-ev-date-badge { position:absolute; bottom:10px; left:10px; background:var(--primary,#0f766e); color:#fff; border-radius:8px; padding:4px 10px; font-size:.7rem; font-weight:800; letter-spacing:.02em; }
+        .cm-ev-body { padding:12px 14px 14px; display:flex; flex-direction:column; flex:1; }
+        .cm-ev-title { font-weight:800; font-size:.92rem; line-height:1.4; margin:0 0 6px; }
+        .cm-ev-meta  { font-size:.73rem; color:var(--muted,#6b7280); line-height:1.55; }
 
-        .cm-fa-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
-        .cm-fa-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; overflow:hidden; text-decoration:none; color:inherit; display:flex; gap:0; transition:box-shadow .15s; }
-        .cm-fa-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); }
-        .cm-fa-photo { width:70px; flex-shrink:0; background:#f3f4f6; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-        .cm-fa-photo img { width:70px; height:100%; min-height:70px; object-fit:cover; }
-        .cm-fa-initials { font-size:1.4rem; font-weight:900; color:#d1d5db; }
-        .cm-fa-info { padding:10px 12px; display:flex; flex-direction:column; gap:3px; }
-        .cm-fa-name { font-weight:700; font-size:.88rem; }
-        .cm-fa-meta { font-size:.74rem; color:var(--muted,#6b7280); }
+        /* ── Funeral Announcement cards ── */
+        .cm-fa-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
+        .cm-fa-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; align-items:center; text-align:center; padding:22px 16px 18px; transition:box-shadow .2s,transform .2s; }
+        .cm-fa-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-2px); }
+        .cm-fa-photo { width:72px; height:72px; border-radius:50%; background:#f3f4f6; display:flex; align-items:center; justify-content:center; overflow:hidden; border:3px solid var(--border,#e5e7eb); flex-shrink:0; }
+        .cm-fa-photo img { width:100%; height:100%; object-fit:cover; }
+        .cm-fa-initials { font-size:1.35rem; font-weight:900; color:#9ca3af; }
+        .cm-fa-divider  { width:32px; height:2px; background:var(--border,#e5e7eb); border-radius:2px; margin:10px auto; }
+        .cm-fa-name { font-weight:800; font-size:.9rem; margin-bottom:5px; }
+        .cm-fa-meta { font-size:.73rem; color:var(--muted,#6b7280); line-height:1.55; }
 
-        .cm-news-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
-        .cm-news-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; overflow:hidden; text-decoration:none; color:inherit; transition:box-shadow .15s; }
-        .cm-news-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); }
-        .cm-news-img { aspect-ratio:16/7; background:#f3f4f6; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+        /* ── News cards ── */
+        .cm-news-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
+        .cm-news-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .2s,transform .2s; }
+        .cm-news-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-3px); }
+        .cm-news-img { aspect-ratio:16/8; background:linear-gradient(135deg,#f8fafc,#f1f5f9); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .cm-news-img img { width:100%; height:100%; object-fit:cover; }
-        .cm-news-body { padding:10px 12px 12px; }
-        .cm-news-title { font-weight:700; font-size:.88rem; margin:0 0 4px; }
-        .cm-news-meta  { font-size:.74rem; color:var(--muted,#6b7280); }
+        .cm-news-img-icon { font-size:2.2rem; opacity:.4; }
+        .cm-news-body { padding:14px 16px 16px; flex:1; display:flex; flex-direction:column; }
+        .cm-news-title { font-weight:800; font-size:.93rem; line-height:1.4; margin:0 0 6px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .cm-news-excerpt { font-size:.78rem; color:var(--muted,#6b7280); line-height:1.55; margin:0 0 10px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; flex:1; }
+        .cm-news-footer { display:flex; align-items:center; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border,#e5e7eb); }
+        .cm-news-meta  { font-size:.72rem; color:var(--muted,#6b7280); }
+        .cm-news-read  { font-size:.75rem; font-weight:700; color:var(--primary,#0f766e); }
 
         .cm-empty { text-align:center; color:var(--muted,#6b7280); font-size:.88rem; padding:24px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; }
-
-        .cm-job-row   { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
-        .cm-job-card  { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:14px; text-decoration:none; color:inherit; display:flex; flex-direction:column; gap:5px; transition:box-shadow .15s; }
-        .cm-job-card:hover { box-shadow:0 4px 16px rgba(0,0,0,.08); }
-        .cm-job-cat   { display:inline-block; font-size:.7rem; font-weight:700; padding:3px 8px; border-radius:20px; background:#f0fdf4; color:#065f46; align-self:flex-start; }
-        .cm-job-title { font-weight:700; font-size:.9rem; line-height:1.35; }
-        .cm-job-meta  { font-size:.75rem; color:var(--muted,#6b7280); }
-        .cm-job-budget{ font-size:.82rem; font-weight:700; color:var(--primary,#0f766e); }
 
         .cm-cta { background:linear-gradient(135deg,#1e293b,#0f172a); color:#fff; border-radius:16px; padding:24px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
         .cm-cta h3 { font-size:1rem; font-weight:800; margin:0 0 4px; }
@@ -161,9 +173,13 @@ $openJobs = $pdo->query(
             <a href="request_detail.php?id=<?php echo (int)$job['id']; ?>" class="cm-job-card">
                 <?php if ($job['category']): ?><span class="cm-job-cat"><?php echo sanitize($job['category']); ?></span><?php endif; ?>
                 <div class="cm-job-title"><?php echo sanitize($job['title']); ?></div>
-                <?php if ($job['location']): ?><div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($job['location'],0,40)); ?></div><?php endif; ?>
-                <?php if ($job['budget_amount']): ?><div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?></div><?php endif; ?>
-                <div class="cm-job-meta">🕐 <?php echo date('d M Y', strtotime($job['created_at'])); ?></div>
+                <div class="cm-job-footer">
+                    <div>
+                        <?php if ($job['location']): ?><div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($job['location'],0,36)); ?></div><?php endif; ?>
+                        <div class="cm-job-meta">🕐 <?php echo date('d M Y', strtotime($job['created_at'])); ?></div>
+                    </div>
+                    <?php if ($job['budget_amount']): ?><div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?></div><?php endif; ?>
+                </div>
             </a>
             <?php endforeach; ?>
         </div>
@@ -199,11 +215,17 @@ $openJobs = $pdo->query(
             <?php foreach ($upcomingEvents as $ev): ?>
             <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="cm-ev-card">
                 <div class="cm-ev-img">
-                    <?php if ($ev['featured_image']): ?><img src="<?php echo sanitize($ev['featured_image']); ?>" alt=""><?php else: ?><span style="font-size:2rem;">📅</span><?php endif; ?>
+                    <?php if ($ev['featured_image']): ?>
+                        <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="">
+                    <?php else: ?>
+                        <span class="cm-ev-img-icon">📅</span>
+                    <?php endif; ?>
+                    <div class="cm-ev-date-badge"><?php echo date('d M', strtotime($ev['start_date'])); ?></div>
                 </div>
                 <div class="cm-ev-body">
                     <div class="cm-ev-title"><?php echo sanitize($ev['title']); ?></div>
-                    <div class="cm-ev-meta">📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?><?php if ($ev['venue']): ?> · <?php echo sanitize(mb_substr($ev['venue'],0,40)); ?><?php endif; ?></div>
+                    <?php if ($ev['venue']): ?><div class="cm-ev-meta">📍 <?php echo sanitize(mb_substr($ev['venue'],0,40)); ?></div><?php endif; ?>
+                    <?php if ($ev['start_time']): ?><div class="cm-ev-meta">🕐 <?php echo date('g:i A', strtotime($ev['start_time'])); ?></div><?php endif; ?>
                 </div>
             </a>
             <?php endforeach; ?>
@@ -224,13 +246,16 @@ $openJobs = $pdo->query(
             <?php foreach ($recentFunerals as $fa): ?>
             <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="cm-fa-card">
                 <div class="cm-fa-photo">
-                    <?php if ($fa['photograph']): ?><img src="<?php echo sanitize($fa['photograph']); ?>" alt=""><?php else: ?><span class="cm-fa-initials"><?php echo mb_strtoupper(mb_substr($fa['deceased_name'],0,2)); ?></span><?php endif; ?>
+                    <?php if ($fa['photograph']): ?>
+                        <img src="<?php echo sanitize($fa['photograph']); ?>" alt="">
+                    <?php else: ?>
+                        <span class="cm-fa-initials"><?php echo mb_strtoupper(mb_substr($fa['deceased_name'],0,2)); ?></span>
+                    <?php endif; ?>
                 </div>
-                <div class="cm-fa-info">
-                    <div class="cm-fa-name"><?php echo sanitize($fa['deceased_name']); ?></div>
-                    <?php if ($fa['burial_date']): ?><div class="cm-fa-meta">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></div><?php endif; ?>
-                    <?php if ($fa['venue']): ?><div class="cm-fa-meta">📍 <?php echo sanitize(mb_substr($fa['venue'],0,40)); ?></div><?php endif; ?>
-                </div>
+                <div class="cm-fa-divider"></div>
+                <div class="cm-fa-name"><?php echo sanitize($fa['deceased_name']); ?></div>
+                <?php if ($fa['burial_date']): ?><div class="cm-fa-meta">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></div><?php endif; ?>
+                <?php if ($fa['venue']): ?><div class="cm-fa-meta">📍 <?php echo sanitize(mb_substr($fa['venue'],0,40)); ?></div><?php endif; ?>
             </a>
             <?php endforeach; ?>
         </div>
@@ -249,12 +274,21 @@ $openJobs = $pdo->query(
         <div class="cm-news-row">
             <?php foreach ($latestNews as $n): ?>
             <a href="news_article.php?slug=<?php echo urlencode($n['slug']); ?>" class="cm-news-card">
-                <?php if ($n['featured_image']): ?>
-                <div class="cm-news-img"><img src="<?php echo sanitize($n['featured_image']); ?>" alt=""></div>
-                <?php endif; ?>
+                <div class="cm-news-img">
+                    <?php if ($n['featured_image']): ?>
+                        <img src="<?php echo sanitize($n['featured_image']); ?>" alt="">
+                    <?php else: ?>
+                        <span class="cm-news-img-icon">📰</span>
+                    <?php endif; ?>
+                </div>
                 <div class="cm-news-body">
                     <div class="cm-news-title"><?php echo sanitize($n['title']); ?></div>
-                    <div class="cm-news-meta"><?php echo $n['published_at'] ? date('d M Y', strtotime($n['published_at'])) : ''; ?></div>
+                    <?php $excerpt = mb_substr(strip_tags($n['content'] ?? ''), 0, 120); ?>
+                    <?php if ($excerpt): ?><p class="cm-news-excerpt"><?php echo sanitize($excerpt); ?></p><?php endif; ?>
+                    <div class="cm-news-footer">
+                        <div class="cm-news-meta"><?php echo $n['published_at'] ? date('d M Y', strtotime($n['published_at'])) : ''; ?></div>
+                        <span class="cm-news-read">Read →</span>
+                    </div>
                 </div>
             </a>
             <?php endforeach; ?>
