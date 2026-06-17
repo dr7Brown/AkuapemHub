@@ -38,9 +38,15 @@ $openJobs = $pdo->query(
     <meta name="description" content="<?php echo APP_NAME; ?> — Find skilled workers, post service requests, discover community events, news &amp; announcements in Ghana.">
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .cm-hero { background:linear-gradient(135deg,#0f766e 0%,#065f46 100%); color:#fff; padding:40px 20px 36px; text-align:center; }
-        .cm-hero h1 { font-size:clamp(1.5rem,5vw,2.2rem); font-weight:900; margin:0 0 8px; }
-        .cm-hero p  { font-size:.95rem; color:#a7f3d0; margin:0; }
+        .cm-hero {
+            background: linear-gradient(135deg, rgba(15,118,110,.80) 0%, rgba(6,95,70,.88) 100%),
+                        url('assets/images/heroes/hero-home.jpg') center/cover no-repeat;
+            color: #fff;
+            padding: 56px 20px 48px;
+            text-align: center;
+        }
+        .cm-hero h1 { font-size:clamp(1.6rem,5vw,2.4rem); font-weight:900; margin:0 0 10px; text-shadow:0 2px 8px rgba(0,0,0,.25); }
+        .cm-hero p  { font-size:1rem; color:#a7f3d0; margin:0; text-shadow:0 1px 4px rgba(0,0,0,.2); }
 
         .cm-modules { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; max-width:900px; margin:-28px auto 0; padding:0 16px; position:relative; z-index:2; }
         .cm-mod     { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:20px 16px; text-align:center; text-decoration:none; color:inherit; transition:box-shadow .15s,transform .15s; }

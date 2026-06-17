@@ -76,13 +76,14 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 
         /* ── Hero ── */
         .bj-hero {
-            background: linear-gradient(135deg, var(--primary, #0f766e) 0%, #065f46 100%);
+            background: linear-gradient(135deg, rgba(15,118,110,.80) 0%, rgba(6,95,70,.88) 100%),
+                        url('assets/images/heroes/hero-jobs.jpg') center/cover no-repeat;
             color: #fff;
-            padding: 48px 20px 40px;
+            padding: 60px 20px 48px;
             text-align: center;
         }
-        .bj-hero h1 { font-size: clamp(1.4rem, 4vw, 2rem); margin: 0 0 10px; font-weight: 800; }
-        .bj-hero p  { margin: 0 0 24px; opacity: .88; font-size: .95rem; }
+        .bj-hero h1 { font-size: clamp(1.5rem, 4vw, 2.2rem); margin: 0 0 10px; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,.25); }
+        .bj-hero p  { margin: 0 0 24px; opacity: .92; font-size: .95rem; text-shadow: 0 1px 4px rgba(0,0,0,.2); }
         .bj-stats   { display: flex; justify-content: center; gap: 28px; flex-wrap: wrap; margin-top: 24px; }
         .bj-stat    { text-align: center; }
         .bj-stat strong { display: block; font-size: 1.5rem; font-weight: 800; }

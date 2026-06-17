@@ -12,9 +12,18 @@ $user = current_user();
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         .about-shell { max-width: 800px; margin: 0 auto; padding: 24px 16px 60px; }
-        .about-hero  { background: linear-gradient(135deg, #0f766e 0%, #065f46 100%); color: #fff; border-radius: 16px; padding: 36px 28px; margin-bottom: 32px; text-align: center; }
-        .about-hero h1 { font-size: clamp(1.5rem, 5vw, 2rem); font-weight: 900; margin: 0 0 10px; }
-        .about-hero p  { font-size: .96rem; color: #a7f3d0; margin: 0; line-height: 1.7; }
+        .about-hero {
+            background: linear-gradient(135deg, rgba(15,118,110,.78) 0%, rgba(6,95,70,.86) 100%),
+                        url('assets/images/heroes/hero-about.jpg') center/cover no-repeat;
+            color: #fff;
+            border-radius: 16px;
+            padding: 56px 28px 48px;
+            margin-bottom: 32px;
+            text-align: center;
+            overflow: hidden;
+        }
+        .about-hero h1 { font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 900; margin: 0 0 12px; text-shadow: 0 2px 8px rgba(0,0,0,.25); }
+        .about-hero p  { font-size: .98rem; color: #a7f3d0; margin: 0; line-height: 1.75; text-shadow: 0 1px 4px rgba(0,0,0,.2); }
         .about-section { margin-bottom: 36px; }
         .about-section h2 { font-size: 1.05rem; font-weight: 800; border-bottom: 2px solid var(--border,#e5e7eb); padding-bottom: 8px; margin: 0 0 14px; }
         .about-section p, .about-section li { font-size: .93rem; color: #374151; line-height: 1.75; }
