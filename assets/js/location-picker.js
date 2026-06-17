@@ -6,9 +6,10 @@
 (function () {
     'use strict';
 
-    var API_URL     = window.LOCATION_API || 'location_api.php';
-    var LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    var LEAFLET_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    var API_URL      = window.LOCATION_API    || 'location_api.php';
+    var ASSETS_BASE  = window.LOCATION_ASSETS || 'assets/';
+    var LEAFLET_CSS  = ASSETS_BASE + 'css/leaflet.css';
+    var LEAFLET_JS   = ASSETS_BASE + 'js/leaflet.js';
 
     // Default map center: Akuapem / Eastern Region, Ghana
     var DEFAULT_CENTER = [5.85, -0.10];
@@ -21,10 +22,11 @@
         if (typeof L !== 'undefined') return Promise.resolve();
         if (_leafletPromise) return _leafletPromise;
         _leafletPromise = new Promise(function (resolve, reject) {
-            if (!document.querySelector('link[href="' + LEAFLET_CSS + '"]')) {
+            if (!document.querySelector('link[data-leaflet]')) {
                 var link = document.createElement('link');
-                link.rel  = 'stylesheet';
-                link.href = LEAFLET_CSS;
+                link.rel          = 'stylesheet';
+                link.href         = LEAFLET_CSS;
+                link.dataset.leaflet = '1';
                 document.head.appendChild(link);
             }
             var script    = document.createElement('script');

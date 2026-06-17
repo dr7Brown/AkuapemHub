@@ -246,7 +246,7 @@ $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : 
             </div>
         </form>
     </div>
-    <script>window.LOCATION_API = '../location_api.php';</script>
+    <script>window.LOCATION_API = '../location_api.php'; window.LOCATION_ASSETS = '../assets/';</script>
     <script src="../assets/js/rich-editor.js" defer></script>
     <script src="../assets/js/location-picker.js" defer></script>
 </body>
