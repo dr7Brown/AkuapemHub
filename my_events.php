@@ -9,7 +9,12 @@ $feeEnabled = (bool)(int)get_platform_setting('event_fee_enabled', '0');
 $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
 
 $errors  = [];
-$success = '';
+$success = match($_GET['msg'] ?? '') {
+    'deleted'   => 'Event deleted.',
+    'updated'   => 'Event updated. It is under review and will be published once approved.',
+    'submitted' => 'Event submitted! It will appear on the site once an admin publishes it.',
+    default     => '',
+};
 
 // Unique slug helper
 function ev_slug($pdo, $base, $excludeId = 0) {
@@ -31,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $row = $check->fetch();
     if ($row && in_array($row['status'], ['pending_payment','draft','cancelled'])) {
         $pdo->prepare("DELETE FROM events WHERE id=?")->execute([$did]);
-        $success = 'Event deleted.';
+        header('Location: my_events.php?msg=deleted'); exit;
     }
 }
 
@@ -88,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                  WHERE id=? AND user_id=?"
             )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,$startTime,$endTime,
                         $organizer,$ticketType,$ticketPrice,$regLink,$googleMapsLink,$editId,$user['id']]);
-            $success = 'Event updated. It is under review and will be published once approved.';
+            header('Location: my_events.php?msg=updated'); exit;
         } else {
             $initStatus = $feeEnabled ? 'pending_payment' : 'draft';
             $pdo->prepare(
@@ -107,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                 display_name($user) . ' submitted a new event: "' . $title . '". Review and publish in the Events admin panel.',
                 'info'
             );
-            $success = 'Event submitted! It will appear on the site once an admin publishes it.';
+            header('Location: my_events.php?msg=submitted'); exit;
         }
     }
 }

@@ -9,7 +9,11 @@ $feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0');
 $feeAmount  = (float)get_platform_setting('funeral_fee_amount', '20');
 
 $errors  = [];
-$success = '';
+$success = match($_GET['msg'] ?? '') {
+    'deleted'   => 'Announcement deleted.',
+    'submitted' => 'Announcement submitted and is pending admin review.',
+    default     => '',
+};
 
 // Helper: generate unique slug
 function fa_slug($pdo, $base, $excludeId = 0) {
@@ -33,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     $row = $check->fetch();
     if ($row && in_array($row['status'], ['pending_payment','pending','rejected'])) {
         $pdo->prepare("DELETE FROM funeral_announcements WHERE id=?")->execute([$did]);
-        $success = 'Announcement deleted.';
+        header('Location: my_funerals.php?msg=deleted'); exit;
     }
 }
 
@@ -94,7 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
             display_name($user) . ' submitted a funeral announcement for "' . $data['deceased_name'] . '". Review in Admin → Funerals.',
             'info'
         );
-        $success = 'Announcement submitted and is pending admin review.';
+        header('Location: my_funerals.php?msg=submitted'); exit;
     }
 }
 
