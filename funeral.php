@@ -24,6 +24,15 @@ $shareText = 'Funeral announcement: ' . $fa['deceased_name'] . ' — ' . APP_NAM
 function fmt_date($d, $format = 'D, j M Y, g:i A') {
     return $d ? date($format, strtotime($d)) : '—';
 }
+
+// Sidebar data
+$today       = date('Y-m-d');
+$sbFunerals  = $pdo->prepare("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' AND id != ? ORDER BY created_at DESC LIMIT 4");
+$sbFunerals->execute([$fa['id']]);
+$sbFunerals  = $sbFunerals->fetchAll();
+$sbEvents    = $pdo->query("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND start_date >= '$today' ORDER BY featured DESC, start_date ASC LIMIT 5")->fetchAll();
+$sbNews      = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 4")->fetchAll();
+$sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -40,9 +49,17 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
     <link rel="canonical" href="<?php echo sanitize($pageUrl); ?>">
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .fd-wrap   { max-width:760px; margin:0 auto; padding:24px 16px 60px; }
+        .fd-wrap   { max-width:1200px; margin:0 auto; padding:24px 16px 60px; }
         .fd-back   { display:inline-flex; align-items:center; gap:6px; color:var(--text-muted,#6b7280); text-decoration:none; font-size:.85rem; font-weight:600; margin-bottom:20px; }
         .fd-back:hover { color:var(--primary,#0f766e); }
+
+        /* Two-column layout */
+        .fd-layout  { display:block; }
+        .fd-sidebar { display:none; }
+        @media(min-width:900px){
+            .fd-layout  { display:grid; grid-template-columns:1fr 280px; gap:28px; align-items:start; }
+            .fd-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+        }
 
         /* Hero */
         .fd-hero   { display:flex; gap:20px; align-items:flex-start; margin-bottom:28px; flex-wrap:wrap; }
@@ -87,6 +104,40 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
         .fd-views { font-size:.78rem; color:var(--text-muted); margin-top:10px; }
 
         @media(max-width:480px) { .fd-photo { width:110px; height:110px; } }
+
+        /* Sidebar widgets */
+        .nsb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
+        .nsb-head   { padding:12px 16px; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--primary,#0f766e); border-bottom:1px solid var(--border,#e5e7eb); background:#f0fdf4; }
+        .nsb-list   { list-style:none; margin:0; padding:0; }
+        .nsb-item   { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-item:last-child { border-bottom:none; }
+        .nsb-num    { font-size:.72rem; font-weight:900; color:var(--primary,#0f766e); min-width:18px; padding-top:2px; }
+        .nsb-text   { flex:1; min-width:0; }
+        .nsb-text a { font-size:.83rem; font-weight:700; color:var(--text,#111); text-decoration:none; display:block; line-height:1.35; }
+        .nsb-text a:hover { color:var(--primary,#0f766e); }
+        .nsb-meta   { font-size:.72rem; color:var(--muted,#6b7280); margin-top:2px; }
+        .nsb-event  { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-event:last-child { border-bottom:none; }
+        .nsb-event-date { background:var(--primary,#0f766e); color:#fff; border-radius:8px; text-align:center; padding:4px 8px; min-width:42px; }
+        .nsb-event-date .nsb-day { font-size:1rem; font-weight:900; line-height:1; }
+        .nsb-event-date .nsb-mon { font-size:.6rem; font-weight:700; text-transform:uppercase; }
+        .nsb-event-info a { font-size:.83rem; font-weight:700; color:var(--text,#111); text-decoration:none; display:block; line-height:1.35; }
+        .nsb-event-info a:hover { color:var(--primary,#0f766e); }
+        .nsb-event-info .nsb-meta { margin-top:2px; }
+        .nsb-funeral      { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-funeral:last-child { border-bottom:none; }
+        .nsb-funeral-icon { font-size:1.3rem; padding-top:1px; }
+        .nsb-funeral-name { font-size:.83rem; font-weight:700; color:var(--text,#111); }
+        .nsb-funeral-name a { color:inherit; text-decoration:none; }
+        .nsb-funeral-name a:hover { color:var(--primary,#0f766e); }
+        .nsb-funeral-meta { font-size:.72rem; color:var(--muted,#6b7280); margin-top:2px; }
+        .nsb-cta  { padding:16px; text-align:center; }
+        .nsb-cta p { font-size:.82rem; color:var(--muted,#6b7280); margin:0 0 10px; line-height:1.4; }
+        .nsb-cta a { display:block; background:var(--primary,#0f766e); color:#fff; padding:10px; border-radius:10px; font-weight:800; font-size:.85rem; text-decoration:none; }
+        .nsb-cta a:hover { opacity:.9; }
+        .nsb-ad { padding:12px; }
+        .nsb-ad img { width:100%; border-radius:8px; display:block; }
+        .nsb-ad a { display:block; }
     </style>
 </head>
 <body>
@@ -103,6 +154,9 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
 
 <div class="fd-wrap">
     <a href="funerals.php" class="fd-back">← Back to Announcements</a>
+
+    <div class="fd-layout">
+    <div class="fd-main">
 
     <?php if ($fa['featured']): ?><span class="fd-badge-featured">⭐ Featured</span><br><br><?php endif; ?>
 
@@ -216,6 +270,98 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
         <button class="fd-share fd-share-copy" onclick="navigator.clipboard.writeText('<?php echo addslashes($pageUrl); ?>').then(function(){this.textContent='Copied!';}.bind(this))">🔗 Copy Link</button>
     </div>
     <p class="fd-views">👁️ <?php echo number_format((int)$fa['view_count']); ?> view<?php echo $fa['view_count'] !== 1 ? 's' : ''; ?></p>
+
+    </div><!-- /.fd-main -->
+
+    <aside class="fd-sidebar">
+
+        <?php if ($sbFunerals): ?>
+        <div class="nsb-widget">
+            <div class="nsb-head">🕊️ Other Announcements</div>
+            <ul class="nsb-list">
+            <?php foreach ($sbFunerals as $sf): ?>
+            <li class="nsb-funeral">
+                <div class="nsb-funeral-icon">🕊️</div>
+                <div>
+                    <div class="nsb-funeral-name"><a href="funeral.php?slug=<?php echo urlencode($sf['slug']); ?>"><?php echo sanitize($sf['deceased_name']); ?></a></div>
+                    <div class="nsb-funeral-meta">
+                        <?php if ($sf['burial_date']): ?>Burial: <?php echo date('d M Y', strtotime($sf['burial_date'])); ?><?php endif; ?>
+                        <?php if ($sf['venue']): ?><br><?php echo sanitize($sf['venue']); ?><?php endif; ?>
+                    </div>
+                </div>
+            </li>
+            <?php endforeach; ?>
+            </ul>
+            <div style="padding:8px 14px 12px;"><a href="funerals.php" style="font-size:.8rem;color:var(--primary,#0f766e);font-weight:700;text-decoration:none;">View all notices →</a></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($sbEvents): ?>
+        <div class="nsb-widget">
+            <div class="nsb-head">📅 Upcoming Events</div>
+            <ul class="nsb-list">
+            <?php foreach ($sbEvents as $se): ?>
+            <li class="nsb-event">
+                <div class="nsb-event-date">
+                    <div class="nsb-day"><?php echo date('d', strtotime($se['start_date'])); ?></div>
+                    <div class="nsb-mon"><?php echo date('M', strtotime($se['start_date'])); ?></div>
+                </div>
+                <div class="nsb-event-info">
+                    <a href="event.php?slug=<?php echo urlencode($se['slug']); ?>"><?php echo sanitize($se['title']); ?></a>
+                    <?php if ($se['start_time']): ?><div class="nsb-meta"><?php echo date('g:i A', strtotime($se['start_time'])); ?></div><?php endif; ?>
+                </div>
+            </li>
+            <?php endforeach; ?>
+            </ul>
+            <div style="padding:8px 14px 12px;"><a href="events.php" style="font-size:.8rem;color:var(--primary,#0f766e);font-weight:700;text-decoration:none;">All events →</a></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($sbNews): ?>
+        <div class="nsb-widget">
+            <div class="nsb-head">📰 Latest News</div>
+            <ul class="nsb-list">
+            <?php foreach ($sbNews as $i => $sn): ?>
+            <li class="nsb-item">
+                <span class="nsb-num"><?php echo $i + 1; ?></span>
+                <div class="nsb-text">
+                    <a href="news_article.php?slug=<?php echo urlencode($sn['slug']); ?>"><?php echo sanitize($sn['title']); ?></a>
+                    <?php if ($sn['published_at']): ?><div class="nsb-meta"><?php echo date('d M Y', strtotime($sn['published_at'])); ?></div><?php endif; ?>
+                </div>
+            </li>
+            <?php endforeach; ?>
+            </ul>
+            <div style="padding:8px 14px 12px;"><a href="news.php" style="font-size:.8rem;color:var(--primary,#0f766e);font-weight:700;text-decoration:none;">All news →</a></div>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($sbAd): ?>
+        <div class="nsb-widget">
+            <div class="nsb-head">Sponsored</div>
+            <div class="nsb-ad">
+                <?php if ($sbAd['image_url']): ?>
+                <a href="<?php echo sanitize($sbAd['target_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored">
+                    <img src="<?php echo sanitize($sbAd['image_url']); ?>" alt="<?php echo sanitize($sbAd['title']); ?>">
+                </a>
+                <?php else: ?>
+                <a href="<?php echo sanitize($sbAd['target_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored"
+                   style="display:block;background:var(--primary,#0f766e);color:#fff;text-align:center;padding:20px 12px;border-radius:8px;font-weight:800;text-decoration:none;">
+                    <?php echo sanitize($sbAd['title']); ?>
+                </a>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <div class="nsb-widget">
+            <div class="nsb-cta">
+                <p>Need to share a funeral notice with the community?</p>
+                <a href="<?php echo $user ? 'my_funerals.php' : 'login.php'; ?>">Submit a Notice</a>
+            </div>
+        </div>
+
+    </aside><!-- /.fd-sidebar -->
+    </div><!-- /.fd-layout -->
 </div>
 
 <?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
