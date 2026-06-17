@@ -11,7 +11,6 @@ $stmt = $pdo->prepare("SELECT * FROM events WHERE slug=? AND status='published' 
 $stmt->execute([$slug]);
 $ev = $stmt->fetch();
 if (!$ev) { header('Location: events.php'); exit; }
-$evLocation = get_location((int)($ev['location_id'] ?? 0));
 
 if (empty($_SESSION['viewed_event'][$ev['id']])) {
     $pdo->prepare("UPDATE events SET view_count=view_count+1 WHERE id=?")->execute([$ev['id']]);
@@ -156,17 +155,12 @@ $isCancelled = $ev['status'] === 'cancelled';
     </div>
     <?php endif; ?>
 
-    <!-- Interactive map -->
-    <?php if ($evLocation): ?>
+    <?php if ($ev['google_maps_link']): ?>
     <div class="ed-section" style="margin-bottom:20px;">
-        <h2>Location</h2>
-        <div data-map-viewer
-             data-lat="<?php echo (float)$evLocation['latitude']; ?>"
-             data-lng="<?php echo (float)$evLocation['longitude']; ?>"
-             data-name="<?php echo sanitize($evLocation['location_name']); ?>"
-             data-address="<?php echo sanitize($evLocation['formatted_address']); ?>"
-             data-gm-url="<?php echo sanitize($evLocation['google_maps_url']); ?>">
-        </div>
+        <a href="<?php echo sanitize($ev['google_maps_link']); ?>" target="_blank" rel="noopener"
+           class="button button-secondary" style="display:inline-flex;align-items:center;gap:6px;">
+            📍 Open in Google Maps
+        </a>
     </div>
     <?php endif; ?>
 

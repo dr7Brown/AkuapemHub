@@ -12,7 +12,6 @@ if ($requestId <= 0) {
 $stmt = $pdo->prepare('SELECT sr.*, c.name AS customer_name, c.username AS customer_username, c.profile_photo AS customer_photo, c.email AS customer_email, w.name AS worker_name, w.username AS worker_username, wc.name AS category_name FROM service_requests sr JOIN users c ON sr.customer_id = c.id JOIN service_categories wc ON sr.category_id = wc.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.id = ?');
 $stmt->execute([$requestId]);
 $request = $stmt->fetch();
-$reqLocation = $request ? get_location((int)($request['location_id'] ?? 0)) : null;
 
 if (!$request) {
     header('Location: jobs.php');
@@ -286,16 +285,12 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
             <p class="detail-label">Description</p>
             <div class="rich-content" style="line-height: 1.7; margin-bottom: 18px;"><?php echo render_rich($request['description']); ?></div>
 
-            <?php if ($reqLocation): ?>
+            <?php if (!empty($request['google_maps_link'])): ?>
             <p class="detail-label">Location</p>
-            <div data-map-viewer
-                 data-lat="<?php echo (float)$reqLocation['latitude']; ?>"
-                 data-lng="<?php echo (float)$reqLocation['longitude']; ?>"
-                 data-name="<?php echo sanitize($reqLocation['location_name']); ?>"
-                 data-address="<?php echo sanitize($reqLocation['formatted_address']); ?>"
-                 data-gm-url="<?php echo sanitize($reqLocation['google_maps_url']); ?>"
-                 style="margin-bottom:18px;">
-            </div>
+            <a href="<?php echo sanitize($request['google_maps_link']); ?>" target="_blank" rel="noopener"
+               class="button button-secondary button-small" style="display:inline-flex;align-items:center;gap:6px;margin-bottom:18px;">
+                📍 Open in Google Maps
+            </a>
             <?php endif; ?>
 
             <p class="detail-label">Skills needed</p>

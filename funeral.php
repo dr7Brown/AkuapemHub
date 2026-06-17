@@ -11,7 +11,6 @@ $stmt = $pdo->prepare("SELECT * FROM funeral_announcements WHERE slug=? AND stat
 $stmt->execute([$slug]);
 $fa = $stmt->fetch();
 if (!$fa) { header('Location: funerals.php'); exit; }
-$faLocation = get_location((int)($fa['location_id'] ?? 0));
 
 // Track view (once per session)
 if (empty($_SESSION['viewed_funeral'][$fa['id']])) {
@@ -164,17 +163,13 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
     </div>
     <?php endif; ?>
 
-    <!-- Interactive map -->
-    <?php if ($faLocation): ?>
+    <?php if ($fa['google_maps_link']): ?>
     <div class="fd-section">
         <h2>Location &amp; Directions</h2>
-        <div data-map-viewer
-             data-lat="<?php echo (float)$faLocation['latitude']; ?>"
-             data-lng="<?php echo (float)$faLocation['longitude']; ?>"
-             data-name="<?php echo sanitize($faLocation['location_name']); ?>"
-             data-address="<?php echo sanitize($faLocation['formatted_address']); ?>"
-             data-gm-url="<?php echo sanitize($faLocation['google_maps_url']); ?>">
-        </div>
+        <a href="<?php echo sanitize($fa['google_maps_link']); ?>" target="_blank" rel="noopener"
+           class="button button-secondary" style="display:inline-flex;align-items:center;gap:6px;">
+            📍 Open in Google Maps
+        </a>
     </div>
     <?php endif; ?>
 

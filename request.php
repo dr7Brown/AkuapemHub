@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $contactInfo = trim($user['phone'] ?? '');
     $latitude    = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude   = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
-    $locationId  = intval($_POST['location_id'] ?? 0) ?: null;
+    $googleMapsLink = trim($_POST['google_maps_link'] ?? '') ?: null;
     $skillsNeeded = trim($_POST['skills_needed'] ?? '');
     $hiringType   = $_POST['hiring_type'] ?? 'single';
     $workersNeeded = $hiringType === 'multiple' ? max(1, intval($_POST['workers_needed'] ?? 1)) : 1;
@@ -100,21 +100,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($postEditId > 0) {
                 $pdo->prepare("UPDATE service_requests SET
-                    title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,location_id=?,
+                    title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,google_maps_link=?,
                     budget=?,budget_amount=?,skills_needed=?,workers_needed=?,payment_mode=?,job_type=?,
                     deadline_value=?,deadline_unit=?,deadline_date=?,updated_at=NOW()
                     WHERE id=? AND status='draft' AND customer_id=?")
-                    ->execute([$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,$locationId,
+                    ->execute([$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,$googleMapsLink,
                         $budget,$draftBudgetAmount,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
                         $deadlineValue,$deadlineUnit,$deadlineDate,$postEditId,$user['id']]);
                 flash('Draft updated.', 'info');
             } else {
                 $pdo->prepare("INSERT INTO service_requests
-                    (customer_id,title,description,category_id,location,latitude,longitude,location_id,budget,budget_amount,
+                    (customer_id,title,description,category_id,location,latitude,longitude,google_maps_link,budget,budget_amount,
                      contact_info,skills_needed,workers_needed,payment_mode,job_type,deadline_value,deadline_unit,deadline_date,
                      status,payment_status,commission_percent,featured,posting_fee_status,created_at,updated_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft','unpaid',?,0,'free',NOW(),NOW())")
-                    ->execute([$user['id'],$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,$locationId,
+                    ->execute([$user['id'],$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,$googleMapsLink,
                         $budget,$draftBudgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
                         $deadlineValue,$deadlineUnit,$deadlineDate,$commRate]);
                 flash('Draft saved. Publish it from your dashboard whenever you are ready.', 'info');
@@ -169,26 +169,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($postEditId > 0) {
             // Publishing an existing draft — update in place
             $pdo->prepare("UPDATE service_requests SET
-                title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,location_id=?,
+                title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,google_maps_link=?,
                 budget=?,budget_amount=?,contact_info=?,skills_needed=?,workers_needed=?,
                 payment_mode=?,job_type=?,deadline_value=?,deadline_unit=?,deadline_date=?,
                 status=?,payment_status='unpaid',commission_percent=?,posting_fee_status=?,updated_at=NOW()
                 WHERE id=? AND status='draft' AND customer_id=?")
-                ->execute([$title,$description,$categoryId,$location,$latitude,$longitude,$locationId,
+                ->execute([$title,$description,$categoryId,$location,$latitude,$longitude,$googleMapsLink,
                     $budget,$budgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,
                     $paymentMode,$jobType,$deadlineValue,$deadlineUnit,$deadlineDate,
                     $initialStatus,$commRate,$postingFeeStatus,$postEditId,$user['id']]);
             $newJobId = $postEditId;
         } else {
             $stmt = $pdo->prepare('INSERT INTO service_requests
-                (customer_id, title, description, category_id, location, latitude, longitude, location_id,
+                (customer_id, title, description, category_id, location, latitude, longitude, google_maps_link,
                  budget, budget_amount, contact_info, skills_needed, workers_needed,
                  payment_mode, job_type, deadline_value, deadline_unit, deadline_date,
                  status, payment_status, commission_percent, featured, posting_fee_status,
                  created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
             $stmt->execute([
-                $user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $locationId,
+                $user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $googleMapsLink,
                 $budget, $budgetAmount, $contactInfo,
                 $skillsNeeded !== '' ? $skillsNeeded : null, $workersNeeded,
                 $paymentMode, $jobType, $deadlineValue, $deadlineUnit, $deadlineDate,
@@ -333,19 +333,15 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             <input type="text" name="location" id="location-input" required placeholder="City, neighbourhood" value="<?php echo $draft ? sanitize($draft['location']) : ''; ?>" <?php echo ($draft && $draft['location']) ? '' : 'readonly'; ?> />
             <input type="hidden" name="latitude"    id="latitude"    value="<?php echo $draft ? sanitize($draft['latitude']    ?? '') : ''; ?>" />
             <input type="hidden" name="longitude"   id="longitude"   value="<?php echo $draft ? sanitize($draft['longitude']   ?? '') : ''; ?>" />
-            <input type="hidden" name="location_id" id="location-id" value="<?php echo (int)($draft['location_id'] ?? 0) ?: ''; ?>" />
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
                 <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
-                <button type="button"
-                        data-location-picker
-                        data-field-name="location"
-                        data-field-lat="latitude"
-                        data-field-lng="longitude"
-                        class="button button-secondary button-small">
-                    🗺️ Map Picker
-                </button>
             </div>
             <p class="meta" id="location-status">Sharing your location helps nearby workers find your job faster.</p>
+            <label style="margin-top:8px;">Google Maps Link <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+            <p class="meta">Paste a Google Maps share link so workers can get directions to the job site.</p>
+            <input type="url" name="google_maps_link" class="form-control" style="margin-bottom:4px;"
+                   value="<?php echo $draft ? sanitize($draft['google_maps_link'] ?? '') : ''; ?>"
+                   placeholder="https://maps.google.com/…">
             <label>Hiring type</label>
             <?php $draftHiringType = ($draft && ($draft['workers_needed'] ?? 1) > 1) ? 'multiple' : 'single'; ?>
             <div style="display:flex;gap:16px;margin-bottom:4px;" id="hiring-type-group">

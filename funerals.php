@@ -218,13 +218,6 @@ if ($isAjax) {
     <button class="fa-load-more" id="fa-load-more" data-page="2" data-search="<?php echo sanitize($search); ?>">Load more</button>
     <?php endif; ?>
 
-    <?php if ($user): ?>
-    <div style="margin-top:28px;padding:16px;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;">
-        <p style="font-weight:800;font-size:.9rem;margin:0 0 6px;">📍 Announcements Near Me</p>
-        <p style="font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 10px;">Find funeral announcements close to your current location.</p>
-        <div data-nearby-widget data-module="funeral_announcements" data-radius="25"></div>
-    </div>
-    <?php endif; ?>
 
 </div>
 

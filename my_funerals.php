@@ -40,7 +40,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
 // Submit new announcement
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     csrf_check();
-    $locationId = intval($_POST['location_id'] ?? 0) ?: null;
+    $googleMapsLink = trim($_POST['google_maps_link'] ?? '') ?: null;
     $fields = ['deceased_name','gender','age','date_of_birth','date_of_death','biography',
                'wake_keeping_date','burial_date','thanksgiving_date','venue','gps_address',
                'organizer_name','organizer_phone','organizer_email'];
@@ -76,14 +76,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
             "INSERT INTO funeral_announcements
              (user_id, deceased_name, gender, age, photograph, funeral_poster, date_of_birth, date_of_death, biography,
               wake_keeping_date, burial_date, thanksgiving_date, venue, gps_address,
-              organizer_name, organizer_phone, organizer_email, location_id, status, slug)
+              organizer_name, organizer_phone, organizer_email, google_maps_link, status, slug)
              VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )->execute([
             $user['id'], $data['deceased_name'], $data['gender'] ?: 'male', $data['age'] ?: null,
             $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
             $data['wake_keeping_date'] ?: null, $data['burial_date'] ?: null, $data['thanksgiving_date'] ?: null,
             $data['venue'], $data['gps_address'], $data['organizer_name'], $data['organizer_phone'],
-            $data['organizer_email'], $locationId, $status, $slug
+            $data['organizer_email'], $googleMapsLink, $status, $slug
         ]);
         $newId = (int)$pdo->lastInsertId();
         if ($feeEnabled) {
@@ -279,25 +279,19 @@ $statusLabels = [
                     <label>Thanksgiving Service Date &amp; Time</label>
                     <input type="datetime-local" name="thanksgiving_date" class="form-control" value="<?php echo $fv('thanksgiving_date'); ?>">
                 </div>
-                <input type="hidden" name="location_id" value="">
                 <div class="mf-field">
                     <label>Venue / Location Name</label>
                     <input type="text" name="venue" class="form-control" placeholder="Church, hall or location name" value="<?php echo $fv('venue'); ?>">
                 </div>
                 <div class="mf-field">
-                    <div class="loc-preview"></div>
-                    <button type="button"
-                            data-location-picker
-                            data-field-name="venue"
-                            data-field-address="gps_address"
-                            class="button button-secondary">
-                        📍 Pick Location on Map
-                    </button>
-                    <p class="desc" style="margin-top:6px;">Picking on the map saves exact coordinates and enables directions for attendees.</p>
+                    <label>GPS / Address</label>
+                    <input type="text" name="gps_address" class="form-control" placeholder="e.g. Akuapem-Mampong, Eastern Region" value="<?php echo $fv('gps_address'); ?>">
                 </div>
                 <div class="mf-field">
-                    <label>GPS / Formatted Address</label>
-                    <input type="text" name="gps_address" class="form-control" placeholder="Auto-filled when you pick on map, or enter manually" value="<?php echo $fv('gps_address'); ?>">
+                    <label>Google Maps Link <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+                    <div class="desc">Paste a Google Maps share link. Visitors can click it for directions.</div>
+                    <input type="url" name="google_maps_link" class="form-control"
+                           value="<?php echo $fv('google_maps_link'); ?>" placeholder="https://maps.google.com/…">
                 </div>
 
                 <p class="mf-section-label">Organizer Contact</p>

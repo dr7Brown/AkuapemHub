@@ -860,11 +860,6 @@ if ($user) {
             <?php endif; ?>
         <?php endif; ?>
 
-        <div style="margin-top:28px;padding:16px;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:14px;">
-            <p style="font-weight:800;font-size:.9rem;margin:0 0 6px;">📍 Jobs Near Me</p>
-            <p style="font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 10px;">Find job postings close to your current location.</p>
-            <div data-nearby-widget data-module="service_requests" data-radius="25"></div>
-        </div>
 
     </main>
     <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
