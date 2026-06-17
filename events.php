@@ -39,6 +39,11 @@ function event_cards($pdo, $search, $filter, $page, $perPage) {
 
 $events = event_cards($pdo, $search, $filter, $page, $perPage);
 
+// Sidebar data
+$sidebarNews     = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 5")->fetchAll();
+$sidebarFunerals = $pdo->query("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' ORDER BY created_at DESC LIMIT 4")->fetchAll();
+$sidebarAd       = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+
 if ($isAjax) {
     foreach ($events as $ev): ?>
     <div class="ev-card<?php echo $ev['featured'] ? ' ev-featured' : ''; ?>">
@@ -113,6 +118,36 @@ if ($isAjax) {
         .ev-load-more:disabled { opacity:.5; cursor:default; }
 
         @media(max-width:480px) { .ev-grid { grid-template-columns:1fr 1fr; } }
+
+        /* ── Two-column layout ── */
+        .ev-layout  { display:block; }
+        .ev-sidebar { display:none; }
+        @media(min-width:900px) {
+            .ev-shell   { max-width:1200px; }
+            .ev-layout  { display:grid; grid-template-columns:1fr 280px; gap:32px; align-items:start; }
+            .ev-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+        }
+        /* ── Sidebar widgets (shared nsb-* from news.php) ── */
+        .nsb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
+        .nsb-head   { padding:12px 16px; border-bottom:1px solid var(--border,#e5e7eb); font-size:.8rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted,#6b7280); }
+        .nsb-list   { list-style:none; margin:0; padding:0; }
+        .nsb-item   { display:flex; gap:10px; align-items:flex-start; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-item:last-child { border-bottom:none; }
+        .nsb-num    { flex-shrink:0; width:22px; height:22px; border-radius:6px; background:var(--primary,#0f766e); color:#fff; font-size:.7rem; font-weight:900; display:flex; align-items:center; justify-content:center; }
+        .nsb-text   { flex:1; min-width:0; }
+        .nsb-text a { font-size:.82rem; font-weight:700; color:var(--text,#111); text-decoration:none; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        .nsb-text a:hover { color:var(--primary,#0f766e); }
+        .nsb-meta   { font-size:.72rem; color:var(--muted,#6b7280); margin-top:3px; }
+        .nsb-funeral { padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-funeral:last-child { border-bottom:none; }
+        .nsb-funeral-name { font-size:.82rem; font-weight:700; }
+        .nsb-funeral-name a { color:var(--text,#111); text-decoration:none; }
+        .nsb-funeral-name a:hover { color:var(--primary,#0f766e); }
+        .nsb-funeral-meta { font-size:.72rem; color:var(--muted,#6b7280); margin-top:2px; }
+        .nsb-cta    { padding:16px; text-align:center; }
+        .nsb-ad     { padding:10px; text-align:center; }
+        .nsb-ad img { width:100%; border-radius:8px; }
+        .nsb-ad-label { font-size:.65rem; text-transform:uppercase; letter-spacing:.07em; color:var(--muted,#6b7280); margin-bottom:6px; }
     </style>
 </head>
 <body>
@@ -146,8 +181,12 @@ if ($isAjax) {
 </div>
 
 <div class="ev-shell">
+<div class="ev-layout">
+
+<!-- ── Main column ── -->
+<div class="ev-main">
     <div class="ev-toolbar">
-        <p style="margin:0;color:var(--text-muted);font-size:.9rem;">
+        <p style="margin:0;color:var(--text-muted,#6b7280);font-size:.9rem;">
             <?php echo $search ? 'Results for "' . sanitize($search) . '"' : ucfirst($filter) . ' events'; ?>
         </p>
         <?php if ($user): ?>
@@ -185,8 +224,92 @@ if ($isAjax) {
     <?php if (count($events) === $perPage): ?>
     <button class="ev-load-more" id="ev-load-more" data-page="2" data-search="<?php echo sanitize($search); ?>" data-filter="<?php echo sanitize($filter); ?>">Load more</button>
     <?php endif; ?>
+</div><!-- /ev-main -->
 
-</div>
+<!-- ── Sidebar ── -->
+<aside class="ev-sidebar">
+
+    <?php if ($user): ?>
+    <div class="nsb-widget">
+        <div class="nsb-cta">
+            <p style="font-size:.85rem;font-weight:700;margin:0 0 10px;">Organising something?</p>
+            <a href="my_events.php" class="button button-primary button-small" style="width:100%;justify-content:center;">➕ Submit an Event</a>
+        </div>
+    </div>
+    <?php else: ?>
+    <div class="nsb-widget">
+        <div class="nsb-cta">
+            <p style="font-size:.85rem;font-weight:700;margin:0 0 4px;">Organising something?</p>
+            <p style="font-size:.78rem;color:var(--muted,#6b7280);margin:0 0 10px;">Sign in to submit your event.</p>
+            <a href="register.php" class="button button-primary button-small" style="width:100%;justify-content:center;">Join free</a>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Latest News -->
+    <?php if ($sidebarNews): ?>
+    <div class="nsb-widget">
+        <div class="nsb-head">📰 Latest News</div>
+        <ul class="nsb-list">
+            <?php foreach ($sidebarNews as $n => $art): ?>
+            <li class="nsb-item">
+                <span class="nsb-num"><?php echo $n + 1; ?></span>
+                <div class="nsb-text">
+                    <a href="news_article.php?slug=<?php echo urlencode($art['slug']); ?>"><?php echo sanitize($art['title']); ?></a>
+                    <?php if ($art['published_at']): ?>
+                    <div class="nsb-meta"><?php echo date('M j, Y', strtotime($art['published_at'])); ?></div>
+                    <?php endif; ?>
+                </div>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+        <div style="padding:10px 14px;">
+            <a href="news.php" style="font-size:.8rem;color:var(--primary,#0f766e);font-weight:700;text-decoration:none;">All articles →</a>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Recent Funerals -->
+    <?php if ($sidebarFunerals): ?>
+    <div class="nsb-widget">
+        <div class="nsb-head">🕊️ Recent Announcements</div>
+        <?php foreach ($sidebarFunerals as $fa): ?>
+        <div class="nsb-funeral">
+            <div class="nsb-funeral-name">
+                <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>"><?php echo sanitize($fa['deceased_name']); ?></a>
+            </div>
+            <div class="nsb-funeral-meta">
+                <?php if ($fa['burial_date']): ?>⚰️ <?php echo date('D, M j', strtotime($fa['burial_date'])); ?><?php endif; ?>
+                <?php if ($fa['venue']): ?> · <?php echo sanitize(mb_substr($fa['venue'],0,35)); ?><?php endif; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <div style="padding:10px 14px;">
+            <a href="funerals.php" style="font-size:.8rem;color:var(--primary,#0f766e);font-weight:700;text-decoration:none;">All announcements →</a>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Ad -->
+    <?php if ($sidebarAd): ?>
+    <div class="nsb-widget">
+        <div class="nsb-ad">
+            <div class="nsb-ad-label">Advertisement</div>
+            <a href="ad_click.php?id=<?php echo (int)$sidebarAd['id']; ?>" target="_blank" rel="noopener sponsored">
+                <?php if ($sidebarAd['image']): ?>
+                    <img src="<?php echo sanitize($sidebarAd['image']); ?>" alt="<?php echo sanitize($sidebarAd['title']); ?>">
+                <?php else: ?>
+                    <p style="font-size:.82rem;font-weight:600;color:var(--muted,#6b7280);margin:0;"><?php echo sanitize($sidebarAd['title']); ?></p>
+                <?php endif; ?>
+            </a>
+        </div>
+    </div>
+    <?php endif; ?>
+
+</aside><!-- /ev-sidebar -->
+
+</div><!-- /ev-layout -->
+</div><!-- /ev-shell -->
 
 <?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 
