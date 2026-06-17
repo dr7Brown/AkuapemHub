@@ -22,7 +22,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard — AkuapemHub</title>
+    <title>Admin Dashboard — AkuapemConnect</title>
     <link rel="stylesheet" href="../assets/css/style.css">
     <style>
         *, *::before, *::after { box-sizing: border-box; }
@@ -456,7 +456,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         ajaxEl.innerHTML = '';
         currentLoadUrl = null;
         setActive(null);
-        document.title = 'Admin Dashboard — AkuapemHub';
+        document.title = 'Admin Dashboard — AkuapemConnect';
         if (push !== false) history.pushState({ adm: 'home' }, '', 'index.php');
     }
 

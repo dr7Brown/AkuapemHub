@@ -205,7 +205,7 @@ $chatSettings = [
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-    <title>Communication Centre — AkuapemHub Admin</title>
+    <title>Communication Centre — AkuapemConnect Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css"/>
     <style>
         .tab-bar { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:20px; flex-wrap:wrap; }

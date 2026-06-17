@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -54,7 +54,7 @@ $user = current_user();
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><?php echo sanitize(display_name($worker)); ?> — AkuapemHub</title>
+    <title><?php echo sanitize(display_name($worker)); ?> — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
@@ -63,7 +63,6 @@ $user = current_user();
         <span class="brand">Worker Profile</span>
         <?php if (!$user): ?>
             <a href="login.php"    class="button button-secondary button-small">Sign in</a>
-            <a href="register.php" class="button button-primary button-small">Register</a>
         <?php endif; ?>
     </header>
     <main class="page-shell small-shell">

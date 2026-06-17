@@ -175,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         $error = 'Please enter a valid email address.';
     } else {
         $mailBody = "Name: {$cfName}\nEmail: {$cfEmail}\nSubject: {$cfSubj}\n\nMessage:\n{$cfMsg}";
-        @mail(ADMIN_EMAIL, '[AkuapemHub] ' . $cfSubj, $mailBody, "From: " . MAIL_FROM . "\r\nReply-To: {$cfEmail}");
+        @mail(ADMIN_EMAIL, '[AkuapemConnect] ' . $cfSubj, $mailBody, "From: " . MAIL_FROM . "\r\nReply-To: {$cfEmail}");
         header("Location: settings.php?section={$section}&msg=message_sent"); exit;
     }
 }
@@ -197,7 +197,7 @@ $sectionMeta = [
     'terms'         => ['icon' => '📋',  'title' => 'Terms of Service'],
     'help'          => ['icon' => '❓',  'title' => 'Help & Support'],
     'contact'       => ['icon' => '📞',  'title' => 'Contact Us'],
-    'about'         => ['icon' => 'ℹ️', 'title' => 'About AkuapemHub'],
+    'about'         => ['icon' => 'ℹ️', 'title' => 'About AkuapemConnect'],
 ];
 $activeSection = isset($sectionMeta[$section]) ? $section : '';
 
@@ -249,7 +249,7 @@ if (!$isAjax): ?>
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><?php echo $activeSection ? sanitize($sectionMeta[$activeSection]['title']).' — ' : ''; ?>Settings — AkuapemHub</title>
+    <title><?php echo $activeSection ? sanitize($sectionMeta[$activeSection]['title']).' — ' : ''; ?>Settings — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         /* ── Settings sidebar layout ──────────────────────── */
@@ -364,7 +364,7 @@ if (!$isAjax): ?>
 <body class="has-bottom-nav<?php echo $activeSection ? ' has-section' : ''; ?>">
 
     <header class="app-topbar">
-        <a href="settings.php" class="sn-back-btn">‹ Back</a>
+        <!-- <a href="settings.php" class="sn-back-btn">‹ Back</a> -->
         <span class="brand">⚙️ Settings</span>
         <a href="logout.php" class="button button-secondary button-small sn-mob-logout">Logout</a>
     </header>
@@ -420,7 +420,7 @@ if (!$isAjax): ?>
                 <!-- Group: Support -->
                 <?php echo snl('?section=help',    '❓',  'Help & Support',  'help',    $a); ?>
                 <?php echo snl('?section=contact', '📞',  'Contact Us',      'contact', $a); ?>
-                <?php echo snl('?section=about',   'ℹ️', 'About AkuapemHub', 'about',   $a); ?>
+                <?php echo snl('?section=about',   'ℹ️', 'About AkuapemConnect', 'about',   $a); ?>
 
                 <div class="sn-sep"></div>
 
@@ -534,7 +534,7 @@ if (!$isAjax): ?>
 <h3 class="sn-sub-title">Role</h3>
 <section class="card form-card">
     <?php if ($user['role'] === 'customer'): ?>
-        <p class="meta">You're registered as a customer. Want to offer services on AkuapemHub?</p>
+        <p class="meta">You're registered as a customer. Want to offer services on AkuapemConnect?</p>
         <a href="become_worker.php" class="button button-primary">Become a worker</a>
     <?php elseif ($user['role'] === 'worker'): ?>
         <p class="meta">You're registered as a worker. Manage your skills, availability, and bio from your worker profile.</p>
@@ -781,74 +781,26 @@ if (!$isAjax): ?>
 <?php elseif ($activeSection === 'privacypolicy'): ?>
 <h2 class="sn-panel-title">📄 Privacy Policy</h2>
 <div class="card sn-scroll-box">
-    <p style="margin:0 0 16px;"><a href="privacy.php" target="_blank" style="color:var(--primary);">Open full page ↗</a> &nbsp;·&nbsp; Last updated: January 2025</p>
-    <h3>Information We Collect</h3>
-    <p>We collect your name, email address, phone number, town, and GPS location (optional). Workers additionally provide a profile bio, ID document type and number, and ID photo for verification. All data is stored on secured servers.</p>
-    <h3>How We Use Your Data</h3>
-    <p>Your data is used to: match customers with nearby workers; process payments via Paystack; send job and account notifications; and maintain platform trust and safety. We do not sell your personal information to third parties.</p>
-    <h3>Payments &amp; Escrow</h3>
-    <p>All payments are processed by <strong>Paystack</strong>. We store transaction IDs, amounts, and statuses for your records but never handle raw card or bank details. Escrow funds are held by the platform until job completion and are then released to the worker.</p>
-    <h3>Data Sharing</h3>
-    <p>Your contact details (name and phone number) are shared only with users you are actively transacting with on a specific job. Your ID documents are reviewed only by the AkuapemHub admin team and are never publicly visible.</p>
-    <h3>Data Retention</h3>
-    <p>Financial transaction records are retained for 7 years in accordance with Ghana Revenue Authority regulations. Account profile data is deleted within 30 days of account closure upon request.</p>
-    <h3>Your Rights</h3>
-    <p>You may update your information at any time in these Settings. To request account and data deletion, use the Privacy &amp; Security section above, or contact us directly.</p>
-    <h3>Cookies</h3>
-    <p>We use only essential session cookies required for login and security (CSRF protection). No advertising or tracking cookies are used.</p>
-    <h3>Third-Party Services</h3>
-    <p>We use <strong>Paystack</strong> for payment processing and <strong>WhatsApp Business API</strong> for optional job notifications. These services have their own privacy policies.</p>
-    <h3>Children</h3>
-    <p>AkuapemHub is intended for users aged 18 and over. We do not knowingly collect data from minors.</p>
-    <h3>Contact</h3>
-    <p>For privacy concerns, email us or use the <a href="contact.php" style="color:var(--primary);">Contact page</a>.</p>
+    <?php include "privacy_short.php"?>
 </div>
 
 <?php elseif ($activeSection === 'terms'): ?>
 <h2 class="sn-panel-title">📋 Terms of Service</h2>
 <div class="card sn-scroll-box">
-    <p style="margin:0 0 16px;"><a href="terms.php" target="_blank" style="color:var(--primary);">Open full page ↗</a> &nbsp;·&nbsp; Last updated: January 2025</p>
-    <h3>1. Acceptance</h3>
-    <p>By using AkuapemHub you agree to these terms. If you do not agree, please do not use the platform.</p>
-    <h3>2. Eligibility</h3>
-    <p>You must be at least 18 years old and legally capable of entering contracts. By registering you confirm this.</p>
-    <h3>3. Your Role</h3>
-    <p><strong>Customers</strong> post jobs and hire workers. <strong>Workers</strong> apply for jobs and perform services. You may hold one role at a time but can switch between them.</p>
-    <h3>4. Job Postings</h3>
-    <p>Job descriptions must be accurate and lawful. Misleading or fraudulent postings will be removed without refund. A posting fee may apply depending on platform settings.</p>
-    <h3>5. Applications &amp; Hiring</h3>
-    <p>Workers apply for open jobs. Customers review applications and select workers. Acceptance of an application creates a binding agreement between customer and worker.</p>
-    <h3>6. Payments &amp; Escrow</h3>
-    <p>Customers fund escrow before work begins. Funds are released to the worker after job completion. The platform charges a commission on escrow payments. All payments are processed by Paystack.</p>
-    <h3>7. Disputes</h3>
-    <p>If a dispute arises, both parties should first communicate directly. Contact AkuapemHub support if resolution cannot be reached. Platform decisions are final.</p>
-    <h3>8. Prohibited Activities</h3>
-    <p>You may not: use the platform for illegal activities; harass or defraud other users; post false reviews; attempt to bypass platform fees; or create multiple accounts.</p>
-    <h3>9. Verification</h3>
-    <p>Workers may submit identity documents for verification. Verification is not a guarantee of trustworthiness but indicates the worker's identity has been reviewed by our team.</p>
-    <h3>10. Liability</h3>
-    <p>AkuapemHub is a marketplace and is not a party to agreements between customers and workers. We are not liable for service quality, property damage, or disputes arising from jobs. Use the platform at your own risk.</p>
-    <h3>11. Termination</h3>
-    <p>We reserve the right to suspend or terminate accounts that violate these terms without prior notice.</p>
-    <h3>12. Governing Law</h3>
-    <p>These terms are governed by the laws of the Republic of Ghana. Any disputes shall be resolved in Ghanaian courts.</p>
-    <h3>Contact</h3>
-    <p>Questions about these terms? Use the <a href="contact.php" style="color:var(--primary);">Contact page</a>.</p>
+    <?php include "terms_short.php"?>
 </div>
 
 <?php elseif ($activeSection === 'help'): ?>
 <h2 class="sn-panel-title">❓ Help &amp; Support</h2>
 <section class="card form-card">
-    <p class="meta">Have a question, found a bug, or need help with a job or payment? Reach out and our team will get back to you as soon as possible.</p>
-    <a href="contact.php" class="button button-primary" style="margin-bottom:10px;">Contact support</a>
-    <a href="mailto:<?php echo sanitize(ADMIN_EMAIL); ?>" class="button button-secondary">Email support directly</a>
+    <?php include "support_short.php"?>
 </section>
-<section class="card" style="padding:16px 18px;margin-top:0;">
+<!-- <section class="card" style="padding:16px 18px;margin-top:0;">
     <p style="margin:0 0 4px;font-size:.85rem;font-weight:600;color:var(--text-muted);">Quick links</p>
     <a href="jobs.php"   class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">← Back to Dashboard</a>
     <a href="find_workers.php" class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Find Workers</a>
     <a href="notifications.php" class="list-row" style="display:block;padding:9px 0;">Notifications</a>
-</section>
+</section> -->
 
 <?php elseif ($activeSection === 'contact'): ?>
 <?php
@@ -932,17 +884,17 @@ if (!$isAjax): ?>
 </div>
 
 <?php elseif ($activeSection === 'about'): ?>
-<h2 class="sn-panel-title">ℹ️ About AkuapemHub</h2>
+<h2 class="sn-panel-title">ℹ️ About AkuapemConnect</h2>
 
 <div class="card" style="padding:20px 22px;margin-bottom:0;">
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
         <span style="font-size:2.4rem;line-height:1;">🏔️</span>
         <div>
-            <h3 style="margin:0 0 3px;font-size:1.1rem;">AkuapemHub</h3>
+            <h3 style="margin:0 0 3px;font-size:1.1rem;">AkuapemConnect</h3>
             <span class="meta">Version 1.0 · Built for the Akuapem community</span>
         </div>
     </div>
-    <p style="margin:0;font-size:.92rem;color:var(--text);line-height:1.7;">AkuapemHub connects people across the Akuapem ridge with skilled workers and service providers. Whether you need a plumber, electrician, cleaner, caterer, delivery rider, or any other service — AkuapemHub helps you find trusted help close to home.</p>
+    <p style="margin:0;font-size:.92rem;color:var(--text);line-height:1.7;">AkuapemConnect connects people across the Akuapem ridge with skilled workers and service providers. Whether you need a plumber, electrician, cleaner, caterer, delivery rider, or any other service — AkuapemConnect helps you find trusted help close to home.</p>
 </div>
 
 <div class="card" style="margin-top:10px;padding:20px 22px;margin-bottom:0;">

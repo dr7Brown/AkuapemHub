@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
@@ -50,7 +50,7 @@ foreach (array_keys($fields) as $key) {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Contact Settings — AkuapemHub Admin</title>
+    <title>Contact Settings — AkuapemConnect Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
     <style>
         .cs-shell { max-width: 640px; margin: 0 auto; padding: 20px 16px 60px; }

@@ -48,7 +48,7 @@ $myStatus = get_user_chat_status($user['id']);
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-    <title><?php echo $other ? 'Chat with ' . sanitize($other['name']) : 'Messages'; ?> — AkuapemHub</title>
+    <title><?php echo $other ? 'Chat with ' . sanitize($other['name']) : 'Messages'; ?> — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css"/>
     <style>
         .chat-layout { display:flex; height:calc(100vh - 56px - 60px); overflow:hidden; }
@@ -91,12 +91,13 @@ $myStatus = get_user_chat_status($user['id']);
 </head>
 <body class="has-bottom-nav">
 <header class="app-topbar">
-    <?php if ($convId): ?>
-        <a href="chat.php" class="button button-secondary button-small">← Back</a>
-    <?php else: ?>
-        <a href="jobs.php" class="button button-secondary button-small">← Back</a>
-    <?php endif; ?>
     <span class="brand">💬 Messages</span>
+    <!-- <?php //if ($convId): ?>
+        <a href="chat.php" class="button button-secondary button-small">← Back</a>
+    <?php //else: ?>
+        <a href="jobs.php" class="button button-secondary button-small">← Back</a>
+    <?php //endif; ?> -->
+    
 </header>
 
 <?php if ($myStatus['banned']): ?>

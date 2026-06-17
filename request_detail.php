@@ -109,22 +109,64 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
     $recommendedWorkers = get_recommended_workers_for_request($request, 5);
 }
 
+// Sidebar: similar open jobs in the same category
+$sbSimilar = $pdo->prepare("
+    SELECT sr.id, sr.title, sr.budget, sr.location, sr.created_at, c.name AS category_name
+    FROM service_requests sr
+    LEFT JOIN service_categories c ON sr.category_id = c.id
+    WHERE sr.category_id = ? AND sr.status IN ('open','partially_staffed')
+      AND (sr.posting_fee_status IS NULL OR sr.posting_fee_status != 'pending')
+      AND sr.id != ?
+    ORDER BY sr.featured DESC, sr.created_at DESC
+    LIMIT 5
+");
+$sbSimilar->execute([$request['category_id'], $requestId]);
+$sbSimilar = $sbSimilar->fetchAll();
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Request details — AkuapemHub</title>
+    <title>Request details — <?php echo APP_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css" />
+    <style>
+        .rd-outer   { max-width:1200px; margin:0 auto; padding:0 16px; }
+        .rd-layout  { display:block; }
+        .rd-main    { padding:20px 0 80px; }
+        .rd-sidebar { display:none; }
+        @media(min-width:900px){
+            .rd-layout  { display:grid; grid-template-columns:1fr 280px; gap:28px; align-items:start; }
+            .rd-main    { padding:24px 0 60px; }
+            .rd-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; padding-top:24px; }
+        }
+        .sb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
+        .sb-head   { padding:11px 16px; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--primary,#0f766e); border-bottom:1px solid var(--border,#e5e7eb); background:#f0fdf4; }
+        .sb-job    { display:block; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); text-decoration:none; color:inherit; transition:background .1s; }
+        .sb-job:last-child { border-bottom:none; }
+        .sb-job:hover { background:#f9fafb; }
+        .sb-job-title  { font-size:.83rem; font-weight:700; line-height:1.35; margin-bottom:3px; }
+        .sb-job-row    { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+        .sb-job-meta   { font-size:.71rem; color:var(--muted,#6b7280); }
+        .sb-job-budget { font-size:.78rem; font-weight:800; color:var(--primary,#0f766e); white-space:nowrap; }
+        .sb-footer { padding:10px 14px; border-top:1px solid var(--border,#e5e7eb); }
+        .sb-footer a { font-size:.8rem; color:var(--primary,#0f766e); font-weight:700; text-decoration:none; }
+        .sb-cta { padding:16px; text-align:center; }
+        .sb-cta p { font-size:.82rem; color:var(--muted,#6b7280); margin:0 0 10px; line-height:1.4; }
+        .sb-cta a { display:block; background:var(--primary,#0f766e); color:#fff; padding:10px; border-radius:10px; font-weight:800; font-size:.85rem; text-decoration:none; }
+        .sb-cta a:hover { opacity:.9; }
+        .sb-info { padding:13px 16px; font-size:.82rem; line-height:1.5; }
+        .sb-skills { display:flex; flex-wrap:wrap; gap:5px; padding:12px 14px; }
+        .sb-skill  { font-size:.7rem; font-weight:700; padding:3px 8px; border-radius:20px; background:#f0fdf4; color:#065f46; }
+    </style>
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
     <?php if (!$user): ?>
     <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <a href="browse_jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← AkuapemHub</a>
+        <a href="browse_jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← <?php echo APP_NAME; ?></a>
         <nav style="display:flex;gap:8px;align-items:center;">
             <a href="login.php"    class="button button-secondary button-small">Sign in</a>
-            <a href="register.php" class="button button-primary button-small">Register</a>
         </nav>
     </header>
     <?php else: ?>
@@ -134,7 +176,7 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
         </a>
     </header>
     <?php endif; ?>
-    <main class="page-shell small-shell">
+    <div class="rd-outer"><div class="rd-layout"><main class="rd-main">
         <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
         <?php if ($user && $request['status'] === 'pending_payment' && $request['customer_id'] === $user['id']): ?>
             <div class="alert alert-warning" style="margin-bottom:12px;">
@@ -467,7 +509,68 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
                 <?php endforeach; ?>
             </section>
         <?php endif; ?>
-    </main>
+    </main><!-- /.rd-main -->
+
+    <aside class="rd-sidebar">
+
+        <?php if ($sbSimilar): ?>
+        <div class="sb-widget">
+            <div class="sb-head">💼 Similar Jobs</div>
+            <?php foreach ($sbSimilar as $sj): ?>
+            <a href="request_detail.php?id=<?php echo (int)$sj['id']; ?>" class="sb-job">
+                <div class="sb-job-title"><?php echo sanitize($sj['title']); ?></div>
+                <div class="sb-job-row">
+                    <span class="sb-job-meta">
+                        <?php if ($sj['location']): ?>📍 <?php echo sanitize(mb_substr($sj['location'],0,28)); ?><?php endif; ?>
+                    </span>
+                    <?php if ($sj['budget']): ?><span class="sb-job-budget">GH₵ <?php echo sanitize($sj['budget']); ?></span><?php endif; ?>
+                </div>
+            </a>
+            <?php endforeach; ?>
+            <div class="sb-footer"><a href="browse_jobs.php">Browse all open jobs →</a></div>
+        </div>
+        <?php else: ?>
+        <div class="sb-widget">
+            <div class="sb-head">💼 Jobs &amp; Services</div>
+            <div class="sb-cta"><a href="browse_jobs.php">Browse all open jobs →</a></div>
+        </div>
+        <?php endif; ?>
+
+        <div class="sb-widget">
+            <div class="sb-head">🏷️ Category &amp; Skills</div>
+            <div class="sb-info"><strong><?php echo sanitize($request['category_name']); ?></strong></div>
+            <?php
+            $skills = array_filter(array_map('trim', explode(',', $request['skills_needed'] ?? '')));
+            if ($skills):
+            ?>
+            <div class="sb-skills">
+                <?php foreach ($skills as $sk): ?>
+                <span class="sb-skill"><?php echo sanitize($sk); ?></span>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <?php if (!$user): ?>
+        <div class="sb-widget">
+            <div class="sb-cta">
+                <p>Are you a skilled worker? Sign in to apply for this job.</p>
+                <a href="login.php?redirect=<?php echo urlencode('request_detail.php?id='.$requestId); ?>">Sign in to Apply</a>
+            </div>
+        </div>
+        <?php elseif (is_customer() && $request['customer_id'] === $user['id']): ?>
+        <div class="sb-widget">
+            <div class="sb-cta">
+                <p>Looking for more skilled workers?</p>
+                <a href="find_workers.php">Browse Workers</a>
+            </div>
+        </div>
+        <?php endif; ?>
+
+    </aside><!-- /.rd-sidebar -->
+    </div><!-- /.rd-layout -->
+    </div><!-- /.rd-outer -->
+
     <?php $activeNav = 'jobs'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

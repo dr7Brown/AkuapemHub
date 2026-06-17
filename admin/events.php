@@ -48,6 +48,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
                         '"' . $ev['title'] . '" has been returned to draft. Please review and resubmit.', 'info');
                 }
                 break;
+            case 'reject':
+                $reason = trim($_POST['rejection_reason'] ?? '');
+                $pdo->prepare("UPDATE events SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")
+                    ->execute([$reason ?: null, $tid]);
+                log_audit_action($user['id'], 'event_reject', "Rejected event #{$tid}: {$ev['title']}");
+                if ($ev['user_id']) {
+                    $reasonNote = $reason ? " Reason: {$reason}" : ' Contact admin for details.';
+                    notify_user($ev['user_id'], 'Event not approved',
+                        '"' . $ev['title'] . '" was not approved.' . $reasonNote . ' You can edit and resubmit it.', 'warning');
+                }
+                break;
             case 'feature':
                 $pdo->prepare("UPDATE events SET featured=1-featured WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_feature', "Toggled feature for event #{$tid}");
@@ -61,7 +72,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
     header('Location: events.php'); exit;
 }
 
-$statusFilter = in_array($_GET['status'] ?? '', ['draft','published','cancelled']) ? $_GET['status'] : '';
+$statusFilter = in_array($_GET['status'] ?? '', ['draft','published','cancelled','rejected']) ? $_GET['status'] : '';
 $search       = trim($_GET['q'] ?? '');
 $page         = max(1, (int)($_GET['page'] ?? 1));
 $perPage      = 20;
@@ -116,6 +127,7 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
         .ae-badge-published { background:#ecfdf5; color:#065f46; }
         .ae-badge-draft     { background:#f3f4f6; color:#6b7280; }
         .ae-badge-cancelled { background:#fee2e2; color:#991b1b; }
+        .ae-badge-rejected  { background:#fee2e2; color:#991b1b; }
         .ae-badge-past      { background:#f3f4f6; color:#9ca3af; font-size:.6rem; }
         .ae-actions { display:flex; gap:5px; flex-wrap:wrap; }
     </style>
@@ -155,6 +167,7 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
         <div class="ae-stats">
             <a href="events.php?status=published" class="ae-stat"><strong><?php echo (int)($counts['published'] ?? 0); ?></strong><span>Published</span></a>
             <a href="events.php?status=draft"     class="ae-stat"><strong><?php echo (int)($counts['draft']     ?? 0); ?></strong><span>Draft</span></a>
+            <a href="events.php?status=rejected"  class="ae-stat"><strong style="color:#dc2626;"><?php echo (int)($counts['rejected']  ?? 0); ?></strong><span>Rejected</span></a>
             <a href="events.php?status=cancelled" class="ae-stat"><strong><?php echo (int)($counts['cancelled'] ?? 0); ?></strong><span>Cancelled</span></a>
             <div class="ae-stat"><strong><?php echo array_sum($counts); ?></strong><span>Total</span></div>
         </div>
@@ -170,6 +183,7 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
                 <option value="">All statuses</option>
                 <option value="published" <?php echo $statusFilter==='published' ? 'selected':'' ?>>Published</option>
                 <option value="draft"     <?php echo $statusFilter==='draft'     ? 'selected':'' ?>>Draft</option>
+                <option value="rejected"  <?php echo $statusFilter==='rejected'  ? 'selected':'' ?>>Rejected</option>
                 <option value="cancelled" <?php echo $statusFilter==='cancelled' ? 'selected':'' ?>>Cancelled</option>
             </select>
         </div>
@@ -220,13 +234,16 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
                         <td>
                             <div class="ae-actions">
                                 <a href="event_edit.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small">Edit</a>
-                                <?php if ($ev['status'] !== 'published'): ?>
+                                <?php if (!in_array($ev['status'], ['published','rejected'], true)): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="publish"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Publish</button></form>
+                                <?php endif; ?>
+                                <?php if ($ev['status'] === 'draft'): ?>
+                                <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="openRejectModal(<?php echo (int)$ev['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <?php if ($ev['status'] === 'published'): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="cancel"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;">Cancel</button></form>
                                 <?php endif; ?>
-                                <?php if ($ev['status'] === 'cancelled'): ?>
+                                <?php if (in_array($ev['status'], ['cancelled','rejected'], true)): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="draft"><?php echo csrf_field(); ?><button class="button button-small">↩ Draft</button></form>
                                 <?php endif; ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $ev['featured'] ? 'Unfeature' : '⭐ Feature'; ?></button></form>
@@ -252,4 +269,35 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
         <?php endif; ?>
     </div>
 </body>
+
+<!-- Reject modal -->
+<div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeRejectModal()">
+    <div style="background:#fff;border-radius:14px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="margin:0 0 6px;font-size:1rem;">Reject Event</h3>
+        <p style="font-size:.85rem;color:#6b7280;margin:0 0 14px;">Optionally explain why. The organiser will see this and can edit and resubmit.</p>
+        <form method="post" action="events.php">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="reject">
+            <input type="hidden" name="id" id="reject-target-id" value="">
+            <textarea name="rejection_reason" rows="4" placeholder="e.g. The event description needs more details about the programme and venue."
+                style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;margin-bottom:12px;"></textarea>
+            <div style="display:flex;gap:8px;">
+                <button type="submit" class="button" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject event</button>
+                <button type="button" class="button button-secondary" onclick="closeRejectModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+function openRejectModal(id) {
+    document.getElementById('reject-target-id').value = id;
+    var m = document.getElementById('reject-modal');
+    m.style.display = 'flex';
+    m.querySelector('textarea').value = '';
+    m.querySelector('textarea').focus();
+}
+function closeRejectModal() {
+    document.getElementById('reject-modal').style.display = 'none';
+}
+</script>
 </html>

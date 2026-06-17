@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->commit();
 
             refresh_session_user($pdo, $user['id']);
-            notify_user($user['id'], 'Welcome to working on AkuapemHub', 'Your worker profile has been created. You can now browse and accept jobs.', 'success');
+            notify_user($user['id'], 'Welcome to working on AkuapemConnect', 'Your worker profile has been created. You can now browse and accept jobs.', 'success');
             if ($serviceFeeStatus === 'pending') {
                 flash('Worker profile created! Complete your service listing payment to appear in search results.', 'info');
                 header('Location: pay_worker_service.php');
@@ -107,7 +107,7 @@ $skillCategories = get_skill_categories_with_skills();
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Become a worker — AkuapemHub</title>
+    <title>Become a worker — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="has-bottom-nav">

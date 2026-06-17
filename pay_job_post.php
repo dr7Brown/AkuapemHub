@@ -99,7 +99,7 @@ $packages = get_active_packages('job_posting_packages');
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pay Posting Fee — AkuapemHub</title>
+    <title>Pay Posting Fee — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="has-bottom-nav">

@@ -244,7 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         "Budget: GH₵ {$budget}\n" .
                         "Contact: {$contactInfo}\n\n" .
                         "Please review and approve the request in the admin panel.";
-        send_email_notification(ADMIN_EMAIL, 'New AkuapemHub service request', $adminMessage);
+        send_email_notification(ADMIN_EMAIL, 'New AkuapemConnect service request', $adminMessage);
 
         flash('Service request created successfully. Admin will approve it before workers can accept.');
         header('Location: jobs.php');
@@ -260,7 +260,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>New Request — AkuapemHub</title>
+    <title>New Request — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="has-bottom-nav">
@@ -388,14 +388,14 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                     <input type="radio" name="payment_mode" value="escrow" id="mode-escrow" <?php echo (!$draft || ($draft['payment_mode'] ?? 'escrow') === 'escrow') ? 'checked' : ''; ?> onchange="onModeChange()">
                     <div>
                         <strong>Escrow Payment <span style="background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;font-size:0.75rem;vertical-align:middle;">Recommended</span></strong>
-                        <p class="meta" style="margin:2px 0 0;">Your funds are held securely by AkuapemHub. Released to the worker only after you confirm satisfactory completion.</p>
+                        <p class="meta" style="margin:2px 0 0;">Your funds are held securely by AkuapemConnect. Released to the worker only after you confirm satisfactory completion.</p>
                     </div>
                 </label>
                 <label style="display:flex;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;" id="mode-direct-label">
                     <input type="radio" name="payment_mode" value="direct" id="mode-direct" <?php echo ($draft && ($draft['payment_mode'] ?? '') === 'direct') ? 'checked' : ''; ?> onchange="onModeChange()">
                     <div>
                         <strong>Direct Payment</strong>
-                        <p class="meta" style="margin:2px 0 0;">You pay the worker directly. AkuapemHub only tracks job completion, not the payment itself.</p>
+                        <p class="meta" style="margin:2px 0 0;">You pay the worker directly. AkuapemConnect only tracks job completion, not the payment itself.</p>
                     </div>
                 </label>
             </div>
@@ -425,7 +425,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
 
             <div id="direct-warning" style="display:none;background:#fffbeb;border:1px solid #f59e0b;border-radius:var(--radius-sm);padding:12px;margin-top:4px;">
                 <strong style="color:#92400e;">Direct Payment — Important</strong>
-                <p class="meta" style="margin:4px 0 0;color:#78350f;">You will arrange payment directly with the worker. AkuapemHub is not responsible for payment disputes, fraud, or non-payment in direct-payment jobs.</p>
+                <p class="meta" style="margin:4px 0 0;color:#78350f;">You will arrange payment directly with the worker. AkuapemConnect is not responsible for payment disputes, fraud, or non-payment in direct-payment jobs.</p>
             </div>
 
             <label style="margin-top:12px;">Deadline <span class="meta">(optional)</span></label>
@@ -608,7 +608,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                 .then(function (data) {
                     if (!data.suggestion) { budgetSuggestion.textContent = ''; return; }
                     var s = data.suggestion;
-                    var scopeText = s.scope === 'nearby' ? 'Similar jobs near this location' : 'Similar jobs across AkuapemHub';
+                    var scopeText = s.scope === 'nearby' ? 'Similar jobs near this location' : 'Similar jobs across AkuapemConnect';
                     budgetSuggestion.textContent = '💡 ' + scopeText + ' typically went for GH₵ ' + Math.round(s.min) + '–' + Math.round(s.max) +
                         ' (avg GH₵ ' + Math.round(s.avg) + ') based on ' + s.count + ' job' + (s.count === 1 ? '' : 's') + '.';
                 })

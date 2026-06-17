@@ -176,7 +176,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Register — AkuapemHub</title>
+    <title>Register — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
@@ -184,7 +184,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div style="text-align: center; margin-bottom: var(--space-4);">
             <span style="display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; font-size: 28px; border-radius: 50%; background: var(--primary-soft); margin-bottom: 10px;">🏠</span>
             <h1 style="margin: 0;">Create your account</h1>
-            <p class="meta">Join AkuapemHub to find work or get jobs done</p>
+            <p class="meta">Join AkuapemConnect to find work or get jobs done</p>
         </div>
         <form class="card form-card" method="post" action="register.php" enctype="multipart/form-data" id="register-form">
             <?php echo csrf_field(); ?>

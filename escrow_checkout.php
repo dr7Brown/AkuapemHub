@@ -100,7 +100,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Escrow Payment — AkuapemHub</title>
+    <title>Escrow Payment — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="has-bottom-nav">
@@ -179,7 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p style="margin:0 0 6px;font-weight:600;">How escrow works</p>
             <ol style="margin:0;padding-left:18px;line-height:1.8;font-size:0.9rem;">
                 <li>You pay <strong id="how-amount">GH₵ <?php echo number_format($escrow['gross_amount'], 2); ?><?php if ($bundlePostingFee): ?> + posting fee<?php endif; ?></strong> now via Paystack.</li>
-                <li>AkuapemHub holds the escrow funds securely after admin approves your job.</li>
+                <li>AkuapemConnect holds the escrow funds securely after admin approves your job.</li>
                 <li>A worker accepts and completes the job.</li>
                 <li>You confirm satisfactory completion and release the payment to the worker.</li>
                 <li>If you don't release within 7 days of job completion, the payment is auto-released to the worker.</li>

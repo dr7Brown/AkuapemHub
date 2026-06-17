@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $request['id']]);
                 send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.", $request['customer_id']);
                 notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
-                send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
+                send_business_message($request['customer_id'], $request['contact_info'], "AkuapemConnect: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
                 notify_workers_of_matching_job($request);
             } elseif ($bulkAction === 'remove') {
                 $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$request['id']]);
@@ -48,8 +48,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             $pdo->prepare('UPDATE service_requests SET status = ? WHERE id = ?')->execute(['open', $requestId]);
             send_email_notification($request['customer_email'], 'Your request is approved', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been approved by admin and is now visible to workers.\n\nThank you.", $request['customer_id']);
             notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
-            send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
+            send_business_message($request['customer_id'], $request['contact_info'], "AkuapemConnect: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
             notify_workers_of_matching_job($request);
+        } elseif ($_POST['action'] === 'reject' && $request) {
+            $reason = trim($_POST['rejection_reason'] ?? '');
+            $pdo->prepare('UPDATE service_requests SET status=?, rejection_reason=?, updated_at=NOW() WHERE id=?')
+                ->execute(['rejected', $reason ?: null, $requestId]);
+            log_audit_action($user['id'], 'request_reject', "Rejected request #{$requestId}: {$request['title']}");
+            $reasonNote = $reason ? "\n\nReason: {$reason}" : '';
+            send_email_notification($request['customer_email'], 'Your job listing was not approved',
+                "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' was not approved.{$reasonNote}\n\nYou can edit and resubmit it from your jobs page.",
+                $request['customer_id']);
+            notify_user($request['customer_id'], 'Job listing not approved',
+                "Your request \"{$request['title']}\" was not approved." . ($reason ? " Reason: {$reason}" : ' Contact admin for details.') . ' You can edit and resubmit it.',
+                'warning');
         } elseif ($_POST['action'] === 'remove' && $request) {
             $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$requestId]);
             send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
@@ -104,6 +116,7 @@ $rpt = $pdo->query("
 $statusMeta = [
     'pending'           => ['label' => 'Pending',       'color' => '#f59e0b'],
     'pending_payment'   => ['label' => 'Awaiting pay',  'color' => '#f97316'],
+    'rejected'          => ['label' => 'Rejected',      'color' => '#dc2626'],
     'open'              => ['label' => 'Open',           'color' => '#16a34a'],
     'partially_staffed' => ['label' => 'Part. staffed', 'color' => '#2563eb'],
     'fully_staffed'     => ['label' => 'Fully staffed', 'color' => '#0891b2'],
@@ -117,7 +130,7 @@ $statusMeta = [
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Requests — AkuapemHub</title>
+    <title>Admin Requests — AkuapemConnect</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
     <style>
         /* ── compact request rows ───────────────────────────────── */
@@ -381,12 +394,16 @@ $statusMeta = [
                         <div class="rq-actions">
                             <form method="post" action="requests.php">
                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
-                                <?php if (!in_array($request['status'], ['open','partially_staffed','fully_staffed','completed','cancelled'], true)): ?>
+                                <?php if (!in_array($request['status'], ['open','partially_staffed','fully_staffed','completed','cancelled','rejected'], true)): ?>
                                     <?php if ($feeStatus === 'pending'): ?>
                                         <button type="button" class="button button-primary button-small" disabled title="Posting fee not confirmed">Approve</button>
                                     <?php else: ?>
                                         <button type="submit" name="action" value="approve" class="button button-primary button-small">Approve</button>
                                     <?php endif; ?>
+                                <?php endif; ?>
+                                <?php if ($request['status'] === 'pending'): ?>
+                                <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"
+                                    onclick="openRejectModal(<?php echo (int)$request['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <button type="submit" name="action" value="feature" class="button button-secondary button-small"
                                     style="<?php echo $arFeatActive ? 'color:#854d0e;border-color:#f59e0b;' : ''; ?>">
@@ -452,6 +469,11 @@ $statusMeta = [
                                 <?php endforeach; ?>
                             </ul>
                         <?php endif; ?>
+                        <?php if ($request['status'] === 'rejected' && !empty($request['rejection_reason'])): ?>
+                            <p style="margin:8px 0 0;padding:8px 12px;background:#fee2e2;border-radius:6px;font-size:.85rem;color:#991b1b;">
+                                <strong>Rejection reason:</strong> <?php echo sanitize($request['rejection_reason']); ?>
+                            </p>
+                        <?php endif; ?>
                     </div>
                 </div>
             <?php endforeach; ?>
@@ -493,6 +515,36 @@ $statusMeta = [
             });
         });
     }
+
+    function openRejectModal(id) {
+        document.getElementById('reject-target-id').value = id;
+        var m = document.getElementById('reject-modal');
+        m.style.display = 'flex';
+        m.querySelector('textarea').value = '';
+        m.querySelector('textarea').focus();
+    }
+    function closeRejectModal() {
+        document.getElementById('reject-modal').style.display = 'none';
+    }
     </script>
+
+<!-- Reject modal -->
+<div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeRejectModal()">
+    <div style="background:#fff;border-radius:14px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="margin:0 0 6px;font-size:1rem;">Reject Job Listing</h3>
+        <p style="font-size:.85rem;color:#6b7280;margin:0 0 14px;">Explain why this listing was rejected. The customer will see this message and can edit and resubmit.</p>
+        <form method="post" action="requests.php">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="reject">
+            <input type="hidden" name="request_id" id="reject-target-id" value="">
+            <textarea name="rejection_reason" rows="4" placeholder="e.g. The job description is too vague. Please add more detail about the location, duration, and specific tasks involved."
+                style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;margin-bottom:12px;"></textarea>
+            <div style="display:flex;gap:8px;">
+                <button type="submit" class="button" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject listing</button>
+                <button type="button" class="button button-secondary" onclick="closeRejectModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
 </body>
 </html>

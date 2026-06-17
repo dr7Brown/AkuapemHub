@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -27,7 +27,7 @@ $receiptNumber = 'AKH-' . str_pad($receipt['id'], 6, '0', STR_PAD_LEFT);
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Receipt <?php echo sanitize($receiptNumber); ?> — AkuapemHub</title>
+    <title>Receipt <?php echo sanitize($receiptNumber); ?> — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         .receipt-card { max-width: 640px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 32px; }

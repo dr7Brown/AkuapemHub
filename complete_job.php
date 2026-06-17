@@ -51,8 +51,8 @@ try {
                    (!empty($completionNotes) ? "Worker notes: {$completionNotes}\n\n" : "\n") .
                    "Please review the work and release the escrow payment from your job detail page.\n" .
                    "If you do not release within {$autoReleaseDays} days, the payment will be auto-released to the worker.\n\n" .
-                   "Thank you for using AkuapemHub.";
-        send_email_notification($request['customer_email'], 'Your AkuapemHub request is complete — release escrow', $message, $request['customer_id']);
+                   "Thank you for using AkuapemConnect.";
+        send_email_notification($request['customer_email'], 'Your AkuapemConnect request is complete — release escrow', $message, $request['customer_id']);
         notify_user($request['customer_id'], '💰 Release escrow payment',
             "The worker completed '{$request['title']}'. Review the work and release payment, or it auto-releases in {$autoReleaseDays} days.",
             'info');
@@ -61,10 +61,10 @@ try {
                    "Your request titled '{$request['title']}' has been completed by the worker.\n" .
                    (!empty($completionNotes) ? "Worker notes: {$completionNotes}\n\n" : '') .
                    "Please review the work, leave a rating, and confirm payment if everything is good.\n\n" .
-                   "Thank you for using AkuapemHub.";
-        send_email_notification($request['customer_email'], 'Your AkuapemHub request is complete', $message, $request['customer_id']);
+                   "Thank you for using AkuapemConnect.";
+        send_email_notification($request['customer_email'], 'Your AkuapemConnect request is complete', $message, $request['customer_id']);
         notify_user($request['customer_id'], 'Job completed', "Your request '{$request['title']}' has been completed.", 'success');
-        send_business_message($request['customer_id'], $request['contact_info'], "AkuapemHub: Your request '{$request['title']}' has been marked complete by the worker. Please review the work and confirm payment.", 'whatsapp');
+        send_business_message($request['customer_id'], $request['contact_info'], "AkuapemConnect: Your request '{$request['title']}' has been marked complete by the worker. Please review the work and confirm payment.", 'whatsapp');
     }
 
     notify_user($user['id'], 'Job completed', "You marked '{$request['title']}' as completed.", 'success');

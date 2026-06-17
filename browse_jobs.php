@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -54,7 +54,7 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Browse Jobs — AkuapemHub</title>
+    <title>Browse Jobs — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         /* ── Page reset ── */
@@ -179,12 +179,11 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 
 <!-- ── Top bar ─────────────────────────────────────────────────────────────── -->
 <header class="bj-topbar">
-    <a href="index.php" class="bj-logo">AkuapemHub</a>
+    <a href="index.php" class="bj-logo">AkuapemConnect</a>
     <nav class="bj-nav">
         <a href="find_workers.php" class="link">Workers</a>
         <a href="community.php"    class="link">Community</a>
         <a href="login.php"    class="button button-secondary button-small">Sign in</a>
-        <a href="register.php" class="button button-primary  button-small">Register</a>
     </nav>
 </header>
 

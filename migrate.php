@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/config.php';
 
@@ -768,7 +768,7 @@ $allTablesExist = !in_array(false, array_values($tableStatus));
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Database Migration — AkuapemHub</title>
+    <title>Database Migration — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>

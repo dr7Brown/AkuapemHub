@@ -114,7 +114,7 @@ $typeLabels = [
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Payments Dashboard — AkuapemHub Admin</title>
+    <title>Payments Dashboard — AkuapemConnect Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>

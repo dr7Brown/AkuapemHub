@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $fError = 'Message is too short (minimum 20 characters).';
     } else {
         $body = "Name: {$fname}\nEmail: {$femail}\nSubject: {$fsubj}\n\n{$fmsg}";
-        @mail(ADMIN_EMAIL, '[AkuapemHub Contact] ' . $fsubj, $body, "From: " . MAIL_FROM . "\r\nReply-To: {$femail}");
+        @mail(ADMIN_EMAIL, '[AkuapemConnect Contact] ' . $fsubj, $body, "From: " . MAIL_FROM . "\r\nReply-To: {$femail}");
         header('Location: contact.php?sent=1'); exit;
     }
 }

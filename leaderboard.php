@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -11,7 +11,7 @@ $trendingCategories = get_trending_categories(5, 30);
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Leaderboard — AkuapemHub</title>
+    <title>Leaderboard — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
@@ -21,7 +21,6 @@ $trendingCategories = get_trending_categories(5, 30);
             <a href="logout.php" class="button button-secondary button-small">Logout</a>
         <?php else: ?>
             <a href="login.php"    class="button button-secondary button-small">Sign in</a>
-            <a href="register.php" class="button button-primary button-small">Register</a>
         <?php endif; ?>
     </header>
     <main class="page-shell">

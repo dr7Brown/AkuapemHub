@@ -61,7 +61,7 @@ $isLoggedIn = (bool) current_user();
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Email Verification — AkuapemHub</title>
+  <title>Email Verification — AkuapemConnect</title>
   <link rel="stylesheet" href="assets/css/style.css"/>
 </head>
 <body>
@@ -77,7 +77,7 @@ $isLoggedIn = (bool) current_user();
     <?php if ($success): ?>
       <div class="card" style="text-align:center;padding:28px 24px;">
         <p style="margin:0 0 20px;color:var(--text);">
-          Your email address has been verified. You now have full access to AkuapemHub.
+          Your email address has been verified. You now have full access to AkuapemConnect.
         </p>
         <?php if ($isLoggedIn): ?>
           <a href="jobs.php" class="button button-primary">Go to dashboard</a>

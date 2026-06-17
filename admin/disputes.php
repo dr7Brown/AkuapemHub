@@ -44,7 +44,7 @@ $disputes = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Disputes — AkuapemHub</title>
+    <title>Admin Disputes — AkuapemConnect</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
 </head>
 <body>

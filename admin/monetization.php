@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
@@ -444,7 +444,7 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Monetization — AkuapemHub Admin</title>
+    <title>Monetization — AkuapemConnect Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
     <style>
         .pkg-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }

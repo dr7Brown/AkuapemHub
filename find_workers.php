@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -130,7 +130,7 @@ if (!empty($_GET['ajax'])) {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Find Workers — AkuapemHub</title>
+    <title>Find Workers — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
@@ -140,7 +140,6 @@ if (!empty($_GET['ajax'])) {
             <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>
             <?php if (!$user): ?>
                 <a href="login.php"    class="button button-secondary button-small">Sign in</a>
-                <a href="register.php" class="button button-primary button-small">Register</a>
             <?php endif; ?>
         </div>
     </header>

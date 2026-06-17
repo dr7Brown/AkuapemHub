@@ -35,7 +35,7 @@ try {
         ->execute([$requestId, $request['budget'], $newStatus, $note]);
 
     if ($newStatus === 'paid' && $request['assigned_worker_id'] && !empty($request['worker_phone'])) {
-        send_business_message($request['assigned_worker_id'], $request['worker_phone'], "AkuapemHub: Payment of GH₵ {$request['budget']} for '{$request['title']}' has been marked as paid by the customer.", 'whatsapp');
+        send_business_message($request['assigned_worker_id'], $request['worker_phone'], "AkuapemConnect: Payment of GH₵ {$request['budget']} for '{$request['title']}' has been marked as paid by the customer.", 'whatsapp');
     }
 
     $pdo->commit();

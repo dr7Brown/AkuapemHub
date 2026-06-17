@@ -51,7 +51,7 @@ $eventLabels = [
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Points &amp; Referrals — AkuapemHub</title>
+    <title>Points &amp; Referrals — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         .ref-hero { background:var(--primary); color:#fff; border-radius:var(--radius); padding:28px 24px; margin-bottom:20px; text-align:center; }
@@ -259,8 +259,8 @@ $eventLabels = [
     async function shareLink() {
         try {
             await navigator.share({
-                title: 'Join AkuapemHub',
-                text: 'I use AkuapemHub to find and hire skilled workers. Join with my link:',
+                title: 'Join AkuapemConnect',
+                text: 'I use AkuapemConnect to find and hire skilled workers. Join with my link:',
                 url: referralUrl
             });
         } catch(e) {

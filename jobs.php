@@ -193,13 +193,13 @@ if ($user) {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Home — AkuapemHub</title>
+    <title>Home — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="has-bottom-nav">
 
     <header class="app-topbar">
-        <span class="brand"><span class="brand-icon">🏠</span> AkuapemHub</span>
+        <span class="brand"><span class="brand-icon">🏠</span> AkuapemConnect</span>
         <div style="display: flex; align-items: center; gap: 10px;">
             <a href="notifications.php" class="bottom-nav-item" style="flex: none; flex-direction: row; gap: 6px; color: var(--text);">
                 <span class="nav-icon<?php echo $notificationCount ? ' nav-badge' : ''; ?>" <?php echo $notificationCount ? 'data-count="' . (int)$notificationCount . '"' : ''; ?>>🔔</span>
@@ -322,7 +322,7 @@ if ($user) {
         var _dashRefUrl = <?php echo json_encode($dashRefUrl); ?>;
         if (navigator.share) { var sb = document.getElementById('dash-share-btn'); if(sb) sb.style.display='block'; }
         async function dashShare() {
-            try { await navigator.share({ title:'Join AkuapemHub', text:'Use my referral link:', url:_dashRefUrl }); }
+            try { await navigator.share({ title:'Join AkuapemConnect', text:'Use my referral link:', url:_dashRefUrl }); }
             catch(e) { dashCopy(); }
         }
         async function dashCopy() {
@@ -830,7 +830,7 @@ if ($user) {
                 <div class="panel-header">
                     <h1>Browse Available Jobs</h1>
                 </div>
-                <p class="meta" style="margin-bottom: 14px;">Want to earn on AkuapemHub? <a href="become_worker.php" style="color:var(--primary);">Switch your profile to Worker</a> to apply for jobs.</p>
+                <p class="meta" style="margin-bottom: 14px;">Want to earn on AkuapemConnect? <a href="become_worker.php" style="color:var(--primary);">Switch your profile to Worker</a> to apply for jobs.</p>
                 <div class="jobs-grid">
                 <?php foreach ($browseJobs as $job): ?>
                     <article class="request-card">

@@ -16,7 +16,7 @@ $providerConfigured = WHATSAPP_PROVIDER_URL !== '' || SMS_PROVIDER_URL !== '';
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Business Messages — AkuapemHub</title>
+    <title>Business Messages — AkuapemConnect</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
 </head>
 <body>

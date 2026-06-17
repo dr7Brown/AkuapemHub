@@ -92,7 +92,7 @@ $packages = get_active_packages('worker_service_packages');
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Activate Service Listing — AkuapemHub</title>
+    <title>Activate Service Listing — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="has-bottom-nav">
@@ -107,7 +107,7 @@ $packages = get_active_packages('worker_service_packages');
 
         <div class="card">
             <h2 style="margin-top:0;">Service listing fee</h2>
-            <p>A listing fee is required to appear in AkuapemHub's worker search. Choose a subscription package below.</p>
+            <p>A listing fee is required to appear in AkuapemConnect's worker search. Choose a subscription package below.</p>
 
             <?php if ($existingPayment): ?>
                 <div class="alert alert-info">

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -223,7 +223,6 @@ $topAd     = $bannerAds[0] ?? null;
             <a href="community.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Community</a>
             <a href="events.php"    style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Events</a>
             <a href="login.php"     class="button button-secondary button-small">Sign in</a>
-            <a href="register.php"  class="button button-primary button-small">Register</a>
         </div>
     </header>
     <?php endif; ?>

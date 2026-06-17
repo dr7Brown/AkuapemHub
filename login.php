@@ -45,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Login — AkuapemHub</title>
+    <title>Login — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body>
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div style="text-align: center; margin-bottom: var(--space-4);">
             <span style="display: inline-flex; align-items: center; justify-content: center; width: 56px; height: 56px; font-size: 28px; border-radius: 50%; background: var(--primary-soft); margin-bottom: 10px;">🏠</span>
             <h1 style="margin: 0;">Welcome back</h1>
-            <p class="meta">Sign in to AkuapemHub</p>
+            <p class="meta">Sign in to AkuapemConnect</p>
         </div>
         <form class="card form-card" method="post" action="login.php">
             <?php echo csrf_field(); ?>

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -202,7 +202,6 @@ $csrfField = csrf_field();
         <span class="brand"><?php echo sanitize(APP_NAME); ?></span>
         <?php if (!$user): ?>
             <a href="login.php"    class="button button-secondary button-small">Sign in</a>
-            <a href="register.php" class="button button-primary button-small">Register</a>
         <?php endif; ?>
     </header>
 

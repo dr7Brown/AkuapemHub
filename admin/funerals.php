@@ -38,11 +38,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'Your announcement for "' . $row['deceased_name'] . '" has been approved and is now live.', 'success');
                     }
                 } elseif ($action === 'reject') {
-                    $pdo->prepare("UPDATE funeral_announcements SET status='rejected', updated_at=NOW() WHERE id=?")->execute([$tid]);
+                    $reason = trim($_POST['rejection_reason'] ?? '');
+                    $pdo->prepare("UPDATE funeral_announcements SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")
+                        ->execute([$reason ?: null, $tid]);
                     log_audit_action($user['id'], 'funeral_reject', "Rejected funeral #{$tid}: {$row['deceased_name']}");
                     if ($row['user_id']) {
+                        $reasonNote = $reason ? " Reason: {$reason}" : ' Contact admin for details.';
                         notify_user($row['user_id'], 'Funeral announcement not approved',
-                            'Your announcement for "' . $row['deceased_name'] . '" was not approved. Contact the admin for details.', 'warning');
+                            'Your announcement for "' . $row['deceased_name'] . '" was not approved.' . $reasonNote . ' You can edit and resubmit it.', 'warning');
                     }
                 } elseif ($action === 'mark_paid') {
                     $pdo->prepare("UPDATE funeral_announcements SET status='pending', updated_at=NOW() WHERE id=?")->execute([$tid]);
@@ -224,8 +227,8 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
                                 <?php if (in_array($fa['status'],['pending_payment','pending','rejected'])): ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="approve"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Approve</button></form>
                                 <?php endif; ?>
-                                <?php if ($fa['status'] === 'pending'): ?>
-                                <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="reject"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject</button></form>
+                                <?php if (in_array($fa['status'], ['pending','rejected'], true)): ?>
+                                <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="openRejectModal(<?php echo (int)$fa['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $fa['featured'] ? 'Unfeature' : 'Feature'; ?></button></form>
                                 <form method="post" action="funerals.php" onsubmit="return confirm('Delete this announcement?')"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
@@ -251,4 +254,35 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
         <?php endif; ?>
     </div>
 </body>
+
+<!-- Reject modal -->
+<div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeRejectModal()">
+    <div style="background:#fff;border-radius:14px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+        <h3 style="margin:0 0 6px;font-size:1rem;">Reject Announcement</h3>
+        <p style="font-size:.85rem;color:#6b7280;margin:0 0 14px;">Optionally explain why. The family will see this and can edit and resubmit.</p>
+        <form method="post" action="funerals.php">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="reject">
+            <input type="hidden" name="id" id="reject-target-id" value="">
+            <textarea name="rejection_reason" rows="4" placeholder="e.g. Some required information is missing. Please add the burial date and venue."
+                style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;margin-bottom:12px;"></textarea>
+            <div style="display:flex;gap:8px;">
+                <button type="submit" class="button" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject announcement</button>
+                <button type="button" class="button button-secondary" onclick="closeRejectModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+function openRejectModal(id) {
+    document.getElementById('reject-target-id').value = id;
+    var m = document.getElementById('reject-modal');
+    m.style.display = 'flex';
+    m.querySelector('textarea').value = '';
+    m.querySelector('textarea').focus();
+}
+function closeRejectModal() {
+    document.getElementById('reject-modal').style.display = 'none';
+}
+</script>
 </html>

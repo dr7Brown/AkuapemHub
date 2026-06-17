@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 class EmailService
 {
@@ -11,7 +11,7 @@ class EmailService
         string $otp,
         string $expiresAt
     ): bool {
-        $appName  = defined('APP_NAME')  ? APP_NAME  : 'AkuapemHub';
+        $appName  = defined('APP_NAME')  ? APP_NAME  : 'AkuapemConnect';
         $mailFrom = defined('MAIL_FROM') ? MAIL_FROM : 'noreply@example.com';
         $subject  = "{$appName} — Your Password Reset Code";
 
@@ -35,7 +35,7 @@ class EmailService
 
     public static function sendVerificationEmail(string $toEmail, string $name, string $token): bool
     {
-        $appName  = defined('APP_NAME')  ? APP_NAME  : 'AkuapemHub';
+        $appName  = defined('APP_NAME')  ? APP_NAME  : 'AkuapemConnect';
         $mailFrom = defined('MAIL_FROM') ? MAIL_FROM : 'noreply@example.com';
         $baseUrl  = defined('BASE_URL')  ? BASE_URL  : '';
         $subject  = "Verify your {$appName} email address";

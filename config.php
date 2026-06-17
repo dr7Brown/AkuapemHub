@@ -8,7 +8,7 @@ define('DB_NAME', 'akuapemhub');
 define('DB_USER', 'root');
 define('DB_PASS', '');
 
-define('APP_NAME', 'AkuapemHub');
+define('APP_NAME', 'AkuapemConnect');
 define('BASE_URL', 'http://localhost:8080/AkuapemHub');
 
 define('ADMIN_EMAIL', 'admin@example.com');

@@ -82,7 +82,7 @@ $featuredWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_fe
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin Analytics — AkuapemHub</title>
+    <title>Admin Analytics — AkuapemConnect</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 </head>

@@ -58,7 +58,7 @@ $currentUser = current_user();
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title><?php echo sanitize(display_name($customer)); ?> — AkuapemHub</title>
+    <title><?php echo sanitize(display_name($customer)); ?> — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="has-bottom-nav">

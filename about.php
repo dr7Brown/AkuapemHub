@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 $user = current_user();
@@ -50,7 +50,6 @@ $user = current_user();
     <a href="<?php echo $user ? 'community.php' : 'index.php'; ?>" class="button button-secondary button-small">← Back</a>
     <span class="brand"><?php echo sanitize(APP_NAME); ?></span>
     <?php if (!$user): ?>
-    <a href="register.php" class="button button-primary button-small">Register</a>
     <?php endif; ?>
 </header>
 

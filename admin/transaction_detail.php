@@ -170,7 +170,7 @@ $methodLabels = [
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Transaction #<?php echo $id; ?> — AkuapemHub Admin</title>
+    <title>Transaction #<?php echo $id; ?> — AkuapemConnect Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
     <style>
         .pay-nav { display:flex; gap:4px; padding:0 0 16px; flex-wrap:wrap; }

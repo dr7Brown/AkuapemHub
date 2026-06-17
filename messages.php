@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -16,7 +16,7 @@ if ($requestId <= 0) {
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>Messages — AkuapemHub</title>
+        <title>Messages — AkuapemConnect</title>
         <link rel="stylesheet" href="assets/css/style.css" />
     </head>
     <body class="has-bottom-nav">
@@ -98,7 +98,7 @@ $otherUserName = ($user['id'] === $request['customer_id']) ? $request['worker_na
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Messages — AkuapemHub</title>
+    <title>Messages — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         .message-thread { max-height: 400px; overflow-y: auto; border: 1px solid #d1d5db; border-radius: 16px; padding: 12px; margin-bottom: 16px; background: #fafafa; }

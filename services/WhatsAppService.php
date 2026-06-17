@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 /**
  * Provider-agnostic WhatsApp messaging service.
@@ -13,7 +13,7 @@ class WhatsAppService
     public static function sendOtp(string $phone, string $otp): bool
     {
         $phone    = self::normalizePhone($phone);
-        $appName  = defined('APP_NAME') ? APP_NAME : 'AkuapemHub';
+        $appName  = defined('APP_NAME') ? APP_NAME : 'AkuapemConnect';
         $expMin   = OtpService::EXPIRY_MINUTES;
         $message  = "Your {$appName} Password Reset Code is: {$otp}\n\n"
                   . "Valid for {$expMin} minutes. Do not share this code.";

@@ -301,7 +301,7 @@ if (!$focusJobId) {
 <head>
     <meta charset="UTF-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-    <title><?php echo $focusJobId ? 'Applicants — ' . sanitize($focusJob['title'] ?? '') : 'Manage Applicants'; ?> — AkuapemHub</title>
+    <title><?php echo $focusJobId ? 'Applicants — ' . sanitize($focusJob['title'] ?? '') : 'Manage Applicants'; ?> — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css"/>
     <style>
         .staffing-bar { display:flex; gap:14px; padding:6px 0; font-size:0.85rem; flex-wrap:wrap; }

@@ -83,7 +83,7 @@ $statusMeta = [
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Applications — AkuapemHub Admin</title>
+    <title>Applications — AkuapemConnect Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
     <style>
         /* ── Compact application rows (mirrors requests.php) ── */

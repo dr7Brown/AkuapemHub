@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -77,7 +77,7 @@ $activeTab = $_GET['tab'] ?? 'jobs';
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Applications — AkuapemHub</title>
+    <title>My Applications — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         .tabs { display:flex; gap:0; border-bottom:2px solid var(--border,#e5e7eb); margin-bottom:20px; overflow-x:auto; }

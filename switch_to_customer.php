@@ -17,7 +17,7 @@ $stmt = $pdo->prepare('SELECT id, name, email, email_verified, role, phone, town
 $stmt->execute([$user['id']]);
 $_SESSION['user'] = $stmt->fetch();
 
-notify_user($user['id'], 'Switched to customer mode', 'You are now browsing AkuapemHub as a customer. Your worker profile and skills are kept — switch back any time from Settings.', 'info');
+notify_user($user['id'], 'Switched to customer mode', 'You are now browsing AkuapemConnect as a customer. Your worker profile and skills are kept — switch back any time from Settings.', 'info');
 flash('You are now in customer mode. Your worker profile is kept, so you can switch back any time.');
 header('Location: jobs.php');
 exit;
