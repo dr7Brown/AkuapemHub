@@ -1,0 +1,302 @@
+This is the right architecture. Instead of every module (Events, Jobs, Businesses, Funeral Venues, Services, Schools, Churches, etc.) implementing its own map functionality, create a **centralized Location & Mapping Module** that all other modules consume.
+
+Use this prompt:
+
+# AKUAPEMHUB LOCATION & MAPPING MODULE
+
+Build a standalone Location & Mapping Module that serves as a shared service for all AkuapemHub modules requiring location functionality.
+
+The module must be reusable and consumable by any current or future module without duplicating location-related logic.
+
+Examples of modules that may consume this service:
+
+* Events
+* Jobs
+* Businesses
+* Funeral Announcements
+* Service Providers
+* Schools
+* Churches
+* Tourist Attractions
+* Advertisements
+* Future Modules
+
+---
+
+# MODULE NAME
+
+Location & Mapping Service
+
+---
+
+# PURPOSE
+
+Provide a centralized system for:
+
+* Location search
+* Address lookup
+* Coordinate storage
+* Map display
+* Route generation
+* Distance calculations
+* Nearby location searches
+
+All modules requiring location functionality must consume this service instead of implementing their own location logic.
+
+---
+
+# CORE FEATURES
+
+## Location Search
+
+Provide an autocomplete search box.
+
+Users should be able to search:
+
+* Place names
+* Streets
+* Landmarks
+* Institutions
+* Communities
+* Towns
+* Cities
+
+Display search suggestions while typing.
+
+---
+
+## Map Picker
+
+Provide an interactive map.
+
+Users should be able to:
+
+* Search location
+* Drop a pin
+* Move a pin
+* Select a location directly from the map
+
+Once selected, automatically capture:
+
+* Latitude
+* Longitude
+* Address
+* Location Name
+
+---
+
+## Stored Location Object
+
+Every saved location must contain:
+
+* Location ID
+* Location Name
+* Formatted Address
+* Latitude
+* Longitude
+* Google Maps URL
+* OpenStreetMap URL
+* Created Date
+
+---
+
+## Get Directions
+
+Provide direction links.
+
+Users should be able to:
+
+* Open Google Maps
+* Open Apple Maps (where supported)
+* Open Waze (where supported)
+
+Generate navigation routes automatically using coordinates.
+
+---
+
+## Embedded Maps
+
+Provide a reusable map component.
+
+Any module should be able to display:
+
+* A location pin
+* Interactive map
+* Directions button
+
+by passing a Location ID.
+
+---
+
+## Nearby Search
+
+Provide location-based search functionality.
+
+Examples:
+
+* Events near me
+* Jobs near me
+* Businesses near me
+* Funeral announcements near me
+* Service providers near me
+
+Support configurable search radius:
+
+* 1 km
+* 5 km
+* 10 km
+* 25 km
+* 50 km
+
+---
+
+## Distance Calculation
+
+Provide a shared service that calculates:
+
+* Distance between user and location
+* Distance between two saved locations
+
+Display distances in:
+
+* Kilometers
+* Miles
+
+---
+
+## Reverse Geocoding
+
+Convert coordinates into readable addresses.
+
+Example:
+
+Input:
+
+Latitude: 5.6037
+Longitude: -0.1870
+
+Output:
+
+Accra, Greater Accra Region, Ghana
+
+---
+
+# DATABASE STRUCTURE
+
+Create a dedicated locations table.
+
+Fields:
+
+* id
+* location_name
+* formatted_address
+* latitude
+* longitude
+* google_maps_url
+* osm_maps_url
+* created_at
+* updated_at
+
+---
+
+# LOCATION RELATIONSHIP MODEL
+
+Other modules should reference locations using:
+
+location_id
+
+Examples:
+
+events.location_id
+
+jobs.location_id
+
+businesses.location_id
+
+services.location_id
+
+funerals.location_id
+
+This eliminates duplicate storage of coordinates and addresses across multiple tables.
+
+---
+
+# API ENDPOINTS
+
+Provide reusable APIs:
+
+Search Locations
+
+Get Location By ID
+
+Create Location
+
+Update Location
+
+Delete Location
+
+Get Nearby Locations
+
+Calculate Distance
+
+Generate Directions Link
+
+Reverse Geocode Coordinates
+
+---
+
+# FRONTEND COMPONENTS
+
+Build reusable components:
+
+Location Search Box
+
+Location Picker Modal
+
+Map Viewer
+
+Get Directions Button
+
+Nearby Locations Widget
+
+Distance Badge
+
+These components must be reusable across the platform.
+
+---
+
+# PERFORMANCE REQUIREMENTS
+
+* Mobile-first design
+* Fast loading maps
+* Lazy load map components
+* AJAX location search
+* Caching for frequently accessed locations
+
+---
+
+# TECHNOLOGY REQUIREMENTS
+
+Use:
+
+* OpenStreetMap
+* Leaflet.js
+
+as the default mapping solution.
+
+Do not depend on paid APIs.
+
+Generate Google Maps links only for navigation purposes.
+
+---
+
+# FUTURE EXPANSION
+
+The module must support future features including:
+
+* Geofencing
+* Delivery zones
+* Location verification
+* Business proximity ranking
+* Nearby recommendations
+* Route optimization

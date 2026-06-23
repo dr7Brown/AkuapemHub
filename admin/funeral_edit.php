@@ -5,6 +5,7 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
+require_mod_permission('approve_funerals');
 $id = (int)($_GET['id'] ?? 0);
 $fa = null;
 if ($id) {
@@ -29,7 +30,12 @@ function fa_unique_slug($pdo, $base, $excludeId = 0) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
+    $locLat = ($_POST['loc_lat'] ?? '') !== '' ? (float)$_POST['loc_lat'] : null;
+    $locLng = ($_POST['loc_lng'] ?? '') !== '' ? (float)$_POST['loc_lng'] : null;
     $googleMapsLink = trim($_POST['google_maps_link'] ?? '') ?: null;
+    if (!$googleMapsLink && $locLat && $locLng) {
+        $googleMapsLink = 'https://maps.google.com/?q=' . $locLat . ',' . $locLng;
+    }
     $fields = ['deceased_name','gender','age','date_of_birth','date_of_death','biography',
                'wake_keeping_date','burial_date','thanksgiving_date','venue','gps_address',
                'organizer_name','organizer_phone','organizer_email','status','featured'];
@@ -63,13 +69,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare(
                 "UPDATE funeral_announcements SET deceased_name=?,gender=?,age=?,photograph=?,funeral_poster=?,
                  date_of_birth=?,date_of_death=?,biography=?,wake_keeping_date=?,burial_date=?,thanksgiving_date=?,
-                 venue=?,gps_address=?,organizer_name=?,organizer_phone=?,organizer_email=?,google_maps_link=?,status=?,featured=?,slug=?,updated_at=NOW()
+                 venue=?,gps_address=?,latitude=?,longitude=?,
+                 organizer_name=?,organizer_phone=?,organizer_email=?,google_maps_link=?,status=?,featured=?,slug=?,updated_at=NOW()
                  WHERE id=?"
             )->execute([
                 $data['deceased_name'], $data['gender'] ?? 'male', $data['age'],
                 $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
                 $data['wake_keeping_date'], $data['burial_date'], $data['thanksgiving_date'],
-                $data['venue'], $data['gps_address'], $data['organizer_name'],
+                $data['venue'], $data['gps_address'], $locLat, $locLng,
+                $data['organizer_name'],
                 $data['organizer_phone'], $data['organizer_email'], $googleMapsLink, $data['status'], $data['featured'], $slug, $id
             ]);
             log_audit_action($user['id'], 'funeral_edit', "Edited funeral #{$id}: {$data['deceased_name']}");
@@ -77,14 +85,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare(
                 "INSERT INTO funeral_announcements
                  (deceased_name,gender,age,photograph,funeral_poster,date_of_birth,date_of_death,biography,
-                  wake_keeping_date,burial_date,thanksgiving_date,venue,gps_address,
+                  wake_keeping_date,burial_date,thanksgiving_date,venue,gps_address,latitude,longitude,
                   organizer_name,organizer_phone,organizer_email,google_maps_link,status,featured,slug)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             )->execute([
                 $data['deceased_name'], $data['gender'] ?? 'male', $data['age'],
                 $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
                 $data['wake_keeping_date'], $data['burial_date'], $data['thanksgiving_date'],
-                $data['venue'], $data['gps_address'], $data['organizer_name'],
+                $data['venue'], $data['gps_address'], $locLat, $locLng,
+                $data['organizer_name'],
                 $data['organizer_phone'], $data['organizer_email'], $googleMapsLink, $data['status'], $data['featured'], $slug
             ]);
             $id = (int)$pdo->lastInsertId();
@@ -189,15 +198,16 @@ $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : 
             <div class="afe-field"><label>Thanksgiving Service</label><input type="datetime-local" name="thanksgiving_date" class="form-control" value="<?php echo $dt('thanksgiving_date','Y-m-d\TH:i'); ?>"></div>
             <div class="afe-field">
                 <label>Venue / Location Name</label>
-                <input type="text" name="venue" class="form-control" value="<?php echo $v('venue'); ?>">
+                <input type="text" name="venue" class="form-control" value="<?php echo $v('venue'); ?>" placeholder="e.g. St. Peter's Church, Akropong">
             </div>
             <div class="afe-field">
                 <label>GPS / Address</label>
                 <input type="text" name="gps_address" class="form-control" value="<?php echo $v('gps_address'); ?>" placeholder="e.g. Akuapem-Mampong, Eastern Region">
             </div>
             <div class="afe-field">
-                <label>Google Maps Link <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                <label>Google Maps Link <span style="font-weight:400;color:var(--text-muted)">(optional — paste a Google Maps share link)</span></label>
                 <input type="url" name="google_maps_link" class="form-control" value="<?php echo $v('google_maps_link'); ?>" placeholder="https://maps.google.com/…">
+                <p style="font-size:.75rem;color:var(--text-muted);margin:4px 0 0;">Tip: open Google Maps, find the location, click Share → Copy link, then paste here.</p>
             </div>
 
             <p class="afe-section">Organizer</p>

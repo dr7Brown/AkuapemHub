@@ -57,14 +57,14 @@ $user = current_user();
 
     <div class="about-hero">
         <h1><?php echo sanitize(APP_NAME); ?></h1>
-        <p>A community platform connecting skilled workers, customers, and neighbours across the Akuapem area and beyond — helping people find work, share news, honour the departed, celebrate together, and support each other.</p>
+        <p>A community platform connecting skilled workers, customers, buyers, sellers, and neighbours across the Akuapem area — find skilled workers, buy and sell products, request deliveries, share news, honour the departed, celebrate community events, and support each other.</p>
     </div>
 
     <!-- Mission -->
     <div class="about-section">
         <h2>Our Mission</h2>
-        <p><?php echo sanitize(APP_NAME); ?> was built to bring the Akuapem community together in one digital space. We believe that local talent deserves a platform where they can be found and fairly paid, that community events and news deserve wider reach, and that important announcements — including funeral notices — should be easy to share with family and friends across Ghana.</p>
-        <p>We connect people who need work done with people who can do it, while also serving as a digital notice board and community hub for everyone in the area.</p>
+        <p><?php echo sanitize(APP_NAME); ?> was built to bring the Akuapem community together in one digital space. We believe that local talent deserves a platform where they can be found and fairly paid, that goods can be bought and sold safely within the community, and that items can be delivered quickly and reliably by local riders.</p>
+        <p>We also serve as a digital notice board — making it easy to share community events, local news, funeral announcements, and sponsored advertisements with family and friends across Ghana and beyond.</p>
     </div>
 
     <!-- Services -->
@@ -131,6 +131,36 @@ $user = current_user();
                 <h3>Ratings &amp; Reviews</h3>
                 <p>Customers rate workers after every completed job. Ratings build trust and help the best workers stand out.</p>
             </div>
+            <div class="service-card">
+                <div class="icon">🚚</div>
+                <h3>Delivery Services</h3>
+                <p>Request door-to-door delivery of parcels, documents, food, and more. Verified local riders pick up and deliver — track every step from request to drop-off.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">🛵</div>
+                <h3>Become a Delivery Rider</h3>
+                <p>Register your bike, car, or van as a delivery agent. Accept jobs, set your availability, build your rating, and earn from every delivery you complete.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">🛍️</div>
+                <h3>Marketplace</h3>
+                <p>Buy and sell products directly within the community. Browse 28+ product categories, add to cart, and check out securely. Sellers can open a free shop in minutes.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">🏪</div>
+                <h3>Seller Shops</h3>
+                <p>Create your own branded shop page, list unlimited products with photos and descriptions, manage incoming orders, and grow your business with featured and sponsored listings.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">📣</div>
+                <h3>Advertisements</h3>
+                <p>Promote your business with banner and sponsored advertisements displayed on the homepage and throughout the platform. Admin-managed for quality and relevance.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">🧾</div>
+                <h3>Receipts &amp; Payments</h3>
+                <p>Every payment — jobs, marketplace orders, delivery fees, and boost listings — generates a downloadable receipt. Supports MTN MoMo, Telecel Cash, AirtelTigo, and card payments.</p>
+            </div>
         </div>
     </div>
 
@@ -151,6 +181,30 @@ $user = current_user();
             <div class="step-card"><div class="num">Step 3</div><h4>Get Hired</h4><p>Once approved, the job is assigned to you. Chat with the customer and get to work.</p></div>
             <div class="step-card"><div class="num">Step 4</div><h4>Complete &amp; Earn</h4><p>Mark the job complete, receive your payment, and build your rating for future jobs.</p></div>
         </div>
+
+        <h3 style="font-size:.9rem;font-weight:700;margin:24px 0 10px;color:#6b7280;">🚚 Requesting a Delivery</h3>
+        <div class="how-steps">
+            <div class="step-card"><div class="num">Step 1</div><h4>Create a Request</h4><p>Enter pickup and drop-off locations, describe the item, set your preferred date and payment method.</p></div>
+            <div class="step-card"><div class="num">Step 2</div><h4>Admin Reviews</h4><p>Your request is reviewed to prevent fraud. Trusted customers with a good record are auto-approved instantly.</p></div>
+            <div class="step-card"><div class="num">Step 3</div><h4>Riders Apply</h4><p>Approved riders in the area apply and can offer a custom delivery fee. You select the best rider.</p></div>
+            <div class="step-card"><div class="num">Step 4</div><h4>Track &amp; Receive</h4><p>Follow live status updates — picked up, in transit, delivered. Rate your rider after delivery.</p></div>
+        </div>
+
+        <h3 style="font-size:.9rem;font-weight:700;margin:24px 0 10px;color:#6b7280;">🛍️ Buying on the Marketplace</h3>
+        <div class="how-steps">
+            <div class="step-card"><div class="num">Step 1</div><h4>Browse Products</h4><p>Search or filter by category, price range, condition, or seller location across 28+ product categories.</p></div>
+            <div class="step-card"><div class="num">Step 2</div><h4>Add to Cart</h4><p>Add items from one or more shops to your cart. Review your items and total before proceeding.</p></div>
+            <div class="step-card"><div class="num">Step 3</div><h4>Checkout</h4><p>Enter your delivery address (optionally with a Google Maps link), choose a payment method, and place your order.</p></div>
+            <div class="step-card"><div class="num">Step 4</div><h4>Receive &amp; Review</h4><p>The seller confirms, packs, and ships your order. Download your receipt and rate the seller once delivered.</p></div>
+        </div>
+
+        <h3 style="font-size:.9rem;font-weight:700;margin:24px 0 10px;color:#6b7280;">🏪 Selling on the Marketplace</h3>
+        <div class="how-steps">
+            <div class="step-card"><div class="num">Step 1</div><h4>Open Your Shop</h4><p>Create your free shop page — add a name, description, logo, and contact details.</p></div>
+            <div class="step-card"><div class="num">Step 2</div><h4>List Products</h4><p>Add products with photos, price, stock quantity, and condition. Submit for admin approval.</p></div>
+            <div class="step-card"><div class="num">Step 3</div><h4>Receive Orders</h4><p>Customers place orders. Confirm, process, and mark as ready. The platform notifies riders automatically.</p></div>
+            <div class="step-card"><div class="num">Step 4</div><h4>Boost &amp; Grow</h4><p>Feature or sponsor your products and shop for top visibility. Track your sales and revenue from the seller dashboard.</p></div>
+        </div>
     </div>
 
     <!-- Values -->
@@ -158,9 +212,11 @@ $user = current_user();
         <h2>Our Values</h2>
         <div class="values-row">
             <div class="value-card"><div class="vi">🤝</div><h4>Community First</h4><p>Built for and by the Akuapem community.</p></div>
-            <div class="value-card"><div class="vi">🛡️</div><h4>Trust &amp; Safety</h4><p>Verified workers, secure escrow, and dispute resolution.</p></div>
-            <div class="value-card"><div class="vi">⚡</div><h4>Speed</h4><p>Fast matching so jobs get done quickly.</p></div>
-            <div class="value-card"><div class="vi">🌍</div><h4>Local Impact</h4><p>Every hire keeps money and opportunity in the community.</p></div>
+            <div class="value-card"><div class="vi">🛡️</div><h4>Trust &amp; Safety</h4><p>Verified workers, riders, and sellers. Secure escrow, admin approval, and dispute resolution.</p></div>
+            <div class="value-card"><div class="vi">⚡</div><h4>Speed</h4><p>Fast job matching, quick deliveries, and instant marketplace orders.</p></div>
+            <div class="value-card"><div class="vi">🌍</div><h4>Local Impact</h4><p>Every hire, order, and delivery keeps money and opportunity within the community.</p></div>
+            <div class="value-card"><div class="vi">📱</div><h4>Mobile First</h4><p>Designed from the ground up for smartphones — fast, simple, and works on any Android or iOS device.</p></div>
+            <div class="value-card"><div class="vi">🔓</div><h4>Open Access</h4><p>Browse jobs, products, events, and news without an account. Register only when you're ready to participate.</p></div>
         </div>
     </div>
 
@@ -170,11 +226,14 @@ $user = current_user();
         <p style="color:#a7f3d0;font-size:.9rem;margin:0 0 16px;">Join <?php echo sanitize(APP_NAME); ?> today — it's free to register.</p>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
             <?php if ($user): ?>
-            <a href="jobs.php"    class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Jobs</a>
-            <a href="request.php" class="button button-primary">Post a Job</a>
+            <a href="jobs.php"         class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Jobs</a>
+            <a href="marketplace.php"  class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Marketplace</a>
+            <a href="delivery.php"     class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Deliveries</a>
+            <a href="request.php"      class="button button-primary">Post a Job</a>
             <?php else: ?>
-            <a href="register.php" class="button button-primary">Create Free Account</a>
-            <a href="browse_jobs.php" class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Jobs</a>
+            <a href="register.php"     class="button button-primary">Create Free Account</a>
+            <a href="marketplace.php"  class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Products</a>
+            <a href="browse_jobs.php"  class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Jobs</a>
             <?php endif; ?>
         </div>
     </div>

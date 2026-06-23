@@ -1,0 +1,39 @@
+Critical — Won't work without these
+1. Hosting & Deployment
+You're currently on localhost XAMPP. You need a PHP/MySQL web host. Upload all files, import your DB (run migrate.php once on the new host), then delete it.
+
+2. Update config.php for production
+Three things must change before anything works:
+
+BASE_URL → your real domain (email verification links use this)
+DB_HOST / DB_NAME / DB_USER / DB_PASS → production DB credentials
+ADMIN_EMAIL → your real admin email (currently admin@example.com)
+3. Email delivery — this is your biggest risk
+Everything uses PHP's mail() which is unreliable or disabled on most shared hosts. Without working email:
+
+Users can't verify email (which blocks job posting)
+Forgot password is broken
+All notification emails silently fail
+Fix: either configure your host's SMTP relay, or swap mail() in functions.php + EmailService.php for PHPMailer with SMTP credentials. This needs to be tested before launch.
+
+4. Create your admin account
+Register a user, then set role = 'admin' directly in the users table in the DB. You can then manage everything from /admin/index.php.
+
+5. HTTPS
+Most hosts give you free SSL (Let's Encrypt). Turn it on — the security headers (HSTS, CSP) only activate on HTTPS, and Paystack requires it for payments.
+
+Important — Do on day 1 of launch
+6. Set Paystack live keys in Admin → Monetization → Payments tab. If you're keeping everything free for now, skip this — just don't enable any fees.
+
+7. Fill in contact details in Admin → Contact Settings — currently blank (phone, address, WhatsApp, support hours).
+
+8. Review Terms & Privacy pages — they exist with a "1 June 2025" date but check the actual content is accurate for your platform.
+
+9. End-to-end test the core flow:
+Register → verify email → post job → worker applies → admin approves → complete → rate. Do this on the live server before announcing it.
+
+Can wait until after launch
+WhatsApp/SMS notifications (already falls back to silent log if keys are empty)
+Monetization/referrals (all disabled by default, configure from admin panel)
+Featured jobs/workers pricing
+The single thing most likely to break your launch: email delivery. Everything else is configuration. Solve that first

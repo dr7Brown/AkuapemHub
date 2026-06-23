@@ -5,6 +5,7 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
+require_mod_permission('approve_news');
 $id = (int)($_GET['id'] ?? 0);
 $article = null;
 if ($id) {

@@ -3,9 +3,10 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
 require_login();
-if (!is_admin()) { header('Location: index.php'); exit; }
+if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
 // Toggle status
+require_mod_permission('manage_ads');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
     csrf_check();
     $tid = (int)$_POST['toggle_id'];

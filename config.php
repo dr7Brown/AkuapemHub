@@ -9,7 +9,7 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 
 define('APP_NAME', 'AkuapemConnect');
-define('BASE_URL', 'http://localhost:8080/AkuapemHub');
+define('BASE_URL', 'http://localhost:8080/Akuapemconnect');
 
 define('ADMIN_EMAIL', 'admin@example.com');
 define('MAIL_FROM', 'info@expresslabgh.com');

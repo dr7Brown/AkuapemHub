@@ -3,9 +3,10 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
 require_login();
-if (!is_admin()) { header('Location: index.php'); exit; }
+if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
 $id = (int)($_GET['id'] ?? 0);
+require_mod_permission('manage_ads');
 $ad = null;
 if ($id) {
     $stmt = $pdo->prepare("SELECT * FROM advertisements WHERE id=? LIMIT 1");

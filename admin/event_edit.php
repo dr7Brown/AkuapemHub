@@ -5,6 +5,7 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
+require_mod_permission('approve_events');
 $id = (int)($_GET['id'] ?? 0);
 $ev = null;
 if ($id) {
@@ -33,7 +34,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $desc       = trim($_POST['description'] ?? '');
     $venue      = trim($_POST['venue']       ?? '');
     $gps        = trim($_POST['gps_address'] ?? '');
+    $locLat     = $_POST['loc_lat'] !== '' ? (float)$_POST['loc_lat'] : null;
+    $locLng     = $_POST['loc_lng'] !== '' ? (float)$_POST['loc_lng'] : null;
     $googleMapsLink = trim($_POST['google_maps_link'] ?? '') ?: null;
+    // Auto-generate Google Maps link from coordinates if not manually set
+    if (!$googleMapsLink && $locLat && $locLng) {
+        $googleMapsLink = 'https://maps.google.com/?q=' . $locLat . ',' . $locLng;
+    }
     $startDate  = trim($_POST['start_date']  ?? '');
     $endDate    = trim($_POST['end_date']    ?? '') ?: null;
     $startTime  = trim($_POST['start_time']  ?? '') ?: null;
@@ -60,18 +67,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id) {
             $pdo->prepare(
                 "UPDATE events SET title=?,slug=?,featured_image=?,description=?,venue=?,gps_address=?,
+                 latitude=?,longitude=?,
                  start_date=?,end_date=?,start_time=?,end_time=?,organizer_name=?,
                  ticket_type=?,ticket_price=?,registration_link=?,google_maps_link=?,status=?,featured=?,updated_at=NOW()
                  WHERE id=?"
-            )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,$startTime,$endTime,
+            )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$locLat,$locLng,$startDate,$endDate,$startTime,$endTime,
                         $organizer,$ticketType,$ticketPrice,$regLink,$googleMapsLink,$status,$featured,$id]);
             log_audit_action($user['id'], 'event_edit', "Edited event #{$id}: {$title}");
         } else {
             $pdo->prepare(
-                "INSERT INTO events (title,slug,featured_image,description,venue,gps_address,start_date,end_date,
-                 start_time,end_time,organizer_name,ticket_type,ticket_price,registration_link,google_maps_link,status,featured)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-            )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,$startTime,$endTime,
+                "INSERT INTO events (title,slug,featured_image,description,venue,gps_address,
+                 latitude,longitude,
+                 start_date,end_date,start_time,end_time,organizer_name,ticket_type,ticket_price,
+                 registration_link,google_maps_link,status,featured)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$locLat,$locLng,$startDate,$endDate,$startTime,$endTime,
                         $organizer,$ticketType,$ticketPrice,$regLink,$googleMapsLink,$status,$featured]);
             $id = (int)$pdo->lastInsertId();
             log_audit_action($user['id'], 'event_create', "Created event #{$id}: {$title}");
@@ -159,8 +169,9 @@ $dt = fn($k) => !empty($ev[$k]) ? $ev[$k] : '';
                 <input type="text" name="gps_address" class="form-control" value="<?php echo $v('gps_address'); ?>" placeholder="e.g. Akuapem-Mampong, Eastern Region">
             </div>
             <div class="ee-field">
-                <label>Google Maps Link <span style="font-weight:400;color:var(--text-muted)">(optional)</span></label>
+                <label>Google Maps Link <span style="font-weight:400;color:var(--text-muted)">(optional — paste a Google Maps share link)</span></label>
                 <input type="url" name="google_maps_link" class="form-control" value="<?php echo $v('google_maps_link'); ?>" placeholder="https://maps.google.com/…">
+                <p style="font-size:.75rem;color:var(--text-muted);margin:4px 0 0;">Tip: open Google Maps, find the location, click Share → Copy link, then paste here.</p>
             </div>
 
             <p class="ee-section">Organizer &amp; Tickets</p>

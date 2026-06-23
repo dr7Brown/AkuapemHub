@@ -259,6 +259,17 @@ $sbSimilar = $sbSimilar->fetchAll();
                 <span class="status status-<?php echo sanitize($request['status']); ?>" style="flex-shrink: 0;"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
             </div>
 
+            <?php if ($request['status'] === 'rejected' && !empty($request['rejection_reason']) && $request['customer_id'] === $user['id']): ?>
+            <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin:12px 0 0;display:flex;gap:10px;align-items:flex-start;">
+                <span style="font-size:1.2rem;flex-shrink:0;">❌</span>
+                <div>
+                    <strong style="display:block;font-size:.88rem;color:#c0392b;margin-bottom:3px;">Request Not Approved</strong>
+                    <p style="margin:0;font-size:.86rem;color:#374151;line-height:1.6;"><strong>Reason:</strong> <?php echo sanitize($request['rejection_reason']); ?></p>
+                    <p style="margin:6px 0 0;font-size:.8rem;color:#6b7280;">You can <a href="request.php?edit=<?php echo $requestId; ?>" style="color:var(--primary,#0f766e);font-weight:700;">edit and resubmit</a> your request.</p>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <?php if ($rdFeatActive || in_array($request['status'], ['fully_staffed', 'partially_staffed'], true) || ($request['workers_needed'] ?? 1) > 1): ?>
                 <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px;">
                     <?php if ($rdFeatActive): ?>

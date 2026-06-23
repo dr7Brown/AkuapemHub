@@ -9,7 +9,7 @@ if (!is_admin()) {
 }
 
 $fields = [
-    'contact_email'    => ['label' => 'Support email',    'type' => 'email',    'placeholder' => 'support@akuapemhub.com', 'desc' => 'Shown on the Contact page and used for contact form replies'],
+    'contact_email'    => ['label' => 'Support email',    'type' => 'email',    'placeholder' => 'support@akuapemconnect.com', 'desc' => 'Shown on the Contact page and used for contact form replies'],
     'contact_phone'    => ['label' => 'Phone number',     'type' => 'text',     'placeholder' => '+233 XX XXX XXXX',       'desc' => 'Optional phone number displayed on the Contact page'],
     'contact_whatsapp' => ['label' => 'WhatsApp number',  'type' => 'text',     'placeholder' => '+233244000000',          'desc' => 'Full international format, used to generate a wa.me link'],
     'contact_address'  => ['label' => 'Physical address', 'type' => 'text',     'placeholder' => 'Akuapem Area, Eastern Region, Ghana', 'desc' => 'Address or area displayed on the Contact page'],

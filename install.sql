@@ -1,5 +1,5 @@
--- ─────────────────────────────────────────────────────────────────────────────
--- AkuapemHub — Master Installation SQL
+﻿-- ─────────────────────────────────────────────────────────────────────────────
+-- AkuapemConnect — Master Installation SQL
 -- ─────────────────────────────────────────────────────────────────────────────
 --
 -- HOW TO RUN (pick one):
@@ -22,6 +22,7 @@
 --   v008  Content publishing fee ENUM extensions     (migrate_content_fees.php)
 --   v009  Location mapping                           (migrate_locations.php)
 --   v010  Rejection-reason columns + status values   (temp script — run & deleted)
+--   v011  Delivery Services module                   (migrate_delivery.php → now in install.sql)
 -- ─────────────────────────────────────────────────────────────────────────────
 
 SET NAMES utf8mb4;
@@ -195,10 +196,14 @@ CREATE TABLE IF NOT EXISTS notifications (
     body       TEXT NOT NULL,
     type       ENUM('info','success','warning','error') NOT NULL DEFAULT 'info',
     is_read    TINYINT(1) NOT NULL DEFAULT 0,
+    link       VARCHAR(500) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_notifications_user_id (user_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS link VARCHAR(500) DEFAULT NULL;
+ALTER TABLE events        ADD COLUMN IF NOT EXISTS published_at DATETIME DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS worker_skills (
     id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -555,7 +560,24 @@ INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) V
     ('chat_allow_applicant_chat',     '1',    'Allow job owner and applicant to chat'),
     ('chat_allow_hired_chat',         '1',    'Allow hired worker and job owner to chat'),
     ('chat_allow_worker_worker',      '0',    'Allow worker to worker direct messaging'),
-    ('chat_allow_direct_all',         '0',    'Allow any user to message any other user freely');
+    ('chat_allow_direct_all',         '0',    'Allow any user to message any other user freely'),
+    ('smtp_enabled',                  '0',    'Use SMTP for email delivery (0=PHP mail(), 1=SMTP)'),
+    ('smtp_host',                     '',     'SMTP server hostname e.g. smtp.gmail.com'),
+    ('smtp_port',                     '587',  'SMTP port: 587=STARTTLS, 465=SSL, 25=plain'),
+    ('smtp_encryption',               'tls',  'Encryption: tls, ssl, or none'),
+    ('smtp_username',                 '',     'SMTP login username / email address'),
+    ('smtp_password',                 '',     'SMTP login password or app-specific password'),
+    ('smtp_from_name',                '',     'Sender display name (blank = APP_NAME)'),
+    ('smtp_from_email',               '',     'Sender email address (blank = MAIL_FROM in config.php)');
+
+
+-- Login rate-limiting table (auto-created by functions.php on first use; here for completeness)
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    ip_address   VARCHAR(45) NOT NULL,
+    attempted_at DATETIME NOT NULL,
+    INDEX idx_la_ip_time (ip_address, attempted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -811,6 +833,7 @@ CREATE TABLE IF NOT EXISTS events (
     status            ENUM('pending_payment','draft','published','cancelled','rejected') NOT NULL DEFAULT 'draft',
     location_id       INT UNSIGNED NULL DEFAULT NULL,  -- v009
     rejection_reason  VARCHAR(500) NULL DEFAULT NULL,  -- v010
+    published_at      DATETIME DEFAULT NULL,
     created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_events_slug (slug),
@@ -953,3 +976,567 @@ ALTER TABLE news                  ADD COLUMN IF NOT EXISTS rejection_reason VARC
 -- ─────────────────────────────────────────────────────────────────────────────
 SET foreign_key_checks = 1;
 -- ─────────────────────────────────────────────────────────────────────────────
+
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v011  Delivery Services module
+-- ═══════════════════════════════════════════════════════════════════════════
+-- New tables: delivery_agents, delivery_requests, delivery_ratings
+-- New platform_settings rows: delivery_enabled, delivery_base_fee, delivery_fee_mode
+
+CREATE TABLE IF NOT EXISTS delivery_agents (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id              INT UNSIGNED NOT NULL,
+    vehicle_type         ENUM('motorbike','bicycle','car','van','truck','public_transport','other') NOT NULL DEFAULT 'motorbike',
+    vehicle_registration VARCHAR(100) DEFAULT NULL,
+    license_number       VARCHAR(100) DEFAULT NULL,
+    service_area         VARCHAR(500) DEFAULT NULL,
+    bio                  TEXT DEFAULT NULL,
+    availability_status  ENUM('available','busy','offline') NOT NULL DEFAULT 'offline',
+    verification_status  ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    rejection_reason     TEXT DEFAULT NULL,
+    id_type              VARCHAR(100) DEFAULT NULL,
+    id_type_custom       VARCHAR(100) DEFAULT NULL,
+    id_number            VARCHAR(100) DEFAULT NULL,
+    id_document_path     VARCHAR(255) DEFAULT NULL,
+    rating               DECIMAL(3,2) NOT NULL DEFAULT 0.00,
+    completed_deliveries INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_da_user (user_id),
+    KEY idx_da_verification (verification_status),
+    KEY idx_da_availability (availability_status),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS delivery_requests (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id          INT UNSIGNED NOT NULL,
+    agent_id             INT UNSIGNED DEFAULT NULL,
+    pickup_location      VARCHAR(500) NOT NULL,
+    pickup_lat           DECIMAL(10,7) DEFAULT NULL,
+    pickup_lng           DECIMAL(10,7) DEFAULT NULL,
+    pickup_contact_name  VARCHAR(255) NOT NULL,
+    pickup_contact_phone VARCHAR(50) NOT NULL,
+    dropoff_location     VARCHAR(500) NOT NULL,
+    dropoff_lat          DECIMAL(10,7) DEFAULT NULL,
+    dropoff_lng          DECIMAL(10,7) DEFAULT NULL,
+    receiver_name        VARCHAR(255) NOT NULL,
+    receiver_phone       VARCHAR(50) NOT NULL,
+    item_description     TEXT NOT NULL,
+    item_category        ENUM('documents','food','electronics','clothing','medical_supplies','groceries','parcels','other') NOT NULL DEFAULT 'parcels',
+    package_weight       DECIMAL(6,2) DEFAULT NULL,
+    delivery_notes       TEXT DEFAULT NULL,
+    delivery_fee         DECIMAL(10,2) DEFAULT NULL,
+    payment_method       ENUM('cash','mobile_money','card','wallet') NOT NULL DEFAULT 'cash',
+    payment_status       ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
+    preferred_date       DATE DEFAULT NULL,
+    preferred_time       TIME DEFAULT NULL,
+    status               ENUM('pending','accepted','picked_up','in_transit','delivered','cancelled','failed') NOT NULL DEFAULT 'pending',
+    cancelled_reason     TEXT DEFAULT NULL,
+    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_dr_customer (customer_id),
+    KEY idx_dr_agent (agent_id),
+    KEY idx_dr_status (status),
+    KEY idx_dr_created (created_at),
+    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (agent_id) REFERENCES delivery_agents(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS delivery_ratings (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    delivery_request_id INT UNSIGNED NOT NULL,
+    customer_rating     TINYINT DEFAULT NULL,
+    customer_comment    TEXT DEFAULT NULL,
+    agent_rating        TINYINT DEFAULT NULL,
+    agent_comment       TEXT DEFAULT NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_drat_request (delivery_request_id),
+    FOREIGN KEY (delivery_request_id) REFERENCES delivery_requests(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v011 settings seeds
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('delivery_enabled',   '1',    'Whether the Delivery Services module is active (1=yes, 0=no)'),
+    ('delivery_base_fee',  '0.00', 'Default delivery base fee in GH₵; 0 means customer and agent negotiate'),
+    ('delivery_fee_mode',  'free', 'free = negotiate, fixed = use delivery_base_fee');
+
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- v012  Delivery Monetization, Approval Workflow & Application System
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+-- New tables : delivery_applications, delivery_subscriptions,
+--              delivery_sponsored_listings, delivery_verifications,
+--              delivery_transactions
+-- New columns: delivery_requests (is_flagged, flag_reason, auto_approved,
+--              rejection_reason); delivery_agents (is_premium, premium_start,
+--              premium_end, is_sponsored, sponsored_end, is_verified,
+--              selfie_path, drivers_license_path, trust_level,
+--              auto_approve_enabled)
+
+-- Extend delivery_requests status ENUM
+ALTER TABLE delivery_requests MODIFY COLUMN status
+    ENUM('draft','pending','pending_approval','approved','open','assigned',
+         'accepted','picked_up','in_progress','in_transit',
+         'delivered','cancelled','expired','rejected','failed')
+    NOT NULL DEFAULT 'pending_approval';
+
+-- New columns on delivery_requests
+ALTER TABLE delivery_requests ADD COLUMN IF NOT EXISTS is_flagged       TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE delivery_requests ADD COLUMN IF NOT EXISTS flag_reason      TEXT DEFAULT NULL;
+ALTER TABLE delivery_requests ADD COLUMN IF NOT EXISTS auto_approved    TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE delivery_requests ADD COLUMN IF NOT EXISTS rejection_reason TEXT DEFAULT NULL;
+
+-- New columns on delivery_agents
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS is_premium           TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS premium_start        DATE DEFAULT NULL;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS premium_end          DATE DEFAULT NULL;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS is_sponsored         TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS sponsored_end        DATE DEFAULT NULL;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS is_verified          TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS selfie_path          VARCHAR(255) DEFAULT NULL;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS drivers_license_path VARCHAR(255) DEFAULT NULL;
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS trust_level          ENUM('new','bronze','silver','gold','platinum') NOT NULL DEFAULT 'new';
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS auto_approve_enabled TINYINT(1) NOT NULL DEFAULT 0;
+
+-- New table: delivery_applications
+CREATE TABLE IF NOT EXISTS delivery_applications (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    delivery_request_id INT UNSIGNED NOT NULL,
+    agent_id            INT UNSIGNED NOT NULL,
+    offer_note          TEXT DEFAULT NULL,
+    offered_fee         DECIMAL(10,2) DEFAULT NULL,
+    status              ENUM('applied','shortlisted','accepted','rejected','withdrawn','assigned','completed')
+                        NOT NULL DEFAULT 'applied',
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_da_app  (delivery_request_id, agent_id),
+    KEY idx_dapp_agent    (agent_id),
+    KEY idx_dapp_status   (status),
+    FOREIGN KEY (delivery_request_id) REFERENCES delivery_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (agent_id)            REFERENCES delivery_agents(id)   ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- New table: delivery_subscriptions
+CREATE TABLE IF NOT EXISTS delivery_subscriptions (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    agent_id       INT UNSIGNED NOT NULL,
+    plan_type      ENUM('monthly','quarterly','yearly') NOT NULL DEFAULT 'monthly',
+    price_paid     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    payment_method ENUM('mtn_momo','telecel','airtel','wallet','free') NOT NULL DEFAULT 'mtn_momo',
+    mobi_number    VARCHAR(30) DEFAULT NULL,
+    start_date     DATE NOT NULL,
+    end_date       DATE NOT NULL,
+    status         ENUM('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
+    activated_by   INT UNSIGNED DEFAULT NULL,
+    activated_at   DATETIME DEFAULT NULL,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_dsub_agent  (agent_id),
+    KEY idx_dsub_status (status),
+    KEY idx_dsub_end    (end_date),
+    FOREIGN KEY (agent_id) REFERENCES delivery_agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- New table: delivery_sponsored_listings
+CREATE TABLE IF NOT EXISTS delivery_sponsored_listings (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    agent_id       INT UNSIGNED NOT NULL,
+    package_days   TINYINT UNSIGNED NOT NULL,
+    price_paid     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    payment_method ENUM('mtn_momo','telecel','airtel','wallet','free') NOT NULL DEFAULT 'mtn_momo',
+    mobi_number    VARCHAR(30) DEFAULT NULL,
+    start_date     DATE NOT NULL,
+    end_date       DATE NOT NULL,
+    status         ENUM('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
+    activated_by   INT UNSIGNED DEFAULT NULL,
+    activated_at   DATETIME DEFAULT NULL,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_dsp_agent  (agent_id),
+    KEY idx_dsp_status (status),
+    KEY idx_dsp_end    (end_date),
+    FOREIGN KEY (agent_id) REFERENCES delivery_agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- New table: delivery_verifications (Verified Rider Badge)
+CREATE TABLE IF NOT EXISTS delivery_verifications (
+    id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    agent_id         INT UNSIGNED NOT NULL,
+    ghana_card_path  VARCHAR(255) DEFAULT NULL,
+    license_path     VARCHAR(255) DEFAULT NULL,
+    vehicle_reg_path VARCHAR(255) DEFAULT NULL,
+    selfie_path      VARCHAR(255) DEFAULT NULL,
+    fee_paid         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status           ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    rejection_reason TEXT DEFAULT NULL,
+    submitted_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at      DATETIME DEFAULT NULL,
+    UNIQUE KEY uq_dv_agent (agent_id),
+    FOREIGN KEY (agent_id) REFERENCES delivery_agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- New table: delivery_transactions
+CREATE TABLE IF NOT EXISTS delivery_transactions (
+    id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    agent_id         INT UNSIGNED NOT NULL,
+    transaction_type ENUM('subscription','sponsored','verification') NOT NULL,
+    amount           DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    payment_method   ENUM('mtn_momo','telecel','airtel','wallet','free') NOT NULL DEFAULT 'mtn_momo',
+    mobi_number      VARCHAR(30) DEFAULT NULL,
+    reference        VARCHAR(100) DEFAULT NULL,
+    status           ENUM('pending','completed','failed','refunded') NOT NULL DEFAULT 'pending',
+    related_id       INT UNSIGNED DEFAULT NULL,
+    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_dtx_agent  (agent_id),
+    KEY idx_dtx_type   (transaction_type),
+    KEY idx_dtx_status (status),
+    FOREIGN KEY (agent_id) REFERENCES delivery_agents(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v012 platform_settings seeds
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('delivery_require_approval',            '1',     'Require admin to approve requests before riders see them (1=yes)'),
+    ('delivery_auto_approve_min_deliveries', '10',    'Min completed deliveries for customer auto-approval'),
+    ('delivery_auto_approve_min_days',       '60',    'Min account age in days for customer auto-approval'),
+    ('delivery_enable_premium',              '0',     'Enable premium rider subscriptions feature'),
+    ('delivery_premium_requires_payment',    '0',     'Require payment for premium (0=admin grants free)'),
+    ('delivery_premium_monthly_price',       '20.00', 'Monthly premium subscription price in GHS'),
+    ('delivery_premium_quarterly_price',     '50.00', 'Quarterly premium subscription price in GHS'),
+    ('delivery_premium_yearly_price',        '180.00','Yearly premium subscription price in GHS'),
+    ('delivery_enable_verification_fee',     '0',     'Charge a fee for the Verified Rider badge (0=free)'),
+    ('delivery_verification_fee',            '0.00',  'One-time verification badge fee in GHS'),
+    ('delivery_enable_sponsored',            '0',     'Enable sponsored rider listings feature'),
+    ('delivery_sponsored_requires_payment',  '0',     'Require payment for sponsored listings'),
+    ('delivery_sponsored_7day_price',        '10.00', '7-day sponsored listing price in GHS'),
+    ('delivery_sponsored_30day_price',       '30.00', '30-day sponsored listing price in GHS'),
+    ('delivery_sponsored_90day_price',       '70.00', '90-day sponsored listing price in GHS');
+
+-- ==========================================================================
+-- v013  Marketplace Module
+-- ==========================================================================
+-- New tables: mp_categories, mp_shops, mp_products, mp_product_images,
+--             mp_cart, mp_cart_items, mp_saved_products,
+--             mp_orders, mp_order_items, mp_reviews, mp_shop_verifications
+
+CREATE TABLE IF NOT EXISTS mp_categories (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
+    slug       VARCHAR(100) NOT NULL,
+    icon       VARCHAR(10)  DEFAULT NULL,
+    sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_mcat_slug (slug),
+    UNIQUE KEY uq_mcat_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_shops (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id             INT UNSIGNED NOT NULL,
+    shop_name           VARCHAR(180) NOT NULL,
+    slug                VARCHAR(180) NOT NULL,
+    description         TEXT,
+    logo_path           VARCHAR(255),
+    banner_path         VARCHAR(255),
+    phone               VARCHAR(30),
+    email               VARCHAR(180),
+    town_id             INT UNSIGNED,
+    region              VARCHAR(100),
+    verification_status ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',
+    rejection_reason    TEXT,
+    is_featured         TINYINT(1) NOT NULL DEFAULT 0,
+    featured_end        DATE,
+    is_sponsored        TINYINT(1) NOT NULL DEFAULT 0,
+    sponsored_end       DATE,
+    rating              DECIMAL(3,2) NOT NULL DEFAULT 0.00,
+    total_sales         INT UNSIGNED NOT NULL DEFAULT 0,
+    view_count          INT UNSIGNED NOT NULL DEFAULT 0,
+    status              ENUM('active','suspended','closed') NOT NULL DEFAULT 'active',
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_mshop_user (user_id),
+    UNIQUE KEY uq_mshop_slug (slug),
+    KEY idx_mshop_status   (status),
+    KEY idx_mshop_featured (is_featured),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_products (
+    id                 INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id            INT UNSIGNED NOT NULL,
+    category_id        INT UNSIGNED,
+    name               VARCHAR(255) NOT NULL,
+    slug               VARCHAR(255) NOT NULL,
+    description        TEXT,
+    price              DECIMAL(10,2) NOT NULL,
+    discount_price     DECIMAL(10,2),
+    stock_quantity     INT NOT NULL DEFAULT 0,
+    sku                VARCHAR(100),
+    condition_type     ENUM('new','used','refurbished') NOT NULL DEFAULT 'new',
+    delivery_available TINYINT(1) NOT NULL DEFAULT 1,
+    status             ENUM('draft','pending_approval','approved','rejected','out_of_stock','archived') NOT NULL DEFAULT 'draft',
+    rejection_reason   TEXT,
+    is_featured        TINYINT(1) NOT NULL DEFAULT 0,
+    featured_end       DATE,
+    is_sponsored       TINYINT(1) NOT NULL DEFAULT 0,
+    sponsored_end      DATE,
+    view_count         INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_mprod_shop     (shop_id),
+    KEY idx_mprod_category (category_id),
+    KEY idx_mprod_status   (status),
+    KEY idx_mprod_featured (is_featured),
+    FOREIGN KEY (shop_id) REFERENCES mp_shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_product_images (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    product_id INT UNSIGNED NOT NULL,
+    image_path VARCHAR(255) NOT NULL,
+    is_primary TINYINT(1) NOT NULL DEFAULT 0,
+    sort_order TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mpimg_product (product_id),
+    FOREIGN KEY (product_id) REFERENCES mp_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_cart (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_mcart_user (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_cart_items (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    cart_id    INT UNSIGNED NOT NULL,
+    product_id INT UNSIGNED NOT NULL,
+    quantity   INT UNSIGNED NOT NULL DEFAULT 1,
+    added_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_mci_cart_product (cart_id, product_id),
+    FOREIGN KEY (cart_id)    REFERENCES mp_cart(id)     ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES mp_products(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_saved_products (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT UNSIGNED NOT NULL,
+    product_id INT UNSIGNED NOT NULL,
+    saved_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_msp_user_product (user_id, product_id),
+    FOREIGN KEY (user_id)    REFERENCES users(id)        ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES mp_products(id)  ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_orders (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id         INT UNSIGNED NOT NULL,
+    shop_id             INT UNSIGNED NOT NULL,
+    total_amount        DECIMAL(10,2) NOT NULL,
+    delivery_fee        DECIMAL(10,2),
+    delivery_address    TEXT,
+    receiver_name       VARCHAR(180),
+    receiver_phone      VARCHAR(30),
+    payment_method      ENUM('cash_on_delivery','mobile_money','card','wallet') NOT NULL DEFAULT 'cash_on_delivery',
+    payment_status      ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
+    status              ENUM('pending','confirmed','processing','ready_for_delivery','in_transit','delivered','cancelled','refunded') NOT NULL DEFAULT 'pending',
+    delivery_request_id INT UNSIGNED,
+    notes               TEXT,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_mord_customer (customer_id),
+    KEY idx_mord_shop     (shop_id),
+    KEY idx_mord_status   (status),
+    FOREIGN KEY (customer_id) REFERENCES users(id)    ON DELETE CASCADE,
+    FOREIGN KEY (shop_id)     REFERENCES mp_shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_order_items (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_id     INT UNSIGNED NOT NULL,
+    product_id   INT UNSIGNED,
+    product_name VARCHAR(255) NOT NULL,
+    price        DECIMAL(10,2) NOT NULL,
+    quantity     INT UNSIGNED NOT NULL,
+    subtotal     DECIMAL(10,2) NOT NULL,
+    KEY idx_moi_order   (order_id),
+    KEY idx_moi_product (product_id),
+    FOREIGN KEY (order_id)   REFERENCES mp_orders(id)   ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES mp_products(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_reviews (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    reviewer_id INT UNSIGNED NOT NULL,
+    order_id    INT UNSIGNED NOT NULL,
+    product_id  INT UNSIGNED,
+    shop_id     INT UNSIGNED,
+    rating      TINYINT UNSIGNED NOT NULL,
+    comment     TEXT,
+    review_type ENUM('product','seller') NOT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mrev_product (product_id),
+    KEY idx_mrev_shop    (shop_id),
+    FOREIGN KEY (reviewer_id) REFERENCES users(id)      ON DELETE CASCADE,
+    FOREIGN KEY (order_id)    REFERENCES mp_orders(id)  ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_shop_verifications (
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id           INT UNSIGNED NOT NULL,
+    ghana_card_path   VARCHAR(255),
+    business_reg_path VARCHAR(255),
+    status            ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    rejection_reason  TEXT,
+    submitted_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at       DATETIME,
+    UNIQUE KEY uq_msv_shop (shop_id),
+    FOREIGN KEY (shop_id) REFERENCES mp_shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- v013 category seeds
+INSERT IGNORE INTO mp_categories (name, slug, icon, sort_order) VALUES
+    ('Electronics & Gadgets', 'electronics',  NULL, 1),
+    ('Fashion & Clothing',    'fashion',       NULL, 2),
+    ('Food & Groceries',      'food',          NULL, 3),
+    ('Home & Living',         'home',          NULL, 4),
+    ('Health & Beauty',       'health-beauty', NULL, 5),
+    ('Agriculture & Farming', 'agriculture',   NULL, 6),
+    ('Baby & Kids',           'baby-kids',     NULL, 7),
+    ('Books & Education',     'books',         NULL, 8),
+    ('Vehicles & Parts',      'vehicles',      NULL, 9),
+    ('Art & Crafts',          'art-crafts',    NULL, 10),
+    ('Sports & Fitness',      'sports',        NULL, 11),
+    ('Business & Industrial', 'business',           NULL, 12),
+    -- Extended categories (v013+)
+    ('Furniture & Home Décor',   'furniture',          NULL, 13),
+    ('Shoes & Footwear',         'shoes',              NULL, 14),
+    ('Jewelry & Accessories',    'jewelry',            NULL, 15),
+    ('Building & Hardware',      'building-hardware',  NULL, 16),
+    ('Kitchen & Cooking',        'kitchen-cooking',    NULL, 17),
+    ('Solar & Energy',           'solar-energy',       NULL, 18),
+    ('Traditional Crafts',       'traditional-crafts', NULL, 19),
+    ('Mobile Phones',            'mobile-phones',      NULL, 20),
+    ('Office & Stationery',      'office-stationery',  NULL, 21),
+    ('Cleaning Supplies',        'cleaning',           NULL, 22),
+    ('Electrical & Plumbing',    'electrical-plumbing',NULL, 23),
+    ('School Supplies',          'school',             NULL, 24),
+    ('Plants & Garden',          'plants-garden',      NULL, 25),
+    ('Pets & Animals',           'pets',               NULL, 26),
+    ('Second-Hand / Preloved',   'second-hand',        NULL, 27),
+    ('Other',                    'other',              NULL, 99);
+
+-- Set category icons using hex so the SQL file stays pure ASCII
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F93B1 WHERE slug = 'electronics';        -- 📱
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F9195 WHERE slug = 'fashion';             -- 👕
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F9B92 WHERE slug = 'food';                -- 🛒
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F8FA0 WHERE slug = 'home';                -- 🏠
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F928A WHERE slug = 'health-beauty';       -- 💊
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F8CBE WHERE slug = 'agriculture';         -- 🌾
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F8DBC WHERE slug = 'baby-kids';           -- 🍼
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F939A WHERE slug = 'books';               -- 📚
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F9A97 WHERE slug = 'vehicles';            -- 🚗
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F8EA8 WHERE slug = 'art-crafts';          -- 🎨
+UPDATE mp_categories SET icon = _utf8mb4 0xE29ABD   WHERE slug = 'sports';              -- ⚽
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F8FAD WHERE slug = 'business';            -- 🏭
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F9B8B WHERE slug = 'furniture';           -- 🛋️
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F919F WHERE slug = 'shoes';               -- 👟
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F928D WHERE slug = 'jewelry';             -- 💍
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F94A8 WHERE slug = 'building-hardware';   -- 🔨
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F8DB3 WHERE slug = 'kitchen-cooking';     -- 🍳
+UPDATE mp_categories SET icon = _utf8mb4 0xE29880   WHERE slug = 'solar-energy';        -- ☀
+UPDATE mp_categories SET icon = _utf8mb4 0xF09FA7B5 WHERE slug = 'traditional-crafts';  -- 🧵
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F93B2 WHERE slug = 'mobile-phones';       -- 📲
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F938E WHERE slug = 'office-stationery';   -- 📎
+UPDATE mp_categories SET icon = _utf8mb4 0xF09FA7B9 WHERE slug = 'cleaning';            -- 🧹
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F948C WHERE slug = 'electrical-plumbing'; -- 🔌
+UPDATE mp_categories SET icon = _utf8mb4 0xE29C8F   WHERE slug = 'school';              -- ✏
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F8CB1 WHERE slug = 'plants-garden';       -- 🌱
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F90BE WHERE slug = 'pets';                -- 🐾
+UPDATE mp_categories SET icon = _utf8mb4 0xE299BB   WHERE slug = 'second-hand';         -- ♻
+UPDATE mp_categories SET icon = _utf8mb4 0xF09F93A6 WHERE slug = 'other';               -- 📦
+
+-- v013 platform_settings
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('mp_enabled',                        '1',    'Enable the Marketplace module'),
+    ('mp_require_product_approval',       '1',    'Require admin to approve products before listing'),
+    ('mp_featured_product_7day_price',   '15.00', 'Featured product 7-day price GHS'),
+    ('mp_featured_product_30day_price',  '40.00', 'Featured product 30-day price GHS'),
+    ('mp_featured_shop_7day_price',      '20.00', 'Featured shop 7-day price GHS'),
+    ('mp_featured_shop_30day_price',     '55.00', 'Featured shop 30-day price GHS'),
+    ('mp_seller_subscription_price',     '30.00', 'Premium seller monthly subscription GHS'),
+    ('mp_verified_seller_fee',            '0.00', 'Verified seller badge fee GHS (0=free)');
+
+-- ==========================================================================
+-- v013b  Marketplace Boost Orders
+-- ==========================================================================
+-- Sellers pay to feature or sponsor their products / shop.
+
+CREATE TABLE IF NOT EXISTS mp_boost_orders (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id        INT UNSIGNED NOT NULL,
+    product_id     INT UNSIGNED,
+    boost_type     ENUM('featured_product','sponsored_product','featured_shop','sponsored_shop') NOT NULL,
+    package_days   TINYINT UNSIGNED NOT NULL,
+    price_paid     DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    payment_method ENUM('mtn_momo','telecel','airtel','wallet','free') NOT NULL DEFAULT 'mtn_momo',
+    mobi_number    VARCHAR(30),
+    start_date     DATE NOT NULL,
+    end_date       DATE NOT NULL,
+    status         ENUM('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
+    activated_by   INT UNSIGNED,
+    activated_at   DATETIME,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mbo_shop    (shop_id),
+    KEY idx_mbo_status  (status),
+    KEY idx_mbo_product (product_id),
+    FOREIGN KEY (shop_id)    REFERENCES mp_shops(id)    ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES mp_products(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- ==========================================================================
+-- v014  Location columns (reserved for future use)
+-- ==========================================================================
+-- Adds latitude/longitude columns to events and funeral_announcements.
+-- Currently unused — location is stored as text (venue, gps_address) with an
+-- optional Google Maps URL. These columns are kept as a hook for future
+-- map integration when needed.
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS latitude     DECIMAL(10,7) DEFAULT NULL;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS longitude    DECIMAL(10,7) DEFAULT NULL;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS published_at DATETIME      DEFAULT NULL;
+
+ALTER TABLE funeral_announcements ADD COLUMN IF NOT EXISTS latitude  DECIMAL(10,7) DEFAULT NULL;
+ALTER TABLE funeral_announcements ADD COLUMN IF NOT EXISTS longitude DECIMAL(10,7) DEFAULT NULL;
+
+-- Google Maps links on delivery addresses (v014b)
+ALTER TABLE delivery_requests ADD COLUMN IF NOT EXISTS pickup_maps_link  VARCHAR(512) DEFAULT NULL;
+ALTER TABLE delivery_requests ADD COLUMN IF NOT EXISTS dropoff_maps_link VARCHAR(512) DEFAULT NULL;
+ALTER TABLE mp_orders         ADD COLUMN IF NOT EXISTS delivery_maps_link VARCHAR(512) DEFAULT NULL;
+
+-- v015  Extend platform_payments.payment_type to cover marketplace boosts + delivery subscriptions
+ALTER TABLE platform_payments MODIFY COLUMN payment_type
+    ENUM('featured_job','featured_worker','verification','job_post','worker_service',
+         'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
+         'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification')
+    NOT NULL;
+
+-- ==========================================================================
+-- v016  Moderator Permission System
+-- ==========================================================================
+-- Granular per-permission access control for manager accounts.
+-- Admins have all permissions implicitly; managers only what is granted here.
+
+CREATE TABLE IF NOT EXISTS moderator_permissions (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT UNSIGNED NOT NULL,
+    permission  VARCHAR(80) NOT NULL,
+    granted_by  INT UNSIGNED NOT NULL,
+    granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_mp_user_perm (user_id, permission),
+    KEY idx_mp_user    (user_id),
+    KEY idx_mp_granted (granted_by),
+    FOREIGN KEY (user_id)    REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

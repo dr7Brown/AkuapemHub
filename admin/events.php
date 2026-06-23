@@ -5,6 +5,7 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 $user = current_user();
+require_mod_permission('approve_events');
 
 // Event fee settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
@@ -233,6 +234,7 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
                         <td style="text-align:center;"><?php echo $ev['featured'] ? '⭐' : '—'; ?></td>
                         <td>
                             <div class="ae-actions">
+                                <a href="event_edit.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">View</a>
                                 <a href="event_edit.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small">Edit</a>
                                 <?php if (!in_array($ev['status'], ['published','rejected'], true)): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="publish"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Publish</button></form>

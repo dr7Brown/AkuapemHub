@@ -7,6 +7,7 @@ if (!is_admin_or_manager()) {
     header('Location: ../jobs.php');
     exit;
 }
+require_mod_permission('approve_jobs');
 
 // Handle daily-limit save
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_app_limit') {

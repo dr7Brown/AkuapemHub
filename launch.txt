@@ -1,0 +1,69 @@
+Day 1 — Must do before any user touches it
+1. Configure SMTP email — this is #1
+Without it, everything breaks silently:
+
+Email verification fails → users can't post jobs
+Password reset fails → locked-out users
+Receipt emails never arrive
+All notification emails silently drop
+Fix: Admin → Email/SMTP → use Gmail (App Password), SendGrid free tier, or your host's SMTP relay. Send a test email to confirm it works.
+
+2. Update config.php for production
+Three values must change:
+
+
+define('BASE_URL', 'https://youractualdomain.com');   // email verification links break without this
+define('ADMIN_EMAIL', 'your@realemail.com');
+// + DB_HOST, DB_NAME, DB_USER, DB_PASS for the live server
+3. Run install.sql on the live database
+Nothing works without the tables. Paste it in phpMyAdmin once.
+
+4. Create the admin account
+Register a normal account on the live site, then run:
+
+
+UPDATE users SET role = 'admin' WHERE email = 'your@email.com';
+5. Enable HTTPS
+Most hosts give free Let's Encrypt SSL in the control panel. Required for Paystack, security headers, and browser trust.
+
+Day 2 — Before announcing publicly
+6. Test the full core flow end-to-end
+Do this yourself on the live server, not localhost:
+
+Register → verify email → post a job → apply as a worker → approve → mark complete → rate
+Request a delivery → approve → apply as rider → select → update status → delivered
+Create a shop → add product → approve → buy → checkout → receipt email
+7. Fill in contact details
+Admin → Platform → Contact — currently blank. Without this, the Contact page shows nothing.
+
+8. Review Terms & Privacy
+Update the company name, address, and any Ghana-specific legal text. They're well-structured but generic.
+
+9. Keep all fees at GHS 0 (already set)
+All monetization is disabled by default. Don't touch it for launch — get users first, add fees later.
+
+10. Delete one-run migration files
+
+migrate_delivery.php  ← delete
+They're harmless but shouldn't sit on a production server.
+
+What can wait until after launch
+Feature	Why it can wait
+Paystack live keys	Everything is free at launch; wire Paystack when you're ready to charge
+Push notifications / PWA	Nice to have — doesn't affect core functionality
+Local language (Twi/Ga)	Big project; launch in English first
+Smart worker matching	Current matching works fine at small scale
+SMS notifications	Email covers it; add SMS as users grow
+Auto-suggested budgets	Enhancement, not required
+Honest launch checklist
+
+□  SMTP configured + test email received
+□  config.php updated with real domain + email  
+□  install.sql run on production DB
+□  Admin account created
+□  HTTPS enabled (free Let's Encrypt)
+□  Core flow tested end-to-end on live server
+□  Contact details filled in (Admin → Contact)
+□  Migration files deleted from server
+□  Paystack keys added (even if all fees are GHS 0)
+If all 9 boxes are ticked, you can launch. The app is feature-complete. The code isn't the risk — the email config is.

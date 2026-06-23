@@ -1,0 +1,203 @@
+Add the below modules to the app.
+
+1. Funeral Announcements
+2. Events
+
+These modules must be publicly accessible and viewable by both logged-in and non-logged-in users.
+
+The modules must be completely independent from the existing service modules but integrated into the main navigation and homepage.
+
+## MAIN NAVIGATION
+
+Add the following menu structure:
+
+Home
+Services
+Community
+Settings
+
+Under Community:
+
+* News & Updates
+* Funeral Announcements
+* Events
+* Advertisements
+
+
+# FUNERAL ANNOUNCEMENTS MODULE
+
+## Purpose
+
+Allow funeral announcements and memorial information to be published for community members.
+
+## Public Features
+
+Allow visitors to:
+
+* Browse funeral announcements
+* Search announcements
+* View full funeral details
+* View funeral posters
+* Share announcements
+
+No login required.
+Login users can Create or post, and edit their funeral announcements, for a fee. 
+
+## Admin Features
+
+Allow administrators to:
+
+* Can also Create announcements
+* Edit announcements
+* Delete announcements
+* Approve submissions
+* Reject submissions
+* Feature announcements
+admin to approve
+Admin to set the fee on his dashboard. Admin to make it free or paid
+when paid, admin manages it all.
+
+## Funeral Fields
+
+* Deceased Name
+* Gender
+* Age
+* Photograph
+* Funeral Poster
+* Date of Birth
+* Date of Death
+* Biography
+* Wake Keeping Date
+* Burial Date
+* Thanksgiving Service Date
+* Venue
+* GPS Address
+* Organizer Name
+* Organizer Phone
+* Organizer Email
+* Status
+* Featured
+* View Count
+
+## Funeral Listing
+
+Display:
+
+* Photo
+* Name
+* Age
+* Burial Date
+* Location
+* View Details button
+
+Display featured funeral announcements at the top.
+
+---
+
+# EVENTS MODULE
+
+## Purpose
+
+Provide a platform for promoting community events, conferences, church programs, festivals, weddings, educational programs, and business events.
+
+## Public Features
+
+Allow visitors to:
+
+* Browse events
+* Search events
+* View event details
+* Share events
+
+No login required.
+
+## Admin Features
+
+Allow administrators to:
+
+* Create events
+* Edit events
+* Delete events
+* Publish events
+* Cancel events
+* Feature events
+
+## Event Fields
+
+* Event Title
+* Featured Image
+* Description
+* Venue
+* GPS Address
+* Start Date
+* End Date
+* Start Time
+* End Time
+* Organizer Name
+* Ticket Type
+* Ticket Price
+* Registration Link
+* Status
+* Featured
+* View Count
+
+## Event Listing
+
+Display:
+
+* Event image
+* Event title
+* Event date
+* Venue
+* Event status
+* View Details button
+
+Upcoming events should appear before past events.
+
+---
+
+# HOMEPAGE INTEGRATION
+
+Create dedicated homepage sections:
+
+Latest News
+Upcoming Events
+Recent Funeral Announcements
+Sponsored Advertisements
+Servicing listings
+
+Each section should display the latest content automatically.
+
+# ADMIN DASHBOARD
+
+Create separate management menus:
+
+* Funeral Management
+* Event Management
+
+Each module must have its own create, edit, delete, publish, and analytics pages.
+
+---
+
+# PERFORMANCE REQUIREMENTS
+
+* Responsive design
+* Mobile-first layout
+* AJAX pagination or infinite scrolling
+* Optimized image uploads
+* SEO-friendly URLs
+* Meta tags and Open Graph support
+* Fast loading pages
+
+---
+
+# SECURITY REQUIREMENTS
+
+* Role-based access control
+* CSRF protection
+* XSS protection
+* SQL Injection prevention
+* Input validation
+* Activity logs for all administrative actions
+
+Build the Community Hub as a scalable standalone module that can be expanded in the future without affecting other AkuapemHub services.

@@ -8,6 +8,8 @@ if (!is_admin_or_manager()) {
     exit;
 }
 
+$adminUser = current_user();
+
 $totalUsers         = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
 $totalRequests      = (int)$pdo->query('SELECT COUNT(*) FROM service_requests')->fetchColumn();
 $openRequests       = (int)$pdo->query('SELECT COUNT(*) FROM service_requests WHERE status="open"')->fetchColumn();
@@ -127,6 +129,44 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             padding: 0 12px; border-left: 1px solid var(--border, #e5e7eb); flex-shrink: 0;
         }
 
+        /* ── Avatar button ──────────────────────────────────────── */
+        .adm-avatar-btn {
+            background: none; border: none; padding: 0; cursor: pointer;
+            display: flex; align-items: center; border-radius: 50%;
+            transition: opacity .15s;
+        }
+        .adm-avatar-btn:hover { opacity: .82; }
+        .adm-avatar {
+            width: 34px; height: 34px; border-radius: 50%; object-fit: cover;
+            border: 2px solid var(--border, #e5e7eb);
+            font-size: .85rem; font-weight: 700;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--primary-soft, #d1faf4); color: var(--primary, #0f766e);
+        }
+        .adm-avatar-wrap { position: relative; }
+        .adm-avatar-menu {
+            display: none; position: absolute; right: 0; top: calc(100% + 8px);
+            min-width: 190px; background: #fff;
+            border: 1px solid var(--border, #e2e8f0); border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(0,0,0,.12); z-index: 9999; overflow: hidden;
+        }
+        .adm-avatar-menu.open { display: block; }
+        .adm-avatar-menu-head {
+            padding: 11px 14px 9px; border-bottom: 1px solid #f1f5f9;
+        }
+        .adm-avatar-menu-head strong { display: block; font-size: .86rem; }
+        .adm-avatar-menu-head span   { font-size: .74rem; color: #6b7280; }
+        .adm-avatar-menu a {
+            display: flex; align-items: center; gap: 9px;
+            padding: 9px 14px; color: var(--text, #111);
+            text-decoration: none; font-size: .86rem; font-weight: 600;
+            transition: background .1s;
+        }
+        .adm-avatar-menu a:hover { background: #f8fafc; }
+        .adm-avatar-menu a.danger       { color: #c0392b; }
+        .adm-avatar-menu a.danger:hover { background: #fff5f5; }
+        .adm-avatar-menu-sep { border-top: 1px solid #f1f5f9; }
+
         /* ── Page body ──────────────────────────────────────────── */
         .adm-body { flex: 1; position: relative; }
 
@@ -210,19 +250,27 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     <button class="adm-sb" id="adm-sl" aria-label="Scroll nav left">‹</button>
 
     <nav class="adm-nav" id="adm-nav" aria-label="Admin sections">
+        <?php if (is_admin() || has_mod_permission('approve_jobs') || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents')): ?>
         <button class="adm-cat-btn" data-cat="jobs">
             📋 Jobs <span class="adm-caret">▾</span>
         </button>
-        <?php if (is_admin()): ?>
+        <?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_users') || has_mod_permission('manage_disputes') || has_mod_permission('manage_referrals')): ?>
         <button class="adm-cat-btn" data-cat="users">
             👥 Users <span class="adm-caret">▾</span>
         </button>
+        <?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('view_reports')): ?>
         <button class="adm-cat-btn" data-cat="finance">
             💳 Finance <span class="adm-caret">▾</span>
         </button>
+        <?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_news') || has_mod_permission('approve_events') || has_mod_permission('approve_funerals') || has_mod_permission('manage_ads') || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents')): ?>
         <button class="adm-cat-btn" data-cat="community">
             🌍 Community <span class="adm-caret">▾</span>
         </button>
+        <?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_communication') || has_mod_permission('view_reports')): ?>
         <button class="adm-cat-btn" data-cat="platform">
             ⚙️ Platform <span class="adm-caret">▾</span>
         </button>
@@ -232,10 +280,48 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     <button class="adm-sb" id="adm-sr" aria-label="Scroll nav right">›</button>
 
     <div class="adm-bar-end">
-        <a href="../settings.php" class="button button-secondary button-small">Settings</a>
-        <a href="../logout.php"   class="button button-secondary button-small">Logout</a>
+        <div class="adm-avatar-wrap" id="adm-av-wrap">
+            <button class="adm-avatar-btn" id="adm-av-btn" aria-expanded="false" aria-haspopup="true" title="Account menu">
+                <?php if (!empty($adminUser['profile_photo'])): ?>
+                    <img src="<?php echo sanitize($adminUser['profile_photo']); ?>" alt="Profile" class="adm-avatar" style="pointer-events:none;" />
+                <?php else: ?>
+                    <span class="adm-avatar" style="pointer-events:none;"><?php echo sanitize(strtoupper(substr(display_name($adminUser), 0, 1))); ?></span>
+                <?php endif; ?>
+            </button>
+            <div class="adm-avatar-menu" id="adm-av-menu" role="menu">
+                <div class="adm-avatar-menu-head">
+                    <strong><?php echo sanitize(display_name($adminUser)); ?></strong>
+                    <span><?php echo sanitize($adminUser['email']); ?></span>
+                </div>
+                <a href="../settings.php"         role="menuitem">⚙️ Settings</a>
+                <a href="../jobs.php"             role="menuitem">🏠 User Dashboard</a>
+                <a href="../marketplace.php"      role="menuitem">🛍️ Marketplace</a>
+                <a href="../orders.php"           role="menuitem">📋 My Orders</a>
+                <a href="../seller_dashboard.php" role="menuitem">🏪 My Shop</a>
+                <div class="adm-avatar-menu-sep"></div>
+                <a href="../logout.php" role="menuitem" class="danger">🚪 Logout</a>
+            </div>
+        </div>
     </div>
 </header>
+<script>
+(function() {
+    var btn  = document.getElementById('adm-av-btn');
+    var menu = document.getElementById('adm-av-menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var open = menu.classList.contains('open');
+        menu.classList.toggle('open', !open);
+        btn.setAttribute('aria-expanded', String(!open));
+    });
+    document.addEventListener('click', function() {
+        menu.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+    });
+    menu.addEventListener('click', function(e) { e.stopPropagation(); });
+})();
+</script>
 
 <!-- ── Dropdown panels (outside nav to avoid overflow clipping) ── -->
 <div id="adm-drops">
@@ -243,31 +329,52 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <a href="requests.php"     data-page="requests.php">📋 Requests</a>
         <a href="applications.php" data-page="applications.php">📝 Applications</a>
     </div>
-    <?php if (is_admin()): ?>
+    <!-- Users dropdown — gated per permission -->
     <div class="adm-drop" data-cat="users">
-        <a href="users.php"     data-page="users.php">👥 Users</a>
-        <a href="disputes.php"  data-page="disputes.php">⚖️ Disputes</a>
+        <?php if (is_admin() || has_mod_permission('manage_users')): ?>
+        <a href="users.php"      data-page="users.php">👥 All Users</a>
+        <?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_disputes')): ?>
+        <a href="disputes.php" data-page="disputes.php">⚖️ Disputes</a>
+        <?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_referrals')): ?>
         <a href="referrals.php" data-page="referrals.php">🔗 Referrals</a>
+        <?php endif; ?>
+        <?php if (is_admin()): ?>
+        <a href="moderators.php" data-page="moderators.php">🛡️ Moderators</a>
+        <?php endif; ?>
     </div>
+    <!-- Finance dropdown -->
     <div class="adm-drop" data-cat="finance">
-        <a href="payments.php"       data-page="payments.php">💳 Payments</a>
-        <a href="monetization.php"   data-page="monetization.php">💰 Monetize</a>
+        <?php if (is_admin() || has_mod_permission('view_reports')): ?>
+        <a href="payments.php"     data-page="payments.php">💳 Payments</a>
+        <?php endif; ?>
+        <?php if (is_admin()): ?>
+        <a href="monetization.php" data-page="monetization.php">💰 Monetize</a>
+        <?php endif; ?>
     </div>
+    <!-- Community dropdown — each item gated -->
     <div class="adm-drop" data-cat="community">
-        <a href="news.php"     data-page="news.php">📰 News</a>
-        <a href="ads.php"      data-page="ads.php">📣 Ads</a>
-        <a href="funerals.php" data-page="funerals.php">🕊️ Funerals</a>
-        <a href="events.php"   data-page="events.php">📅 Events</a>
+        <?php if (is_admin() || has_mod_permission('approve_news')): ?><a href="news.php"     data-page="news.php">📰 News</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_ads')): ?><a href="ads.php"      data-page="ads.php">📣 Ads</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_funerals')): ?><a href="funerals.php" data-page="funerals.php">🕊️ Funerals</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_events')): ?><a href="events.php"   data-page="events.php">📅 Events</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents') || has_mod_permission('approve_verifications') || has_mod_permission('approve_boosts')): ?><a href="delivery.php"    data-page="delivery.php">🚚 Delivery</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_boosts')): ?><a href="marketplace.php" data-page="marketplace.php">🛍️ Marketplace</a><?php endif; ?>
     </div>
+    <!-- Platform dropdown — mostly admin-only, plus a few permitted -->
     <div class="adm-drop" data-cat="platform">
-        <a href="analytics.php"         data-page="analytics.php">📊 Analytics</a>
-        <a href="business_messages.php" data-page="business_messages.php">💬 Messages</a>
-        <a href="communication.php"     data-page="communication.php">📣 Broadcast</a>
-        <a href="contact_settings.php"  data-page="contact_settings.php">📞 Contact</a>
-        <a href="theme.php"             data-page="theme.php">🎨 Theme</a>
-        <a href="audit_logs.php"        data-page="audit_logs.php">📜 Audit</a>
+        <?php if (is_admin() || has_mod_permission('view_reports')): ?><a href="analytics.php"         data-page="analytics.php">📊 Analytics</a><?php endif; ?>
+        <?php if (is_admin()): ?><a href="business_messages.php" data-page="business_messages.php">💬 Messages</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_communication')): ?><a href="communication.php" data-page="communication.php">📣 Broadcast</a><?php endif; ?>
+        <?php if (is_admin()): ?>
+        <a href="email_settings.php"   data-page="email_settings.php">📧 Email / SMTP</a>
+        <a href="contact_settings.php" data-page="contact_settings.php">📞 Contact</a>
+        <a href="theme.php"            data-page="theme.php">🎨 Theme</a>
+        <a href="moderators.php"       data-page="moderators.php">🛡️ Moderators</a>
+        <?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('view_reports')): ?><a href="audit_logs.php" data-page="audit_logs.php">📜 Audit</a><?php endif; ?>
     </div>
-    <?php endif; ?>
 </div>
 
 <!-- ── Body ────────────────────────────────────────────────────── -->
@@ -288,6 +395,289 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         </div>
         <?php endif; ?>
 
+        <?php if (!is_admin()): ?>
+        <!-- ── Moderator Dashboard ──────────────────────────────────────────── -->
+        <?php
+        $modId = (int)$adminUser['id'];
+
+        // ── Performance stats (today & this week) ─────────────────────────────
+        $statStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE admin_id=? AND action LIKE '%approve%' AND DATE(created_at)=CURDATE()"); $statStmt->execute([$modId]); $todayApproved=(int)$statStmt->fetchColumn();
+        $statStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE admin_id=? AND action LIKE '%reject%' AND DATE(created_at)=CURDATE()"); $statStmt->execute([$modId]); $todayRejected=(int)$statStmt->fetchColumn();
+        $statStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE admin_id=? AND (action LIKE '%approve%' OR action LIKE '%reject%') AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"); $statStmt->execute([$modId]); $weekTotal=(int)$statStmt->fetchColumn();
+        $statStmt = $pdo->prepare("SELECT COUNT(*) FROM audit_logs WHERE admin_id=? AND action LIKE '%approve%' AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)"); $statStmt->execute([$modId]); $weekApproved=(int)$statStmt->fetchColumn();
+
+        // ── Build queue sections ───────────────────────────────────────────────
+        $queueSections = [];
+
+        if (has_mod_permission('approve_jobs')) {
+            $c = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WHERE status='pending'")->fetchColumn();
+            $items = $pdo->query("SELECT sr.id, sr.title, sr.location, sr.description, sr.budget_amount, sr.budget, u.name AS user_name, sr.created_at FROM service_requests sr JOIN users u ON sr.customer_id=u.id WHERE sr.status='pending' ORDER BY sr.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = '../request_detail.php?id=' . $it['id']; }; unset($it);
+            $queueSections[] = ['icon'=>'📋','title'=>'Job Requests','color'=>'#f59e0b','bg'=>'#fffbeb','count'=>$c,'items'=>$items,'page'=>'requests.php','approve_action'=>'approve_job','reject_action'=>'reject_job','label_key'=>'title','meta_key'=>'location'];
+        }
+        if (has_mod_permission('approve_products')) {
+            try {
+                $c=(int)$pdo->query("SELECT COUNT(*) FROM mp_products WHERE status='pending_approval'")->fetchColumn();
+                $items=$pdo->query("SELECT mp.id, mp.name AS title, mp.description, mp.price, mp.condition_type, ms.shop_name AS location, u.name AS user_name, mp.created_at FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id JOIN users u ON ms.user_id=u.id WHERE mp.status='pending_approval' ORDER BY mp.created_at ASC LIMIT 3")->fetchAll();
+                foreach ($items as &$it) { $it['view_url'] = '../product.php?id=' . $it['id']; }; unset($it);
+                $queueSections[]=['icon'=>'🛍️','title'=>'Products','color'=>'#3b82f6','bg'=>'#eff6ff','count'=>$c,'items'=>$items,'page'=>'marketplace.php?tab=products','approve_action'=>'approve_product','reject_action'=>'reject_product','label_key'=>'title','meta_key'=>'location'];
+            } catch(Exception $e){}
+        }
+        if (has_mod_permission('approve_events')) {
+            $c=(int)$pdo->query("SELECT COUNT(*) FROM events WHERE status IN('draft','pending_payment')")->fetchColumn();
+            $items=$pdo->query("SELECT e.id, e.slug, e.title, e.venue AS location, e.description, e.start_date, u.name AS user_name, e.created_at FROM events e JOIN users u ON e.user_id=u.id WHERE e.status IN('draft','pending_payment') ORDER BY e.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = 'event_edit.php?id=' . $it['id']; }; unset($it);
+            $queueSections[]=['icon'=>'📅','title'=>'Events','color'=>'#10b981','bg'=>'#f0fdf4','count'=>$c,'items'=>$items,'page'=>'events.php','approve_action'=>'approve_event','reject_action'=>'reject_event','label_key'=>'title','meta_key'=>'location'];
+        }
+        if (has_mod_permission('approve_funerals')) {
+            $c=(int)$pdo->query("SELECT COUNT(*) FROM funeral_announcements WHERE status='pending'")->fetchColumn();
+            $items=$pdo->query("SELECT fa.id, fa.slug, fa.deceased_name AS title, fa.venue AS location, fa.biography AS description, fa.burial_date, u.name AS user_name, fa.created_at FROM funeral_announcements fa JOIN users u ON fa.user_id=u.id WHERE fa.status='pending' ORDER BY fa.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = 'funeral_edit.php?id=' . $it['id']; }; unset($it);
+            $queueSections[]=['icon'=>'🕊️','title'=>'Funeral Announcements','color'=>'#6b7280','bg'=>'#f9fafb','count'=>$c,'items'=>$items,'page'=>'funerals.php','approve_action'=>'approve_funeral','reject_action'=>'reject_funeral','label_key'=>'title','meta_key'=>'location'];
+        }
+        if (has_mod_permission('approve_news')) {
+            $c=(int)$pdo->query("SELECT COUNT(*) FROM news WHERE status='draft'")->fetchColumn();
+            $items=$pdo->query("SELECT n.id, n.slug, n.title, n.summary AS description, 'Article' AS location, u.name AS user_name, n.created_at FROM news n JOIN users u ON n.user_id=u.id WHERE n.status='draft' ORDER BY n.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = 'news_edit.php?id=' . $it['id']; }; unset($it);
+            $queueSections[]=['icon'=>'📰','title'=>'News Articles','color'=>'#059669','bg'=>'#f0fdf4','count'=>$c,'items'=>$items,'page'=>'news.php','approve_action'=>'approve_news','reject_action'=>'reject_news','label_key'=>'title','meta_key'=>'location'];
+        }
+        if (has_mod_permission('approve_delivery_requests')) {
+            try {
+                $c=(int)$pdo->query("SELECT COUNT(*) FROM delivery_requests WHERE status='pending_approval'")->fetchColumn();
+                $items=$pdo->query("SELECT dr.id, dr.item_description AS title, dr.pickup_location AS location, dr.dropoff_location, dr.delivery_fee, dr.item_category, u.name AS user_name, dr.created_at FROM delivery_requests dr JOIN users u ON dr.customer_id=u.id WHERE dr.status='pending_approval' ORDER BY dr.created_at ASC LIMIT 3")->fetchAll();
+                foreach ($items as &$it) { $it['view_url'] = '../delivery_detail.php?id=' . $it['id']; }; unset($it);
+                $queueSections[]=['icon'=>'🚚','title'=>'Delivery Requests','color'=>'#f97316','bg'=>'#fff7ed','count'=>$c,'items'=>$items,'page'=>'delivery.php?tab=pending','approve_action'=>'approve_delivery_request','reject_action'=>'reject_delivery_request','label_key'=>'title','meta_key'=>'location'];
+            } catch(Exception $e){}
+        }
+        if (has_mod_permission('approve_delivery_agents')) {
+            try {
+                $c=(int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE verification_status='pending'")->fetchColumn();
+                $items=$pdo->query("SELECT da.id, u.name AS title, da.service_area AS location, da.vehicle_type, da.bio AS description, u.name AS user_name, da.created_at FROM delivery_agents da JOIN users u ON da.user_id=u.id WHERE da.verification_status='pending' ORDER BY da.created_at ASC LIMIT 3")->fetchAll();
+                foreach ($items as &$it) { $it['view_url'] = 'delivery.php?tab=agents'; }; unset($it);
+                $queueSections[]=['icon'=>'🛵','title'=>'Rider Applications','color'=>'#8b5cf6','bg'=>'#f5f3ff','count'=>$c,'items'=>$items,'page'=>'delivery.php?tab=agents','approve_action'=>'approve_delivery_agent','reject_action'=>'reject_delivery_agent','label_key'=>'title','meta_key'=>'location'];
+            } catch(Exception $e){}
+        }
+        if (has_mod_permission('manage_disputes')) {
+            $c=(int)$pdo->query("SELECT COUNT(*) FROM disputes WHERE status='open'")->fetchColumn();
+            if ($c) $queueSections[]=['icon'=>'⚖️','title'=>'Open Disputes','color'=>'#ef4444','bg'=>'#fef2f2','count'=>$c,'items'=>[],'page'=>'disputes.php','approve_action'=>null,'reject_action'=>null,'label_key'=>null,'meta_key'=>null];
+        }
+
+        $totalPending = array_sum(array_column($queueSections, 'count'));
+
+        // ── Recent activity by this moderator ─────────────────────────────────
+        $recentActions = $pdo->prepare("SELECT action, description, created_at FROM audit_logs WHERE admin_id=? ORDER BY created_at DESC LIMIT 8");
+        $recentActions->execute([$modId]);
+        $recentActions = $recentActions->fetchAll();
+        ?>
+
+        <?php
+        // What permissions does this manager hold?
+        $myPerms = get_user_mod_permissions($modId);
+        $allPermLabels = [];
+        foreach (all_mod_permissions() as $group => $perms) {
+            foreach ($perms as $key => $label) $allPermLabels[$key] = $label;
+        }
+        ?>
+
+        <?php if (empty($myPerms)): ?>
+        <!-- ── No permissions assigned yet ────────────────────────────────────── -->
+        <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:14px;padding:22px 20px;margin-bottom:20px;display:flex;gap:14px;align-items:flex-start;">
+            <span style="font-size:2rem;flex-shrink:0;">⚠️</span>
+            <div>
+                <strong style="display:block;font-size:.95rem;margin-bottom:6px;">No permissions assigned to your account yet.</strong>
+                <p style="margin:0 0 10px;font-size:.85rem;color:#374151;line-height:1.6;">
+                    Your role is <strong>Manager</strong>, but no specific permissions have been granted yet.
+                    An <strong>Admin</strong> must visit <em>Admin → Moderators → your name</em> and check the boxes for what you should be able to do.
+                </p>
+                <p style="margin:0;font-size:.82rem;color:#6b7280;">Until permissions are granted, you won't be able to approve or manage any content.</p>
+            </div>
+        </div>
+
+        <?php else: ?>
+        <!-- ── Permission summary strip ───────────────────────────────────────── -->
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
+            <p style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 8px;">Your Active Permissions</p>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                <?php foreach ($myPerms as $p): ?>
+                <span style="background:var(--primary-soft,#d1fae5);color:var(--primary,#0f766e);font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:10px;">
+                    <?php echo sanitize($allPermLabels[$p] ?? $p); ?>
+                </span>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; /* empty permissions */ ?>
+
+        <!-- Performance bar -->
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;min-width:130px;">
+                <span style="font-size:1.4rem;">✅</span>
+                <div><strong style="display:block;font-size:1.3rem;font-weight:900;color:#10b981;line-height:1.1;"><?php echo $todayApproved; ?></strong><span style="font-size:.72rem;color:var(--text-muted,#6b7280);">Approved today</span></div>
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;min-width:130px;">
+                <span style="font-size:1.4rem;">❌</span>
+                <div><strong style="display:block;font-size:1.3rem;font-weight:900;color:#ef4444;line-height:1.1;"><?php echo $todayRejected; ?></strong><span style="font-size:.72rem;color:var(--text-muted,#6b7280);">Rejected today</span></div>
+            </div>
+            <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;min-width:130px;">
+                <span style="font-size:1.4rem;">📋</span>
+                <div><strong style="display:block;font-size:1.3rem;font-weight:900;color:var(--primary,#0f766e);line-height:1.1;"><?php echo $weekTotal; ?></strong><span style="font-size:.72rem;color:var(--text-muted,#6b7280);">Actions this week</span></div>
+            </div>
+            <div style="background:<?php echo $totalPending>0?'#fef3c7':'#d1fae5'; ?>;border:1px solid <?php echo $totalPending>0?'#f59e0b':'#6ee7b7'; ?>;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:10px;flex:1;min-width:130px;">
+                <span style="font-size:1.4rem;"><?php echo $totalPending>0?'⏳':'✓'; ?></span>
+                <div><strong style="display:block;font-size:1.3rem;font-weight:900;color:<?php echo $totalPending>0?'#b45309':'#065f46'; ?>;line-height:1.1;"><?php echo $totalPending; ?></strong><span style="font-size:.72rem;color:<?php echo $totalPending>0?'#b45309':'#065f46'; ?>;">In queue now</span></div>
+            </div>
+        </div>
+
+        <?php if ($queueSections): ?>
+        <p class="adm-section-label" style="color:#f59e0b;">⚡ Your Queue — <?php echo $totalPending; ?> item<?php echo $totalPending!==1?'s':''; ?> pending</p>
+
+        <?php foreach ($queueSections as $sec): ?>
+        <div style="background:var(--surface);border:2px solid <?php echo $sec['color']; ?>22;border-radius:14px;margin-bottom:12px;overflow:hidden;">
+            <!-- Section header -->
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:<?php echo $sec['bg']; ?>;border-bottom:1px solid <?php echo $sec['color']; ?>22;flex-wrap:wrap;gap:8px;">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:1.1rem;"><?php echo $sec['icon']; ?></span>
+                    <strong style="font-size:.9rem;"><?php echo sanitize($sec['title']); ?></strong>
+                    <span style="background:<?php echo $sec['color']; ?>;color:#fff;font-size:.68rem;font-weight:800;padding:2px 7px;border-radius:10px;"><?php echo $sec['count']; ?></span>
+                </div>
+                <a href="<?php echo sanitize($sec['page']); ?>" data-page="<?php echo sanitize($sec['page']); ?>"
+                   style="font-size:.78rem;font-weight:700;color:<?php echo $sec['color']; ?>;text-decoration:none;">
+                    View all <?php echo $sec['count']; ?> →
+                </a>
+            </div>
+
+            <?php foreach ($sec['items'] as $item): ?>
+            <!-- Item row -->
+            <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border,#f1f5f9);flex-wrap:wrap;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:700;font-size:.86rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                        <?php echo sanitize(mb_substr($item[$sec['label_key']]??'(no title)',0,60)); ?>
+                    </div>
+                    <div style="font-size:.74rem;color:var(--text-muted,#6b7280);margin-top:2px;">
+                        by <?php echo sanitize($item['user_name']); ?>
+                        <?php if (!empty($item[$sec['meta_key']])): ?> · <?php echo sanitize(mb_substr($item[$sec['meta_key']],0,40)); ?><?php endif; ?>
+                        &nbsp;·&nbsp; <?php echo time_ago($item['created_at']); ?>
+                    </div>
+                    <?php /* Description preview for richer context */ ?>
+                    <?php $preview = $item['description'] ?? null; ?>
+                    <?php if ($preview): ?>
+                    <div style="font-size:.76rem;color:var(--text-muted,#6b7280);margin-top:4px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.5;">
+                        <?php echo sanitize(strip_tags(mb_substr($preview,0,160))); ?>
+                    </div>
+                    <?php endif; ?>
+                    <?php if (!empty($item['budget_amount']) || !empty($item['price'])): ?>
+                    <div style="font-size:.76rem;font-weight:700;color:var(--primary,#0f766e);margin-top:3px;">
+                        GHS <?php echo number_format((float)($item['budget_amount'] ?? $item['price'] ?? 0),2); ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <!-- Quick actions -->
+                <?php if ($sec['approve_action']): ?>
+                <div style="display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap;align-items:flex-start;">
+                    <?php if (!empty($item['view_url'])): ?>
+                    <a href="<?php echo sanitize($item['view_url']); ?>" target="_blank" rel="noopener"
+                       class="button button-small" style="background:var(--surface-muted,#f3f4f6);border-color:var(--border);color:var(--text);padding:4px 10px;font-size:.75rem;" title="Open full detail in new tab">
+                        🔍 View
+                    </a>
+                    <?php endif; ?>
+                    <form method="post" action="mod_action.php" style="margin:0;">
+                        <?php echo csrf_field(); ?>
+                        <input type="hidden" name="action"  value="<?php echo $sec['approve_action']; ?>">
+                        <input type="hidden" name="item_id" value="<?php echo $item['id']; ?>">
+                        <input type="hidden" name="back"    value="index.php">
+                        <button type="submit" class="button button-small" style="background:#10b981;color:#fff;border-color:transparent;padding:4px 10px;font-size:.75rem;">✓ Approve</button>
+                    </form>
+                    <button type="button" class="button button-small"
+                            style="background:#ef4444;color:#fff;border-color:transparent;padding:4px 10px;font-size:.75rem;"
+                            onclick="openReject('<?php echo $sec['reject_action']; ?>',<?php echo $item['id']; ?>,'<?php echo sanitize(addslashes(mb_substr($item[$sec['label_key']]??'',0,40))); ?>')">
+                        ✗ Reject
+                    </button>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+
+            <?php if (empty($sec['items']) && $sec['count'] > 0): ?>
+            <div style="padding:12px 14px;font-size:.84rem;color:var(--text-muted,#6b7280);">
+                <?php echo $sec['count']; ?> item<?php echo $sec['count']>1?'s':''; ?> pending —
+                <a href="<?php echo sanitize($sec['page']); ?>" data-page="<?php echo sanitize($sec['page']); ?>" style="color:<?php echo $sec['color']; ?>;font-weight:700;">Review them →</a>
+            </div>
+            <?php elseif ($sec['count'] > count($sec['items'])): ?>
+            <div style="padding:8px 14px;font-size:.78rem;color:var(--text-muted,#6b7280);text-align:right;">
+                + <?php echo $sec['count'] - count($sec['items']); ?> more —
+                <a href="<?php echo sanitize($sec['page']); ?>" data-page="<?php echo sanitize($sec['page']); ?>" style="color:<?php echo $sec['color']; ?>;font-weight:700;">View all →</a>
+            </div>
+            <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
+
+        <?php else: ?>
+        <div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:12px;padding:16px;margin-bottom:20px;display:flex;align-items:center;gap:12px;">
+            <span style="font-size:1.6rem;">✅</span>
+            <div><strong style="font-size:.9rem;">Queue clear!</strong><br><span style="font-size:.82rem;color:#065f46;">Nothing awaiting your review right now. Check back later.</span></div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Recent activity by this moderator -->
+        <?php if ($recentActions): ?>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:20px;">
+            <p style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 10px;">Your Recent Actions</p>
+            <?php foreach ($recentActions as $log): ?>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid var(--border,#f1f5f9);font-size:.81rem;gap:10px;">
+                <div>
+                    <?php
+                    $logColor = str_contains($log['action'],'approve')?'#10b981':(str_contains($log['action'],'reject')?'#ef4444':'#6b7280');
+                    ?>
+                    <span style="background:<?php echo $logColor; ?>22;color:<?php echo $logColor; ?>;font-size:.65rem;font-weight:800;padding:1px 6px;border-radius:8px;margin-right:5px;"><?php echo sanitize($log['action']); ?></span>
+                    <?php echo sanitize(mb_substr($log['description'],0,80)); ?>
+                </div>
+                <span style="font-size:.72rem;color:var(--text-muted,#6b7280);white-space:nowrap;flex-shrink:0;"><?php echo time_ago($log['created_at']); ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Hidden reject modal -->
+        <div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
+            <div style="background:var(--surface);border-radius:14px;padding:24px;width:100%;max-width:440px;margin:16px;">
+                <h3 style="margin:0 0 6px;font-size:1rem;">Reject Item</h3>
+                <p id="reject-label" style="font-size:.84rem;color:var(--text-muted,#6b7280);margin:0 0 14px;"></p>
+                <form method="post" action="mod_action.php">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action"  id="reject-action">
+                    <input type="hidden" name="item_id" id="reject-item-id">
+                    <input type="hidden" name="back"    value="index.php">
+                    <div class="form-group">
+                        <label style="font-weight:700;font-size:.86rem;display:block;margin-bottom:4px;">Rejection Reason *</label>
+                        <textarea name="reason" id="reject-reason" rows="3" required style="width:100%;box-sizing:border-box;"
+                                  placeholder="Explain why this is being rejected so the submitter can correct and resubmit…"></textarea>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button type="button" class="button button-secondary button-small" onclick="closeReject()">Cancel</button>
+                        <button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;">Confirm Rejection</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script>
+        function openReject(action, id, label) {
+            document.getElementById('reject-action').value  = action;
+            document.getElementById('reject-item-id').value = id;
+            document.getElementById('reject-label').textContent = label;
+            document.getElementById('reject-reason').value  = '';
+            var m = document.getElementById('reject-modal');
+            m.style.display = 'flex';
+            document.getElementById('reject-reason').focus();
+        }
+        function closeReject() {
+            document.getElementById('reject-modal').style.display = 'none';
+        }
+        document.getElementById('reject-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeReject();
+        });
+        </script>
+
+        <?php endif; ?>
+
         <p class="adm-section-label">Platform overview</p>
         <div class="adm-stats">
             <div class="adm-stat"><strong><?php echo $totalUsers; ?></strong><span>Users</span></div>
@@ -301,27 +691,37 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <p class="adm-section-label">Quick access</p>
         <div class="adm-cards">
         <?php
+        // [href, icon, title, desc, required_permission_or_null]
+        // null = always visible to admin+manager; string = visible if is_admin() OR has_mod_permission($perm)
         $cards = [
-            ['requests.php',        '📋', 'Requests',     'Service request queue',      false],
-            ['applications.php',    '📝', 'Applications', 'Job applications',           false],
-            ['users.php',           '👥', 'Users',        'Manage accounts & roles',   true ],
-            ['disputes.php',        '⚖️', 'Disputes',     'Resolve user conflicts',     true ],
-            ['referrals.php',       '🔗', 'Referrals',    'Referral programme',         true ],
-            ['payments.php',        '💳', 'Payments',     'Platform payment records',   true ],
-            ['monetization.php',    '💰', 'Monetize',     'Pricing, plans & fees',      true ],
-            ['news.php',            '📰', 'News',         'Articles & blog posts',      true ],
-            ['ads.php',             '📣', 'Ads',          'Manage advertisements',      true ],
-            ['funerals.php',        '🕊️', 'Funerals',     'Funeral announcements',      true ],
-            ['events.php',          '📅', 'Events',       'Community events',           true ],
-            ['analytics.php',       '📊', 'Analytics',    'Stats & growth trends',      true ],
-            ['business_messages.php','💬','Messages',     'Business enquiries',         true ],
-            ['communication.php',   '📣', 'Broadcast',    'Push notifications',         true ],
-            ['contact_settings.php','📞', 'Contact',      'Contact page information',   true ],
-            ['theme.php',           '🎨', 'Theme',        'Colours & branding',         true ],
-            ['audit_logs.php',      '📜', 'Audit Logs',   'Admin action history',       true ],
+            ['requests.php',         '📋', 'Requests',     'Service request queue',       'approve_jobs'],
+            ['applications.php',     '📝', 'Applications', 'Job applications',            'approve_jobs'],
+            ['users.php',            '👥', 'Users',        'Manage accounts & roles',     'manage_users'],
+            ['disputes.php',         '⚖️', 'Disputes',     'Resolve user conflicts',      'manage_disputes'],
+            ['referrals.php',        '🔗', 'Referrals',    'Referral programme',          'manage_referrals'],
+            ['payments.php',         '💳', 'Payments',     'Platform payment records',    'view_reports'],
+            ['monetization.php',     '💰', 'Monetize',     'Pricing, plans & fees',       null],
+            ['news.php',             '📰', 'News',         'Articles & blog posts',       'approve_news'],
+            ['ads.php',              '📣', 'Ads',          'Manage advertisements',       'manage_ads'],
+            ['funerals.php',         '🕊️', 'Funerals',     'Funeral announcements',       'approve_funerals'],
+            ['events.php',           '📅', 'Events',       'Community events',            'approve_events'],
+            ['delivery.php',         '🚚', 'Delivery',     'Agents, requests & tracking', 'approve_delivery_agents'],
+            ['marketplace.php',      '🛍️', 'Marketplace',  'Shops, products & orders',    'approve_products'],
+            ['moderators.php',       '🛡️', 'Moderators',   'Roles & access control',      null],
+            ['analytics.php',        '📊', 'Analytics',    'Stats & growth trends',       'view_reports'],
+            ['business_messages.php','💬', 'Messages',     'Business enquiries',          null],
+            ['communication.php',    '📣', 'Broadcast',    'Push notifications',          'manage_communication'],
+            ['email_settings.php',   '📧', 'Email / SMTP', 'SMTP config & test',          null],
+            ['contact_settings.php', '📞', 'Contact',      'Contact page information',    null],
+            ['theme.php',            '🎨', 'Theme',        'Colours & branding',          null],
+            ['audit_logs.php',       '📜', 'Audit Logs',   'Admin action history',        'view_reports'],
         ];
-        foreach ($cards as [$href, $icon, $title, $desc, $adminOnly]):
-            if ($adminOnly && !is_admin()) continue;
+        foreach ($cards as [$href, $icon, $title, $desc, $requiredPerm]):
+            // Admin sees everything. Null-permission cards: admin-only. String: manager needs that permission.
+            if (!is_admin()) {
+                if ($requiredPerm === null) continue;          // admin-only card
+                if (!has_mod_permission($requiredPerm)) continue; // not granted
+            }
         ?>
             <a class="adm-card" href="<?php echo $href; ?>" data-page="<?php echo $href; ?>">
                 <div class="adm-card-icon"><?php echo $icon; ?></div>

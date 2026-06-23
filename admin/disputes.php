@@ -3,11 +3,12 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
 require_login();
-if (!is_admin()) {
+if (!is_admin_or_manager()) {
     header('Location: ../jobs.php');
     exit;
 }
 
+require_mod_permission('manage_disputes');
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && !empty($_POST['dispute_id'])) {
     $disputeId = intval($_POST['dispute_id']);
     $action = $_POST['action'];

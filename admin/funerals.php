@@ -5,6 +5,7 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 $user = current_user();
+require_mod_permission('approve_funerals');
 
 $feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0');
 $feeAmount  = (float)get_platform_setting('funeral_fee_amount', '20');
@@ -220,6 +221,7 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
                         <td style="text-align:center;"><?php echo $fa['featured'] ? '⭐' : '—'; ?></td>
                         <td>
                             <div class="af-actions">
+                                <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">View</a>
                                 <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small">Edit</a>
                                 <?php if ($fa['status'] === 'pending_payment'): ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="mark_paid"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fffbeb;color:#92400e;border-color:#f59e0b;">Mark Paid</button></form>

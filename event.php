@@ -191,6 +191,11 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
             <div class="ed-info-val"><?php echo sanitize($ev['gps_address']); ?></div>
         </div>
         <?php endif; ?>
+        <?php if (!empty($ev['google_maps_link'])): ?>
+        <div style="margin:8px 0;">
+            <a href="<?php echo sanitize($ev['google_maps_link']); ?>" target="_blank" rel="noopener" class="button button-secondary button-small">🗺 View on Google Maps ↗</a>
+        </div>
+        <?php endif; ?>
         <?php if ($ev['organizer_name']): ?>
         <div class="ed-info-card">
             <div class="ed-info-label">Organizer</div>

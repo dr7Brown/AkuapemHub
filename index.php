@@ -28,6 +28,38 @@ $openJobs = $pdo->query(
      WHERE sr.status IN ('open','partially_staffed') AND sr.posting_fee_status != 'pending'
      ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 4"
 )->fetchAll();
+
+// Marketplace featured products
+$featuredProducts = [];
+try {
+    $featuredProducts = $pdo->query(
+        "SELECT mp.id, mp.name, mp.price, mp.discount_price, mp.condition_type, mp.is_sponsored, mp.sponsored_end, mp.is_featured, mp.featured_end,
+                ms.shop_name, ms.id AS shop_id,
+                mc.icon AS cat_icon,
+                mpi.image_path AS primary_image
+         FROM mp_products mp
+         JOIN mp_shops ms ON mp.shop_id = ms.id
+         LEFT JOIN mp_categories mc ON mp.category_id = mc.id
+         LEFT JOIN mp_product_images mpi ON mpi.product_id = mp.id AND mpi.is_primary = 1
+         WHERE mp.status = 'approved' AND ms.status = 'active'
+         ORDER BY (mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE()) DESC,
+                  (mp.is_featured=1 AND mp.featured_end>=CURDATE()) DESC,
+                  mp.created_at DESC
+         LIMIT 4"
+    )->fetchAll();
+} catch (Exception $e) {}
+
+$openDeliveries = [];
+try {
+    $openDeliveries = $pdo->query(
+        "SELECT dr.id, dr.item_description, dr.item_category,
+                dr.pickup_location, dr.dropoff_location,
+                dr.delivery_fee, dr.preferred_date, dr.created_at
+         FROM delivery_requests dr
+         WHERE dr.status = 'approved' AND dr.agent_id IS NULL
+         ORDER BY dr.preferred_date ASC, dr.created_at DESC LIMIT 4"
+    )->fetchAll();
+} catch (Exception $e) { /* delivery tables not yet created */ }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -116,15 +148,158 @@ $openJobs = $pdo->query(
         .cm-cta p  { font-size:.85rem; color:#94a3b8; margin:0; }
         .cm-cta a  { white-space:nowrap; }
         @media(max-width:760px){ .cm-cta-row { grid-template-columns:1fr !important; } }
+
+        /* ── Marketplace product row (desktop grid) ── */
+        .cm-mp-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
+        .cm-mp-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .15s,transform .15s; }
+        .cm-mp-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.1); transform:translateY(-2px); }
+        .cm-mp-card--sponsored { border:2px solid #f59e0b; }
+
+        /* ═══════════════════════════════════════════════
+           MOBILE & TABLET  (≤ 767 px)
+           All content rows → horizontal scroll strips.
+           Module menu → horizontal scroll.
+           3 cards visible per screen width.
+        ═══════════════════════════════════════════════ */
+        @media (max-width: 767px) {
+
+            /* ── Guest top nav: horizontal scroll ── */
+            header nav { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch; padding-bottom:2px; }
+            header nav::-webkit-scrollbar { display:none; }
+
+            /* ── Hero: smaller on mobile ── */
+            .cm-hero { padding:28px 16px 24px; }
+            .cm-hero h1 { font-size:1.35rem; margin:0 0 6px; }
+            .cm-hero p  { font-size:.86rem; }
+
+            /* ── Module strip: horizontal scroll, 3 per view ── */
+            .cm-modules {
+                display:flex;
+                flex-wrap:nowrap;
+                overflow-x:auto;
+                gap:10px;
+                padding:0 16px 10px;
+                margin:-20px 0 0;
+                scroll-snap-type:x mandatory;
+                scrollbar-width:none;
+                -webkit-overflow-scrolling:touch;
+            }
+            .cm-modules::-webkit-scrollbar { display:none; }
+            .cm-mod {
+                flex:0 0 calc(33.333vw - 14px);
+                min-width:88px;
+                padding:14px 8px;
+                scroll-snap-align:start;
+            }
+            .cm-mod-icon  { font-size:1.6rem; margin-bottom:5px; }
+            .cm-mod-title { font-size:.76rem; margin-bottom:0; }
+            .cm-mod-desc  { display:none; }
+
+            /* ── Shared row layout: flex horizontal scroll ── */
+            .cm-shell { padding:20px 0 60px; }
+            .cm-section { margin-bottom:22px; }
+            .cm-section-head { padding:0 16px; margin-bottom:10px; }
+            .cm-section > div[style*="margin-top:14px"],
+            .cm-section > div[style*="margin-top: 14px"] { padding:0 16px; }
+
+            /* Common scroll row rules applied to all row types */
+            .cm-job-row,
+            .cm-ev-row,
+            .cm-fa-row,
+            .cm-news-row,
+            .cm-mp-row {
+                display:flex;
+                flex-wrap:nowrap;
+                overflow-x:auto;
+                gap:10px;
+                padding:0 16px 10px;
+                scroll-snap-type:x mandatory;
+                scrollbar-width:none;
+                -webkit-overflow-scrolling:touch;
+            }
+            .cm-job-row::-webkit-scrollbar,
+            .cm-ev-row::-webkit-scrollbar,
+            .cm-fa-row::-webkit-scrollbar,
+            .cm-news-row::-webkit-scrollbar,
+            .cm-mp-row::-webkit-scrollbar { display:none; }
+
+            /* ── Card widths: exactly 3 per screen ── */
+            .cm-job-card,
+            .cm-ev-card,
+            .cm-fa-card,
+            .cm-news-card,
+            .cm-mp-card {
+                flex:0 0 calc(33.333vw - 14px);
+                min-width:96px;
+                scroll-snap-align:start;
+            }
+
+            /* ── Job card mobile tweaks ── */
+            .cm-job-card { padding:10px 10px 10px 14px; }
+            .cm-job-cat   { font-size:.6rem; padding:2px 6px; margin-bottom:5px; }
+            .cm-job-title { font-size:.8rem; line-height:1.35; padding-bottom:6px; -webkit-line-clamp:3; }
+            .cm-job-footer{ padding-top:6px; gap:4px; flex-direction:column; align-items:flex-start; }
+            .cm-job-budget{ font-size:.8rem; }
+            .cm-job-meta  { font-size:.66rem; }
+
+            /* ── Event card mobile tweaks ── */
+            .cm-ev-img { aspect-ratio:4/3; }
+            .cm-ev-date-badge { font-size:.6rem; padding:3px 6px; bottom:6px; left:6px; }
+            .cm-ev-body { padding:8px 10px 10px; }
+            .cm-ev-title { font-size:.8rem; -webkit-line-clamp:2; margin-bottom:3px; }
+            .cm-ev-meta  { font-size:.66rem; }
+
+            /* ── Funeral card mobile tweaks ── */
+            .cm-fa-img { aspect-ratio:1/1; }
+            .cm-fa-initials { font-size:2rem; }
+            .cm-fa-info { padding:8px 10px 10px; gap:1px; }
+            .cm-fa-name { font-size:.8rem; margin-bottom:1px; }
+            .cm-fa-meta { font-size:.66rem; }
+
+            /* ── News card mobile tweaks ── */
+            .cm-news-img { aspect-ratio:16/9; }
+            .cm-news-body { padding:8px 10px 10px; }
+            .cm-news-title { font-size:.8rem; -webkit-line-clamp:2; margin-bottom:2px; }
+            .cm-news-excerpt { display:none; }
+            .cm-news-footer { padding-top:6px; }
+            .cm-news-meta, .cm-news-read { font-size:.66rem; }
+
+            /* ── Marketplace product card mobile tweaks ── */
+            .cm-mp-card > div:first-child { aspect-ratio:1/1; }
+            .cm-mp-card > div:last-child  { padding:7px 9px 9px; }
+
+            /* ── Empty state: keep padded ── */
+            .cm-empty { margin:0 16px; }
+
+            /* ── CTA block ── */
+            .cm-cta { margin:0 16px; border-radius:12px; padding:16px; }
+        }
+
+        /* ── Mid-tablet (540 – 767 px): 4 cards per view ── */
+        @media (min-width:540px) and (max-width:767px) {
+            .cm-mod,
+            .cm-job-card,
+            .cm-ev-card,
+            .cm-fa-card,
+            .cm-news-card,
+            .cm-mp-card {
+                flex:0 0 calc(25vw - 12px);
+                min-width:110px;
+            }
+            .cm-mod-desc { display:block; font-size:.68rem; }
+        }
     </style>
 </head>
 <body <?php echo $user ? 'class="has-bottom-nav"' : ''; ?>>
 
 <?php if (!$user): ?>
 <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;"><?php echo APP_NAME; ?></a>
+    <a href="index.php" style="text-decoration:none;display:flex;align-items:center;">
+        <img src="assets/images/ac%20logo.png" alt="<?php echo APP_NAME; ?>" style="height:38px;width:auto;display:block;">
+    </a>
     <nav style="display:flex;gap:12px;align-items:center;">
-        <a href="browse_jobs.php" style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Jobs</a>
+        <a href="browse_jobs.php"  style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Jobs</a>
+        <a href="marketplace.php"  style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Marketplace</a>
         <a href="find_workers.php" style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Workers</a>
         <a href="events.php"       style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Events</a>
         <a href="news.php"         style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">News</a>
@@ -156,9 +331,92 @@ $openJobs = $pdo->query(
     <a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a>
     <a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a>
     <a href="find_workers.php" class="cm-mod"><div class="cm-mod-icon">🔧</div><div class="cm-mod-title">Find Workers</div><div class="cm-mod-desc">Skilled professionals near you</div></a>
+    <a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a>
+    <a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a>
 </div>
 
 <div class="cm-shell">
+
+    <!-- Marketplace Featured Products -->
+    <?php if ($featuredProducts): ?>
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>🛍️ Marketplace</h2>
+            <a href="marketplace.php">View all →</a>
+        </div>
+        <div class="cm-mp-row">
+            <?php foreach ($featuredProducts as $fp):
+                $effP = !empty($fp['discount_price']) ? (float)$fp['discount_price'] : (float)$fp['price'];
+                $disc = (!empty($fp['discount_price']) && $fp['price'] > 0) ? (int)round((1 - $fp['discount_price']/$fp['price'])*100) : 0;
+                $isSp = $fp['is_sponsored'] && !empty($fp['sponsored_end']) && $fp['sponsored_end'] >= date('Y-m-d');
+            ?>
+            <a href="product.php?id=<?php echo (int)$fp['id']; ?>" class="cm-mp-card<?php echo $isSp?' cm-mp-card--sponsored':''; ?>">
+                <div style="aspect-ratio:1/1;background:#f8fafc;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;">
+                    <?php if ($fp['primary_image']): ?><img src="<?php echo sanitize($fp['primary_image']); ?>" style="width:100%;height:100%;object-fit:cover;" alt=""><?php else: ?><span style="font-size:2.5rem;opacity:.3;"><?php echo $fp['cat_icon']??'📦'; ?></span><?php endif; ?>
+                    <?php if ($isSp): ?><span style="position:absolute;top:6px;left:6px;background:#f59e0b;color:#fff;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:10px;">SPONSORED</span><?php endif; ?>
+                    <?php if ($disc>=10): ?><span style="position:absolute;top:<?php echo $isSp?'26px':'6px'; ?>;left:6px;background:#ef4444;color:#fff;font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:10px;">-<?php echo $disc; ?>%</span><?php endif; ?>
+                </div>
+                <div style="padding:10px 12px 12px;">
+                    <div style="font-weight:700;font-size:.84rem;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:4px;"><?php echo sanitize($fp['name']); ?></div>
+                    <div style="font-size:.72rem;color:var(--muted,#6b7280);">🏪 <?php echo sanitize(mb_substr($fp['shop_name'],0,28)); ?></div>
+                    <div style="font-weight:900;color:var(--primary,#0f766e);font-size:.92rem;margin-top:6px;">
+                        GH&#8373; <?php echo number_format($effP,2); ?>
+                        <?php if ($disc>0): ?><span style="font-size:.76rem;color:var(--muted,#6b7280);font-weight:400;text-decoration:line-through;margin-left:4px;">GH&#8373; <?php echo number_format((float)$fp['price'],2); ?></span><?php endif; ?>
+                    </div>
+                </div>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+            <a href="marketplace.php" class="button button-secondary">🛍️ Browse All Products</a>
+            <?php if ($user): ?><a href="seller_dashboard.php" class="button button-primary">➕ Start Selling</a><?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Open Delivery Requests -->
+    <?php if ($openDeliveries): ?>
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>Open Delivery Requests</h2>
+            <a href="delivery.php">View all →</a>
+        </div>
+        <div class="cm-job-row">
+            <?php
+            $catIcons = ['documents'=>'📄','food'=>'🍔','electronics'=>'📱','clothing'=>'👕','medical_supplies'=>'💊','groceries'=>'🛒','parcels'=>'📦','other'=>'📦'];
+            $catLabels= ['documents'=>'Documents','food'=>'Food','electronics'=>'Electronics','clothing'=>'Clothing','medical_supplies'=>'Medical','groceries'=>'Groceries','parcels'=>'Parcels','other'=>'Other'];
+            foreach ($openDeliveries as $dr):
+                $catIcon  = $catIcons[$dr['item_category']]  ?? '📦';
+                $catLabel = $catLabels[$dr['item_category']] ?? 'Parcel';
+            ?>
+            <a href="delivery_detail.php?id=<?php echo (int)$dr['id']; ?>" class="cm-job-card" style="border-left-color:#f97316;">
+                <span class="cm-job-cat" style="background:#fff7ed;color:#9a3412;"><?php echo $catIcon; ?> <?php echo sanitize($catLabel); ?></span>
+                <div class="cm-job-title"><?php echo sanitize(mb_substr($dr['item_description'],0,72)).(mb_strlen($dr['item_description'])>72?'…':''); ?></div>
+                <div class="cm-job-footer">
+                    <div>
+                        <div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($dr['pickup_location'],0,36)); ?></div>
+                        <div class="cm-job-meta">🏁 <?php echo sanitize(mb_substr($dr['dropoff_location'],0,36)); ?></div>
+                        <?php if ($dr['preferred_date']): ?>
+                        <div class="cm-job-meta">📅 <?php echo date('d M Y', strtotime($dr['preferred_date'])); ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($dr['delivery_fee']): ?>
+                    <div class="cm-job-budget" style="color:#ea580c;">GH₵ <?php echo number_format((float)$dr['delivery_fee'],2); ?></div>
+                    <?php else: ?>
+                    <div class="cm-job-budget" style="color:#9ca3af;font-size:.75rem;">Fee TBD</div>
+                    <?php endif; ?>
+                </div>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+            <a href="delivery.php" class="button button-secondary">🚚 Browse Deliveries</a>
+            <?php if ($user): ?>
+            <a href="delivery_request.php" class="button button-primary">➕ Request Delivery</a>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Open Jobs & Services -->
     <div class="cm-section">

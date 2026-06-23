@@ -7,6 +7,7 @@ if (!is_admin() && !is_manager()) {
     header('Location: ../jobs.php');
     exit;
 }
+require_mod_permission('view_reports');
 
 // Stats
 $stats = $pdo->query("SELECT

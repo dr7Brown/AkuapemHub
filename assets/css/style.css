@@ -895,6 +895,38 @@ tbody tr:hover td {
   .jobs-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
+/* Keep small forms (login / register) narrow on all screen sizes */
+.page-shell.small-shell {
+  max-width: 440px;
+  padding-left: var(--space-3);
+  padding-right: var(--space-3);
+}
+
+/* ── Delivery Services — shared star-rating component ──────────────────────── */
+.dl-stars .dl-star-full  { color: #f59e0b; }
+.dl-stars .dl-star-empty { color: #e5e7eb; }
+.dl-star-val             { font-size: .8rem; color: var(--text-muted, #6b7280); margin-left: 2px; }
+
+/* Interactive star picker — CSS-only reverse trick */
+.dl-stars-input {
+    display: flex;
+    flex-direction: row-reverse;
+    justify-content: flex-end;
+    gap: 2px;
+}
+.dl-stars-input input  { display: none; }
+.dl-stars-input label  {
+    font-size: 1.8rem;
+    cursor: pointer;
+    color: #e5e7eb;
+    transition: color .1s;
+    line-height: 1;
+}
+/* Highlight selected star and all stars before it (visually to the left) */
+.dl-stars-input input:checked ~ label,
+.dl-stars-input label:hover,
+.dl-stars-input label:hover ~ label { color: #f59e0b; }
+
 /* Sidebar layout utility: single col on mobile, sidebar+content on wide screens */
 .sidebar-layout {
   display: grid;

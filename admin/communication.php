@@ -8,6 +8,7 @@ $user = current_user();
 if (!in_array($user['role'], ['admin','manager'], true)) {
     header('Location: ../jobs.php'); exit;
 }
+require_mod_permission('manage_communication');
 
 $tab = $_GET['tab'] ?? 'dashboard';
 $msg = '';

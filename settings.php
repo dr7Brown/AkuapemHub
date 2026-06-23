@@ -884,9 +884,12 @@ if (!$isAjax): ?>
 </div>
 
 <?php elseif ($activeSection === 'about'): ?>
-<h2 class="sn-panel-title">ℹ️ About AkuapemConnect</h2>
+ <h2 class="sn-panel-title">ℹ️ About AkuapemConnect</h2>
 
-<div class="card" style="padding:20px 22px;margin-bottom:0;">
+ <section class="card form-card">
+    <?php include "about_short.php"?>
+</section>
+<!-- <div class="card" style="padding:20px 22px;margin-bottom:0;">
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;">
         <span style="font-size:2.4rem;line-height:1;">🏔️</span>
         <div>
@@ -895,7 +898,16 @@ if (!$isAjax): ?>
         </div>
     </div>
     <p style="margin:0;font-size:.92rem;color:var(--text);line-height:1.7;">AkuapemConnect connects people across the Akuapem ridge with skilled workers and service providers. Whether you need a plumber, electrician, cleaner, caterer, delivery rider, or any other service — AkuapemConnect helps you find trusted help close to home.</p>
-</div>
+</div> -->
+<!--
+
+<?php elseif ($activeSection === 'help'): ?>
+<h2 class="sn-panel-title">❓ Help &amp; Support</h2>
+<section class="card form-card">
+    <?php include "support_short.php"?>
+</section>
+
+
 
 <div class="card" style="margin-top:10px;padding:20px 22px;margin-bottom:0;">
     <h3 style="font-size:.9rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin:0 0 12px;">What you can do</h3>
@@ -937,7 +949,7 @@ if (!$isAjax): ?>
     <a href="contact.php"  class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Contact us</a>
     <a href="privacy.php"  class="list-row" style="display:block;padding:9px 0;border-bottom:1px solid var(--border);">Privacy Policy</a>
     <a href="terms.php"    class="list-row" style="display:block;padding:9px 0;">Terms of Service</a>
-</div>
+</div> -->
 
 <?php else: ?>
 <div class="sn-welcome">

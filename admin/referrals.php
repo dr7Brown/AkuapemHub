@@ -4,11 +4,12 @@ require_once __DIR__ . '/../functions.php';
 require_once __DIR__ . '/../modules/referrals/service.php';
 
 require_login();
-if (!is_admin()) {
+if (!is_admin_or_manager()) {
     header('Location: index.php');
     exit;
 }
 
+require_mod_permission('manage_referrals');
 $tab = $_GET['tab'] ?? 'config';
 
 // ── POST: save config ─────────────────────────────────────────────────────────

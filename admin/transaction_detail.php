@@ -8,6 +8,7 @@ if (!is_admin() && !is_manager()) {
     header('Location: ../jobs.php');
     exit;
 }
+require_mod_permission('view_reports');
 
 $id = intval($_GET['id'] ?? 0);
 if ($id <= 0) {

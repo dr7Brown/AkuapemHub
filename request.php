@@ -245,6 +245,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         "Contact: {$contactInfo}\n\n" .
                         "Please review and approve the request in the admin panel.";
         send_email_notification(ADMIN_EMAIL, 'New AkuapemConnect service request', $adminMessage);
+        notify_moderators('approve_jobs', 'New Job Request Pending',
+            display_name($user) . ' posted "' . $title . '" — awaiting approval.');
 
         flash('Service request created successfully. Admin will approve it before workers can accept.');
         header('Location: jobs.php');

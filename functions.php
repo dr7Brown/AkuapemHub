@@ -61,15 +61,19 @@ function user_wants_email_notifications($userId) {
 }
 
 function send_email_notification($to, $subject, $message, $userId = null) {
-    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
-        return false;
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return false;
+
+    // Route through EmailService (handles SMTP + user opt-out + fallback to mail())
+    $serviceFile = __DIR__ . '/services/EmailService.php';
+    if (file_exists($serviceFile)) {
+        if (!class_exists('EmailService', false)) require_once $serviceFile;
+        return EmailService::send($to, $subject, $message, $userId);
     }
-    if ($userId !== null && !user_wants_email_notifications($userId)) {
-        return false;
-    }
-    $headers = 'From: ' . MAIL_FROM . "\r\n" .
-               'Reply-To: ' . MAIL_FROM . "\r\n" .
-               'Content-Type: text/plain; charset=UTF-8' . "\r\n";
+
+    // Hard fallback when EmailService not available
+    if ($userId !== null && !user_wants_email_notifications($userId)) return false;
+    $headers = 'From: ' . MAIL_FROM . "\r\nReply-To: " . MAIL_FROM
+             . "\r\nContent-Type: text/html; charset=UTF-8\r\n";
     return mail($to, $subject, $message, $headers);
 }
 
@@ -100,10 +104,10 @@ function log_security_event(?int $userId, string $action, string $ip, string $us
     }
 }
 
-function notify_user($userId, $title, $body, $type = 'info') {
+function notify_user($userId, $title, $body, $type = 'info', $link = null) {
     global $pdo;
-    $stmt = $pdo->prepare('INSERT INTO notifications (user_id, title, body, type, is_read, created_at) VALUES (?, ?, ?, ?, 0, NOW())');
-    return $stmt->execute([$userId, $title, $body, $type]);
+    $stmt = $pdo->prepare('INSERT INTO notifications (user_id, title, body, type, is_read, link, created_at) VALUES (?, ?, ?, ?, 0, ?, NOW())');
+    return $stmt->execute([$userId, $title, $body, $type, $link]);
 }
 
 function get_notifications($userId, $limit = 10) {
@@ -778,17 +782,69 @@ function rank_jobs_for_worker(array $jobs, array $worker) {
 
 function sweep_expired_featured() {
     global $pdo;
+
+    // ── Jobs & workers (existing) ─────────────────────────────────────────
     $pdo->exec("UPDATE service_requests SET featured = 0 WHERE featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET is_featured = 0 WHERE is_featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET is_verified = 0, verification_status = 'expired' WHERE is_verified = 1 AND verification_expiry IS NOT NULL AND verification_expiry < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET service_fee_status = 'free' WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry < CURDATE()");
 
-    // H2: notify workers whose service listing expires within 7 days (once per expiry cycle)
+    // Notify workers whose service listing expires within 7 days (once per expiry cycle)
     $expiring = $pdo->query("SELECT user_id, service_fee_expiry FROM worker_profiles WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND service_renewal_notice_sent = 0")->fetchAll();
     foreach ($expiring as $row) {
         notify_user($row['user_id'], 'Service listing expiring soon', 'Your service listing expires on ' . $row['service_fee_expiry'] . '. Renew now to stay visible in Find Workers.', 'warning');
         $pdo->prepare("UPDATE worker_profiles SET service_renewal_notice_sent = 1 WHERE user_id = ?")->execute([$row['user_id']]);
     }
+
+    // ── Marketplace products ──────────────────────────────────────────────
+    try {
+        $pdo->exec("UPDATE mp_products SET is_featured = 0, featured_end = NULL WHERE is_featured = 1 AND featured_end IS NOT NULL AND featured_end < CURDATE()");
+        $pdo->exec("UPDATE mp_products SET is_sponsored = 0, sponsored_end = NULL WHERE is_sponsored = 1 AND sponsored_end IS NOT NULL AND sponsored_end < CURDATE()");
+
+        // ── Marketplace shops ─────────────────────────────────────────────
+        $pdo->exec("UPDATE mp_shops SET is_featured = 0, featured_end = NULL WHERE is_featured = 1 AND featured_end IS NOT NULL AND featured_end < CURDATE()");
+        $pdo->exec("UPDATE mp_shops SET is_sponsored = 0, sponsored_end = NULL WHERE is_sponsored = 1 AND sponsored_end IS NOT NULL AND sponsored_end < CURDATE()");
+
+        // Mark expired boost orders
+        $pdo->exec("UPDATE mp_boost_orders SET status = 'expired' WHERE status = 'active' AND end_date < CURDATE()");
+
+        // Notify sellers whose boost expires in 2 days
+        $boostExpiring = $pdo->query(
+            "SELECT mb.id, mb.boost_type, mb.end_date, ms.user_id, ms.shop_name
+             FROM mp_boost_orders mb JOIN mp_shops ms ON mb.shop_id = ms.id
+             WHERE mb.status = 'active' AND mb.end_date = DATE_ADD(CURDATE(), INTERVAL 2 DAY)"
+        )->fetchAll();
+        foreach ($boostExpiring as $b) {
+            notify_user((int)$b['user_id'], 'Boost Listing Expires in 2 Days',
+                ucwords(str_replace('_', ' ', $b['boost_type'])) . ' boost for ' . $b['shop_name'] . ' expires on ' . $b['end_date'] . '. Renew to keep your top visibility.',
+                'warning');
+        }
+    } catch (Exception $e) { /* Marketplace tables not yet installed */ }
+
+    // ── Delivery agents ────────────────────────────────────────────────────
+    try {
+        $pdo->exec("UPDATE delivery_agents SET is_premium = 0, premium_start = NULL, premium_end = NULL WHERE is_premium = 1 AND premium_end IS NOT NULL AND premium_end < CURDATE()");
+        $pdo->exec("UPDATE delivery_agents SET is_sponsored = 0, sponsored_end = NULL WHERE is_sponsored = 1 AND sponsored_end IS NOT NULL AND sponsored_end < CURDATE()");
+
+        // Mark expired subscription & sponsored records
+        $pdo->exec("UPDATE delivery_subscriptions SET status = 'expired' WHERE status = 'active' AND end_date < CURDATE()");
+        $pdo->exec("UPDATE delivery_sponsored_listings SET status = 'expired' WHERE status = 'active' AND end_date < CURDATE()");
+
+        // Notify delivery agents expiring within 3 days
+        $dlExpiring = $pdo->query(
+            "SELECT da.user_id, da.premium_end, da.sponsored_end, u.name
+             FROM delivery_agents da JOIN users u ON da.user_id = u.id
+             WHERE (
+                 (da.is_premium = 1 AND da.premium_end = DATE_ADD(CURDATE(), INTERVAL 3 DAY))
+              OR (da.is_sponsored = 1 AND da.sponsored_end = DATE_ADD(CURDATE(), INTERVAL 3 DAY))
+             )"
+        )->fetchAll();
+        foreach ($dlExpiring as $ag) {
+            notify_user((int)$ag['user_id'], 'Rider Boost Expiring Soon',
+                'One of your Premium or Sponsored listings expires in 3 days. Renew from your Agent Dashboard to maintain your visibility.',
+                'warning');
+        }
+    } catch (Exception $e) { /* Delivery tables not yet installed */ }
 }
 
 function consume_job_post_credit(int $userId, int $jobId): bool {
@@ -1348,6 +1404,205 @@ function login_rate_limit_clear(string $ip): void {
         $pdo->prepare("DELETE FROM login_attempts WHERE ip_address = ?")->execute([$ip]);
     } catch (Exception $e) {}
 }
+
+// ── Moderator Permission System ───────────────────────────────────────────────
+
+/**
+ * All available moderator permissions with human-readable labels.
+ * Grouped by section for the admin UI.
+ */
+function all_mod_permissions(): array {
+    return [
+        'Content Approvals' => [
+            'approve_jobs'              => 'Approve / reject job posts',
+            'approve_products'          => 'Approve / reject marketplace products',
+            'approve_shops'             => 'Verify / suspend marketplace shops',
+            'approve_events'            => 'Approve / reject community events',
+            'approve_funerals'          => 'Approve / reject funeral announcements',
+            'approve_news'              => 'Approve / reject news articles',
+            'approve_delivery_requests' => 'Approve / reject delivery requests',
+            'approve_delivery_agents'   => 'Approve / reject delivery agent applications',
+            'approve_verifications'     => 'Review rider & worker verification badges',
+            'approve_boosts'            => 'Activate sponsored & featured listings',
+        ],
+        'User & Community' => [
+            'manage_users'     => 'View, ban, and manage user accounts',
+            'manage_disputes'  => 'Mediate disputes between users',
+            'manage_referrals' => 'View and manage the referral programme',
+        ],
+        'Platform' => [
+            'manage_ads'           => 'Create, edit, and delete advertisements',
+            'manage_communication' => 'Send broadcast notifications to users',
+            'view_reports'         => 'View analytics, revenue, and platform reports',
+        ],
+    ];
+}
+
+/**
+ * Returns all permission keys as a flat array (no groups).
+ */
+function all_mod_permission_keys(): array {
+    $flat = [];
+    foreach (all_mod_permissions() as $perms) {
+        foreach ($perms as $key => $label) $flat[] = $key;
+    }
+    return $flat;
+}
+
+/**
+ * Check if the current user has a specific permission.
+ * Admins implicitly have every permission.
+ * Managers have only what was explicitly granted.
+ */
+function has_mod_permission(string $permission): bool {
+    static $cache    = [];
+    static $tableOk  = null;
+    if (is_admin()) return true;
+    $user = current_user();
+    if (!$user || $user['role'] !== 'manager') return false;
+
+    $uid = (int)$user['id'];
+    if (!isset($cache[$uid])) {
+        global $pdo;
+        // Auto-create the table if it was never migrated (v016)
+        if ($tableOk === null) {
+            try {
+                $pdo->query('SELECT 1 FROM moderator_permissions LIMIT 1');
+                $tableOk = true;
+            } catch (Exception $e) {
+                try {
+                    $pdo->exec("CREATE TABLE IF NOT EXISTS moderator_permissions (
+                        id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        user_id    INT UNSIGNED NOT NULL,
+                        permission VARCHAR(80) NOT NULL,
+                        granted_by INT UNSIGNED NOT NULL,
+                        granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_mp_user_perm (user_id, permission),
+                        KEY idx_mp_user (user_id),
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+                    $tableOk = true;
+                } catch (Exception $e2) {
+                    $tableOk = false;
+                }
+            }
+        }
+        if ($tableOk) {
+            try {
+                $st = $pdo->prepare('SELECT permission FROM moderator_permissions WHERE user_id = ?');
+                $st->execute([$uid]);
+                $cache[$uid] = array_column($st->fetchAll(), 'permission');
+            } catch (Exception $e) {
+                $cache[$uid] = [];
+            }
+        } else {
+            $cache[$uid] = [];
+        }
+    }
+    return in_array($permission, $cache[$uid], true);
+}
+
+/**
+ * Gate access by permission.
+ * - GET requests that fail: render an inline HTML error (AJAX-safe — gets injected into the panel).
+ * - POST requests that fail: flash + redirect.
+ * - Admins always pass.
+ */
+function require_mod_permission(string $permission, string $back = 'index.php'): void {
+    if (is_admin()) return;
+    if (is_admin_or_manager() && has_mod_permission($permission)) return;
+
+    $perm = htmlspecialchars($permission, ENT_QUOTES, 'UTF-8');
+    $back = htmlspecialchars($back,       ENT_QUOTES, 'UTF-8');
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        flash('You do not have the "' . $perm . '" permission.', 'error');
+        header('Location: ' . $back);
+    } else {
+        // Return an embeddable fragment — when loaded via admin AJAX this gets injected cleanly
+        http_response_code(403);
+        echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<link rel="stylesheet" href="../assets/css/style.css"></head><body>
+<main class="page-shell" style="padding:48px 16px;text-align:center;">
+<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:14px;padding:28px 24px;max-width:480px;margin:0 auto;">
+<div style="font-size:2.5rem;margin-bottom:12px;">⛔</div>
+<h2 style="color:#c0392b;margin:0 0 10px;font-size:1.1rem;">Permission Denied</h2>
+<p style="color:#374151;margin:0 0 10px;">You need the <strong>' . $perm . '</strong> permission to access this section.</p>
+<p style="font-size:.84rem;color:#6b7280;margin:0;">Ask your administrator to grant it via
+<strong>Admin → Moderators</strong> → your name → check the box → Save.</p>
+</div></main></body></html>';
+    }
+    exit;
+}
+
+/**
+ * Get all permissions granted to a specific user (by user ID).
+ */
+function get_user_mod_permissions(int $userId): array {
+    global $pdo;
+    try {
+        $st = $pdo->prepare('SELECT permission FROM moderator_permissions WHERE user_id = ?');
+        $st->execute([$userId]);
+        return array_column($st->fetchAll(), 'permission');
+    } catch (Exception $e) { return []; }
+}
+
+/**
+ * Grant a permission to a moderator (idempotent — silently skips if already held).
+ */
+function grant_mod_permission(int $userId, string $permission, int $grantedBy): void {
+    global $pdo;
+    $pdo->prepare(
+        'INSERT IGNORE INTO moderator_permissions (user_id, permission, granted_by) VALUES (?,?,?)'
+    )->execute([$userId, $permission, $grantedBy]);
+}
+
+/**
+ * Revoke a specific permission from a moderator.
+ */
+function revoke_mod_permission(int $userId, string $permission): void {
+    global $pdo;
+    $pdo->prepare('DELETE FROM moderator_permissions WHERE user_id=? AND permission=?')
+        ->execute([$userId, $permission]);
+}
+
+/**
+ * Revoke ALL permissions from a moderator (e.g., when demoting to regular user).
+ */
+function revoke_all_mod_permissions(int $userId): void {
+    global $pdo;
+    $pdo->prepare('DELETE FROM moderator_permissions WHERE user_id=?')->execute([$userId]);
+}
+
+/**
+ * Notify all moderators who hold $permission about a new item needing review.
+ * Called by admin pages when new content is submitted for approval.
+ *
+ * Example:
+ *   notify_moderators('approve_products', 'New Product Pending', 'Seller X submitted "Widget" for review.');
+ */
+function notify_moderators(string $permission, string $title, string $body): void {
+    global $pdo;
+    try {
+        // Get all managers who have this permission
+        $st = $pdo->prepare(
+            'SELECT mp.user_id FROM moderator_permissions mp
+             JOIN users u ON mp.user_id = u.id
+             WHERE mp.permission = ? AND u.role = "manager" AND u.banned = 0'
+        );
+        $st->execute([$permission]);
+        foreach ($st->fetchAll() as $row) {
+            notify_user((int)$row['user_id'], $title, $body, 'info');
+        }
+        // Also notify all admins
+        $admins = $pdo->query("SELECT id FROM users WHERE role='admin' AND banned=0")->fetchAll();
+        foreach ($admins as $admin) {
+            notify_user((int)$admin['id'], $title, $body, 'info');
+        }
+    } catch (Exception $e) { /* silently skip if table not ready */ }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function log_audit_action($adminId, $action, $description) {
     global $pdo;

@@ -1,0 +1,216 @@
+Use this prompt for your AI developer or coding assistant:
+
+---
+
+# PROMPT
+
+Add a new **Public Content Module** to the AkuapemHub platform called **"News & Advertisements"**.
+
+This module must be completely separate from the existing services and should be accessible by both authenticated and unauthenticated users. Visitors should be able to view all published content without creating an account or logging in.
+
+## General Requirements
+
+Create a standalone module named:
+
+**News & Advertisements**
+
+The module should appear in the main navigation and be accessible to everyone.
+
+Do not categorize news items. All news articles should appear in a single chronological feed, with the newest articles displayed first.
+
+The system should be optimized for mobile devices and fast loading.
+
+---
+i want admin dashboard to use ajax to load its contents such that when the top menu items are clicked, 
+the contents get loaded below, so that going back and forth are reduced
+
+
+## News Management
+
+### Admin Features
+
+Create a News Management section in the Admin Dashboard where administrators can:
+
+* Create news articles
+* Edit news articles
+* Delete news articles
+* Publish or unpublish news articles
+* Upload a featured image
+* Schedule publication date (optional)
+* View total article views
+
+### News Fields
+
+Each news article should contain:
+
+* ID
+* Title
+* Slug
+* Featured Image
+* Summary
+* Full Content
+* Publication Status (Published/Unpublished)
+* View Count
+* Created Date
+* Updated Date
+* Published Date
+
+### Public News Feed
+
+Display:
+
+* Featured image
+* News title
+* Short summary
+* Publication date
+* Read More button
+
+When a user clicks a news item, open a dedicated article page displaying:
+
+* Full article
+* Featured image
+* Publication date
+* View count
+* Share buttons (WhatsApp, Facebook, X/Twitter, Copy Link)
+
+Increment view count only once per visitor within a reasonable timeframe.
+
+---
+
+## Advertisement Management
+
+Create a separate Advertisement Management section in the Admin Dashboard.
+
+### Admin Features
+
+Allow administrators to:
+
+* Create advertisements
+* Edit advertisements
+* Delete advertisements
+* Activate/Deactivate advertisements
+* Set start date
+* Set end date
+* Upload advertisement image
+* Set destination URL
+* View advertisement click statistics
+
+### Advertisement Fields
+
+Each advertisement should contain:
+
+* ID
+* Title
+* Image
+* Destination URL
+* Advertisement Type
+* Status
+* Start Date
+* End Date
+* Click Count
+* Created Date
+
+### Advertisement Types
+
+Support:
+
+* Banner Advertisement
+* Sponsored Post
+
+### Public Advertisement Display
+
+Banner advertisements should appear:
+
+* On the homepage
+* Within the news feed after every few articles
+* On article pages
+
+Sponsored posts should appear mixed into the news feed but must be clearly labeled:
+
+"Sponsored"
+
+Users must easily distinguish advertisements from news content.
+
+---
+
+## Public Access Rules
+Logged-in Features:
+
+❤️ Like articles
+💬 Comment section
+🔖 Save for later
+📊 View history
+🔔 Notifications for new news
+un loggin users can not access these features
+
+Guests can:
+
+* Browse news
+* Read full news articles
+* View advertisements
+* Share articles
+
+Guests cannot:
+
+* Access administration features
+* Create content
+* Modify content
+
+---
+
+## Database Requirements
+
+Create separate tables:
+
+### news
+
+* id
+* slug
+* title
+* summary
+* content
+* featured_image
+* status
+* view_count
+* created_at
+* updated_at
+* published_at
+
+### advertisements
+
+* id
+* title
+* image
+* destination_url
+* ad_type
+* status
+* click_count
+* start_date
+* end_date
+* created_at
+* updated_at
+
+---
+
+## Performance Requirements
+
+* Load content using AJAX pagination or infinite scrolling.
+* Optimize uploaded images.
+* Cache frequently viewed articles.
+* Ensure SEO-friendly URLs.
+* Generate meta title, description, and Open Graph tags for news articles.
+* Make all pages responsive for mobile, tablet, and desktop.
+
+---
+
+## Security Requirements
+
+* Sanitize all user input.
+* Validate image uploads.
+* Protect admin routes using role-based access control.
+* Prevent XSS and SQL Injection attacks.
+* Log all administrative actions.
+
+---
+
+Build this module as a fully independent system that can be maintained, enabled, disabled, and expanded without affecting other AkuapemHub services.

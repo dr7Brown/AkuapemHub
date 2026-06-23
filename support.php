@@ -194,6 +194,91 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
         </div>
     </div>
 
+    <!-- Delivery Services -->
+    <div class="sup-section">
+        <h2>Delivery Services</h2>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I request a delivery? <span class="arrow">▼</span></div>
+            <div class="faq-a">Log in and tap <strong>Request Delivery</strong> from the Delivery Services page or the home screen. Fill in the pickup location, drop-off location, item description, category, and your preferred date and payment method. You can optionally paste a Google Maps link for each location to help the rider. Your request will be reviewed by an admin (or auto-approved if you meet the trust criteria) before riders can see it.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How long does admin review take? <span class="arrow">▼</span></div>
+            <div class="faq-a">Most requests are reviewed within a few hours. Customers who have completed 10 or more successful deliveries and have an account older than 60 days are automatically approved without waiting for admin review. You will receive an in-app notification as soon as your request is approved or if it is rejected with a reason.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I select a delivery rider? <span class="arrow">▼</span></div>
+            <div class="faq-a">Once your request is approved, verified riders can apply. You will see a list of applicants on the request detail page — each showing the rider's vehicle type, rating, completed deliveries, and their offered fee. Tap <strong>Select This Rider</strong> to assign the job. All other applicants are notified that the position is filled.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I track my delivery? <span class="arrow">▼</span></div>
+            <div class="faq-a">Open the delivery from your <strong>Delivery Services</strong> dashboard. You will see a live status timeline: Pending → Accepted → Picked Up → In Transit → Delivered. You receive an in-app notification and email at each stage. If a Google Maps link was provided for your drop-off, you can share it directly with the rider via the detail page.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">Can I cancel a delivery? <span class="arrow">▼</span></div>
+            <div class="faq-a">Yes, you can cancel a delivery that is still in <em>Pending</em> or <em>Approved</em> status before a rider is assigned. Once a rider has been assigned and started the trip, cancellation is no longer available through the app — contact support if you need urgent assistance.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I become a delivery rider? <span class="arrow">▼</span></div>
+            <div class="faq-a">Go to <strong>Delivery Services → Become a Delivery Agent</strong>. Register your vehicle details, upload a valid ID, describe your service area, and submit for admin approval. Once approved, you can set your availability, browse open delivery requests, apply for jobs, and start earning. You can also apply for a Verified Rider badge for extra trust.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">What is a Verified Rider badge? <span class="arrow">▼</span></div>
+            <div class="faq-a">The Verified Rider badge is awarded to agents who submit additional verification documents — a selfie photo, Ghana Card, and optionally a driver's licence and vehicle registration. An admin reviews and approves the documents. Verified riders appear higher in search results and are more likely to be selected by customers.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">What do Premium and Sponsored rider listings mean? <span class="arrow">▼</span></div>
+            <div class="faq-a"><strong>Premium Rider</strong> subscriptions (monthly, quarterly, or yearly) place the rider above basic riders in search results and add a purple Premium badge. <strong>Sponsored</strong> listings place the rider at the very top of all results and add a gold Sponsored badge. Both features are optional and available for a configurable fee from your Agent Dashboard.</div>
+        </div>
+    </div>
+
+    <!-- Marketplace -->
+    <div class="sup-section">
+        <h2>Marketplace &amp; Shopping</h2>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I buy a product on the marketplace? <span class="arrow">▼</span></div>
+            <div class="faq-a">Browse the <a href="marketplace.php">Marketplace</a> by category, keyword, price range, or condition. When you find a product you want, open the product page and tap <strong>Add to Cart</strong>. When ready, go to your Cart, review the items, and tap <strong>Checkout</strong>. Enter your delivery address (you can paste a Google Maps link to help the seller locate you), choose a payment method, and place your order. You will receive a receipt by email and in the app.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I open a shop and sell products? <span class="arrow">▼</span></div>
+            <div class="faq-a">Log in and go to <strong>My Shop</strong> from the profile menu (or visit seller_dashboard.php directly). Click <em>Create Your Shop</em>, fill in your shop name, description, contact details, and region. Then go to the <strong>Products</strong> tab and click <strong>+ Add Product</strong>. Fill in the product details, upload up to 5 photos, set your price and stock, and submit for admin approval. Approved products go live immediately.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How long does product approval take? <span class="arrow">▼</span></div>
+            <div class="faq-a">Most products are reviewed within a few hours. You will receive an in-app notification when your product is approved or if it is rejected with a reason. You can edit and resubmit a rejected product without any additional fee.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How are marketplace orders delivered? <span class="arrow">▼</span></div>
+            <div class="faq-a">Delivery is arranged between you and the seller. When a seller marks an order <em>Ready for Delivery</em>, a delivery request is automatically created on the Delivery Services platform and nearby riders are notified. Alternatively, a seller may arrange their own delivery or request the buyer to pick up in person — check the product listing or contact the seller to confirm.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">What do I do if I have a problem with my order? <span class="arrow">▼</span></div>
+            <div class="faq-a">First, try to contact the seller directly through the messaging or phone number on the shop page. If the issue cannot be resolved, contact us via the <a href="contact.php">contact form</a> with your order number, a description of the problem, and any photos if relevant. Our team mediates marketplace disputes and will respond within 2 business days.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How can I make my shop or products more visible? <span class="arrow">▼</span></div>
+            <div class="faq-a">From your <strong>Seller Dashboard</strong>, click <strong>⚡ Boost</strong> on any approved product, or go to the <em>Boost</em> button at the top of your product list. You can choose <em>Featured</em> (appears above standard listings) or <em>Sponsored</em> (top placement with a gold badge) for your products and shop, in 7-day or 30-day packages. Boost orders go to admin for activation after payment confirmation.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">Can I save products to look at later? <span class="arrow">▼</span></div>
+            <div class="faq-a">Yes. On any product page, tap the ❤️ heart button to save it to your <strong>Saved Products</strong> list. Access your saved items from the profile menu → Saved Products at any time. You can add saved items directly to cart from the Saved Products page.</div>
+        </div>
+    </div>
+
     <!-- Payments -->
     <div class="sup-section">
         <h2>Payments &amp; Receipts</h2>

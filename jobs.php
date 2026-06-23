@@ -233,6 +233,19 @@ if ($user) {
                         <span>⚙️</span> Settings
                     </a>
                     <div style="border-top:1px solid #f1f5f9;"></div>
+                    <a href="marketplace.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                        <span>🛍️</span> Marketplace
+                    </a>
+                    <a href="orders.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                        <span>📋</span> My Orders
+                    </a>
+                    <a href="seller_dashboard.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                        <span>🏪</span> My Shop
+                    </a>
+                    <a href="my_saved.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+                        <span>❤️</span> Saved Products
+                    </a>
+                    <div style="border-top:1px solid #f1f5f9;"></div>
                     <a href="logout.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:#c0392b;text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background=''">
                         <span>🚪</span> Logout
                     </a>
@@ -301,6 +314,18 @@ if ($user) {
                 </div>
             <?php endif; ?>
         </section>
+
+        <!-- Marketplace discovery banner -->
+        <div style="background:linear-gradient(135deg,#f59e0b 0%,#d97706 100%);border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div>
+                <p style="color:rgba(255,255,255,0.85);font-size:.72rem;margin:0 0 2px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;">Marketplace</p>
+                <p style="color:#fff;font-size:.9rem;font-weight:700;margin:0;">Buy &amp; sell products in the community</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="marketplace.php" style="background:rgba(255,255,255,0.2);color:#fff;border:1px solid rgba(255,255,255,.4);padding:7px 14px;border-radius:8px;font-size:.84rem;font-weight:700;text-decoration:none;white-space:nowrap;">Browse</a>
+                <a href="seller_dashboard.php" style="background:#fff;color:#d97706;padding:7px 14px;border-radius:8px;font-size:.84rem;font-weight:800;text-decoration:none;white-space:nowrap;">Start Selling →</a>
+            </div>
+        </div>
 
         <?php if ($dashRefEnabled): ?>
         <div style="background:linear-gradient(135deg,var(--primary) 0%,#1d4ed8 100%);border-radius:var(--radius-sm);padding:14px 16px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">

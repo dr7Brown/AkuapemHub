@@ -3,11 +3,12 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
 require_login();
-if (!is_admin()) {
+if (!is_admin_or_manager()) {
     header('Location: ../jobs.php');
     exit;
 }
 
+require_mod_permission('view_reports');
 $totalUsers = $pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
 $totalWorkers = $pdo->query('SELECT COUNT(*) FROM users WHERE role = "worker"')->fetchColumn();
 $totalCustomers = $pdo->query('SELECT COUNT(*) FROM users WHERE role = "customer"')->fetchColumn();

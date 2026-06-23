@@ -5,6 +5,7 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 $user = current_user();
+require_mod_permission('approve_news');
 
 // Fee settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
@@ -213,6 +214,7 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                     <td><?php echo $a['published_at'] ? date('M j, Y', strtotime($a['published_at'])) : '—'; ?></td>
                     <td>
                         <div class="an-actions">
+                            <a href="news_edit.php?id=<?php echo (int)$a['id']; ?>" class="button button-small button-primary">View</a>
                             <a href="news_edit.php?id=<?php echo (int)$a['id']; ?>" class="button button-small">Edit</a>
                             <?php if ($a['status'] !== 'rejected'): ?>
                             <form method="post" action="news.php" style="display:inline;">

@@ -7,6 +7,7 @@ if (!is_admin_or_manager()) {
     header('Location: ../jobs.php');
     exit;
 }
+require_mod_permission('approve_jobs');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
     if ($_POST['action'] === 'bulk' && !empty($_POST['selected_requests']) && is_array($_POST['selected_requests'])) {

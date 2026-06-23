@@ -539,16 +539,69 @@ next:
 1. i want messaging to job specific.
 messages should reference/linked to the job they are attached to
 
+Next:
+admin top bar to have horizontal scrolbar and left and right buttons that
+scrolls in those directions
+seems the top bar items are plenty, so put it into categories, such that
+when admin clicks, the children expands / released 
 
+Next: 
+1. rename AkuapemHub/dashboard.php to AkuapemHub/jobs.php
+2. on the buttom nav, rename Home tab Jobs. when users
+click loads the job.PHP
+3. when users sign in, the Community.php file which is also the community tab on the buttom
+nav bar, should be the first page to load.
+4. under "Open Jobs & Services" on the community page, 
+show the jobs, instead of workers. 
 
+Next:
+1. all users should see and filter
+jobs posted, including users who have not logged in.
+just that user must be logged in to be able to apply for jobs and see Referral points
+2. Replace the "workers" tab on the bottom Nav with "My Applications". and 
+let workers be accessed with a button on the jobs.php cta bar,
+between My Application button and Post Job button. 
 
+Next:
+1. requests and Applications and payments under finances tab pages on admin dashboard lost its styling, 
+items messed up on those pages.
+2. non logged in users should have access to jop page. just that, they must be logged in 
+to be able to apply
 
+Next: 
+1. users coments, their profile picture covers the whole page., should be professional
+2. there should be a module that checks if job application is still hiring 
+so that if worker is not hired and application expires, he is notified and application
+be withdrawn
 
+Next:
+1. job card for logged-in users does not show day posted like it does for un-logged-in users
+its a helpful info, must be added.
+2. job card for un-logged-in users must be bordered. currently, only featured jobs are boardered
+border all, and find a different customization for featured job
+3. when posting job, user must pick if its remote or on-site. must be added to the job filters
+4. 
 
+Next:
+1. Admin to set number of jobs users can apply per day
+users see their application count
+2. if user has set application deadline, then when deadline reaches
+application should be marked closed, not open.
+3. application should 
+4. details button on admin > job tab > requests and applications 
+no response when details is clicked.
+5. Tabs under admin > finance> Monitize not working, including their buttons
 
-
-
-
+Next:
+1. create a model that formats text area field so users can perform the below formating:
+ie. user to be able to select text then a popup shows indicating(Bold, underline, Italize, etc.)
+ie. Empty line space denotes a new paragraph
+2. Event description field too uses the above model
+3. Funeral announcement's Biography field too uses this model.
+4. Job description field too uses this model.
+5. Article body field
+6. all text area field in the app should consume this model
+7. any future textfield should use this model
 
 
 

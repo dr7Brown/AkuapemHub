@@ -1,0 +1,436 @@
+# AKUAPEMCONNECT MARKETPLACE MODULE
+
+Build a standalone Marketplace Module for AkuapemConnect.
+
+The Marketplace should allow businesses and individuals to list products for sale while allowing customers to browse, purchase, and request delivery.
+
+The module must integrate with the existing Delivery Services Module.
+
+---
+
+# USER TYPES
+
+Customer
+
+Seller
+
+Administrator
+
+---
+
+# SELLER FEATURES
+
+Allow sellers to:
+
+* Create shop
+* Edit shop
+* Upload logo
+* Upload banner
+* Add products
+* Edit products
+* Delete products
+* Manage orders
+* View sales reports
+
+---
+
+# SHOP INFORMATION
+
+Store Name
+
+Store Logo
+
+Store Banner
+
+Store Description
+
+Phone Number
+
+Email Address
+
+Town/City
+
+Region
+
+Verification Status
+
+Featured Status
+
+Rating
+
+Created Date
+
+---
+
+# PRODUCT MANAGEMENT
+
+Allow sellers to:
+
+Create Product
+
+Edit Product
+
+Delete Product
+
+Pause Product
+
+Activate Product
+
+---
+
+# PRODUCT FIELDS
+
+Product Name
+
+Product Description
+
+Category
+
+Price
+
+Discount Price
+
+Stock Quantity
+
+Product Images
+
+SKU
+
+Condition
+
+Delivery Available
+
+Status
+
+Featured Status
+
+Created Date
+
+---
+
+# PRODUCT CONDITIONS
+
+New
+
+Used
+
+Refurbished
+
+---
+
+# PRODUCT STATUS
+
+Draft
+
+Pending Approval
+
+Approved
+
+Rejected
+
+Out of Stock
+
+Archived
+
+---
+
+# ADMIN APPROVAL
+
+IMPORTANT:
+
+All products must be approved by administrators before becoming visible.
+
+Workflow:
+
+Seller Creates Product
+
+↓
+
+Pending Approval
+
+↓
+
+Admin Reviews
+
+↓
+
+Approved or Rejected
+
+↓
+
+Visible to Customers
+
+Only approved products can appear in search results.
+
+---
+
+# CUSTOMER FEATURES
+
+Customers can:
+
+Browse Products
+
+Search Products
+
+View Product Details
+
+Add to Cart
+
+Save Products
+
+Contact Seller
+
+Request Delivery
+
+Track Orders
+
+Rate Products
+
+Rate Sellers
+
+---
+
+# CART SYSTEM
+
+Allow customers to:
+
+Add Products
+
+Update Quantities
+
+Remove Products
+
+Proceed to Checkout
+
+View Cart Total
+
+---
+
+# ORDER MANAGEMENT
+
+Order Status:
+
+Pending
+
+Confirmed
+
+Processing
+
+Ready for Delivery
+
+In Transit
+
+Delivered
+
+Cancelled
+
+Refunded
+
+---
+
+# DELIVERY INTEGRATION
+
+Connect marketplace orders to the Delivery Services Module.
+
+When seller marks order:
+
+Ready for Delivery
+
+↓
+
+Delivery Request Automatically Created
+
+↓
+
+Available Riders Notified
+
+↓
+
+Rider Accepts Delivery
+
+↓
+
+Delivery Process Begins
+
+---
+
+# SELLER VERIFICATION
+
+Allow sellers to apply for:
+
+Verified Seller Badge
+
+Verification documents:
+
+Ghana Card
+
+Business Registration (Optional)
+
+Store Verification
+
+Admin Approval Required
+
+---
+
+# FEATURED PRODUCTS
+
+Allow sellers to pay for:
+
+Featured Product
+
+Featured Shop
+
+Sponsored Product
+
+Sponsored Shop
+
+Admin configurable pricing.
+
+---
+
+# SEARCH FEATURES
+
+Search by:
+
+Product Name
+
+Store Name
+
+Town
+
+Region
+
+Price Range
+
+Product Condition
+
+Availability
+
+---
+
+# REVIEWS
+
+Customers can review:
+
+Products
+
+Sellers
+
+Delivery Experience
+
+Only verified buyers can submit reviews.
+
+---
+
+# REPORTING
+
+Seller Dashboard:
+
+Products
+
+Orders
+
+Revenue
+
+Pending Orders
+
+Completed Orders
+
+Ratings
+
+Store Views
+
+Product Views
+
+---
+
+# ADMIN DASHBOARD
+
+Manage:
+
+Shops
+
+Products
+
+Orders
+
+Seller Verification
+
+Featured Listings
+
+Sponsored Listings
+
+Reports
+
+Revenue
+
+---
+
+# PAYMENT OPTIONS
+
+Cash on Delivery
+
+Mobile Money
+
+Card Payments
+
+Wallet Balance
+
+Admin configurable.
+
+---
+
+# MONETIZATION
+
+Free Seller Account
+
+Premium Seller Subscription
+
+Featured Products
+
+Featured Shops
+
+Verified Seller Badge
+
+Sponsored Listings
+
+Future Sales Commission
+
+---
+
+# BUSINESS OBJECTIVE
+
+Create a trusted community marketplace where businesses and individuals can buy and sell products while leveraging the AkuapemConnect Delivery Services network for fulfillment.
+
+
+
+
+
+
+
+
+
+
+Remaining from existing prompts
+Feature	Status	Notes
+Smart worker matching	Not built	Score/rank workers by category + distance + rating + availability
+Auto-suggested budgets	Not built	"Similar jobs near you went for GH₵X–Y"
+PWA / installable	Not built	Service worker + manifest so it installs on Android home screen
+Push notifications	Not built	Background alerts (requires PWA first)
+Local language toggle (Twi/Ga/Ewe)	Not built	Highest adoption unlock for everyday users
+Seller featured/sponsored purchase	Not built	Sellers can't yet pay to feature their own products from the UI — only admin can set it
+Receipt generation for payments	Not built	Printable/downloadable receipt after any payment
+Delivery payment receipts	Partial	Structure exists, receipt page not wired
+Before launch (from before launch.txt)
+Task	Notes
+Email delivery	Replace mail() with PHPMailer + SMTP — biggest launch risk
+Production config	BASE_URL, DB credentials, ADMIN_EMAIL in config.php
+HTTPS	Required for Paystack; most hosts give free Let's Encrypt
+Paystack live keys	Set in Admin → Monetization when ready to charge
+Contact details	Admin → Platform → Contact — currently blank
+Create admin account	Register then UPDATE users SET role='admin' in DB
+What I'd suggest tackling next
+Email (SMTP) — nothing works without it in production
+Seller featured/sponsored purchase flow — completes the marketplace monetization
+Receipts — every payment should generate one (already prompted for this)
+What would you like to work on next?
