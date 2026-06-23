@@ -28,11 +28,15 @@ $before = microtime(true);
 
 // Count rows before so we can report what changed
 $beforeCounts = [
-    'expired_featured_jobs'    => (int)$pdo->query("SELECT COUNT(*) FROM service_requests WHERE featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()")->fetchColumn(),
-    'expired_featured_workers' => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()")->fetchColumn(),
-    'expired_verifications'    => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_verified = 1 AND verification_expiry IS NOT NULL AND verification_expiry < CURDATE()")->fetchColumn(),
-    'expired_service_listings' => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry < CURDATE()")->fetchColumn(),
-    'renewal_notices_pending'  => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND service_renewal_notice_sent = 0")->fetchColumn(),
+    'expired_featured_jobs'      => (int)$pdo->query("SELECT COUNT(*) FROM service_requests WHERE featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()")->fetchColumn(),
+    'expired_featured_workers'   => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()")->fetchColumn(),
+    'expired_verifications'      => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_verified = 1 AND verification_expiry IS NOT NULL AND verification_expiry < CURDATE()")->fetchColumn(),
+    'expired_service_listings'   => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry < CURDATE()")->fetchColumn(),
+    'renewal_notices_pending'    => (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND service_renewal_notice_sent = 0")->fetchColumn(),
+    'expired_mp_products'        => (int)$pdo->query("SELECT COUNT(*) FROM mp_products WHERE (is_featured = 1 AND featured_end < CURDATE()) OR (is_sponsored = 1 AND sponsored_end < CURDATE())")->fetchColumn(),
+    'expired_mp_shops'           => (int)$pdo->query("SELECT COUNT(*) FROM mp_shops WHERE (is_featured = 1 AND featured_end < CURDATE()) OR (is_sponsored = 1 AND sponsored_end < CURDATE())")->fetchColumn(),
+    'expired_delivery_premium'   => (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE is_premium = 1 AND premium_end IS NOT NULL AND premium_end < CURDATE()")->fetchColumn(),
+    'expired_delivery_sponsored' => (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE is_sponsored = 1 AND sponsored_end IS NOT NULL AND sponsored_end < CURDATE()")->fetchColumn(),
 ];
 
 sweep_expired_featured();
