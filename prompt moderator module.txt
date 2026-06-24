@@ -1,0 +1,337 @@
+# AKUAPEMCONNECT MODERATOR PERFORMANCE & REWARDS MODULE
+
+Build a Moderator Performance & Rewards Module that tracks moderator activities, measures productivity, and calculates earnings or rewards based on work completed.
+
+The module must integrate with:
+
+* News Module
+* Events Module
+* Funeral Module
+* Marketplace Module
+* Delivery Module
+* Jobs Module
+* Advertisements Module
+* User Management
+
+---
+
+
+# ACTIVITY TRACKING
+
+Track every moderator action.
+
+Examples:
+
+Approve Product
+
+Reject Product
+
+Approve Delivery Request
+
+Reject Delivery Request
+
+Approve Event
+
+Reject Event
+
+Approve Advertisement
+
+Reject Advertisement
+
+Review User Report
+
+Resolve Dispute
+
+Suspend User
+
+Restore User
+
+Edit Listing
+
+Verify Seller
+
+Verify Rider
+
+Verify Business
+
+---
+
+# MODERATOR ACTIVITY LOG
+
+Store:
+
+Moderator ID
+
+Module
+
+Action Type
+
+Record ID
+
+Timestamp
+
+Duration
+
+Status
+
+IP Address
+
+Notes
+
+---
+
+# PERFORMANCE POINT SYSTEM
+
+Assign points for each completed task.
+
+Example:
+
+Approve Product = 2 Points
+
+Reject Product = 2 Points
+
+Approve Event = 2 Points
+
+Approve Funeral Announcement = 2 Points
+
+Approve Delivery Request = 1 Point
+
+Resolve User Report = 5 Points
+
+Resolve Dispute = 10 Points
+
+Verify Seller = 5 Points
+
+Verify Rider = 5 Points
+
+Suspend Fraudulent User = 8 Points
+
+Admin can modify point values.
+
+---
+
+# DAILY TARGETS
+
+Track:
+
+Daily Points
+
+Weekly Points
+
+Monthly Points
+
+Quarterly Points
+
+Yearly Points
+
+---
+
+# MODERATOR SCORECARD
+
+Display:
+
+Tasks Completed
+
+Approval Accuracy
+
+Rejection Accuracy
+
+Average Review Time
+
+Reports Resolved
+
+Disputes Resolved
+
+Warnings Issued
+
+Total Points
+
+Ranking
+
+Reward Balance
+
+---
+
+# QUALITY CONTROL
+
+Prevent moderators from approving everything.
+
+Track:
+
+Approval Rate
+
+Rejection Rate
+
+Appeal Rate
+
+Reversal Rate
+
+Error Rate
+
+---
+
+# MODERATOR ACCURACY
+
+Calculate:
+
+Correct Decisions
+
+Incorrect Decisions
+
+Overturned Decisions
+
+Appealed Decisions
+
+Accuracy Percentage
+
+Example:
+
+95% Accuracy
+
+88% Accuracy
+
+72% Accuracy
+
+---
+
+# REWARD SYSTEM
+
+Allow administrators to choose:
+
+Cash Rewards
+
+Wallet Credits
+
+Points
+
+
+---
+
+# REWARD FORMULA
+
+Example:
+
+100 Points = GH₵10
+
+500 Points = GH₵60
+
+1000 Points = GH₵150
+
+Admin configurable.
+
+
+# LEADERBOARD
+
+Display:
+
+Top Moderators Today
+
+Top Moderators This Week
+
+Top Moderators This Month
+
+Top Moderators This Year
+
+
+# ADMIN ANALYTICS DASHBOARD
+
+Provide analytics for all moderators.
+
+Display:
+
+Total Moderators
+
+Active Moderators
+
+Inactive Moderators
+
+Tasks Completed
+
+Average Accuracy
+
+Average Response Time
+
+Total Rewards Paid
+
+Top Performers
+
+Lowest Performers
+
+Revenue Impact
+
+---
+
+# MODERATOR PROFILE
+
+Display:
+
+Photo
+
+Name
+
+Role
+
+Status
+
+Rank
+
+Points
+
+Accuracy
+
+Tasks Completed
+
+Reward Balance
+
+Last Active Date
+
+---
+
+# AUTOMATIC FLAGGING
+
+Flag moderators when:
+
+Accuracy falls below threshold
+
+Too many approvals
+
+Too many rejections
+
+Long inactivity
+
+High complaint rate
+
+Suspicious behavior
+
+---
+
+# PAYOUT SYSTEM
+
+Allow payouts through:
+
+Wallet Balance
+
+
+# REPORTING
+
+Generate:
+
+Daily Reports
+
+Weekly Reports
+
+Monthly Reports
+
+Moderator Performance Reports
+
+Reward Reports
+
+Productivity Reports
+
+Export PDF and Excel
+
+---
+
+# BUSINESS OBJECTIVE
+
+Create a transparent, measurable, and performance-based moderation system that rewards productivity, encourages quality decisions, reduces fraud, and provides administrators with full visibility into moderator performance and platform impact.

@@ -31,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             };
             if ($action === 'ban' || $action === 'unban') {
                 log_audit_action($adminUser['id'], 'user_' . $action, ucfirst($action) . ' user: ' . $target['name'] . ' (#' . $userId . ')');
+            log_mod_activity($adminUser['id'], 'users', $action === 'ban' ? 'manage_users_ban' : 'manage_users_unban', $userId, $target['name']);
                 flash($action === 'ban' ? sanitize($target['name']) . ' banned.' : sanitize($target['name']) . ' unbanned.', 'info');
             }
         }

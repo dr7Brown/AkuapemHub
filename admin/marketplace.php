@@ -28,12 +28,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("UPDATE mp_products SET status='approved', updated_at=NOW() WHERE id=?")->execute([$pid]);
                 notify_user((int)$prod['owner_id'], 'Product Approved ✅', '"' . $prod['name'] . '" is now live on the marketplace!', 'success');
                 log_audit_action($adminUser['id'], 'mp_product_approve', 'Approved product #' . $pid . ': ' . $prod['name']);
+                log_mod_activity($adminUser['id'], 'marketplace', 'approve_product', $pid, $prod['name']);
                 flash('Product approved.', 'success');
             } else {
                 if (!$reason) { flash('Rejection reason is required.', 'error'); header('Location: marketplace.php?tab=products'); exit; }
                 $pdo->prepare("UPDATE mp_products SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")->execute([$reason, $pid]);
                 notify_user((int)$prod['owner_id'], 'Product Rejected', '"' . $prod['name'] . '" was not approved. Reason: ' . $reason, 'error');
                 log_audit_action($adminUser['id'], 'mp_product_reject', 'Rejected product #' . $pid . ': ' . $prod['name'] . '. Reason: ' . $reason);
+                log_mod_activity($adminUser['id'], 'marketplace', 'reject_product', $pid, $prod['name']);
                 flash('Product rejected.', 'info');
             }
         }
@@ -53,6 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("UPDATE mp_shop_verifications SET status='approved', reviewed_at=NOW() WHERE shop_id=?")->execute([$sid]);
                 notify_user((int)$shop['user_id'], 'Shop Verified ✅', $shop['shop_name'] . ' is now verified!', 'success');
                 log_audit_action($adminUser['id'], 'mp_shop_verify', 'Verified shop #' . $sid . ': ' . $shop['shop_name']);
+                log_mod_activity($adminUser['id'], 'marketplace', 'approve_shop', $sid, $shop['shop_name']);
                 flash('Shop verified.', 'success');
             } elseif ($postAction === 'reject_shop') {
                 $pdo->prepare("UPDATE mp_shops SET verification_status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")->execute([$reason, $sid]);
@@ -95,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             notify_user((int)$boost['user_id'], 'Boost Activated! ⚡',
                 'Your ' . ucwords(str_replace('_',' ',$boost['boost_type'])) . ' boost is now live until ' . date('d M Y', strtotime($boost['end_date'])) . '.', 'success');
             log_audit_action($adminUser['id'], 'mp_boost_activate', 'Activated boost #' . $bid . ' for ' . $boost['shop_name']);
+            log_mod_activity($adminUser['id'], 'marketplace', 'activate_boost', $bid, $boost['shop_name']);
             flash('Boost activated.', 'success');
         }
         header('Location: marketplace.php?tab=boosts'); exit;

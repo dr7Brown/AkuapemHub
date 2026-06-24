@@ -163,6 +163,7 @@ $allPerms = all_mod_permissions();
 <header class="topbar">
     <a href="index.php" class="button button-secondary button-small">← Dashboard</a>
     <h1 style="margin:0;font-size:1rem;font-weight:800;">👥 Moderator Management</h1>
+    <a href="mod_performance.php" class="button button-secondary button-small">🏆 Performance →</a>
 </header>
 
 <main class="mo-shell">
@@ -232,12 +233,15 @@ $allPerms = all_mod_permissions();
                     &nbsp;·&nbsp; Joined <?php echo time_ago($mod['created_at']); ?>
                 </div>
             </div>
-            <form method="post" style="margin:0;" onsubmit="return confirm('Demote this moderator? All their permissions will be removed.');">
-                <?php echo csrf_field(); ?>
-                <input type="hidden" name="action"  value="demote">
-                <input type="hidden" name="user_id" value="<?php echo $mod['id']; ?>">
-                <button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;">Remove Moderator</button>
-            </form>
+            <div style="display:flex;gap:6px;align-items:center;">
+                <a href="mod_performance.php?tab=leaderboard&mod=<?php echo $mod['id']; ?>" class="button button-secondary button-small">🏆 Scorecard</a>
+                <form method="post" style="margin:0;" onsubmit="return confirm('Demote this moderator? All their permissions will be removed.');">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action"  value="demote">
+                    <input type="hidden" name="user_id" value="<?php echo $mod['id']; ?>">
+                    <button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;">Remove Moderator</button>
+                </form>
+            </div>
         </div>
 
         <!-- Permissions form -->

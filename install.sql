@@ -1540,3 +1540,86 @@ CREATE TABLE IF NOT EXISTS moderator_permissions (
     FOREIGN KEY (user_id)    REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ==========================================================================
+-- v017  Moderator Performance & Rewards Module
+-- ==========================================================================
+
+-- Activity log: every moderation action
+CREATE TABLE IF NOT EXISTS mod_activity_log (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    mod_id      INT UNSIGNED NOT NULL,
+    module      ENUM('jobs','events','funerals','news','marketplace','delivery','users','disputes','ads','general') NOT NULL DEFAULT 'general',
+    action_key  VARCHAR(80) NOT NULL,
+    record_id   INT UNSIGNED DEFAULT NULL,
+    points      DECIMAL(6,2) NOT NULL DEFAULT 0.00,
+    notes       TEXT DEFAULT NULL,
+    ip_address  VARCHAR(45) DEFAULT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mal_mod    (mod_id),
+    KEY idx_mal_module (module),
+    KEY idx_mal_date   (created_at),
+    KEY idx_mal_action (action_key),
+    FOREIGN KEY (mod_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Configurable point values per action
+CREATE TABLE IF NOT EXISTS mod_point_config (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    action_key VARCHAR(80) NOT NULL UNIQUE,
+    label      VARCHAR(120) NOT NULL,
+    points     DECIMAL(6,2) NOT NULL DEFAULT 1.00,
+    module     VARCHAR(40) NOT NULL DEFAULT 'general'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Reward / payout requests
+CREATE TABLE IF NOT EXISTS mod_rewards (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    mod_id       INT UNSIGNED NOT NULL,
+    reward_type  ENUM('cash','wallet','points') NOT NULL DEFAULT 'cash',
+    amount_ghs   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    points_used  INT UNSIGNED NOT NULL DEFAULT 0,
+    status       ENUM('pending','approved','paid','rejected') NOT NULL DEFAULT 'pending',
+    mobi_number  VARCHAR(30) DEFAULT NULL,
+    notes        TEXT DEFAULT NULL,
+    approved_by  INT UNSIGNED DEFAULT NULL,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    paid_at      DATETIME DEFAULT NULL,
+    KEY idx_mr_mod    (mod_id),
+    KEY idx_mr_status (status),
+    FOREIGN KEY (mod_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Default point config seeds
+INSERT IGNORE INTO mod_point_config (action_key, label, points, module) VALUES
+    ('approve_job',               'Approve Job Request',          2.00, 'jobs'),
+    ('reject_job',                'Reject Job Request',           2.00, 'jobs'),
+    ('approve_product',           'Approve Marketplace Product',  2.00, 'marketplace'),
+    ('reject_product',            'Reject Marketplace Product',   2.00, 'marketplace'),
+    ('approve_shop',              'Verify Seller Shop',           5.00, 'marketplace'),
+    ('approve_event',             'Approve Event',                2.00, 'events'),
+    ('reject_event',              'Reject Event',                 2.00, 'events'),
+    ('approve_funeral',           'Approve Funeral Announcement', 2.00, 'funerals'),
+    ('reject_funeral',            'Reject Funeral Announcement',  2.00, 'funerals'),
+    ('approve_news',              'Approve News Article',         2.00, 'news'),
+    ('reject_news',               'Reject News Article',         2.00, 'news'),
+    ('approve_delivery_request',  'Approve Delivery Request',     1.00, 'delivery'),
+    ('reject_delivery_request',   'Reject Delivery Request',      1.00, 'delivery'),
+    ('approve_delivery_agent',    'Verify Delivery Rider',        5.00, 'delivery'),
+    ('reject_delivery_agent',     'Reject Rider Application',     1.00, 'delivery'),
+    ('approve_verification',      'Approve Rider Verification',   5.00, 'delivery'),
+    ('manage_users_ban',          'Suspend User Account',         8.00, 'users'),
+    ('manage_users_unban',        'Restore User Account',         3.00, 'users'),
+    ('resolve_dispute',           'Resolve User Dispute',        10.00, 'disputes'),
+    ('activate_boost',            'Activate Boost Listing',       2.00, 'marketplace'),
+    ('manage_ads',                'Manage Advertisement',         2.00, 'ads');
+
+-- Platform settings for performance module
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('mod_perf_enabled',          '1',    'Enable moderator performance tracking'),
+    ('mod_reward_100pts',        '10.00', 'Cash reward for 100 points (GHS)'),
+    ('mod_reward_500pts',        '60.00', 'Cash reward for 500 points (GHS)'),
+    ('mod_reward_1000pts',      '150.00', 'Cash reward for 1000 points (GHS)'),
+    ('mod_flag_low_accuracy',    '65',    'Flag moderator if accuracy falls below this % (0=disabled)'),
+    ('mod_flag_inactivity_days', '7',     'Flag moderator after this many inactive days (0=disabled)'),
+    ('mod_flag_high_approval',   '95',    'Flag if approval rate exceeds this % (0=disabled)');

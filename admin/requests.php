@@ -51,11 +51,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             notify_user($request['customer_id'], 'Request approved', "Your request '{$request['title']}' is now approved and open to workers.", 'success');
             send_business_message($request['customer_id'], $request['contact_info'], "AkuapemConnect: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
             notify_workers_of_matching_job($request);
+            log_mod_activity($user['id'], 'jobs', 'approve_job', $requestId, $request['title']);
         } elseif ($_POST['action'] === 'reject' && $request) {
             $reason = trim($_POST['rejection_reason'] ?? '');
             $pdo->prepare('UPDATE service_requests SET status=?, rejection_reason=?, updated_at=NOW() WHERE id=?')
                 ->execute(['rejected', $reason ?: null, $requestId]);
             log_audit_action($user['id'], 'request_reject', "Rejected request #{$requestId}: {$request['title']}");
+            log_mod_activity($user['id'], 'jobs', 'reject_job', $requestId, $request['title']);
             $reasonNote = $reason ? "\n\nReason: {$reason}" : '';
             send_email_notification($request['customer_email'], 'Your job listing was not approved',
                 "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' was not approved.{$reasonNote}\n\nYou can edit and resubmit it from your jobs page.",

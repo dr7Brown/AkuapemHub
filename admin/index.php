@@ -341,7 +341,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <a href="referrals.php" data-page="referrals.php">🔗 Referrals</a>
         <?php endif; ?>
         <?php if (is_admin()): ?>
-        <a href="moderators.php" data-page="moderators.php">🛡️ Moderators</a>
+        <a href="moderators.php"       data-page="moderators.php">🛡️ Moderators</a>
+        <a href="mod_performance.php"  data-page="mod_performance.php">🏆 Performance</a>
         <?php endif; ?>
     </div>
     <!-- Finance dropdown -->
@@ -708,6 +709,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             ['delivery.php',         '🚚', 'Delivery',     'Agents, requests & tracking', 'approve_delivery_agents'],
             ['marketplace.php',      '🛍️', 'Marketplace',  'Shops, products & orders',    'approve_products'],
             ['moderators.php',       '🛡️', 'Moderators',   'Roles & access control',      null],
+            ['mod_performance.php',  '🏆', 'Performance',  'Points, leaderboard & rewards',null],
             ['analytics.php',        '📊', 'Analytics',    'Stats & growth trends',       'view_reports'],
             ['business_messages.php','💬', 'Messages',     'Business enquiries',          null],
             ['communication.php',    '📣', 'Broadcast',    'Push notifications',          'manage_communication'],

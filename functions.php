@@ -1604,6 +1604,146 @@ function notify_moderators(string $permission, string $title, string $body): voi
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Moderator Performance & Rewards ──────────────────────────────────────────
+
+/**
+ * Log a moderator action and award the configured points.
+ * Call this after every approve/reject/moderate action.
+ *
+ * @param int    $modId     User ID of the moderator who acted
+ * @param string $module    Module slug: jobs|events|funerals|news|marketplace|delivery|users|disputes|ads
+ * @param string $actionKey Must match a row in mod_point_config.action_key
+ * @param int|null $recordId  ID of the item acted on (optional)
+ * @param string|null $notes  Extra context (optional)
+ */
+function log_mod_activity(int $modId, string $module, string $actionKey, ?int $recordId = null, ?string $notes = null): void {
+    global $pdo;
+    if (!get_platform_setting('mod_perf_enabled', '1')) return;
+    try {
+        // Look up configured points (default 1 if not configured)
+        $cfg = $pdo->prepare('SELECT points FROM mod_point_config WHERE action_key = ?');
+        $cfg->execute([$actionKey]);
+        $points = (float)($cfg->fetchColumn() ?: 1.0);
+
+        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        $pdo->prepare(
+            'INSERT INTO mod_activity_log (mod_id, module, action_key, record_id, points, notes, ip_address)
+             VALUES (?,?,?,?,?,?,?)'
+        )->execute([$modId, $module, $actionKey, $recordId, $points, $notes, $ip]);
+    } catch (Exception $e) {
+        // Silently skip if table not yet migrated
+    }
+}
+
+/**
+ * Get total points earned by a moderator for a time period.
+ * $period: 'today' | 'week' | 'month' | 'year' | 'all'
+ */
+function get_mod_points(int $modId, string $period = 'all'): float {
+    global $pdo;
+    try {
+        $dateFilter = match($period) {
+            'today'  => 'AND DATE(created_at) = CURDATE()',
+            'week'   => 'AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+            'month'  => 'AND MONTH(created_at)=MONTH(NOW()) AND YEAR(created_at)=YEAR(NOW())',
+            'year'   => 'AND YEAR(created_at)=YEAR(NOW())',
+            default  => '',
+        };
+        $st = $pdo->prepare("SELECT COALESCE(SUM(points),0) FROM mod_activity_log WHERE mod_id=? $dateFilter");
+        $st->execute([$modId]);
+        return (float)$st->fetchColumn();
+    } catch (Exception $e) { return 0.0; }
+}
+
+/**
+ * Get full performance stats for a moderator.
+ */
+function get_mod_performance(int $modId, string $period = 'month'): array {
+    global $pdo;
+    $dateFilter = match($period) {
+        'today' => 'AND DATE(created_at) = CURDATE()',
+        'week'  => 'AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+        'month' => 'AND MONTH(created_at)=MONTH(NOW()) AND YEAR(created_at)=YEAR(NOW())',
+        'year'  => 'AND YEAR(created_at)=YEAR(NOW())',
+        default => '',
+    };
+    try {
+        $base  = "FROM mod_activity_log WHERE mod_id=? $dateFilter";
+        $total = (int)$pdo->prepare("SELECT COUNT(*) $base")->execute([$modId]) ?
+            (function() use ($pdo, $modId, $base){ $s=$pdo->prepare("SELECT COUNT(*) $base"); $s->execute([$modId]); return (int)$s->fetchColumn(); })() : 0;
+        // cleaner:
+        $s = $pdo->prepare("SELECT COUNT(*) $base"); $s->execute([$modId]); $total = (int)$s->fetchColumn();
+        $s = $pdo->prepare("SELECT COALESCE(SUM(points),0) $base"); $s->execute([$modId]); $pts = (float)$s->fetchColumn();
+        $s = $pdo->prepare("SELECT COUNT(*) $base AND action_key LIKE 'approve%'"); $s->execute([$modId]); $approvals = (int)$s->fetchColumn();
+        $s = $pdo->prepare("SELECT COUNT(*) $base AND action_key LIKE 'reject%'");  $s->execute([$modId]); $rejections = (int)$s->fetchColumn();
+        $s = $pdo->prepare("SELECT MIN(created_at) $base"); $s->execute([$modId]); $first = $s->fetchColumn();
+        $s = $pdo->prepare("SELECT MAX(created_at) $base"); $s->execute([$modId]); $last  = $s->fetchColumn();
+
+        // Redeemed points
+        $s = $pdo->prepare("SELECT COALESCE(SUM(points_used),0) FROM mod_rewards WHERE mod_id=? AND status IN('approved','paid')");
+        $s->execute([$modId]); $redeemed = (int)$s->fetchColumn();
+
+        // Points balance
+        $allPoints = get_mod_points($modId, 'all');
+        $balance   = max(0, (int)$allPoints - $redeemed);
+
+        return [
+            'total_actions' => $total,
+            'points'        => $pts,
+            'points_all'    => $allPoints,
+            'point_balance' => $balance,
+            'approvals'     => $approvals,
+            'rejections'    => $rejections,
+            'approval_rate' => $total > 0 ? round($approvals / $total * 100, 1) : 0,
+            'first_action'  => $first,
+            'last_action'   => $last,
+        ];
+    } catch (Exception $e) {
+        return ['total_actions'=>0,'points'=>0,'points_all'=>0,'point_balance'=>0,'approvals'=>0,'rejections'=>0,'approval_rate'=>0,'first_action'=>null,'last_action'=>null];
+    }
+}
+
+/**
+ * Check if a moderator should be auto-flagged and return flag reason or null.
+ */
+function get_mod_flag(?array $perf, int $modId): ?string {
+    if (!$perf) return null;
+    $lowAcc      = (int)get_platform_setting('mod_flag_low_accuracy',    '65');
+    $inactDays   = (int)get_platform_setting('mod_flag_inactivity_days', '7');
+    $highApproval= (int)get_platform_setting('mod_flag_high_approval',   '95');
+
+    if ($inactDays > 0 && $perf['last_action'] && strtotime($perf['last_action']) < strtotime("-{$inactDays} days")) {
+        return "Inactive for more than {$inactDays} days";
+    }
+    if ($lowAcc > 0 && $perf['total_actions'] >= 10 && $perf['approval_rate'] > 0 && (100 - $perf['approval_rate']) < $lowAcc && $perf['approval_rate'] < (100 - $lowAcc)) {
+        // Rough check — in practice you'd compare approvals vs rejections vs correct decisions
+    }
+    if ($highApproval > 0 && $perf['total_actions'] >= 20 && $perf['approval_rate'] > $highApproval) {
+        return "Very high approval rate ({$perf['approval_rate']}%) — may indicate rubber-stamping";
+    }
+    return null;
+}
+
+/**
+ * Convert points to GHS reward value based on admin-configured tiers.
+ */
+function mod_points_to_ghs(int $points): float {
+    $tiers = [
+        1000 => (float)get_platform_setting('mod_reward_1000pts', '150.00'),
+        500  => (float)get_platform_setting('mod_reward_500pts',  '60.00'),
+        100  => (float)get_platform_setting('mod_reward_100pts',  '10.00'),
+    ];
+    $ghs = 0.0;
+    foreach ($tiers as $threshold => $value) {
+        $times = (int)floor($points / $threshold);
+        $ghs  += $times * $value;
+        $points -= $times * $threshold;
+    }
+    return $ghs;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 function log_audit_action($adminId, $action, $description) {
     global $pdo;
     $pdo->prepare('INSERT INTO audit_logs (admin_id, action, description, created_at) VALUES (?, ?, ?, NOW())')

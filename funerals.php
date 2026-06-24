@@ -2,42 +2,93 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
-$user   = current_user();
-$search = trim($_GET['q'] ?? '');
-$page   = max(1, (int)($_GET['page'] ?? 1));
+$user    = current_user();
+$search  = trim($_GET['q']       ?? '');
+$month   = trim($_GET['month']   ?? '');   // YYYY-MM
+$gender  = trim($_GET['gender']  ?? '');   // male | female | other
+$venue   = trim($_GET['venue']   ?? '');   // free-text venue/location
+$sort    = $_GET['sort']          ?? 'burial_asc'; // burial_asc | burial_desc | newest
+$page    = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 12;
-$isAjax = !empty($_GET['ajax']);
+$isAjax  = !empty($_GET['ajax']);
 
-function funeral_cards($pdo, $search, $page, $perPage, $featuredOnly = false) {
+function funeral_cards($pdo, array $filters, int $page, int $perPage, bool $featuredOnly = false): array {
     $offset = ($page - 1) * $perPage;
-    $like   = '%' . $search . '%';
+    $where  = ["fa.status='approved'"];
     $params = [];
-    $where  = "WHERE fa.status='approved'";
-    if ($search) {
-        $where .= " AND (fa.deceased_name LIKE ? OR fa.venue LIKE ? OR fa.organizer_name LIKE ?)";
-        $params = [$like, $like, $like];
+
+    if (!empty($filters['q'])) {
+        $like = '%' . $filters['q'] . '%';
+        $where[] = "(fa.deceased_name LIKE ? OR fa.venue LIKE ? OR fa.organizer_name LIKE ? OR fa.gps_address LIKE ?)";
+        array_push($params, $like, $like, $like, $like);
+    }
+    if (!empty($filters['month'])) {
+        $where[] = "DATE_FORMAT(fa.burial_date,'%Y-%m') = ?";
+        $params[] = $filters['month'];
+    }
+    if (!empty($filters['gender']) && in_array($filters['gender'], ['male','female','other'], true)) {
+        $where[] = "fa.gender = ?";
+        $params[] = $filters['gender'];
+    }
+    if (!empty($filters['venue'])) {
+        $like = '%' . $filters['venue'] . '%';
+        $where[] = "(fa.venue LIKE ? OR fa.gps_address LIKE ?)";
+        array_push($params, $like, $like);
     }
     if ($featuredOnly) {
-        $where .= " AND fa.featured=1";
+        $where[] = "fa.featured=1";
     }
-    $sql = "SELECT fa.* FROM funeral_announcements fa $where
-            ORDER BY fa.featured DESC, fa.burial_date ASC
+
+    $orderBy = match($filters['sort'] ?? 'burial_asc') {
+        'burial_desc' => 'fa.burial_date DESC, fa.featured DESC',
+        'newest'      => 'fa.created_at DESC',
+        default       => 'fa.featured DESC, fa.burial_date ASC',
+    };
+
+    $whereClause = 'WHERE ' . implode(' AND ', $where);
+    $sql = "SELECT fa.* FROM funeral_announcements fa $whereClause
+            ORDER BY $orderBy
             LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     return $stmt->fetchAll();
 }
 
+function funeral_count($pdo, array $filters): int {
+    $where  = ["fa.status='approved'"];
+    $params = [];
+    if (!empty($filters['q'])) { $like='%'.$filters['q'].'%'; $where[]="(fa.deceased_name LIKE ? OR fa.venue LIKE ?)"; $params[]=$like; $params[]=$like; }
+    if (!empty($filters['month'])) { $where[]="DATE_FORMAT(fa.burial_date,'%Y-%m')=?"; $params[]=$filters['month']; }
+    if (!empty($filters['gender']) && in_array($filters['gender'],['male','female','other'],true)) { $where[]="fa.gender=?"; $params[]=$filters['gender']; }
+    if (!empty($filters['venue'])) { $like='%'.$filters['venue'].'%'; $where[]="(fa.venue LIKE ? OR fa.gps_address LIKE ?)"; $params[]=$like; $params[]=$like; }
+    $st = $pdo->prepare("SELECT COUNT(*) FROM funeral_announcements fa WHERE " . implode(' AND ', $where));
+    $st->execute($params);
+    return (int)$st->fetchColumn();
+}
+
+$activeFilters = compact('q', 'month', 'gender', 'venue', 'sort');
+$activeFilters['q'] = $search;
+
+// Distinct months that have approved burials — for the month dropdown
+$availableMonths = $pdo->query(
+    "SELECT DISTINCT DATE_FORMAT(burial_date,'%Y-%m') AS ym, DATE_FORMAT(burial_date,'%M %Y') AS label
+     FROM funeral_announcements WHERE status='approved' AND burial_date IS NOT NULL
+     ORDER BY burial_date DESC LIMIT 24"
+)->fetchAll();
+
 $featured = [];
 $cards    = [];
+$hasFilters = $search || $month || $gender || $venue;
+$totalCount = funeral_count($pdo, $activeFilters);
+$totalPages = max(1, (int)ceil($totalCount / $perPage));
 
 if (!$isAjax || $page === 1) {
-    if (!$search) {
-        $featured = funeral_cards($pdo, '', 1, 3, true);
+    if (!$hasFilters) {
+        $featured = funeral_cards($pdo, ['q'=>'','month'=>'','gender'=>'','venue'=>'','sort'=>'burial_asc'], 1, 3, true);
     }
 }
 
-$cards = funeral_cards($pdo, $search, $page, $perPage);
+$cards = funeral_cards($pdo, $activeFilters, $page, $perPage);
 
 // Sidebar data
 $today           = date('Y-m-d');
@@ -90,10 +141,15 @@ if ($isAjax) {
         .fa-hero  { background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%); color:#fff; padding:36px 20px 32px; text-align:center; margin-bottom:28px; }
         .fa-hero h1 { font-size:clamp(1.4rem,4vw,2rem); font-weight:900; margin:0 0 8px; }
         .fa-hero p  { font-size:.95rem; color:#cbd5e1; margin:0 0 20px; }
-        .fa-search-wrap { display:flex; gap:8px; max-width:440px; margin:0 auto; }
+        .fa-search-wrap { display:flex; gap:8px; max-width:480px; margin:0 auto 14px; }
         .fa-search-wrap input { flex:1; padding:10px 14px; border-radius:10px; border:1px solid #334155; background:#1e293b; color:#fff; font-size:.9rem; }
         .fa-search-wrap input::placeholder { color:#64748b; }
         .fa-search-wrap button { padding:10px 18px; border-radius:10px; background:#0f766e; color:#fff; border:none; font-weight:700; cursor:pointer; }
+        /* Filter bar */
+        .fa-filters { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; max-width:700px; margin:0 auto; }
+        .fa-filters select { padding:7px 12px; border-radius:8px; border:1px solid #334155; background:#1e293b; color:#fff; font-size:.82rem; }
+        .fa-filter-active { background:rgba(15,118,110,.25); border:1px solid #0f766e; border-radius:8px; padding:3px 10px; font-size:.76rem; color:#a7f3d0; display:inline-flex; align-items:center; gap:4px; }
+        .fa-filter-active a { color:#a7f3d0; text-decoration:none; }
 
         /* Featured strip */
         .fa-featured-strip { margin-bottom:28px; }
@@ -177,11 +233,63 @@ if ($isAjax) {
 <div class="fa-hero">
     <h1>🕊️ Funeral Announcements</h1>
     <p>Memorial information and funeral notices from our community</p>
-    <form class="fa-search-wrap" method="get" action="funerals.php">
-        <input type="search" name="q" placeholder="Search by name or location…" value="<?php echo sanitize($search); ?>">
-        <button type="submit">Search</button>
+
+    <form id="fa-filter-form" method="get" action="funerals.php">
+        <!-- Search row -->
+        <div class="fa-search-wrap">
+            <input type="search" name="q" placeholder="Search name, venue, organiser…" value="<?php echo sanitize($search); ?>">
+            <button type="submit">Search</button>
+        </div>
+
+        <!-- Filter pills -->
+        <div class="fa-filters">
+            <!-- Month -->
+            <select name="month" onchange="this.form.submit()">
+                <option value="">📅 All dates</option>
+                <?php foreach ($availableMonths as $m): ?>
+                <option value="<?php echo sanitize($m['ym']); ?>" <?php echo $month===$m['ym']?'selected':''; ?>>
+                    <?php echo sanitize($m['label']); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+
+            <!-- Gender -->
+            <select name="gender" onchange="this.form.submit()">
+                <option value="">👤 All</option>
+                <option value="male"   <?php echo $gender==='male'?'selected':''; ?>>Male</option>
+                <option value="female" <?php echo $gender==='female'?'selected':''; ?>>Female</option>
+                <option value="other"  <?php echo $gender==='other'?'selected':''; ?>>Other</option>
+            </select>
+
+            <!-- Venue/location -->
+            <input type="text" name="venue" placeholder="📍 Venue / area"
+                   value="<?php echo sanitize($venue); ?>"
+                   style="padding:7px 12px;border-radius:8px;border:1px solid #334155;background:#1e293b;color:#fff;font-size:.82rem;width:140px;">
+
+            <!-- Sort -->
+            <select name="sort" onchange="this.form.submit()">
+                <option value="burial_asc"  <?php echo $sort==='burial_asc'?'selected':''; ?>>⬆ Burial (soonest)</option>
+                <option value="burial_desc" <?php echo $sort==='burial_desc'?'selected':''; ?>>⬇ Burial (latest)</option>
+                <option value="newest"      <?php echo $sort==='newest'?'selected':''; ?>>🆕 Newest posted</option>
+            </select>
+
+            <?php if ($hasFilters): ?>
+            <a href="funerals.php" class="fa-filter-active">✕ Clear filters</a>
+            <?php endif; ?>
+        </div>
     </form>
 </div>
+
+<!-- Active filter summary -->
+<?php if ($hasFilters): ?>
+<div style="max-width:1060px;margin:-14px auto 10px;padding:0 16px;font-size:.8rem;color:var(--text-muted,#6b7280);">
+    <?php echo number_format($totalCount); ?> announcement<?php echo $totalCount!==1?'s':''; ?> found
+    <?php if ($search): ?> · matching "<strong><?php echo sanitize($search); ?></strong>"<?php endif; ?>
+    <?php if ($month): ?> · burial in <strong><?php echo sanitize(date('F Y', strtotime($month.'-01'))); ?></strong><?php endif; ?>
+    <?php if ($gender): ?> · <strong><?php echo ucfirst($gender); ?></strong><?php endif; ?>
+    <?php if ($venue): ?> · venue contains "<strong><?php echo sanitize($venue); ?></strong>"<?php endif; ?>
+</div>
+<?php endif; ?>
 
 <div class="fa-shell">
 <div class="fa-layout">
@@ -191,7 +299,10 @@ if ($isAjax) {
 
     <?php if ($user): ?>
     <div class="fa-toolbar">
-        <p style="margin:0;color:var(--muted,#6b7280);font-size:.9rem;"><?php echo $search ? 'Results for "' . sanitize($search) . '"' : 'All announcements'; ?></p>
+        <p style="margin:0;color:var(--muted,#6b7280);font-size:.88rem;">
+            <?php echo number_format($totalCount); ?> announcement<?php echo $totalCount!==1?'s':''; ?>
+            <?php if ($hasFilters): ?><a href="funerals.php" style="margin-left:8px;color:var(--primary,#0f766e);font-size:.8rem;">Clear filters ✕</a><?php endif; ?>
+        </p>
         <a href="my_funerals.php" class="button button-small">My Submissions</a>
     </div>
     <?php endif; ?>
@@ -252,8 +363,16 @@ if ($isAjax) {
         <?php if (!$cards): ?><p class="fa-empty" style="grid-column:1/-1;">No announcements found<?php echo $search ? ' for "' . sanitize($search) . '"' : ' yet'; ?>.</p><?php endif; ?>
     </div>
 
-    <?php if (count($cards) === $perPage): ?>
-    <button class="fa-load-more" id="fa-load-more" data-page="2" data-search="<?php echo sanitize($search); ?>">Load more</button>
+    <?php if (count($cards) === $perPage && $page < $totalPages): ?>
+    <button class="fa-load-more" id="fa-load-more"
+            data-page="<?php echo $page + 1; ?>"
+            data-q="<?php echo sanitize($search); ?>"
+            data-month="<?php echo sanitize($month); ?>"
+            data-gender="<?php echo sanitize($gender); ?>"
+            data-venue="<?php echo sanitize($venue); ?>"
+            data-sort="<?php echo sanitize($sort); ?>">
+        Load more (<?php echo $totalCount - ($page * $perPage); ?> remaining)
+    </button>
     <?php endif; ?>
 
 </div><!-- /fa-main -->
@@ -345,22 +464,31 @@ if ($isAjax) {
     var btn = document.getElementById('fa-load-more');
     if (!btn) return;
     btn.addEventListener('click', function(){
-        var p = parseInt(btn.dataset.page);
-        var q = btn.dataset.search;
+        var p      = parseInt(btn.dataset.page);
+        var params = new URLSearchParams({
+            ajax:   1,
+            page:   p,
+            q:      btn.dataset.q      || '',
+            month:  btn.dataset.month  || '',
+            gender: btn.dataset.gender || '',
+            venue:  btn.dataset.venue  || '',
+            sort:   btn.dataset.sort   || 'burial_asc',
+        });
         btn.disabled = true; btn.textContent = 'Loading…';
-        fetch('funerals.php?ajax=1&page=' + p + (q ? '&q=' + encodeURIComponent(q) : ''))
+        fetch('funerals.php?' + params.toString())
             .then(function(r){ return r.text(); })
             .then(function(html){
                 var grid = document.getElementById('fa-grid');
                 var tmp  = document.createElement('div');
                 tmp.innerHTML = html;
-                var empty = tmp.querySelector('.fa-empty');
-                tmp.querySelectorAll('.fa-card').forEach(function(c){ grid.appendChild(c); });
-                if (empty || !tmp.querySelector('.fa-card')) {
+                var cards = tmp.querySelectorAll('.fa-card');
+                cards.forEach(function(c){ grid.appendChild(c); });
+                if (!cards.length || tmp.querySelector('.fa-empty')) {
                     btn.remove();
                 } else {
                     btn.dataset.page = p + 1;
-                    btn.disabled = false; btn.textContent = 'Load more';
+                    btn.disabled = false;
+                    btn.textContent = 'Load more';
                 }
             });
     });

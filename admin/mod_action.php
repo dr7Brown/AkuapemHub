@@ -42,6 +42,7 @@ if ($action === 'approve_job') {
         'Hi ' . $job['customer_name'] . ",\n\nYour job post \"" . $job['title'] . "\" has been approved and is now live.\n\n" . BASE_URL . '/request_detail.php?id=' . $itemId,
         (int)$job['customer_id']);
     log_audit_action($mod['id'], 'job_approve_quick', 'Approved job #' . $itemId . ': ' . $job['title']);
+    log_mod_activity($mod['id'], 'jobs', 'approve_job', $itemId, $job['title']);
     notify_workers_of_matching_job($job);
     mod_flash_redirect('"' . $job['title'] . '" approved and posted.', 'success', $back);
 }
@@ -60,6 +61,7 @@ if ($action === 'reject_job') {
         '"' . $job['title'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nYou can edit and resubmit.",
         'error', 'request_detail.php?id=' . $itemId);
     log_audit_action($mod['id'], 'job_reject_quick', 'Rejected job #' . $itemId . '. Reason: ' . $reason);
+    log_mod_activity($mod['id'], 'jobs', 'reject_job', $itemId, $job['title']);
     mod_flash_redirect('"' . $job['title'] . '" rejected.', 'info', $back);
 }
 
@@ -76,6 +78,7 @@ if ($action === 'approve_product') {
         '"' . $prod['name'] . '" is now live on the marketplace.',
         'success', 'product.php?id=' . $itemId);
     log_audit_action($mod['id'], 'mp_product_approve_quick', 'Approved product #' . $itemId . ': ' . $prod['name']);
+    log_mod_activity($mod['id'], 'marketplace', 'approve_product', $itemId, $prod['name']);
     mod_flash_redirect('"' . $prod['name'] . '" approved.', 'success', $back);
 }
 
@@ -93,6 +96,7 @@ if ($action === 'reject_product') {
         '"' . $prod['name'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nEdit and resubmit from your seller dashboard.",
         'error', 'seller_dashboard.php?tab=products');
     log_audit_action($mod['id'], 'mp_product_reject_quick', 'Rejected product #' . $itemId . '. Reason: ' . $reason);
+    log_mod_activity($mod['id'], 'marketplace', 'reject_product', $itemId, $prod['name']);
     mod_flash_redirect('"' . $prod['name'] . '" rejected.', 'info', $back);
 }
 
@@ -109,6 +113,7 @@ if ($action === 'approve_event') {
         '"' . $ev['title'] . '" is now live. Share it with your community!',
         'success', 'event.php?slug=' . urlencode($ev['slug']));
     log_audit_action($mod['id'], 'event_approve_quick', 'Approved event #' . $itemId . ': ' . $ev['title']);
+    log_mod_activity($mod['id'], 'events', 'approve_event', $itemId, $ev['title']);
     mod_flash_redirect('"' . $ev['title'] . '" published.', 'success', $back);
 }
 
@@ -126,6 +131,7 @@ if ($action === 'reject_event') {
         '"' . $ev['title'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nEdit and resubmit from My Events.",
         'error', 'my_events.php');
     log_audit_action($mod['id'], 'event_reject_quick', 'Rejected event #' . $itemId . '. Reason: ' . $reason);
+    log_mod_activity($mod['id'], 'events', 'reject_event', $itemId, $ev['title']);
     mod_flash_redirect('"' . $ev['title'] . '" rejected.', 'info', $back);
 }
 
@@ -142,6 +148,7 @@ if ($action === 'approve_funeral') {
         'The announcement for ' . $fa['deceased_name'] . ' is now published.',
         'success', 'funeral.php?slug=' . urlencode($fa['slug']));
     log_audit_action($mod['id'], 'funeral_approve_quick', 'Approved funeral #' . $itemId);
+    log_mod_activity($mod['id'], 'funerals', 'approve_funeral', $itemId, $fa['deceased_name']);
     mod_flash_redirect('Funeral announcement approved.', 'success', $back);
 }
 
@@ -159,6 +166,7 @@ if ($action === 'reject_funeral') {
         'The announcement for ' . $fa['deceased_name'] . ' was not approved.' . "\n\nReason: " . $reason . "\n\nEdit and resubmit from My Funerals.",
         'error', 'my_funerals.php');
     log_audit_action($mod['id'], 'funeral_reject_quick', 'Rejected funeral #' . $itemId . '. Reason: ' . $reason);
+    log_mod_activity($mod['id'], 'funerals', 'reject_funeral', $itemId, $fa['deceased_name']);
     mod_flash_redirect('Funeral announcement rejected.', 'info', $back);
 }
 
@@ -175,6 +183,7 @@ if ($action === 'approve_news') {
         '"' . $ns['title'] . '" is now live.',
         'success', 'news_article.php?slug=' . urlencode($ns['slug']));
     log_audit_action($mod['id'], 'news_approve_quick', 'Approved news #' . $itemId . ': ' . $ns['title']);
+    log_mod_activity($mod['id'], 'news', 'approve_news', $itemId, $ns['title']);
     mod_flash_redirect('"' . $ns['title'] . '" published.', 'success', $back);
 }
 
@@ -192,6 +201,7 @@ if ($action === 'reject_news') {
         '"' . $ns['title'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nEdit and resubmit from My Articles.",
         'error', 'my_news.php');
     log_audit_action($mod['id'], 'news_reject_quick', 'Rejected news #' . $itemId . '. Reason: ' . $reason);
+    log_mod_activity($mod['id'], 'news', 'reject_news', $itemId, $ns['title']);
     mod_flash_redirect('"' . $ns['title'] . '" rejected.', 'info', $back);
 }
 
@@ -216,6 +226,7 @@ if ($action === 'approve_delivery_request') {
         }
     } catch(Exception $e){}
     log_audit_action($mod['id'], 'delivery_request_approve_quick', 'Approved delivery request #' . $itemId);
+    log_mod_activity($mod['id'], 'delivery', 'approve_delivery_request', $itemId);
     mod_flash_redirect('Delivery request #' . $itemId . ' approved.', 'success', $back);
 }
 
@@ -233,6 +244,7 @@ if ($action === 'reject_delivery_request') {
         "Your delivery request #$itemId was not approved." . "\n\nReason: " . $reason . "\n\nYou may submit a corrected request.",
         'error', 'delivery_detail.php?id=' . $itemId);
     log_audit_action($mod['id'], 'delivery_request_reject_quick', 'Rejected delivery request #' . $itemId . '. Reason: ' . $reason);
+    log_mod_activity($mod['id'], 'delivery', 'reject_delivery_request', $itemId);
     mod_flash_redirect('Delivery request rejected.', 'info', $back);
 }
 
@@ -252,6 +264,7 @@ if ($action === 'approve_delivery_agent') {
         "Hi {$ag['agent_name']},\n\nYour agent profile has been approved. Log in to start accepting jobs.\n\n" . BASE_URL . '/delivery_agent_jobs.php',
         (int)$ag['user_id']);
     log_audit_action($mod['id'], 'delivery_agent_approve_quick', 'Approved delivery agent #' . $itemId . ': ' . $ag['agent_name']);
+    log_mod_activity($mod['id'], 'delivery', 'approve_delivery_agent', $itemId, $ag['agent_name']);
     mod_flash_redirect($ag['agent_name'] . ' approved as delivery agent.', 'success', $back);
 }
 
@@ -269,6 +282,7 @@ if ($action === 'reject_delivery_agent') {
         'Your delivery agent application was not approved.' . "\n\nReason: " . $reason . "\n\nCorrect the issues and reapply.",
         'error', 'become_delivery_agent.php');
     log_audit_action($mod['id'], 'delivery_agent_reject_quick', 'Rejected delivery agent #' . $itemId . '. Reason: ' . $reason);
+    log_mod_activity($mod['id'], 'delivery', 'reject_delivery_agent', $itemId, $ag['agent_name']);
     mod_flash_redirect($ag['agent_name'] . '\'s agent application rejected.', 'info', $back);
 }
 
