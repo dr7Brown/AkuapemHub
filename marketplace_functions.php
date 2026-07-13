@@ -204,6 +204,81 @@ function mp_refresh_shop_rating(int $shopId): void {
     $pdo->prepare('UPDATE mp_shops SET rating = ? WHERE id = ?')->execute([round($avg, 2), $shopId]);
 }
 
+// ── Payment / stock reservation cleanup ───────────────────────────────────────
+
+/**
+ * Cancel one or more pending, unpaid marketplace orders and restore the stock
+ * that was reserved for them at checkout. Used both when Paystack init fails
+ * immediately, and by the abandoned-order cron sweep for checkouts the buyer
+ * never completed.
+ */
+function mp_cancel_order_and_restore_stock(array $orderIds, string $reason = ''): void {
+    global $pdo;
+    if (!$orderIds) return;
+
+    foreach ($orderIds as $orderId) {
+        $orderId = (int)$orderId;
+        $order = $pdo->prepare("SELECT * FROM mp_orders WHERE id=? AND payment_status='unpaid'");
+        $order->execute([$orderId]);
+        $order = $order->fetch();
+        if (!$order) continue; // already paid or already cancelled — leave it alone
+
+        $items = $pdo->prepare('SELECT product_id, quantity FROM mp_order_items WHERE order_id=?');
+        $items->execute([$orderId]);
+        foreach ($items->fetchAll() as $it) {
+            if (!$it['product_id']) continue;
+            $pdo->prepare('UPDATE mp_products SET stock_quantity = stock_quantity + ? WHERE id=?')
+                ->execute([$it['quantity'], $it['product_id']]);
+            // Bring a sold-out listing back if this restock gives it stock again
+            $pdo->prepare("UPDATE mp_products SET status='approved' WHERE id=? AND status='out_of_stock' AND stock_quantity>0")
+                ->execute([$it['product_id']]);
+        }
+
+        $pdo->prepare("UPDATE mp_orders SET status='cancelled', notes=CONCAT(COALESCE(notes,''), ?), updated_at=NOW() WHERE id=?")
+            ->execute([$reason ? "\n[System] {$reason}" : '', $orderId]);
+    }
+}
+
+/**
+ * Refund a single PAID marketplace order: restores its reserved stock and
+ * reverses whatever was already credited to the seller's wallet (from
+ * whichever balance currently holds it), then marks the order refunded.
+ * Called by admin after they've processed the actual Paystack refund.
+ */
+function mp_refund_order(array $order, string $reason = ''): void {
+    global $pdo;
+    if ($order['payment_status'] !== 'paid') return;
+
+    $items = $pdo->prepare('SELECT product_id, quantity FROM mp_order_items WHERE order_id=?');
+    $items->execute([$order['id']]);
+    foreach ($items->fetchAll() as $it) {
+        if (!$it['product_id']) continue;
+        $pdo->prepare('UPDATE mp_products SET stock_quantity = stock_quantity + ? WHERE id=?')
+            ->execute([$it['quantity'], $it['product_id']]);
+        $pdo->prepare("UPDATE mp_products SET status='approved' WHERE id=? AND status='out_of_stock' AND stock_quantity>0")
+            ->execute([$it['product_id']]);
+    }
+
+    if ($order['net_amount'] !== null) {
+        $balCol = $order['payout_released'] ? 'available_balance' : 'pending_balance';
+        $pdo->prepare("UPDATE mp_shops SET $balCol = $balCol - ? WHERE id=?")
+            ->execute([$order['net_amount'], $order['shop_id']]);
+        $pdo->prepare('INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())')
+            ->execute([$order['shop_id'], $order['id'], 'reversal', -$order['net_amount']]);
+    }
+
+    $pdo->prepare("UPDATE mp_orders SET status='refunded', payment_status='refunded', notes=CONCAT(COALESCE(notes,''), ?), updated_at=NOW() WHERE id=?")
+        ->execute([$reason ? "\n[System] {$reason}" : '', $order['id']]);
+
+    $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+    $shopOwner->execute([$order['shop_id']]);
+    if ($uid = $shopOwner->fetchColumn()) {
+        notify_user((int)$uid, 'Order Refunded',
+            'Order #' . $order['id'] . ' was refunded to the buyer. GH₵ ' . number_format((float)$order['net_amount'], 2) . ' was reversed from your wallet balance.',
+            'warning', 'seller_dashboard.php?tab=wallet');
+    }
+}
+
 // ── Delivery integration ──────────────────────────────────────────────────────
 
 /**
@@ -219,15 +294,16 @@ function mp_create_delivery_for_order(array $order, array $shop): ?int {
 
         $stmt = $pdo->prepare(
             'INSERT INTO delivery_requests
-             (customer_id, pickup_location, pickup_contact_name, pickup_contact_phone,
+             (customer_id, pickup_location, pickup_maps_link, pickup_contact_name, pickup_contact_phone,
               dropoff_location, receiver_name, receiver_phone,
               item_description, item_category, delivery_fee, payment_method,
               status, created_at, updated_at)
-             VALUES (?,?,?,?,?,?,?,?,\'parcels\',?,\'cash\',\'pending_approval\',NOW(),NOW())'
+             VALUES (?,?,?,?,?,?,?,?,?,\'parcels\',?,\'cash\',\'pending_approval\',NOW(),NOW())'
         );
         $stmt->execute([
             $order['customer_id'],
             $shop['shop_name'] . ($shop['region'] ? ', ' . $shop['region'] : ''),
+            $shop['google_maps_link'] ?? null,
             $shop['shop_name'],
             $shop['phone'] ?? '',
             $order['delivery_address'],

@@ -70,6 +70,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && is_admin()) {
                 $pdo->prepare("UPDATE service_requests SET payment_status='unpaid', updated_at=NOW() WHERE id=? AND payment_status='escrowed'")
                     ->execute([$tx['reference_id']]);
             }
+
+            // Cascade refund to marketplace orders: restore reserved stock, reverse
+            // whatever was credited to the seller's wallet, mark orders refunded.
+            // (A single Paystack payment can cover several shops' orders at once.)
+            if ($tx['payment_type'] === 'mp_order') {
+                require_once __DIR__ . '/../marketplace_functions.php';
+                $ordStmt = $pdo->prepare("SELECT * FROM mp_orders WHERE platform_payment_id=? AND payment_status='paid'");
+                $ordStmt->execute([$id]);
+                foreach ($ordStmt->fetchAll() as $mpOrder) {
+                    mp_refund_order($mpOrder, 'Refunded by admin (payment #' . $id . ')');
+                }
+            }
             log_audit_action($user['id'], 'payment_refunded', "Payment #{$id} refunded by admin {$user['id']}. " . $refundMsg);
             notify_user((int)$tx['user_id'], '↩️ Payment refunded',
                 "Your payment of {$tx['currency']} " . number_format($tx['amount'], 2) . " (Ref: {$tx['reference_code']}) has been refunded by admin. Please allow 3–5 business days for the funds to appear.",

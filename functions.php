@@ -30,8 +30,8 @@ function sanitize($value) {
  * javascript: hrefs; adds target/rel to all links.
  * Falls back gracefully for legacy plain-text content.
  */
-function render_rich(string $html): string {
-    if (empty(trim($html))) return '';
+function render_rich(?string $html): string {
+    if (empty(trim($html ?? ''))) return '';
     // Legacy plain text (no HTML tags) — convert to paragraphs
     if (!preg_match('/<[a-z][^>]*>/i', $html)) {
         $paras = preg_split('/\n{2,}/', trim($html));
@@ -51,6 +51,48 @@ function render_rich(string $html): string {
     return $clean;
 }
 
+/**
+ * Render a complete, consistent SEO <head> block: title, description,
+ * canonical, robots, Open Graph, and Twitter Card tags. Echo the result
+ * directly inside <head> — replaces ad-hoc per-page meta tag blocks.
+ *
+ * Options: title, description, image (absolute or site-relative URL),
+ * url (defaults to the current request URL), type ('website'|'article'),
+ * noindex (bool — set true for pages that shouldn't be indexed).
+ */
+function seo_meta(array $opts = []): string {
+    $base = rtrim(BASE_URL, '/');
+
+    $title       = trim($opts['title'] ?? APP_NAME);
+    $description = trim($opts['description'] ?? (APP_NAME . ' — Find skilled workers, post service requests, and discover community news, events & funeral announcements across the Akuapem area of Ghana.'));
+    $description = mb_substr($description, 0, 300);
+    $type        = $opts['type'] ?? 'website';
+    $noindex     = !empty($opts['noindex']);
+
+    $image = $opts['image'] ?? ($base . '/assets/images/heroes/hero-home.jpg');
+    if (!preg_match('#^https?://#i', $image)) $image = $base . '/' . ltrim($image, '/');
+
+    $url = $opts['url'] ?? ($base . '/' . ltrim($_SERVER['REQUEST_URI'] ?? '', '/'));
+
+    $e = fn($s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+
+    $out  = '<title>' . $e($title) . '</title>' . "\n";
+    $out .= '    <meta name="description" content="' . $e($description) . '">' . "\n";
+    $out .= '    <link rel="canonical" href="' . $e($url) . '">' . "\n";
+    $out .= '    <meta name="robots" content="' . ($noindex ? 'noindex,nofollow' : 'index,follow') . '">' . "\n";
+    $out .= '    <meta property="og:type" content="' . $e($type) . '">' . "\n";
+    $out .= '    <meta property="og:site_name" content="' . $e(APP_NAME) . '">' . "\n";
+    $out .= '    <meta property="og:title" content="' . $e($title) . '">' . "\n";
+    $out .= '    <meta property="og:description" content="' . $e($description) . '">' . "\n";
+    $out .= '    <meta property="og:url" content="' . $e($url) . '">' . "\n";
+    $out .= '    <meta property="og:image" content="' . $e($image) . '">' . "\n";
+    $out .= '    <meta name="twitter:card" content="summary_large_image">' . "\n";
+    $out .= '    <meta name="twitter:title" content="' . $e($title) . '">' . "\n";
+    $out .= '    <meta name="twitter:description" content="' . $e($description) . '">' . "\n";
+    $out .= '    <meta name="twitter:image" content="' . $e($image) . '">';
+
+    return $out;
+}
 
 function user_wants_email_notifications($userId) {
     global $pdo;
@@ -783,16 +825,40 @@ function rank_jobs_for_worker(array $jobs, array $worker) {
 function sweep_expired_featured() {
     global $pdo;
 
-    // ── Jobs & workers (existing) ─────────────────────────────────────────
+    // ── Jobs & workers ────────────────────────────────────────────────────
     $pdo->exec("UPDATE service_requests SET featured = 0 WHERE featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET is_featured = 0 WHERE is_featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET is_verified = 0, verification_status = 'expired' WHERE is_verified = 1 AND verification_expiry IS NOT NULL AND verification_expiry < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET service_fee_status = 'free' WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry < CURDATE()");
 
-    // Notify workers whose service listing expires within 7 days (once per expiry cycle)
+    // 2-day warning: featured jobs
+    $featJobsExpiring = $pdo->query(
+        "SELECT sr.id, sr.title, sr.customer_id, sr.featured_end_date
+         FROM service_requests sr
+         WHERE sr.featured = 1 AND sr.featured_end_date = DATE_ADD(CURDATE(), INTERVAL 2 DAY)"
+    )->fetchAll();
+    foreach ($featJobsExpiring as $fj) {
+        notify_user((int)$fj['customer_id'], 'Featured Job Expires in 2 Days',
+            '"' . $fj['title'] . '" will lose its featured placement on ' . $fj['featured_end_date'] . '. Renew to stay at the top of search results.',
+            'warning', 'feature_job.php?id=' . $fj['id']);
+    }
+
+    // 2-day warning: featured worker profiles
+    $featWorkersExpiring = $pdo->query(
+        "SELECT wp.user_id, wp.featured_end_date, u.name
+         FROM worker_profiles wp JOIN users u ON wp.user_id = u.id
+         WHERE wp.is_featured = 1 AND wp.featured_end_date = DATE_ADD(CURDATE(), INTERVAL 2 DAY)"
+    )->fetchAll();
+    foreach ($featWorkersExpiring as $fw) {
+        notify_user((int)$fw['user_id'], 'Featured Profile Expires in 2 Days',
+            'Your featured worker profile expires on ' . $fw['featured_end_date'] . '. Renew to keep appearing at the top of Find Workers.',
+            'warning', 'feature_worker.php');
+    }
+
+    // 7-day warning: worker service listing (once per cycle, flag prevents repeat)
     $expiring = $pdo->query("SELECT user_id, service_fee_expiry FROM worker_profiles WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND service_renewal_notice_sent = 0")->fetchAll();
     foreach ($expiring as $row) {
-        notify_user($row['user_id'], 'Service listing expiring soon', 'Your service listing expires on ' . $row['service_fee_expiry'] . '. Renew now to stay visible in Find Workers.', 'warning');
+        notify_user($row['user_id'], 'Service Listing Expiring Soon', 'Your service listing expires on ' . $row['service_fee_expiry'] . '. Renew now to stay visible in Find Workers.', 'warning');
         $pdo->prepare("UPDATE worker_profiles SET service_renewal_notice_sent = 1 WHERE user_id = ?")->execute([$row['user_id']]);
     }
 
@@ -820,6 +886,60 @@ function sweep_expired_featured() {
                 'warning');
         }
     } catch (Exception $e) { /* Marketplace tables not yet installed */ }
+
+    // ── Community content: events / funerals / news featuring ─────────────
+    try {
+        // Expire featured listings whose end date has passed
+        $pdo->exec("UPDATE events SET featured=0, featured_end_date=NULL WHERE featured=1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
+        $pdo->exec("UPDATE funeral_announcements SET featured=0, featured_end_date=NULL WHERE featured=1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
+        $pdo->exec("UPDATE news SET featured=0, featured_end_date=NULL WHERE featured=1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
+
+        // 2-day expiry warnings for events
+        $evExpiring = $pdo->query(
+            "SELECT e.id, e.title, e.user_id, e.featured_end_date
+             FROM events e
+             WHERE e.featured = 1 AND e.featured_end_date = DATE_ADD(CURDATE(), INTERVAL 2 DAY)"
+        )->fetchAll();
+        foreach ($evExpiring as $e) {
+            notify_user((int)$e['user_id'], 'Featured Event Expires in 2 Days',
+                '"' . $e['title'] . '" will lose its featured placement on ' . $e['featured_end_date'] . '. Renew to stay at the top.',
+                'warning', 'my_events.php');
+        }
+
+        // 2-day expiry warnings for funerals
+        $faExpiring = $pdo->query(
+            "SELECT fa.id, fa.deceased_name, fa.user_id, fa.featured_end_date
+             FROM funeral_announcements fa
+             WHERE fa.featured = 1 AND fa.featured_end_date = DATE_ADD(CURDATE(), INTERVAL 2 DAY)"
+        )->fetchAll();
+        foreach ($faExpiring as $fa) {
+            notify_user((int)$fa['user_id'], 'Featured Announcement Expires in 2 Days',
+                'The announcement for "' . $fa['deceased_name'] . '" will lose its featured placement on ' . $fa['featured_end_date'] . '.',
+                'warning', 'my_funerals.php');
+        }
+
+        // 2-day expiry warnings for news articles
+        $newsExpiring = $pdo->query(
+            "SELECT n.id, n.title, n.user_id, n.featured_end_date
+             FROM news n
+             WHERE n.featured = 1 AND n.featured_end_date = DATE_ADD(CURDATE(), INTERVAL 2 DAY)"
+        )->fetchAll();
+        foreach ($newsExpiring as $n) {
+            notify_user((int)$n['user_id'], 'Featured Article Expires in 2 Days',
+                '"' . $n['title'] . '" will lose its featured placement on ' . $n['featured_end_date'] . '. Renew to stay at the top.',
+                'warning', 'my_news.php');
+        }
+    } catch (Exception $e) {}
+
+    // ── Marketplace seller subscriptions ──────────────────────────────────
+    try {
+        $expired = $pdo->query("SELECT mss.id, mss.shop_id, ms.user_id FROM mp_seller_subscriptions mss JOIN mp_shops ms ON mss.shop_id=ms.id WHERE mss.status='active' AND mss.end_date < CURDATE()")->fetchAll();
+        foreach ($expired as $sub) {
+            $pdo->prepare("UPDATE mp_seller_subscriptions SET status='expired' WHERE id=?")->execute([$sub['id']]);
+            $pdo->prepare("UPDATE mp_shops SET is_subscribed=0, subscription_plan_id=NULL, subscription_end=NULL WHERE id=?")->execute([$sub['shop_id']]);
+            notify_user((int)$sub['user_id'], 'Seller Subscription Expired', 'Your seller subscription has expired. Renew to keep your benefits.', 'warning');
+        }
+    } catch (Exception $e) {}
 
     // ── Delivery agents ────────────────────────────────────────────────────
     try {
@@ -1074,7 +1194,9 @@ function category_icon($categoryName) {
 
 function get_towns() {
     global $pdo;
-    $stmt = $pdo->query('SELECT id, name, district FROM towns ORDER BY district, name');
+    // Excludes the 'Other' sentinel row (see get_other_town_id()) — that's an
+    // FK target for users outside the Akuapem list, not a real pickable town.
+    $stmt = $pdo->query("SELECT id, name, district FROM towns WHERE NOT (name='Other' AND district='Other') ORDER BY district, name");
     return $stmt->fetchAll();
 }
 
@@ -1095,6 +1217,25 @@ function get_town_name($townId) {
     $stmt->execute([$townId]);
     $name = $stmt->fetchColumn();
     return $name !== false ? $name : null;
+}
+
+/** ID of the sentinel 'Other' towns row used when a user's location isn't
+ *  one of the listed Akuapem towns — see get_user_town_display(). */
+function get_other_town_id(): int {
+    global $pdo;
+    static $id = null;
+    if ($id !== null) return $id;
+    $stmt = $pdo->query("SELECT id FROM towns WHERE name='Other' AND district='Other' LIMIT 1");
+    $id = (int)($stmt->fetchColumn() ?: 0);
+    return $id;
+}
+
+/** Display name for a user's location: their custom_town if set (they picked
+ *  "Other"), otherwise their town's name. Pass the user row (needs town_id
+ *  and custom_town keys). */
+function get_user_town_display(array $user): ?string {
+    if (!empty($user['custom_town'])) return $user['custom_town'];
+    return get_town_name($user['town_id'] ?? null);
 }
 
 function get_skill_categories() {
@@ -1222,6 +1363,151 @@ function sweep_expired_jobs() {
         update_employer_score((int)$job['customer_id'], -5, 'Job expired without completing hiring');
         log_audit_action(0, 'job_auto_expired',
             "Job #{$job['id']} '{$job['title']}' auto-expired. " . count($apps) . " application(s) closed.");
+        $count++;
+    }
+
+    return $count;
+}
+
+/**
+ * Auto-release escrow payments whose auto_release_at has passed.
+ * Called by _cron.php daily. Returns the number of payments released.
+ */
+function sweep_expired_escrow(): int {
+    global $pdo;
+    $count = 0;
+
+    // Fetch all escrow payments that are held, the job is completed,
+    // and the auto-release window has elapsed.
+    $due = $pdo->query("
+        SELECT ep.id, ep.job_id, ep.worker_id, ep.net_amount, ep.client_id
+        FROM escrow_payments ep
+        JOIN service_requests sr ON ep.job_id = sr.id
+        WHERE ep.status = 'held'
+          AND ep.auto_release_at IS NOT NULL
+          AND ep.auto_release_at <= NOW()
+          AND sr.status = 'completed'
+    ")->fetchAll();
+
+    foreach ($due as $ep) {
+        // Atomic UPDATE — only succeeds if still held (prevents race conditions)
+        $upd = $pdo->prepare(
+            "UPDATE escrow_payments
+             SET status = 'released', released_at = NOW(), release_initiated_by = 'auto'
+             WHERE id = ? AND status = 'held'"
+        );
+        $upd->execute([$ep['id']]);
+
+        if ($upd->rowCount() === 0) continue; // Already processed by another request
+
+        // Mark job payment as paid
+        $pdo->prepare("UPDATE service_requests SET payment_status = 'paid', updated_at = NOW() WHERE id = ?")
+            ->execute([$ep['job_id']]);
+
+        // Notify worker
+        if ($ep['worker_id']) {
+            notify_user(
+                (int)$ep['worker_id'],
+                '💸 Escrow Payment Auto-Released',
+                'Your payment of GH₵ ' . number_format($ep['net_amount'], 2) .
+                ' for job #' . $ep['job_id'] . ' was automatically released. ' .
+                'The client did not dispute within the release window.',
+                'success',
+                'request_detail.php?id=' . $ep['job_id']
+            );
+        }
+
+        // Notify client
+        if ($ep['client_id']) {
+            notify_user(
+                (int)$ep['client_id'],
+                'Escrow Released',
+                'The escrow payment for job #' . $ep['job_id'] .
+                ' was automatically released to the worker (GH₵ ' . number_format($ep['net_amount'], 2) . ').',
+                'info',
+                'request_detail.php?id=' . $ep['job_id']
+            );
+        }
+
+        log_audit_action(0, 'escrow_auto_released',
+            "Escrow #" . $ep['id'] . " auto-released for job #" . $ep['job_id'] .
+            " — GH₵ " . number_format($ep['net_amount'], 2));
+
+        $count++;
+    }
+
+    return $count;
+}
+
+/**
+ * Release reserved stock for marketplace checkouts the buyer never completed
+ * payment for (Paystack init failed silently, tab closed, etc). Mirrors the
+ * 45-minute abandonment window used by resume_payment.php.
+ */
+function sweep_abandoned_marketplace_orders(): int {
+    global $pdo;
+    require_once __DIR__ . '/marketplace_functions.php';
+
+    $due = $pdo->query("
+        SELECT id FROM mp_orders
+        WHERE payment_status = 'unpaid'
+          AND status = 'pending'
+          AND created_at < NOW() - INTERVAL 45 MINUTE
+    ")->fetchAll();
+
+    if (!$due) return 0;
+
+    $orderIds = array_map(fn($r) => (int)$r['id'], $due);
+    mp_cancel_order_and_restore_stock($orderIds, 'Checkout abandoned — payment not completed in time');
+
+    log_audit_action(0, 'mp_orders_auto_cancelled',
+        count($orderIds) . ' abandoned marketplace order(s) auto-cancelled, stock restored: ' . implode(',', $orderIds));
+
+    return count($orderIds);
+}
+
+/**
+ * Move marketplace seller earnings from pending_balance to available_balance
+ * once the delivery-confirmation window has elapsed.
+ */
+function sweep_marketplace_payout_releases(): int {
+    global $pdo;
+
+    $due = $pdo->query("
+        SELECT id, shop_id, net_amount
+        FROM mp_orders
+        WHERE status = 'delivered'
+          AND payment_status = 'paid'
+          AND payout_released = 0
+          AND payout_release_at IS NOT NULL
+          AND payout_release_at <= NOW()
+    ")->fetchAll();
+
+    $count = 0;
+    foreach ($due as $order) {
+        // Atomic — only succeeds if still un-released (prevents double-processing)
+        $upd = $pdo->prepare("UPDATE mp_orders SET payout_released = 1, updated_at = NOW() WHERE id = ? AND payout_released = 0");
+        $upd->execute([$order['id']]);
+        if ($upd->rowCount() === 0) continue;
+
+        $pdo->prepare("UPDATE mp_shops SET pending_balance = pending_balance - ?, available_balance = available_balance + ? WHERE id = ?")
+            ->execute([$order['net_amount'], $order['net_amount'], $order['shop_id']]);
+
+        $pdo->prepare("INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())")
+            ->execute([$order['shop_id'], $order['id'], 'released_to_available', $order['net_amount']]);
+
+        $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id = ?');
+        $shopOwner->execute([$order['shop_id']]);
+        if ($uid = $shopOwner->fetchColumn()) {
+            notify_user((int)$uid, '💰 Funds Available for Withdrawal',
+                'GH₵ ' . number_format($order['net_amount'], 2) . ' from order #' . $order['id'] .
+                ' has moved to your available balance and can now be withdrawn.',
+                'success', 'seller_dashboard.php?tab=wallet');
+        }
+
+        log_audit_action(0, 'mp_payout_released',
+            "Order #" . $order['id'] . " released GH₵ " . number_format($order['net_amount'], 2) . " to shop #" . $order['shop_id']);
+
         $count++;
     }
 
@@ -1361,6 +1647,22 @@ function set_platform_setting($key, $value) {
     $pdo->prepare('INSERT INTO platform_settings (setting_key, setting_value, updated_at) VALUES (?, ?, NOW())
         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW()')
         ->execute([$key, $value]);
+}
+
+/** Whether email verification is currently required before the given action.
+ *  $action: 'job_post' | 'job_apply' */
+function requires_verified_email($action) {
+    return get_platform_setting("require_verified_email_{$action}", '1') === '1';
+}
+
+/** SQL-ready list of job statuses that should appear in public listings. */
+function public_job_statuses_sql() {
+    $statuses = ['open', 'partially_staffed'];
+    if (get_platform_setting('jobs_list_staffed_completed', '0') === '1') {
+        $statuses[] = 'fully_staffed';
+        $statuses[] = 'completed';
+    }
+    return "'" . implode("','", $statuses) . "'";
 }
 
 function is_feature_paid($featureKey) {
@@ -1740,6 +2042,67 @@ function mod_points_to_ghs(int $points): float {
         $points -= $times * $threshold;
     }
     return $ghs;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── Conflict of Interest (COI) Policy ────────────────────────────────────────
+
+/**
+ * Returns the user_id of the person who created/owns a given record.
+ * Used to detect conflicts of interest before moderation actions.
+ */
+function get_record_owner_id(string $type, int $id): ?int {
+    global $pdo;
+    try {
+        $q = match($type) {
+            'job'              => 'SELECT customer_id  FROM service_requests WHERE id=?',
+            'event'            => 'SELECT user_id      FROM events WHERE id=?',
+            'funeral'          => 'SELECT user_id      FROM funeral_announcements WHERE id=?',
+            'news'             => 'SELECT user_id      FROM news WHERE id=?',
+            'product'          => 'SELECT ms.user_id   FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id WHERE mp.id=?',
+            'shop'             => 'SELECT user_id      FROM mp_shops WHERE id=?',
+            'delivery_request' => 'SELECT customer_id  FROM delivery_requests WHERE id=?',
+            'delivery_agent'   => 'SELECT user_id      FROM delivery_agents WHERE id=?',
+            default            => null,
+        };
+        if (!$q) return null;
+        $st = $pdo->prepare($q);
+        $st->execute([$id]);
+        $v = $st->fetchColumn();
+        return $v !== false ? (int)$v : null;
+    } catch (Exception $e) { return null; }
+}
+
+/**
+ * Returns true if $modId is the creator/owner of the record — i.e. a conflict exists.
+ * Admins are never conflicted (they can moderate anything).
+ */
+function check_mod_coi(string $type, int $id, int $modId): bool {
+    if (is_admin()) return false;   // Admins exempt
+    $ownerId = get_record_owner_id($type, $id);
+    return $ownerId !== null && $ownerId === $modId;
+}
+
+/**
+ * Log a COI violation, notify all admins, and optionally throw.
+ * Call this when a moderator attempts to moderate their own record.
+ */
+function log_coi_violation(int $modId, string $type, int $id, string $attemptedAction): void {
+    global $pdo;
+    $ownerId = get_record_owner_id($type, $id) ?? $modId;
+    $msg = "COI VIOLATION: Moderator #$modId attempted '$attemptedAction' on $type #$id (their own record, owner=$ownerId)";
+    log_audit_action($modId, 'coi_violation', $msg);
+    // Notify all admins
+    try {
+        $admins = $pdo->query("SELECT id FROM users WHERE role='admin' AND banned=0")->fetchAll();
+        foreach ($admins as $a) {
+            notify_user((int)$a['id'],
+                '⚠️ Conflict of Interest Blocked',
+                "Moderator (ID #$modId) tried to $attemptedAction their own $type (ID #$id). Action was automatically blocked.",
+                'warning');
+        }
+    } catch (Exception $e) {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

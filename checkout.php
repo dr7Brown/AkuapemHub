@@ -2,6 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
+require_once __DIR__ . '/paystack.php';
 
 require_login();
 $user = current_user();
@@ -31,81 +32,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $deliveryMapsLink = trim($_POST['delivery_maps_link'] ?? '') ?: null;
     $receiverName     = trim($_POST['receiver_name']    ?? $user['name']);
     $receiverPhone    = trim($_POST['receiver_phone']   ?? $user['phone']);
-    $paymentMethod   = $_POST['payment_method'] ?? 'cash_on_delivery';
-    $notes           = trim($_POST['notes'] ?? '');
+    $notes            = trim($_POST['notes'] ?? '');
 
-    $validPayments = ['cash_on_delivery','mobile_money','card','wallet'];
     if ($deliveryAddress === '') $error = 'Please enter a delivery address.';
     elseif ($receiverName === '')  $error = 'Please enter the receiver name.';
     elseif ($receiverPhone === '') $error = 'Please enter the receiver phone number.';
-    elseif (!in_array($paymentMethod, $validPayments, true)) $error = 'Select a payment method.';
+    elseif (!paystack_configured()) $error = 'Payment gateway is not configured. Please contact support.';
 
     if (!$error) {
         $pdo->beginTransaction();
         try {
             $orderIds = [];
+            $orderMeta = []; // orderId => ['shop_name'=>..., 'subtotal'=>actual fulfilled amount]
+            $droppedItems = []; // across all shops, for the customer-facing message
+            $reservedProductIds = []; // for rollback if payment init fails below
+
             foreach ($byShop as $shopId => $group) {
-                // Create order
+                // Deduct stock FIRST and only keep items that actually had stock —
+                // the "stock_quantity >= ?" guard means a losing UPDATE (0 rows
+                // affected) means someone else already took the last unit. This
+                // reserves inventory for this checkout attempt; if payment is
+                // never completed, the abandoned-order sweep in _cron.php
+                // restores it (see sweep_abandoned_marketplace_orders()).
+                $fulfilledItems = [];
+                $shopDropped    = [];
+                foreach ($group['items'] as $item) {
+                    $upd = $pdo->prepare('UPDATE mp_products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?');
+                    $upd->execute([$item['quantity'], $item['product_id'], $item['quantity']]);
+                    if ($upd->rowCount() > 0) {
+                        $fulfilledItems[] = $item;
+                        $reservedProductIds[] = $item['product_id'];
+                        // Flip to out_of_stock the moment the last unit sells — keeps
+                        // the listing visible (seller keeps their reviews/history)
+                        // but marketplace.php/product.php show it as unavailable.
+                        $pdo->prepare("UPDATE mp_products SET status='out_of_stock' WHERE id=? AND stock_quantity=0 AND status='approved'")
+                            ->execute([$item['product_id']]);
+                    } else {
+                        $shopDropped[] = $item;
+                    }
+                }
+
+                if (!$fulfilledItems) {
+                    // Nothing in this shop's group could be fulfilled — no order created.
+                    $droppedItems = array_merge($droppedItems, $shopDropped);
+                    continue;
+                }
+
+                $actualSubtotal = 0;
+                foreach ($fulfilledItems as $item) $actualSubtotal += mp_effective_price($item) * $item['quantity'];
+
+                // Create order (total reflects only what was actually fulfilled).
+                // payment_status stays 'unpaid' / status 'pending' until Paystack confirms.
                 $pdo->prepare(
-                    'INSERT INTO mp_orders (customer_id, shop_id, total_amount, delivery_address, delivery_maps_link, receiver_name, receiver_phone, payment_method, notes, status) VALUES (?,?,?,?,?,?,?,?,?,\'pending\')'
-                )->execute([$user['id'], $shopId, $group['subtotal'], $deliveryAddress, $deliveryMapsLink, $receiverName, $receiverPhone, $paymentMethod, $notes ?: null]);
+                    'INSERT INTO mp_orders (customer_id, shop_id, total_amount, delivery_address, delivery_maps_link, receiver_name, receiver_phone, payment_method, notes, status) VALUES (?,?,?,?,?,?,?,\'paystack\',?,\'pending\')'
+                )->execute([$user['id'], $shopId, $actualSubtotal, $deliveryAddress, $deliveryMapsLink, $receiverName, $receiverPhone, $notes ?: null]);
                 $orderId = (int)$pdo->lastInsertId();
                 $orderIds[] = $orderId;
+                $orderMeta[$orderId] = ['shop_name' => $group['shop_name'], 'subtotal' => $actualSubtotal];
 
-                // Create order items
-                foreach ($group['items'] as $item) {
+                // Create order items for what was fulfilled
+                foreach ($fulfilledItems as $item) {
                     $price = mp_effective_price($item);
                     $pdo->prepare(
                         'INSERT INTO mp_order_items (order_id, product_id, product_name, price, quantity, subtotal) VALUES (?,?,?,?,?,?)'
                     )->execute([$orderId, $item['product_id'], $item['name'], $price, $item['quantity'], $price * $item['quantity']]);
-
-                    // Deduct stock
-                    $pdo->prepare('UPDATE mp_products SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?')
-                        ->execute([$item['quantity'], $item['product_id'], $item['quantity']]);
                 }
 
-                // Notify seller
-                $shopOwnerRow = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id = ?');
-                $shopOwnerRow->execute([$shopId]);
-                $ownerId = $shopOwnerRow->fetchColumn();
-                if ($ownerId) {
-                    notify_user((int)$ownerId, 'New Order Received! 🛍️',
-                        'You have a new order #' . $orderId . ' from ' . display_name($user) . '. Open your seller dashboard.',
-                        'success');
+                // Record what was dropped, visible to the seller on this order
+                foreach ($shopDropped as $item) {
+                    $pdo->prepare(
+                        'INSERT INTO mp_order_stock_issues (order_id, product_id, product_name, requested_qty) VALUES (?,?,?,?)'
+                    )->execute([$orderId, $item['product_id'], $item['name'], $item['quantity']]);
                 }
+                $droppedItems = array_merge($droppedItems, $shopDropped);
             }
 
-            // Clear cart
+            if (!$orderIds) {
+                // Every item in the cart sold out before checkout completed.
+                $pdo->rollBack();
+                flash('Sorry — everything in your cart just sold out. Please check your cart and try again.', 'error');
+                header('Location: cart.php');
+                exit;
+            }
+
+            // Clear cart — items are now reserved as pending orders
             $cartRow = $pdo->prepare('SELECT id FROM mp_cart WHERE user_id = ?');
             $cartRow->execute([$user['id']]);
             $cartId = $cartRow->fetchColumn();
             if ($cartId) $pdo->prepare('DELETE FROM mp_cart_items WHERE cart_id = ?')->execute([$cartId]);
 
-            // Notify customer (in-app + email receipt)
-            notify_user((int)$user['id'], 'Order Placed Successfully ✅',
-                'Your order' . (count($orderIds) > 1 ? 's have' : ' has') . ' been placed. The seller will confirm shortly.',
-                'success');
-            if (class_exists('EmailService') || file_exists(__DIR__ . '/services/EmailService.php')) {
-                if (!class_exists('EmailService', false)) require_once __DIR__ . '/services/EmailService.php';
-                foreach ($orderIds as $oid) {
-                    $shopName = $byShop[array_keys($byShop)[array_search($oid, $orderIds)] ?? array_key_first($byShop)]['shop_name'] ?? '';
-                    EmailService::sendReceipt(
-                        $user['email'], $user['name'],
-                        'MKT-' . str_pad($oid, 6, '0', STR_PAD_LEFT),
-                        'Marketplace Order — ' . $shopName,
-                        (float)($byShop[array_keys($byShop)[array_search($oid, $orderIds)] ?? array_key_first($byShop)]['subtotal'] ?? 0),
-                        date('d M Y, g:i A'),
-                        (int)$user['id']
-                    );
-                }
-            }
-
             $pdo->commit();
 
-            flash('Orders placed successfully! Sellers have been notified.', 'success');
-            // Show receipt for first order; user can see all orders in orders.php
-            $firstOrderId = $orderIds[0] ?? null;
-            header('Location: ' . ($firstOrderId ? 'payment_receipt.php?type=marketplace_order&id=' . $firstOrderId : 'orders.php'));
+            // ── Charge the buyer via Paystack for the actual (post-adjustment) total ──
+            $payTotal = array_sum(array_column($orderMeta, 'subtotal'));
+            $result = initializePayment(
+                (int)$user['id'], $user['email'], 'mp_order', $orderIds[0], 0, $payTotal,
+                ['order_ids' => $orderIds]
+            );
+
+            if (isset($result['error'])) {
+                // Payment couldn't even start — release the reservation instead of
+                // leaving the customer with a paid-for-nothing pending order.
+                mp_cancel_order_and_restore_stock($orderIds, 'Payment could not be started: ' . $result['error']);
+                flash('Could not start payment: ' . $result['error'] . '. Please try again.', 'error');
+                header('Location: cart.php');
+                exit;
+            }
+
+            $placeholders = implode(',', array_fill(0, count($orderIds), '?'));
+            $pdo->prepare("UPDATE mp_orders SET platform_payment_id=? WHERE id IN ($placeholders)")
+                ->execute(array_merge([$result['payment_id']], $orderIds));
+
+            if ($droppedItems) {
+                $names = implode(', ', array_map(fn($i) => $i['quantity'] . '× ' . $i['name'], $droppedItems));
+                flash("Note: {$names} just sold out and could not be included in your order.", 'warning');
+            }
+
+            header('Location: ' . $result['checkout_url']);
             exit;
         } catch (Exception $e) {
             $pdo->rollBack();
@@ -183,17 +226,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
 
-        <!-- Payment Method -->
+        <!-- Payment -->
         <div class="co-card">
-            <p class="co-section-title">💳 Payment Method</p>
-            <?php $selPm = $_POST['payment_method'] ?? 'cash_on_delivery';
-            $pmOptions = ['cash_on_delivery'=>'Cash on Delivery','mobile_money'=>'Mobile Money','card'=>'Card Payment','wallet'=>'Wallet Balance']; ?>
-            <?php foreach ($pmOptions as $v => $l): ?>
-            <label style="display:flex;align-items:center;gap:8px;padding:7px 0;cursor:pointer;font-size:.88rem;">
-                <input type="radio" name="payment_method" value="<?php echo $v; ?>" <?php echo $selPm===$v?'checked':''; ?>>
-                <?php echo sanitize($l); ?>
-            </label>
-            <?php endforeach; ?>
+            <p class="co-section-title">💳 Payment</p>
+            <p class="meta" style="margin:0;">You'll be redirected to Paystack's secure checkout to pay by card or mobile money.</p>
         </div>
 
         <!-- Order Summary -->
@@ -219,7 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <button type="submit" class="button button-primary" style="width:100%;padding:14px;font-size:1rem;">
-            Place Order →
+            Pay with Paystack →
         </button>
     </form>
 

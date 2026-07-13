@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS worker_profiles (
     longitude                    DECIMAL(10,7) DEFAULT NULL,
     contact_phone                VARCHAR(80) NOT NULL,
     id_type                      ENUM('ghana_card','passport','other') DEFAULT NULL,
+    id_type_custom               VARCHAR(100) DEFAULT NULL,
     id_number                    VARCHAR(50) DEFAULT NULL,
     id_document_path             VARCHAR(255) DEFAULT NULL,
     availability                 ENUM('available','busy','offline') NOT NULL DEFAULT 'available',
@@ -130,7 +131,7 @@ CREATE TABLE IF NOT EXISTS service_requests (
     job_type           ENUM('on_site','remote','hybrid') NOT NULL DEFAULT 'on_site',
     completion_notes   TEXT DEFAULT NULL,
     -- Final ENUM includes all values added by later migrations + temp script (v004, v010)
-    status             ENUM('draft','pending','pending_payment','open','in_progress','partially_staffed','fully_staffed','completed','cancelled','rejected') NOT NULL DEFAULT 'draft',
+    status             ENUM('draft','pending','pending_payment','open','in_progress','partially_staffed','fully_staffed','completed','cancelled','rejected','expired') NOT NULL DEFAULT 'draft',
     payment_status     ENUM('unpaid','escrowed','paid') NOT NULL DEFAULT 'unpaid',
     payment_mode       ENUM('direct','escrow') NOT NULL DEFAULT 'direct',
     posting_fee_status ENUM('free','pending','paid') NOT NULL DEFAULT 'free',
@@ -203,7 +204,6 @@ CREATE TABLE IF NOT EXISTS notifications (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS link VARCHAR(500) DEFAULT NULL;
-ALTER TABLE events        ADD COLUMN IF NOT EXISTS published_at DATETIME DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS worker_skills (
     id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -412,6 +412,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     message           TEXT NOT NULL,
     message_type      ENUM('text','image','file') NOT NULL DEFAULT 'text',
     file_path         VARCHAR(255) DEFAULT NULL,
+    thumb_path        VARCHAR(255) DEFAULT NULL,
     is_read           TINYINT(1) NOT NULL DEFAULT 0,
     is_flagged        TINYINT(1) NOT NULL DEFAULT 0,
     flag_reason       VARCHAR(120) DEFAULT NULL,
@@ -521,28 +522,28 @@ INSERT IGNORE INTO towns (name, district) VALUES
     ('Nkyenoa',         'Okere District');
 
 -- Default packages
-INSERT IGNORE INTO featured_job_packages (name, duration_days, price, status) VALUES
-    ('7 Days',  7,  0.00, 'active'),
-    ('14 Days', 14, 0.00, 'active'),
-    ('30 Days', 30, 0.00, 'active');
+-- INSERT IGNORE INTO featured_job_packages (name, duration_days, price, status) VALUES
+--     ('7 Days',  7,  0.00, 'active'),
+--     ('14 Days', 14, 0.00, 'active'),
+--     ('30 Days', 30, 0.00, 'active');
 
-INSERT IGNORE INTO worker_promotion_packages (name, duration_days, price, status) VALUES
-    ('7 Days',  7,  0.00, 'active'),
-    ('30 Days', 30, 0.00, 'active'),
-    ('90 Days', 90, 0.00, 'active');
+-- INSERT IGNORE INTO worker_promotion_packages (name, duration_days, price, status) VALUES
+--     ('7 Days',  7,  0.00, 'active'),
+--     ('30 Days', 30, 0.00, 'active'),
+--     ('90 Days', 90, 0.00, 'active');
 
-INSERT IGNORE INTO verification_packages (name, price, status) VALUES
-    ('Verified Worker Badge', 0.00, 'active');
+-- INSERT IGNORE INTO verification_packages (name, price, status) VALUES
+--     ('Verified Worker Badge', 0.00, 'active');
 
-INSERT IGNORE INTO job_posting_packages (name, post_count, price, status) VALUES
-    ('Single Post',      1,  0.00, 'active'),
-    ('5 Post Bundle',    5,  0.00, 'active'),
-    ('Monthly Unlimited', -1, 0.00, 'active');
+-- INSERT IGNORE INTO job_posting_packages (name, post_count, price, status) VALUES
+--     ('Single Post',      1,  0.00, 'active'),
+--     ('5 Post Bundle',    5,  0.00, 'active'),
+--     ('Monthly Unlimited', -1, 0.00, 'active');
 
-INSERT IGNORE INTO worker_service_packages (name, duration_days, price, status) VALUES
-    ('Monthly Listing', 30,  0.00, 'active'),
-    ('3 Month Listing', 90,  0.00, 'active'),
-    ('Annual Listing',  365, 0.00, 'active');
+-- INSERT IGNORE INTO worker_service_packages (name, duration_days, price, status) VALUES
+--     ('Monthly Listing', 30,  0.00, 'active'),
+--     ('3 Month Listing', 90,  0.00, 'active'),
+--     ('Annual Listing',  365, 0.00, 'active');
 
 -- Core platform settings
 INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
@@ -643,7 +644,7 @@ UPDATE users SET email_verified = 1 WHERE email_verified = 0;
 -- Adds escrow_payments table.
 
 ALTER TABLE service_requests MODIFY COLUMN status
-    ENUM('draft','pending','pending_payment','open','in_progress','partially_staffed','fully_staffed','completed','cancelled','rejected')
+    ENUM('draft','pending','pending_payment','open','in_progress','partially_staffed','fully_staffed','completed','cancelled','rejected','expired')
     NOT NULL DEFAULT 'draft';
 
 ALTER TABLE service_requests MODIFY COLUMN payment_status
@@ -833,6 +834,7 @@ CREATE TABLE IF NOT EXISTS events (
     status            ENUM('pending_payment','draft','published','cancelled','rejected') NOT NULL DEFAULT 'draft',
     location_id       INT UNSIGNED NULL DEFAULT NULL,  -- v009
     rejection_reason  VARCHAR(500) NULL DEFAULT NULL,  -- v010
+    view_count        INT UNSIGNED NOT NULL DEFAULT 0,
     published_at      DATETIME DEFAULT NULL,
     created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -842,6 +844,8 @@ CREATE TABLE IF NOT EXISTS events (
     INDEX idx_events_start_date (start_date),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS published_at DATETIME DEFAULT NULL;
 
 CREATE TABLE IF NOT EXISTS funeral_announcements (
     id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -868,6 +872,7 @@ CREATE TABLE IF NOT EXISTS funeral_announcements (
     status            ENUM('pending_payment','pending','approved','rejected') NOT NULL DEFAULT 'pending',
     location_id       INT UNSIGNED NULL DEFAULT NULL,  -- v009
     rejection_reason  VARCHAR(500) NULL DEFAULT NULL,  -- v010
+    view_count        INT UNSIGNED NOT NULL DEFAULT 0,
     created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_funeral_slug (slug),
@@ -952,7 +957,7 @@ ALTER TABLE service_requests      ADD COLUMN IF NOT EXISTS location_id INT UNSIG
 
 -- service_requests: extend status ENUM to add 'draft' and 'rejected'
 ALTER TABLE service_requests MODIFY COLUMN status
-    ENUM('draft','pending','pending_payment','open','in_progress','partially_staffed','fully_staffed','completed','cancelled','rejected')
+    ENUM('draft','pending','pending_payment','open','in_progress','partially_staffed','fully_staffed','completed','cancelled','rejected','expired')
     NOT NULL DEFAULT 'draft';
 
 -- news: extend status to add 'rejected'
@@ -1623,3 +1628,414 @@ INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) V
     ('mod_flag_low_accuracy',    '65',    'Flag moderator if accuracy falls below this % (0=disabled)'),
     ('mod_flag_inactivity_days', '7',     'Flag moderator after this many inactive days (0=disabled)'),
     ('mod_flag_high_approval',   '95',    'Flag if approval rate exceeds this % (0=disabled)');
+
+-- ==========================================================================
+-- v018  Conflict of Interest (COI) Policy
+-- ==========================================================================
+-- Adds reviewed_by / approved_by tracking columns to all content tables
+-- so moderation history is permanently recorded and COI is auditable.
+
+ALTER TABLE service_requests      ADD COLUMN IF NOT EXISTS approved_by INT UNSIGNED DEFAULT NULL;
+ALTER TABLE events                ADD COLUMN IF NOT EXISTS approved_by INT UNSIGNED DEFAULT NULL;
+ALTER TABLE funeral_announcements ADD COLUMN IF NOT EXISTS approved_by INT UNSIGNED DEFAULT NULL;
+ALTER TABLE news                  ADD COLUMN IF NOT EXISTS approved_by INT UNSIGNED DEFAULT NULL;
+ALTER TABLE mp_products           ADD COLUMN IF NOT EXISTS approved_by INT UNSIGNED DEFAULT NULL;
+ALTER TABLE delivery_requests     ADD COLUMN IF NOT EXISTS approved_by INT UNSIGNED DEFAULT NULL;
+ALTER TABLE delivery_agents       ADD COLUMN IF NOT EXISTS reviewed_by INT UNSIGNED DEFAULT NULL;
+ALTER TABLE delivery_agents       ADD COLUMN IF NOT EXISTS approved_by INT UNSIGNED DEFAULT NULL;
+
+-- ==========================================================================
+-- v019  Resume pending Paystack transactions
+-- ==========================================================================
+ALTER TABLE platform_payments ADD COLUMN IF NOT EXISTS authorization_url VARCHAR(500) DEFAULT NULL;
+
+-- ==========================================================================
+-- v020  Featured listings for Events & Funerals
+-- ==========================================================================
+
+ALTER TABLE events                ADD COLUMN IF NOT EXISTS featured          TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE events                ADD COLUMN IF NOT EXISTS featured_end_date DATE DEFAULT NULL;
+ALTER TABLE funeral_announcements ADD COLUMN IF NOT EXISTS featured          TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE funeral_announcements ADD COLUMN IF NOT EXISTS featured_end_date DATE DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS featured_event_packages (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(100) NOT NULL,
+    duration_days INT NOT NULL DEFAULT 30,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS featured_funeral_packages (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(100) NOT NULL,
+    duration_days INT NOT NULL DEFAULT 30,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO featured_event_packages (id, name, duration_days, price, status) VALUES
+(1, '7 Days',  7,  15.00, 'active'),
+(2, '14 Days', 14, 25.00, 'active'),
+(3, '30 Days', 30, 40.00, 'active');
+
+INSERT IGNORE INTO featured_funeral_packages (id, name, duration_days, price, status) VALUES
+(1, '7 Days',  7,  10.00, 'active'),
+(2, '14 Days', 14, 18.00, 'active'),
+(3, '30 Days', 30, 30.00, 'active');
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('enable_paid_featured_events',   '0'),
+('enable_paid_featured_funerals', '0');
+
+-- ==========================================================================
+-- v021  Featured listings for News
+-- ==========================================================================
+
+ALTER TABLE news ADD COLUMN IF NOT EXISTS featured     TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE news ADD COLUMN IF NOT EXISTS featured_end_date DATE DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS featured_news_packages (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(100) NOT NULL,
+    duration_days INT NOT NULL DEFAULT 30,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO featured_news_packages (id, name, duration_days, price, status) VALUES
+(1, '7 Days',  7,  8.00, 'active'),
+(2, '14 Days', 14, 14.00, 'active'),
+(3, '30 Days', 30, 25.00, 'active');
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('enable_paid_featured_news', '0');
+
+-- ==========================================================================
+-- v022  Marketplace Monetization — Boost Packages + Seller Subscriptions
+-- ==========================================================================
+
+CREATE TABLE IF NOT EXISTS mp_boost_packages (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    boost_type    ENUM('featured_product','sponsored_product','featured_shop','sponsored_shop') NOT NULL,
+    name          VARCHAR(100) NOT NULL,
+    duration_days INT NOT NULL DEFAULT 7,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO mp_boost_packages (id, boost_type, name, duration_days, price, status) VALUES
+(1, 'featured_product',  '7 Days',  7,  15.00, 'active'),
+(2, 'featured_product',  '30 Days', 30, 40.00, 'active'),
+(3, 'sponsored_product', '7 Days',  7,  18.00, 'active'),
+(4, 'sponsored_product', '30 Days', 30, 48.00, 'active'),
+(5, 'featured_shop',     '7 Days',  7,  20.00, 'active'),
+(6, 'featured_shop',     '30 Days', 30, 55.00, 'active'),
+(7, 'sponsored_shop',    '7 Days',  7,  25.00, 'active'),
+(8, 'sponsored_shop',    '30 Days', 30, 65.00, 'active');
+
+CREATE TABLE IF NOT EXISTS mp_seller_subscription_plans (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(100) NOT NULL,
+    description   TEXT,
+    duration_days INT NOT NULL DEFAULT 30,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    product_limit INT NOT NULL DEFAULT -1 COMMENT '-1 = unlimited',
+    features      TEXT,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO mp_seller_subscription_plans (id, name, description, duration_days, price, product_limit, status) VALUES
+(1, 'Starter', 'Up to 10 active products, basic analytics',            30, 20.00,  10, 'active'),
+(2, 'Growth',  'Up to 50 products, priority in search, analytics',     30, 50.00,  50, 'active'),
+(3, 'Pro',     'Unlimited products, featured in homepage, analytics',  30, 100.00, -1, 'active');
+
+CREATE TABLE IF NOT EXISTS mp_seller_subscriptions (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id      INT UNSIGNED NOT NULL,
+    plan_id      INT UNSIGNED NOT NULL,
+    start_date   DATE NOT NULL,
+    end_date     DATE NOT NULL,
+    price_paid   DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status       ENUM('pending','active','expired','cancelled') NOT NULL DEFAULT 'pending',
+    payment_id   INT UNSIGNED DEFAULT NULL,
+    activated_by INT UNSIGNED DEFAULT NULL,
+    activated_at DATETIME DEFAULT NULL,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_shop   (shop_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS subscription_plan_id INT UNSIGNED DEFAULT NULL;
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS subscription_end     DATE DEFAULT NULL;
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS is_subscribed        TINYINT(1) NOT NULL DEFAULT 0;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('mp_boost_requires_payment',   '1'),
+('mp_featured_product_enabled', '1'),
+('mp_sponsored_product_enabled','1'),
+('mp_featured_shop_enabled',    '1'),
+('mp_sponsored_shop_enabled',   '1'),
+('mp_subscription_enabled',     '0');
+
+-- ==========================================================================
+-- FINAL: Extend payment_type ENUM with all values added in v018-v022
+-- This single MODIFY is the authoritative definition. It is idempotent —
+-- running it again does not change existing data since all values are
+-- already present. Do NOT add intermediate MODIFY statements above;
+-- always extend THIS list when new payment types are introduced.
+-- ==========================================================================
+ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
+    'featured_job',
+    'featured_worker',
+    'verification',
+    'job_post',
+    'worker_service',
+    'escrow_payment',
+    'escrow_with_posting',
+    'news_post',
+    'event_post',
+    'funeral_post',
+    'mp_boost',
+    'delivery_subscription',
+    'delivery_sponsored',
+    'delivery_verification',
+    'featured_event',
+    'featured_funeral',
+    'featured_news',
+    'mp_subscription',
+    'mp_order'
+) NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v023  Per-service email verification requirements
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Lets admin choose (via checkboxes in Admin → Monetize) which actions require
+-- a verified email, instead of it being hard-blocked for everyone. Defaults to
+-- '1' (required) to preserve prior behaviour on existing installs.
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('require_verified_email_job_post',  '1', 'Require verified email before posting a job'),
+    ('require_verified_email_job_apply', '1', 'Require verified email before applying to a job');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v024  Email verification requirements — remaining services + login
+-- ═══════════════════════════════════════════════════════════════════════════
+-- 'login' defaults to '1' (required) — matches the hard block already in
+-- login.php prior to this version. All other new services default to '0'
+-- (not required) to preserve current behaviour, since they were previously
+-- never gated on email verification at all.
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('require_verified_email_login',            '1', 'Require verified email before logging in at all'),
+    ('require_verified_email_news_post',        '0', 'Require verified email before submitting a news article'),
+    ('require_verified_email_event_post',       '0', 'Require verified email before submitting an event'),
+    ('require_verified_email_funeral_post',     '0', 'Require verified email before submitting a funeral announcement'),
+    ('require_verified_email_shop_create',      '0', 'Require verified email before creating a marketplace shop'),
+    ('require_verified_email_product_post',     '0', 'Require verified email before listing a marketplace product'),
+    ('require_verified_email_delivery_request', '0', 'Require verified email before creating a delivery request'),
+    ('require_verified_email_delivery_agent',   '0', 'Require verified email before registering as a delivery agent');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v025  Fix missing worker_profiles.id_type_custom column
+-- ═══════════════════════════════════════════════════════════════════════════
+-- register.php, become_worker.php and request_verification.php have always
+-- inserted/updated this column, but it was never added to worker_profiles —
+-- every worker profile creation/update was failing with an unknown-column
+-- DB error. delivery_agents already had its own copy of this column.
+ALTER TABLE worker_profiles ADD COLUMN IF NOT EXISTS id_type_custom VARCHAR(100) DEFAULT NULL AFTER id_type;
+
+-- Backfill: any user whose role was set to 'worker' directly (e.g. by an
+-- admin, bypassing become_worker.php) but has no worker_profiles row yet —
+-- give them a minimal one so worker_profile.php stops saying "no profile".
+INSERT INTO worker_profiles (user_id, bio, location, contact_phone, availability, created_at)
+SELECT u.id, '', COALESCE(t.name, ''), COALESCE(u.phone, ''), 'available', NOW()
+FROM users u
+LEFT JOIN towns t ON t.id = u.town_id
+WHERE u.role = 'worker'
+  AND NOT EXISTS (SELECT 1 FROM worker_profiles wp WHERE wp.user_id = u.id);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v026  Admin control: keep fully-staffed / completed jobs publicly listed
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Defaults to '0' (hidden) to preserve current behaviour — jobs.php and
+-- browse_jobs.php have always hard-coded status IN ('open','partially_staffed').
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('jobs_list_staffed_completed', '0', 'Keep fully-staffed and completed jobs visible in public job listings');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v027  Fix missing columns/tables causing blank pages on event/funeral/news
+--       detail pages and the entire chat feature (confirmed via production
+--       error log — PHP fatal PDOExceptions, "Unknown column" / "Table doesn't
+--       exist", swallowed as blank pages since display_errors is off in prod).
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE events               ADD COLUMN IF NOT EXISTS view_count INT UNSIGNED NOT NULL DEFAULT 0;
+ALTER TABLE funeral_announcements ADD COLUMN IF NOT EXISTS view_count INT UNSIGNED NOT NULL DEFAULT 0;
+ALTER TABLE chat_messages         ADD COLUMN IF NOT EXISTS thumb_path VARCHAR(255) DEFAULT NULL AFTER file_path;
+
+CREATE TABLE IF NOT EXISTS news_views (
+    id       INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    news_id  INT UNSIGNED NOT NULL,
+    user_id  INT UNSIGNED NOT NULL,
+    viewed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_news_views_news_id (news_id),
+    INDEX idx_news_views_user_id (user_id),
+    FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS news_likes (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    news_id    INT UNSIGNED NOT NULL,
+    user_id    INT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_news_like (news_id, user_id),
+    FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS news_saves (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    news_id    INT UNSIGNED NOT NULL,
+    user_id    INT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_news_save (news_id, user_id),
+    FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS news_comments (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    news_id    INT UNSIGNED NOT NULL,
+    user_id    INT UNSIGNED NOT NULL,
+    comment    TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_news_comments_news_id (news_id),
+    FOREIGN KEY (news_id) REFERENCES news(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v028  Per-role configurable idle-session timeout
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Minutes of inactivity before a session is force-expired (require_login() in
+-- auth.php). Defaults to 120 (2 hours) for every role, matching the existing
+-- session.gc_maxlifetime default in config.php — no behaviour change until an
+-- admin adjusts these in Admin → Monetize → Session Settings. 0 = disabled
+-- (idle timeout not enforced; only PHP's native session lifetime applies).
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('session_timeout_customer', '120', 'Idle session timeout for customers, in minutes (0 = disabled)'),
+    ('session_timeout_worker',   '120', 'Idle session timeout for workers, in minutes (0 = disabled)'),
+    ('session_timeout_manager',  '120', 'Idle session timeout for managers, in minutes (0 = disabled)'),
+    ('session_timeout_admin',    '120', 'Idle session timeout for admins, in minutes (0 = disabled)');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v029  "Other" location option for users outside the Akuapem town list
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Adds a sentinel 'Other' town row so users.town_id can still point to a real
+-- towns row (keeps existing FK/JOIN logic working everywhere unchanged), plus
+-- a free-text column for what they actually typed.
+INSERT IGNORE INTO towns (name, district) VALUES ('Other', 'Other');
+ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_town VARCHAR(120) DEFAULT NULL AFTER town_id;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v030  Account deletion becomes an admin-reviewed request
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS account_deletion_requests (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT UNSIGNED NOT NULL,
+    reason       TEXT NOT NULL,
+    status       ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+    admin_notes  VARCHAR(500) DEFAULT NULL,
+    reviewed_by  INT UNSIGNED DEFAULT NULL,
+    reviewed_at  DATETIME DEFAULT NULL,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_adr_user_id (user_id),
+    INDEX idx_adr_status (status),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v031  Google Maps pickup location for marketplace shops
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Helps delivery agents locate the shop for pickups.
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS google_maps_link VARCHAR(512) DEFAULT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v032  Checkout stock-race fix: record items dropped for insufficient stock
+-- ═══════════════════════════════════════════════════════════════════════════
+-- checkout.php now checks whether its stock UPDATE actually affected a row
+-- before adding an item to the order. When it doesn't (two buyers grabbed the
+-- last unit at the same time), the item is recorded here instead of silently
+-- disappearing, so the seller can see it and the customer isn't charged for it.
+CREATE TABLE IF NOT EXISTS mp_order_stock_issues (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    order_id       INT UNSIGNED NOT NULL,
+    product_id     INT UNSIGNED,
+    product_name   VARCHAR(255) NOT NULL,
+    requested_qty  INT UNSIGNED NOT NULL,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mosi_order (order_id),
+    FOREIGN KEY (order_id)   REFERENCES mp_orders(id)   ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES mp_products(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v033  Seller payout system — Paystack checkout, pending/available balance,
+--       withdrawal requests reviewed by admin.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Flow: buyer pays via Paystack at checkout → net (after commission) credited
+-- to the shop's pending_balance → once the linked delivery is marked
+-- 'delivered' and the confirmation period passes (cron sweep), it moves to
+-- available_balance → seller requests a withdrawal → admin approves/rejects/
+-- marks paid, mirroring the existing mod_rewards moderator-payout pattern.
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('mp_commission_percent',      '10', 'Platform commission % taken from each paid marketplace order'),
+    ('mp_payout_confirmation_days', '3', 'Days after delivery before a seller''s pending balance becomes withdrawable');
+
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS pending_balance   DECIMAL(10,2) NOT NULL DEFAULT 0;
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS available_balance DECIMAL(10,2) NOT NULL DEFAULT 0;
+
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS commission_percent DECIMAL(5,2)  DEFAULT NULL;
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS commission_amount  DECIMAL(10,2) DEFAULT NULL;
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS net_amount         DECIMAL(10,2) DEFAULT NULL;
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS platform_payment_id INT UNSIGNED DEFAULT NULL;
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS payout_release_at  DATETIME      DEFAULT NULL;
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS payout_released    TINYINT(1)    NOT NULL DEFAULT 0;
+
+-- 'paystack' replaces the old cash_on_delivery/mobile_money/card/wallet choice —
+-- Paystack's own hosted checkout already lets the buyer pick card vs mobile money.
+ALTER TABLE mp_orders MODIFY COLUMN payment_method ENUM('cash_on_delivery','mobile_money','card','wallet','paystack') NOT NULL DEFAULT 'paystack';
+
+CREATE TABLE IF NOT EXISTS mp_wallet_transactions (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id       INT UNSIGNED NOT NULL,
+    order_id      INT UNSIGNED DEFAULT NULL,
+    payout_id     INT UNSIGNED DEFAULT NULL,
+    type          ENUM('sale_pending','released_to_available','withdrawal','reversal') NOT NULL,
+    amount        DECIMAL(10,2) NOT NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mwt_shop (shop_id),
+    FOREIGN KEY (shop_id)  REFERENCES mp_shops(id)  ON DELETE CASCADE,
+    FOREIGN KEY (order_id) REFERENCES mp_orders(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_payout_requests (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id       INT UNSIGNED NOT NULL,
+    amount        DECIMAL(10,2) NOT NULL,
+    momo_number   VARCHAR(30) NOT NULL,
+    status        ENUM('pending','approved','rejected','paid') NOT NULL DEFAULT 'pending',
+    admin_notes   VARCHAR(500) DEFAULT NULL,
+    reviewed_by   INT UNSIGNED DEFAULT NULL,
+    reviewed_at   DATETIME DEFAULT NULL,
+    paid_at       DATETIME DEFAULT NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mpr_shop (shop_id),
+    KEY idx_mpr_status (status),
+    FOREIGN KEY (shop_id) REFERENCES mp_shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

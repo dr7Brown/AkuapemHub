@@ -151,8 +151,14 @@ if ($action === 'approve_request') {
         delivery_error('Request is not awaiting approval.', 'admin/delivery.php?tab=pending');
     }
 
-    $pdo->prepare("UPDATE delivery_requests SET status='approved', updated_at=NOW() WHERE id=?")
-        ->execute([$deliveryId]);
+    // COI check — moderator cannot approve their own delivery request
+    if (check_mod_coi('delivery_request', $deliveryId, (int)$user['id'])) {
+        log_coi_violation((int)$user['id'], 'delivery_request', $deliveryId, 'approve_request');
+        delivery_error('Conflict of interest: you cannot approve your own delivery request.', 'admin/delivery.php?tab=pending');
+    }
+
+    $pdo->prepare("UPDATE delivery_requests SET status='approved', approved_by=?, updated_at=NOW() WHERE id=?")
+        ->execute([$user['id'], $deliveryId]);
 
     notify_user((int)$delivery['customer_id'], 'Delivery Request Approved ✅',
         "Your delivery request #$deliveryId has been approved and is now visible to riders.",
@@ -244,6 +250,15 @@ if ($action === 'update_status') {
 
         notify_user((int)$user['id'], 'Delivery Complete — Rate Your Customer',
             "Delivery #$deliveryId marked as delivered. You can now rate the customer.", 'info');
+
+        // ── Marketplace: start the payout confirmation window ──────────────
+        $mpOrder = $pdo->prepare("SELECT id FROM mp_orders WHERE delivery_request_id=? AND payment_status='paid'");
+        $mpOrder->execute([$deliveryId]);
+        if ($mpOrderId = $mpOrder->fetchColumn()) {
+            $confirmDays = (int)get_platform_setting('mp_payout_confirmation_days', 3);
+            $pdo->prepare("UPDATE mp_orders SET status='delivered', payout_release_at=NOW() + INTERVAL ? DAY, updated_at=NOW() WHERE id=?")
+                ->execute([$confirmDays, $mpOrderId]);
+        }
     }
 
     if ($newStatus === 'failed') {

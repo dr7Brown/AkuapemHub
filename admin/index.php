@@ -283,7 +283,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <div class="adm-avatar-wrap" id="adm-av-wrap">
             <button class="adm-avatar-btn" id="adm-av-btn" aria-expanded="false" aria-haspopup="true" title="Account menu">
                 <?php if (!empty($adminUser['profile_photo'])): ?>
-                    <img src="<?php echo sanitize($adminUser['profile_photo']); ?>" alt="Profile" class="adm-avatar" style="pointer-events:none;" />
+                    <img src="<?php echo sanitize('../'.ltrim($adminUser['profile_photo'],'/')); ?>" alt="Profile" class="adm-avatar" style="pointer-events:none;" />
                 <?php else: ?>
                     <span class="adm-avatar" style="pointer-events:none;"><?php echo sanitize(strtoupper(substr(display_name($adminUser), 0, 1))); ?></span>
                 <?php endif; ?>
@@ -333,6 +333,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     <div class="adm-drop" data-cat="users">
         <?php if (is_admin() || has_mod_permission('manage_users')): ?>
         <a href="users.php"      data-page="users.php">👥 All Users</a>
+        <a href="account_deletions.php" data-page="account_deletions.php">🚪 Account Closure Requests</a>
         <?php endif; ?>
         <?php if (is_admin() || has_mod_permission('manage_disputes')): ?>
         <a href="disputes.php" data-page="disputes.php">⚖️ Disputes</a>
@@ -352,6 +353,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <?php endif; ?>
         <?php if (is_admin()): ?>
         <a href="monetization.php" data-page="monetization.php">💰 Monetize</a>
+        <a href="mp_payouts.php"   data-page="mp_payouts.php">🏪 Seller Payouts</a>
         <?php endif; ?>
     </div>
     <!-- Community dropdown — each item gated -->
@@ -396,8 +398,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         </div>
         <?php endif; ?>
 
-        <?php if (!is_admin()): ?>
-        <!-- ── Moderator Dashboard ──────────────────────────────────────────── -->
+        <?php if (true): // Admins and managers both see the review queue ?>
+        <!-- ── Review Queue (shown to all admins & managers) ───────────────── -->
         <?php
         $modId = (int)$adminUser['id'];
 
@@ -412,49 +414,49 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
 
         if (has_mod_permission('approve_jobs')) {
             $c = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WHERE status='pending'")->fetchColumn();
-            $items = $pdo->query("SELECT sr.id, sr.title, sr.location, sr.description, sr.budget_amount, sr.budget, u.name AS user_name, sr.created_at FROM service_requests sr JOIN users u ON sr.customer_id=u.id WHERE sr.status='pending' ORDER BY sr.created_at ASC LIMIT 3")->fetchAll();
-            foreach ($items as &$it) { $it['view_url'] = '../request_detail.php?id=' . $it['id']; }; unset($it);
+            $items = $pdo->query("SELECT sr.id, sr.title, sr.location, sr.description, sr.budget_amount, sr.budget, sr.customer_id AS owner_id, u.name AS user_name, sr.created_at FROM service_requests sr JOIN users u ON sr.customer_id=u.id WHERE sr.status='pending' ORDER BY sr.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = '../request_detail.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
             $queueSections[] = ['icon'=>'📋','title'=>'Job Requests','color'=>'#f59e0b','bg'=>'#fffbeb','count'=>$c,'items'=>$items,'page'=>'requests.php','approve_action'=>'approve_job','reject_action'=>'reject_job','label_key'=>'title','meta_key'=>'location'];
         }
         if (has_mod_permission('approve_products')) {
             try {
                 $c=(int)$pdo->query("SELECT COUNT(*) FROM mp_products WHERE status='pending_approval'")->fetchColumn();
-                $items=$pdo->query("SELECT mp.id, mp.name AS title, mp.description, mp.price, mp.condition_type, ms.shop_name AS location, u.name AS user_name, mp.created_at FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id JOIN users u ON ms.user_id=u.id WHERE mp.status='pending_approval' ORDER BY mp.created_at ASC LIMIT 3")->fetchAll();
-                foreach ($items as &$it) { $it['view_url'] = '../product.php?id=' . $it['id']; }; unset($it);
+                $items=$pdo->query("SELECT mp.id, mp.name AS title, mp.description, mp.price, mp.condition_type, ms.shop_name AS location, ms.user_id AS owner_id, u.name AS user_name, mp.created_at FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id JOIN users u ON ms.user_id=u.id WHERE mp.status='pending_approval' ORDER BY mp.created_at ASC LIMIT 3")->fetchAll();
+                foreach ($items as &$it) { $it['view_url'] = '../product.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
                 $queueSections[]=['icon'=>'🛍️','title'=>'Products','color'=>'#3b82f6','bg'=>'#eff6ff','count'=>$c,'items'=>$items,'page'=>'marketplace.php?tab=products','approve_action'=>'approve_product','reject_action'=>'reject_product','label_key'=>'title','meta_key'=>'location'];
             } catch(Exception $e){}
         }
         if (has_mod_permission('approve_events')) {
             $c=(int)$pdo->query("SELECT COUNT(*) FROM events WHERE status IN('draft','pending_payment')")->fetchColumn();
-            $items=$pdo->query("SELECT e.id, e.slug, e.title, e.venue AS location, e.description, e.start_date, u.name AS user_name, e.created_at FROM events e JOIN users u ON e.user_id=u.id WHERE e.status IN('draft','pending_payment') ORDER BY e.created_at ASC LIMIT 3")->fetchAll();
-            foreach ($items as &$it) { $it['view_url'] = 'event_edit.php?id=' . $it['id']; }; unset($it);
+            $items=$pdo->query("SELECT e.id, e.slug, e.title, e.venue AS location, e.description, e.start_date, e.user_id AS owner_id, u.name AS user_name, e.created_at FROM events e JOIN users u ON e.user_id=u.id WHERE e.status IN('draft','pending_payment') ORDER BY e.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = 'event_edit.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
             $queueSections[]=['icon'=>'📅','title'=>'Events','color'=>'#10b981','bg'=>'#f0fdf4','count'=>$c,'items'=>$items,'page'=>'events.php','approve_action'=>'approve_event','reject_action'=>'reject_event','label_key'=>'title','meta_key'=>'location'];
         }
         if (has_mod_permission('approve_funerals')) {
             $c=(int)$pdo->query("SELECT COUNT(*) FROM funeral_announcements WHERE status='pending'")->fetchColumn();
-            $items=$pdo->query("SELECT fa.id, fa.slug, fa.deceased_name AS title, fa.venue AS location, fa.biography AS description, fa.burial_date, u.name AS user_name, fa.created_at FROM funeral_announcements fa JOIN users u ON fa.user_id=u.id WHERE fa.status='pending' ORDER BY fa.created_at ASC LIMIT 3")->fetchAll();
-            foreach ($items as &$it) { $it['view_url'] = 'funeral_edit.php?id=' . $it['id']; }; unset($it);
+            $items=$pdo->query("SELECT fa.id, fa.slug, fa.deceased_name AS title, fa.venue AS location, fa.biography AS description, fa.burial_date, fa.user_id AS owner_id, u.name AS user_name, fa.created_at FROM funeral_announcements fa JOIN users u ON fa.user_id=u.id WHERE fa.status='pending' ORDER BY fa.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = 'funeral_edit.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
             $queueSections[]=['icon'=>'🕊️','title'=>'Funeral Announcements','color'=>'#6b7280','bg'=>'#f9fafb','count'=>$c,'items'=>$items,'page'=>'funerals.php','approve_action'=>'approve_funeral','reject_action'=>'reject_funeral','label_key'=>'title','meta_key'=>'location'];
         }
         if (has_mod_permission('approve_news')) {
             $c=(int)$pdo->query("SELECT COUNT(*) FROM news WHERE status='draft'")->fetchColumn();
-            $items=$pdo->query("SELECT n.id, n.slug, n.title, n.summary AS description, 'Article' AS location, u.name AS user_name, n.created_at FROM news n JOIN users u ON n.user_id=u.id WHERE n.status='draft' ORDER BY n.created_at ASC LIMIT 3")->fetchAll();
-            foreach ($items as &$it) { $it['view_url'] = 'news_edit.php?id=' . $it['id']; }; unset($it);
+            $items=$pdo->query("SELECT n.id, n.slug, n.title, n.summary AS description, 'Article' AS location, n.user_id AS owner_id, u.name AS user_name, n.created_at FROM news n JOIN users u ON n.user_id=u.id WHERE n.status='draft' ORDER BY n.created_at ASC LIMIT 3")->fetchAll();
+            foreach ($items as &$it) { $it['view_url'] = 'news_edit.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
             $queueSections[]=['icon'=>'📰','title'=>'News Articles','color'=>'#059669','bg'=>'#f0fdf4','count'=>$c,'items'=>$items,'page'=>'news.php','approve_action'=>'approve_news','reject_action'=>'reject_news','label_key'=>'title','meta_key'=>'location'];
         }
         if (has_mod_permission('approve_delivery_requests')) {
             try {
                 $c=(int)$pdo->query("SELECT COUNT(*) FROM delivery_requests WHERE status='pending_approval'")->fetchColumn();
-                $items=$pdo->query("SELECT dr.id, dr.item_description AS title, dr.pickup_location AS location, dr.dropoff_location, dr.delivery_fee, dr.item_category, u.name AS user_name, dr.created_at FROM delivery_requests dr JOIN users u ON dr.customer_id=u.id WHERE dr.status='pending_approval' ORDER BY dr.created_at ASC LIMIT 3")->fetchAll();
-                foreach ($items as &$it) { $it['view_url'] = '../delivery_detail.php?id=' . $it['id']; }; unset($it);
+                $items=$pdo->query("SELECT dr.id, dr.item_description AS title, dr.pickup_location AS location, dr.dropoff_location, dr.delivery_fee, dr.item_category, dr.customer_id AS owner_id, u.name AS user_name, dr.created_at FROM delivery_requests dr JOIN users u ON dr.customer_id=u.id WHERE dr.status='pending_approval' ORDER BY dr.created_at ASC LIMIT 3")->fetchAll();
+                foreach ($items as &$it) { $it['view_url'] = '../delivery_detail.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
                 $queueSections[]=['icon'=>'🚚','title'=>'Delivery Requests','color'=>'#f97316','bg'=>'#fff7ed','count'=>$c,'items'=>$items,'page'=>'delivery.php?tab=pending','approve_action'=>'approve_delivery_request','reject_action'=>'reject_delivery_request','label_key'=>'title','meta_key'=>'location'];
             } catch(Exception $e){}
         }
         if (has_mod_permission('approve_delivery_agents')) {
             try {
                 $c=(int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE verification_status='pending'")->fetchColumn();
-                $items=$pdo->query("SELECT da.id, u.name AS title, da.service_area AS location, da.vehicle_type, da.bio AS description, u.name AS user_name, da.created_at FROM delivery_agents da JOIN users u ON da.user_id=u.id WHERE da.verification_status='pending' ORDER BY da.created_at ASC LIMIT 3")->fetchAll();
-                foreach ($items as &$it) { $it['view_url'] = 'delivery.php?tab=agents'; }; unset($it);
+                $items=$pdo->query("SELECT da.id, u.name AS title, da.service_area AS location, da.vehicle_type, da.bio AS description, da.user_id AS owner_id, u.name AS user_name, da.created_at FROM delivery_agents da JOIN users u ON da.user_id=u.id WHERE da.verification_status='pending' ORDER BY da.created_at ASC LIMIT 3")->fetchAll();
+                foreach ($items as &$it) { $it['view_url'] = 'delivery.php?tab=agents'; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
                 $queueSections[]=['icon'=>'🛵','title'=>'Rider Applications','color'=>'#8b5cf6','bg'=>'#f5f3ff','count'=>$c,'items'=>$items,'page'=>'delivery.php?tab=agents','approve_action'=>'approve_delivery_agent','reject_action'=>'reject_delivery_agent','label_key'=>'title','meta_key'=>'location'];
             } catch(Exception $e){}
         }
@@ -469,6 +471,23 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         $recentActions = $pdo->prepare("SELECT action, description, created_at FROM audit_logs WHERE admin_id=? ORDER BY created_at DESC LIMIT 8");
         $recentActions->execute([$modId]);
         $recentActions = $recentActions->fetchAll();
+
+        // ── Moderator performance data ─────────────────────────────────────────
+        $modPerf = get_mod_performance($modId, 'month');
+        $modAllPts = (int)get_mod_points($modId, 'all');
+        // Points redeemed
+        try {
+            $redSt = $pdo->prepare("SELECT COALESCE(SUM(points_used),0) FROM mod_rewards WHERE mod_id=? AND status IN('approved','paid')");
+            $redSt->execute([$modId]); $modRedeemedPts = (int)$redSt->fetchColumn();
+        } catch(Exception $e){ $modRedeemedPts = 0; }
+        $modBalance = max(0, $modAllPts - $modRedeemedPts);
+        $modGhsEarned = mod_points_to_ghs($modAllPts);
+        // Rank among all managers
+        try {
+            $rankAll = $pdo->query("SELECT mod_id, SUM(points) AS pts FROM mod_activity_log GROUP BY mod_id ORDER BY pts DESC")->fetchAll();
+            $modRank = 0;
+            foreach ($rankAll as $ri => $rv) { if ((int)$rv['mod_id']==$modId){ $modRank=$ri+1; break; } }
+        } catch(Exception $e){ $modRank = 0; }
         ?>
 
         <?php
@@ -480,8 +499,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         }
         ?>
 
-        <?php if (empty($myPerms)): ?>
-        <!-- ── No permissions assigned yet ────────────────────────────────────── -->
+        <?php if (!is_admin() && empty($myPerms)): ?>
+        <!-- ── No permissions assigned yet (managers only) ──────────────────── -->
         <div style="background:#fef3c7;border:2px solid #f59e0b;border-radius:14px;padding:22px 20px;margin-bottom:20px;display:flex;gap:14px;align-items:flex-start;">
             <span style="font-size:2rem;flex-shrink:0;">⚠️</span>
             <div>
@@ -494,7 +513,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             </div>
         </div>
 
-        <?php else: ?>
+        <?php elseif (!is_admin() && !empty($myPerms)): ?>
         <!-- ── Permission summary strip ───────────────────────────────────────── -->
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:14px;">
             <p style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 8px;">Your Active Permissions</p>
@@ -580,6 +599,12 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                         🔍 View
                     </a>
                     <?php endif; ?>
+                    <?php if (!empty($item['has_coi'])): ?>
+                    <!-- COI: hide approve/reject, show conflict notice -->
+                    <span style="background:#fef3c7;border:1px solid #f59e0b;color:#b45309;font-size:.72rem;font-weight:700;padding:4px 9px;border-radius:8px;display:flex;align-items:center;gap:4px;">
+                        ⚠️ Your submission — cannot moderate
+                    </span>
+                    <?php else: ?>
                     <form method="post" action="mod_action.php" style="margin:0;">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action"  value="<?php echo $sec['approve_action']; ?>">
@@ -592,6 +617,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                             onclick="openReject('<?php echo $sec['reject_action']; ?>',<?php echo $item['id']; ?>,'<?php echo sanitize(addslashes(mb_substr($item[$sec['label_key']]??'',0,40))); ?>')">
                         ✗ Reject
                     </button>
+                    <?php endif; ?>
                 </div>
                 <?php endif; ?>
             </div>
@@ -618,8 +644,46 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         </div>
         <?php endif; ?>
 
+        <!-- ── Moderator performance snapshot (managers only) ── -->
+        <?php if (!is_admin()): ?>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+                <p style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0;">Your Performance — This Month</p>
+                <a href="mod_performance.php?tab=leaderboard&mod=<?php echo $modId; ?>" class="button button-secondary button-small" style="font-size:.76rem;">Full Scorecard →</a>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px;margin-bottom:12px;">
+                <div style="text-align:center;background:var(--primary-soft,#d1fae5);border-radius:10px;padding:10px 6px;">
+                    <strong style="display:block;font-size:1.2rem;font-weight:900;color:var(--primary,#0f766e);line-height:1.1;"><?php echo number_format($modPerf['points'],1); ?></strong>
+                    <span style="font-size:.68rem;color:var(--text-muted,#6b7280);">Points (month)</span>
+                </div>
+                <div style="text-align:center;background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px 6px;">
+                    <strong style="display:block;font-size:1.2rem;font-weight:900;color:#1d4ed8;line-height:1.1;"><?php echo number_format($modBalance); ?></strong>
+                    <span style="font-size:.68rem;color:var(--text-muted,#6b7280);">Point Balance</span>
+                </div>
+                <div style="text-align:center;background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px 6px;">
+                    <strong style="display:block;font-size:1.2rem;font-weight:900;color:#16a34a;line-height:1.1;">GHS <?php echo number_format($modGhsEarned,2); ?></strong>
+                    <span style="font-size:.68rem;color:var(--text-muted,#6b7280);">Total Earned</span>
+                </div>
+                <div style="text-align:center;background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px 6px;">
+                    <strong style="display:block;font-size:1.2rem;font-weight:900;color:#f59e0b;line-height:1.1;"><?php echo $modRank > 0 ? '#'.$modRank : '—'; ?></strong>
+                    <span style="font-size:.68rem;color:var(--text-muted,#6b7280);">Your Rank</span>
+                </div>
+                <div style="text-align:center;background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px 6px;">
+                    <strong style="display:block;font-size:1.2rem;font-weight:900;line-height:1.1;"><?php echo $modPerf['approval_rate']; ?>%</strong>
+                    <span style="font-size:.68rem;color:var(--text-muted,#6b7280);">Approval Rate</span>
+                </div>
+            </div>
+            <?php if ($modBalance >= 100): ?>
+            <a href="mod_reward_request.php" class="button button-primary button-small">💰 Request Reward (<?php echo number_format($modBalance); ?> pts = GHS <?php echo number_format(mod_points_to_ghs($modBalance),2); ?>)</a>
+            <?php else: ?>
+            <p style="font-size:.78rem;color:var(--text-muted,#6b7280);margin:0;">Earn <?php echo max(0,100-$modBalance); ?> more points to unlock your first reward. Current balance: <?php echo $modBalance; ?> pts.</p>
+            <?php endif; ?>
+        </div>
+
+        <?php endif; // !is_admin() — end of performance snapshot ?>
+
         <!-- Recent activity by this moderator -->
-        <?php if ($recentActions): ?>
+        <?php if (!is_admin() && $recentActions): ?>
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:20px;">
             <p style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 10px;">Your Recent Actions</p>
             <?php foreach ($recentActions as $log): ?>
@@ -635,7 +699,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             </div>
             <?php endforeach; ?>
         </div>
-        <?php endif; ?>
+        <?php endif; // recentActions ?>
 
         <!-- Hidden reject modal -->
         <div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;">
@@ -881,6 +945,14 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
 
         fetch(absUrl, { credentials: 'same-origin' })
             .then(function (r) {
+                // Session expired mid-session: require_login() redirects to
+                // login.php, which fetch() follows silently. Detect that via
+                // the final response URL and do a real navigation instead of
+                // injecting the login form into the admin dashboard layout.
+                if (r.url && /\/login\.php(\?|$)/.test(r.url)) {
+                    window.location.href = r.url;
+                    return Promise.reject('session-expired');
+                }
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.text();
             })
@@ -925,7 +997,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
 
                 window.scrollTo({ top: 0 });
             })
-            .catch(function () {
+            .catch(function (err) {
+                if (err === 'session-expired') return; // navigation already in progress
                 ajaxEl.innerHTML =
                     '<div style="padding:30px 16px;">' +
                     '<div class="alert alert-error">Failed to load the page. ' +

@@ -8,25 +8,39 @@ $user = current_user();
 $stmt = $pdo->prepare("
     SELECT pp.*,
         CASE pp.payment_type
-            WHEN 'featured_job'    THEN sr.title
-            WHEN 'job_post'        THEN sr2.title
+            WHEN 'featured_job'        THEN sr.title
+            WHEN 'job_post'            THEN sr2.title
+            WHEN 'escrow_with_posting' THEN sr3.title
             ELSE NULL
         END AS job_title,
         CASE pp.payment_type
-            WHEN 'featured_job'    THEN COALESCE(fp.name, '—')
-            WHEN 'featured_worker' THEN COALESCE(wp2.name, '—')
-            WHEN 'verification'    THEN COALESCE(vp.name, '—')
-            WHEN 'job_post'        THEN COALESCE(jp.name, '—')
-            WHEN 'worker_service'  THEN COALESCE(ws.name, '—')
+            WHEN 'featured_job'        THEN COALESCE(fp.name, '—')
+            WHEN 'featured_worker'     THEN COALESCE(wp2.name, '—')
+            WHEN 'verification'        THEN COALESCE(vp.name, '—')
+            WHEN 'job_post'            THEN COALESCE(jp.name, '—')
+            WHEN 'escrow_with_posting' THEN COALESCE(jp2.name, '—')
+            WHEN 'worker_service'      THEN COALESCE(ws.name, '—')
+            WHEN 'featured_event'      THEN COALESCE(fep.name, '—')
+            WHEN 'featured_funeral'    THEN COALESCE(ffp.name, '—')
+            WHEN 'featured_news'       THEN COALESCE(fnp.name, '—')
+            WHEN 'mp_subscription'     THEN COALESCE(msp.name, '—')
+            WHEN 'mp_boost'            THEN COALESCE(mbp.name, '—')
         END AS package_name
     FROM platform_payments pp
-    LEFT JOIN service_requests sr  ON pp.payment_type = 'featured_job' AND sr.id  = pp.reference_id
-    LEFT JOIN service_requests sr2 ON pp.payment_type = 'job_post'     AND sr2.id = pp.reference_id
-    LEFT JOIN featured_job_packages fp      ON pp.payment_type = 'featured_job'    AND fp.id  = pp.package_id
-    LEFT JOIN worker_promotion_packages wp2 ON pp.payment_type = 'featured_worker' AND wp2.id = pp.package_id
-    LEFT JOIN verification_packages vp      ON pp.payment_type = 'verification'    AND vp.id  = pp.package_id
-    LEFT JOIN job_posting_packages jp       ON pp.payment_type = 'job_post'        AND jp.id  = pp.package_id
-    LEFT JOIN worker_service_packages ws    ON pp.payment_type = 'worker_service'  AND ws.id  = pp.package_id
+    LEFT JOIN service_requests sr   ON pp.payment_type = 'featured_job'        AND sr.id   = pp.reference_id
+    LEFT JOIN service_requests sr2  ON pp.payment_type = 'job_post'            AND sr2.id  = pp.reference_id
+    LEFT JOIN service_requests sr3  ON pp.payment_type = 'escrow_with_posting' AND sr3.id  = pp.reference_id
+    LEFT JOIN featured_job_packages fp       ON pp.payment_type = 'featured_job'        AND fp.id   = pp.package_id
+    LEFT JOIN worker_promotion_packages wp2  ON pp.payment_type = 'featured_worker'     AND wp2.id  = pp.package_id
+    LEFT JOIN verification_packages vp       ON pp.payment_type = 'verification'        AND vp.id   = pp.package_id
+    LEFT JOIN job_posting_packages jp        ON pp.payment_type = 'job_post'            AND jp.id   = pp.package_id
+    LEFT JOIN job_posting_packages jp2       ON pp.payment_type = 'escrow_with_posting' AND jp2.id  = pp.package_id
+    LEFT JOIN worker_service_packages ws     ON pp.payment_type = 'worker_service'      AND ws.id   = pp.package_id
+    LEFT JOIN featured_event_packages fep    ON pp.payment_type = 'featured_event'      AND fep.id  = pp.package_id
+    LEFT JOIN featured_funeral_packages ffp  ON pp.payment_type = 'featured_funeral'    AND ffp.id  = pp.package_id
+    LEFT JOIN featured_news_packages fnp     ON pp.payment_type = 'featured_news'       AND fnp.id  = pp.package_id
+    LEFT JOIN mp_seller_subscription_plans msp ON pp.payment_type = 'mp_subscription'  AND msp.id  = pp.package_id
+    LEFT JOIN mp_boost_packages mbp          ON pp.payment_type = 'mp_boost'            AND mbp.id  = pp.package_id
     WHERE pp.user_id = ?
     ORDER BY pp.created_at DESC
 ");
@@ -45,6 +59,18 @@ $typeLabel = [
     'worker_service'     => 'Service Listing',
     'escrow_payment'     => 'Escrow Payment',
     'escrow_with_posting'=> 'Escrow + Posting Fee',
+    'news_post'          => 'News Publishing Fee',
+    'event_post'         => 'Event Publishing Fee',
+    'funeral_post'       => 'Funeral Announcement Fee',
+    'featured_news'      => 'Featured Article',
+    'featured_event'     => 'Featured Event',
+    'featured_funeral'   => 'Featured Announcement',
+    'mp_boost'           => 'Marketplace Boost',
+    'mp_subscription'    => 'Seller Subscription',
+    'mp_order'           => 'Marketplace Order',
+    'delivery_subscription'  => 'Rider Premium Subscription',
+    'delivery_sponsored'     => 'Rider Sponsored Listing',
+    'delivery_verification'  => 'Rider Verification Badge',
 ];
 ?>
 <!DOCTYPE html>
@@ -70,27 +96,38 @@ $typeLabel = [
             <?php if (!empty($pending)): ?>
                 <section class="panel">
                     <h2 style="margin-top:0;color:#f59e0b;">⏳ Pending Payments</h2>
+                    <p class="meta" style="margin:0 0 14px;">These payments were started but not completed. You can continue or cancel them.</p>
                     <?php foreach ($pending as $p): ?>
-                        <?php $isPs = ($p['gateway'] ?? 'manual') === 'paystack'; ?>
-                        <div style="padding:14px;border:2px solid #f59e0b;border-radius:10px;margin-bottom:12px;">
-                            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+                        <?php
+                        $isPs       = ($p['gateway'] ?? 'manual') === 'paystack';
+                        $ageMin     = (int)round((time() - strtotime($p['created_at'])) / 60);
+                        $urlFresh   = !empty($p['authorization_url']) && $ageMin < 45;
+                        ?>
+                        <div style="border:2px solid #f59e0b;border-radius:12px;margin-bottom:14px;overflow:hidden;">
+                            <!-- Header row -->
+                            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:14px;flex-wrap:wrap;">
                                 <div>
-                                    <strong><?php echo sanitize($typeLabel[$p['payment_type']] ?? $p['payment_type']); ?></strong>
-                                    — <?php echo sanitize($p['package_name']); ?>
-                                    <?php if ($p['job_title']): ?>
-                                        <br><span class="meta">📋 <?php echo sanitize(substr($p['job_title'], 0, 50)); ?></span>
-                                    <?php endif; ?>
+                                    <div style="font-weight:800;font-size:.92rem;"><?php echo sanitize($typeLabel[$p['payment_type']] ?? $p['payment_type']); ?><?php if ($p['package_name'] && $p['package_name']!=='—'): ?> — <?php echo sanitize($p['package_name']); ?><?php endif; ?></div>
+                                    <?php if ($p['job_title']): ?><div class="meta" style="margin-top:2px;">📋 <?php echo sanitize(mb_substr($p['job_title'],0,50)); ?></div><?php endif; ?>
+                                    <div class="meta" style="font-size:.76rem;margin-top:4px;font-family:monospace;"><?php echo sanitize(strtoupper($p['reference_code'])); ?></div>
+                                    <div class="meta" style="font-size:.72rem;"><?php echo time_ago($p['created_at']); ?></div>
                                 </div>
-                                <strong style="color:var(--primary);white-space:nowrap;">GH₵ <?php echo number_format($p['amount'], 2); ?></strong>
+                                <strong style="color:var(--primary);white-space:nowrap;font-size:1.05rem;">GH₵ <?php echo number_format($p['amount'], 2); ?></strong>
                             </div>
-                            <div style="margin-top:10px;padding:10px;background:var(--surface);border-radius:8px;">
+                            <!-- Action bar -->
+                            <div style="background:#fef3c7;padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                                 <?php if ($isPs): ?>
-                                    <p style="margin:0 0 6px;font-size:0.85rem;color:#f59e0b;">🔒 Paystack payment initiated — awaiting confirmation</p>
-                                    <p class="meta" style="margin:0;font-size:0.8rem;">Ref: <?php echo sanitize($p['reference_code']); ?> · <?php echo sanitize(date('d M Y, H:i', strtotime($p['created_at']))); ?></p>
+                                <a href="resume_payment.php?id=<?php echo (int)$p['id']; ?>" class="button button-primary button-small" style="font-size:.82rem;">
+                                    💳 <?php echo $urlFresh ? 'Continue Checkout →' : 'Restart Payment →'; ?>
+                                </a>
+                                <span style="font-size:.74rem;color:#92400e;flex:1;">
+                                    <?php echo $urlFresh ? 'Your checkout session is still active.' : 'Session expired — a fresh link will be created.'; ?>
+                                </span>
                                 <?php else: ?>
-                                    <p class="meta" style="margin:0 0 4px;">Reference code — share with our team to confirm</p>
-                                    <strong style="font-size:1.1rem;letter-spacing:0.05em;"><?php echo sanitize($p['reference_code']); ?></strong>
-                                    <span class="meta" style="font-size:0.8rem;display:block;margin-top:4px;"><?php echo sanitize(date('d M Y, H:i', strtotime($p['created_at']))); ?></span>
+                                <a href="resume_payment.php?id=<?php echo (int)$p['id']; ?>" class="button button-secondary button-small" style="font-size:.82rem;">
+                                    📋 View Instructions
+                                </a>
+                                <span style="font-size:.74rem;color:#92400e;flex:1;">Transfer via MoMo/bank using the reference code above.</span>
                                 <?php endif; ?>
                             </div>
                         </div>

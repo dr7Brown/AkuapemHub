@@ -95,6 +95,10 @@ function initializePayment(
         return ['error' => $data['message'] ?? 'Could not reach payment gateway. Please try again.'];
     }
 
+    // Persist the authorization_url so resume_payment.php can redirect without a re-init
+    $pdo->prepare('UPDATE platform_payments SET authorization_url=? WHERE id=?')
+        ->execute([$data['data']['authorization_url'], $paymentId]);
+
     return [
         'payment_id'   => $paymentId,
         'checkout_url' => $data['data']['authorization_url'],
@@ -331,6 +335,120 @@ function activatePurchasedFeature(array $payment): void {
                 "\"{$faName}\" — publishing fee paid by user {$payment['user_id']}. Review in Admin → Funerals.",
                 'info'
             );
+            break;
+
+        case 'mp_order':
+            // reference_id is just the first order created at checkout; the full
+            // set (usually one per shop in the cart) is looked up by payment id.
+            $mpOrders = $pdo->prepare("SELECT * FROM mp_orders WHERE platform_payment_id=? AND payment_status='unpaid'");
+            $mpOrders->execute([$payment['id']]);
+            $mpOrders = $mpOrders->fetchAll();
+
+            $commissionPct = (float)get_platform_setting('mp_commission_percent', '10');
+            $custEmailSent = false;
+
+            foreach ($mpOrders as $mo) {
+                $commissionAmt = round((float)$mo['total_amount'] * $commissionPct / 100, 2);
+                $netAmt = round((float)$mo['total_amount'] - $commissionAmt, 2);
+
+                $pdo->prepare("UPDATE mp_orders SET payment_status='paid', commission_percent=?, commission_amount=?, net_amount=?, updated_at=NOW() WHERE id=?")
+                    ->execute([$commissionPct, $commissionAmt, $netAmt, $mo['id']]);
+
+                $shopRow = $pdo->prepare('SELECT id, user_id, shop_name FROM mp_shops WHERE id=?');
+                $shopRow->execute([$mo['shop_id']]);
+                $shop = $shopRow->fetch();
+                if (!$shop) continue;
+
+                $pdo->prepare('UPDATE mp_shops SET pending_balance = pending_balance + ? WHERE id=?')
+                    ->execute([$netAmt, $shop['id']]);
+                $pdo->prepare('INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount) VALUES (?,?,\'sale_pending\',?)')
+                    ->execute([$shop['id'], $mo['id'], $netAmt]);
+
+                notify_user((int)$shop['user_id'], 'Payment Received 💳',
+                    "Order #{$mo['id']} was paid (GH₵ " . number_format((float)$mo['total_amount'], 2) . "). GH₵ " . number_format($netAmt, 2) . " has been added to your pending balance — it becomes withdrawable after the order is delivered and the confirmation period passes.",
+                    'success');
+
+                if (!$custEmailSent) {
+                    notify_user($payment['user_id'], 'Order Payment Confirmed ✅',
+                        'Your payment for order #' . $mo['id'] . (count($mpOrders) > 1 ? ' (and related orders)' : '') . ' was successful. Sellers have been notified and will confirm shortly.',
+                        'success');
+                    $custEmailSent = true;
+                }
+
+                if (class_exists('EmailService') || file_exists(__DIR__ . '/services/EmailService.php')) {
+                    if (!class_exists('EmailService', false)) require_once __DIR__ . '/services/EmailService.php';
+                    $custRow = $pdo->prepare('SELECT name, email FROM users WHERE id=?');
+                    $custRow->execute([$payment['user_id']]);
+                    $cust = $custRow->fetch();
+                    if ($cust) {
+                        EmailService::sendReceipt(
+                            $cust['email'], $cust['name'],
+                            'MKT-' . str_pad($mo['id'], 6, '0', STR_PAD_LEFT),
+                            'Marketplace Order — ' . $shop['shop_name'],
+                            (float)$mo['total_amount'],
+                            date('d M Y, g:i A'),
+                            (int)$payment['user_id']
+                        );
+                    }
+                }
+            }
+            break;
+
+        case 'mp_subscription':
+            $subR = $pdo->prepare("SELECT mss.*, msp.name AS plan_name, ms.user_id, ms.shop_name FROM mp_seller_subscriptions mss JOIN mp_seller_subscription_plans msp ON mss.plan_id=msp.id JOIN mp_shops ms ON mss.shop_id=ms.id WHERE mss.id=?");
+            $subR->execute([$payment['reference_id']]);
+            $sub = $subR->fetch();
+            if ($sub) {
+                $pdo->prepare("UPDATE mp_seller_subscriptions SET status='active', payment_id=?, activated_at=NOW() WHERE id=?")->execute([$payment['id'], $sub['id']]);
+                $pdo->prepare("UPDATE mp_shops SET is_subscribed=1, subscription_plan_id=?, subscription_end=?, updated_at=NOW() WHERE id=?")->execute([$sub['plan_id'], $sub['end_date'], $sub['shop_id']]);
+                notify_user((int)$sub['user_id'], '⭐ Subscription Activated!',
+                    $sub['plan_name'].' subscription for '.$sub['shop_name'].' is active until '.date('d M Y',strtotime($sub['end_date'])).'.', 'success');
+            }
+            break;
+
+        case 'featured_news':
+            $pkgN = $pdo->prepare("SELECT duration_days FROM featured_news_packages WHERE id=?");
+            $pkgN->execute([$payment['package_id']]);
+            $pkgNRow = $pkgN->fetch();
+            $days = (int)($pkgNRow['duration_days'] ?? 30);
+            $artR = $pdo->prepare("SELECT title FROM news WHERE id=?");
+            $artR->execute([$payment['reference_id']]);
+            $artRow = $artR->fetch();
+            $artTitle = $artRow ? $artRow['title'] : "Article #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE news SET featured=1, featured_end_date=DATE_ADD(CURDATE(),INTERVAL ? DAY) WHERE id=?")
+                ->execute([$days, $payment['reference_id']]);
+            notify_user($payment['user_id'], '⭐ Article is now featured!',
+                "\"{$artTitle}\" is featured for {$days} days. It will appear at the top of the news feed.", 'success');
+            break;
+
+        case 'featured_event':
+            $pkgE = $pdo->prepare("SELECT duration_days FROM featured_event_packages WHERE id=?");
+            $pkgE->execute([$payment['package_id']]);
+            $pkgERow = $pkgE->fetch();
+            $days = (int)($pkgERow['duration_days'] ?? 30);
+            $evR = $pdo->prepare("SELECT title FROM events WHERE id=?");
+            $evR->execute([$payment['reference_id']]);
+            $evRow = $evR->fetch();
+            $evTitle = $evRow ? $evRow['title'] : "Event #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE events SET featured=1, featured_end_date=DATE_ADD(CURDATE(),INTERVAL ? DAY) WHERE id=?")
+                ->execute([$days, $payment['reference_id']]);
+            notify_user($payment['user_id'], '⭐ Event is now featured!',
+                "\"{$evTitle}\" is featured for {$days} days. It will appear at the top of the events listing.", 'success');
+            break;
+
+        case 'featured_funeral':
+            $pkgF = $pdo->prepare("SELECT duration_days FROM featured_funeral_packages WHERE id=?");
+            $pkgF->execute([$payment['package_id']]);
+            $pkgFRow = $pkgF->fetch();
+            $days = (int)($pkgFRow['duration_days'] ?? 30);
+            $faR = $pdo->prepare("SELECT deceased_name FROM funeral_announcements WHERE id=?");
+            $faR->execute([$payment['reference_id']]);
+            $faRow2 = $faR->fetch();
+            $faName2 = $faRow2 ? $faRow2['deceased_name'] : "Announcement #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE funeral_announcements SET featured=1, featured_end_date=DATE_ADD(CURDATE(),INTERVAL ? DAY) WHERE id=?")
+                ->execute([$days, $payment['reference_id']]);
+            notify_user($payment['user_id'], '⭐ Announcement is now featured!',
+                "The announcement for \"{$faName2}\" is featured for {$days} days.", 'success');
             break;
 
         case 'escrow_with_posting':
