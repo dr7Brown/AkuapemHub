@@ -37,6 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($idNumber === '') $error = 'Enter your ID number.';
     elseif (empty($_FILES['id_document']['name'])) $error = 'Upload a photo of your ID document.';
     elseif (!is_valid_image_upload($_FILES['id_document'])) $error = 'ID document must be a JPEG, PNG, or WEBP image under 5MB.';
+    elseif (requires_verified_email('delivery_agent') && !is_email_verified()) {
+        $error = 'Please verify your email address before registering as a delivery agent.';
+    }
 
     if (!$error) {
         $idDocPath = save_uploaded_image($_FILES['id_document'], 'uploads/delivery_agents/' . $user['id']);

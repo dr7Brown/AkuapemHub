@@ -76,6 +76,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (in_array($newRole, $validRoles, true) && $newRole !== $target['role']) {
             $pdo->prepare('UPDATE users SET role=? WHERE id=?')->execute([$newRole, $targetId]);
             if ($newRole !== 'manager') revoke_all_mod_permissions($targetId);
+
+            // Promoting straight to worker bypasses become_worker.php, so make
+            // sure a worker_profiles row exists — otherwise the user is stuck
+            // seeing "no worker profile yet" with no way to create one (they
+            // can't reach become_worker.php since it requires role=customer).
+            if ($newRole === 'worker') {
+                $hasProfile = $pdo->prepare('SELECT id FROM worker_profiles WHERE user_id=?');
+                $hasProfile->execute([$targetId]);
+                if (!$hasProfile->fetchColumn()) {
+                    $pdo->prepare(
+                        'INSERT INTO worker_profiles (user_id, bio, location, contact_phone, availability, created_at)
+                         VALUES (?, ?, ?, ?, ?, NOW())'
+                    )->execute([$targetId, '', get_user_town_display($target) ?: '', $target['phone'] ?: '', 'available']);
+                }
+            }
+
             log_audit_action($adminUser['id'], 'user_change_role', "Changed role of {$target['name']} (#{$targetId}) from {$target['role']} to $newRole");
             flash('Role changed to ' . ucfirst($newRole) . '.', 'success');
         }
@@ -251,7 +267,12 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
 <header class="topbar">
     <a href="users.php" class="button button-secondary button-small">← Users</a>
     <h1 style="margin:0;font-size:1rem;font-weight:800;">Manage: <?php echo sanitize($target['name']); ?></h1>
-    <span style="font-size:.78rem;color:var(--text-muted,#6b7280);">ID #<?php echo $targetId; ?></span>
+    <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:.78rem;color:var(--text-muted,#6b7280);">ID #<?php echo $targetId; ?></span>
+        <?php if (is_admin() || has_mod_permission('view_reports')): ?>
+        <a href="user_statement.php?id=<?php echo $targetId; ?>" class="button button-primary button-small">📄 Statement</a>
+        <?php endif; ?>
+    </div>
 </header>
 
 <main class="ue-shell">

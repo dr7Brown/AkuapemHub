@@ -123,6 +123,100 @@ function paystack_refund(string $paystackTransactionId, ?float $amount = null): 
     return ['success' => true, 'data' => $data['data'] ?? []];
 }
 
+// ── Transfers (seller payouts) ─────────────────────────────────────────────
+// Automated seller withdrawals. Ghana mobile money recipients use Paystack's
+// 'mobile_money' recipient type; bank accounts use 'ghipss'.
+
+function paystack_sync_banks(): array {
+    global $pdo;
+    $types  = ['ghipss' => 'bank', 'mobile_money' => 'mobile_money'];
+    $synced = 0;
+    foreach ($types as $paystackType => $localType) {
+        $data = paystack_request('GET', '/bank?currency=GHS&type=' . $paystackType);
+        if (!$data || !($data['status'] ?? false)) continue;
+        foreach ($data['data'] ?? [] as $bank) {
+            if (empty($bank['code']) || empty($bank['name'])) continue;
+            $pdo->prepare('INSERT INTO mp_banks (code, name, type, currency) VALUES (?,?,?,\'GHS\')
+                ON DUPLICATE KEY UPDATE name = VALUES(name)')
+                ->execute([$bank['code'], $bank['name'], $localType]);
+            $synced++;
+        }
+    }
+    return $synced > 0
+        ? ['success' => true, 'count' => $synced]
+        : ['success' => false, 'error' => 'Could not reach Paystack, or no banks were returned.'];
+}
+
+// Confirms the account name on a MoMo/bank account before saving it, so a
+// seller mistyping their own account number is caught before payouts start.
+function paystack_resolve_account(string $accountNumber, string $bankCode): array {
+    $data = paystack_request('GET', '/bank/resolve?account_number=' . urlencode($accountNumber) . '&bank_code=' . urlencode($bankCode));
+    if (!$data || !($data['status'] ?? false)) {
+        return ['success' => false, 'error' => $data['message'] ?? 'Could not verify this account.'];
+    }
+    return ['success' => true, 'account_name' => $data['data']['account_name'] ?? null];
+}
+
+// Creates (and caches) a Paystack transfer recipient for a saved payout account.
+function paystack_get_or_create_recipient(array $account): array {
+    global $pdo;
+    if (!empty($account['paystack_recipient_code'])) {
+        return ['success' => true, 'recipient_code' => $account['paystack_recipient_code']];
+    }
+    $data = paystack_request('POST', '/transferrecipient', [
+        'type'           => $account['method'] === 'bank' ? 'ghipss' : 'mobile_money',
+        'name'           => $account['account_name'],
+        'account_number' => $account['account_number'],
+        'bank_code'      => $account['bank_code'],
+        'currency'       => 'GHS',
+    ]);
+    if (!$data || !($data['status'] ?? false)) {
+        return ['success' => false, 'error' => $data['message'] ?? 'Could not create transfer recipient.'];
+    }
+    $recipientCode = $data['data']['recipient_code'] ?? null;
+    if ($recipientCode) {
+        $pdo->prepare('UPDATE mp_payout_accounts SET paystack_recipient_code=? WHERE id=?')
+            ->execute([$recipientCode, $account['id']]);
+    }
+    return ['success' => true, 'recipient_code' => $recipientCode];
+}
+
+// Fires the actual transfer. The platform absorbs Paystack's transfer fee —
+// it's deducted from the platform's own Paystack balance, not this $amount.
+function paystack_initiate_transfer(int $payoutRequestId, string $recipientCode, float $amount, string $reason): array {
+    $ref  = 'AH-PAYOUT-' . $payoutRequestId . '-' . time() . '-' . strtoupper(bin2hex(random_bytes(3)));
+    $data = paystack_request('POST', '/transfer', [
+        'source'    => 'balance',
+        'amount'    => (int)round($amount * 100),
+        'recipient' => $recipientCode,
+        'reason'    => $reason,
+        'reference' => $ref,
+        'currency'  => 'GHS',
+    ]);
+    if (!$data || !($data['status'] ?? false)) {
+        return ['success' => false, 'error' => $data['message'] ?? 'Transfer request failed.', 'reference' => $ref];
+    }
+    $status = $data['data']['status'] ?? 'pending';
+    if ($status === 'otp') {
+        // Paystack account has OTP-finalization enabled for transfers — this
+        // can't be automated from here, it's a Paystack dashboard/API step
+        // requiring a human to enter the OTP sent to the business owner.
+        return ['success' => false, 'otp_required' => true,
+            'error' => 'Paystack requires OTP finalization for transfers on this account — disable "Finalize Transfers with OTP" in the Paystack dashboard for full automation, or finalize this transfer manually there.',
+            'reference' => $ref, 'transfer_code' => $data['data']['transfer_code'] ?? null];
+    }
+    return ['success' => true, 'transfer_code' => $data['data']['transfer_code'] ?? null, 'reference' => $ref, 'status' => $status];
+}
+
+// Manual fallback for admins in case a transfer.success/failed webhook was missed.
+function paystack_check_transfer_status(string $transferCode): array {
+    $data = paystack_request('GET', '/transfer/' . urlencode($transferCode));
+    if (!$data || !($data['status'] ?? false)) {
+        return ['success' => false, 'error' => $data['message'] ?? 'Could not check transfer status.'];
+    }
+    return ['success' => true, 'status' => $data['data']['status'] ?? null];
+}
+
 // ── Verify & activate ─────────────────────────────────────────────────────────
 // Returns: ['success'=>true, 'payment'=>[...]]
 // Or:      ['success'=>false, 'error'=>'...']
@@ -354,7 +448,7 @@ function activatePurchasedFeature(array $payment): void {
                 $pdo->prepare("UPDATE mp_orders SET payment_status='paid', commission_percent=?, commission_amount=?, net_amount=?, updated_at=NOW() WHERE id=?")
                     ->execute([$commissionPct, $commissionAmt, $netAmt, $mo['id']]);
 
-                $shopRow = $pdo->prepare('SELECT id, user_id, shop_name FROM mp_shops WHERE id=?');
+                $shopRow = $pdo->prepare('SELECT id, user_id, shop_name, phone, region FROM mp_shops WHERE id=?');
                 $shopRow->execute([$mo['shop_id']]);
                 $shop = $shopRow->fetch();
                 if (!$shop) continue;
@@ -381,13 +475,24 @@ function activatePurchasedFeature(array $payment): void {
                     $custRow->execute([$payment['user_id']]);
                     $cust = $custRow->fetch();
                     if ($cust) {
+                        $orderItemsStmt = $pdo->prepare('SELECT product_name, quantity, price, subtotal FROM mp_order_items WHERE order_id=?');
+                        $orderItemsStmt->execute([$mo['id']]);
+                        $receiptItems = array_map(fn($it) => [
+                            'name'       => $it['product_name'],
+                            'qty'        => (int)$it['quantity'],
+                            'unit_price' => (float)$it['price'],
+                            'amount'     => (float)$it['subtotal'],
+                        ], $orderItemsStmt->fetchAll());
+
                         EmailService::sendReceipt(
                             $cust['email'], $cust['name'],
                             'MKT-' . str_pad($mo['id'], 6, '0', STR_PAD_LEFT),
                             'Marketplace Order — ' . $shop['shop_name'],
                             (float)$mo['total_amount'],
                             date('d M Y, g:i A'),
-                            (int)$payment['user_id']
+                            (int)$payment['user_id'],
+                            $receiptItems,
+                            ['name' => $shop['shop_name'], 'phone' => $shop['phone'], 'region' => $shop['region']]
                         );
                     }
                 }
@@ -536,6 +641,14 @@ function handleWebhook(): void {
         $ref = $event['data']['reference'] ?? '';
         if ($ref) {
             verifyPayment($ref); // idempotent — handles duplicate webhooks
+        }
+    }
+
+    if (in_array($event['event'], ['transfer.success', 'transfer.failed', 'transfer.reversed'], true)) {
+        $ref = $event['data']['reference'] ?? '';
+        if ($ref) {
+            require_once __DIR__ . '/marketplace_functions.php';
+            finalize_marketplace_payout_transfer($ref, $event['event']); // idempotent — handles duplicate webhooks
         }
     }
 

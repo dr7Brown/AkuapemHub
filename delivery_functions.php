@@ -121,6 +121,7 @@ function item_category_icon(string $cat): string {
 /** Returns next status options an agent can move a delivery to. */
 function delivery_agent_next_statuses(string $current): array {
     return [
+        'assigned'   => ['accepted'],
         'accepted'   => ['picked_up'],
         'picked_up'  => ['in_transit'],
         'in_transit' => ['delivered', 'failed'],
@@ -229,6 +230,36 @@ function get_delivery_application(int $requestId, int $agentId): ?array {
     $stmt = $pdo->prepare('SELECT * FROM delivery_applications WHERE delivery_request_id = ? AND agent_id = ?');
     $stmt->execute([$requestId, $agentId]);
     return $stmt->fetch() ?: null;
+}
+
+/**
+ * Atomically assign one application to a delivery request — used both when a
+ * customer manually picks a rider and when a marketplace order auto-assigns
+ * the first applicant. Returns false if another rider was already assigned
+ * in the meantime (guards the race when several agents apply at once).
+ */
+function assign_delivery_application(int $deliveryId, array $app, ?float $requestFee): bool {
+    global $pdo;
+    $usedFee = $app['offered_fee'] ?? $requestFee;
+
+    $upd = $pdo->prepare("UPDATE delivery_requests SET agent_id=?, status='assigned', delivery_fee=?, updated_at=NOW() WHERE id=? AND status='approved'");
+    $upd->execute([$app['agent_id'], $usedFee, $deliveryId]);
+    if ($upd->rowCount() === 0) return false;
+
+    $pdo->prepare("UPDATE delivery_applications SET status='assigned', updated_at=NOW() WHERE id=?")
+        ->execute([$app['id']]);
+    $pdo->prepare("UPDATE delivery_applications SET status='rejected', updated_at=NOW()
+                    WHERE delivery_request_id=? AND id!=? AND status IN('applied','shortlisted')")
+        ->execute([$deliveryId, $app['id']]);
+
+    $agentRow = $pdo->prepare('SELECT user_id FROM delivery_agents WHERE id = ?');
+    $agentRow->execute([$app['agent_id']]);
+    if ($agentUserId = $agentRow->fetchColumn()) {
+        notify_user((int)$agentUserId, 'You Got the Job! 🎉',
+            "You have been selected for delivery request #$deliveryId. Check your active deliveries.",
+            'success');
+    }
+    return true;
 }
 
 /**

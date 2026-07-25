@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/modules/referrals/service.php';
@@ -11,8 +11,8 @@ sweep_expired_featured();
 // Banner ad + news teaser for dashboard
 $dashBannerAd  = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
 $dashLatestNews = $pdo->query("SELECT title, slug, featured_image, published_at FROM news WHERE status='published' AND (published_at IS NULL OR published_at<=NOW()) ORDER BY COALESCE(published_at,created_at) DESC LIMIT 3")->fetchAll();
-$dashEvents    = $pdo->query("SELECT * FROM events WHERE status='published' AND start_date>=CURDATE() ORDER BY featured DESC, start_date ASC LIMIT 3")->fetchAll();
-$dashFunerals  = $pdo->query("SELECT * FROM funeral_announcements WHERE status='approved' ORDER BY featured DESC, created_at DESC LIMIT 3")->fetchAll();
+$dashEvents    = $pdo->query("SELECT * FROM events WHERE status='published' AND start_date>=CURDATE() ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 3")->fetchAll();
+$dashFunerals  = $pdo->query("SELECT * FROM funeral_announcements WHERE status='approved' ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, created_at DESC LIMIT 3")->fetchAll();
 $categories = get_categories();
 $notificationCount = get_unread_notifications_count((int)$user['id']);
 
@@ -50,7 +50,7 @@ if ($searchQuery) {
 }
 
 if (is_worker()) {
-    $workerWhere = array_merge(["sr.status IN ('open','partially_staffed')", "sr.posting_fee_status != 'pending'"], $where);
+    $workerWhere = array_merge(["sr.status IN (" . public_job_statuses_sql() . ")", "sr.posting_fee_status != 'pending'"], $where);
     $sql = 'SELECT sr.*, u.name AS customer_name, wc.name AS category_name, w.user_id AS worker_user_id
             FROM service_requests sr
             JOIN users u ON sr.customer_id = u.id
@@ -162,10 +162,10 @@ if (is_worker()) {
     $browseStmt = $pdo->prepare(
         'SELECT sr.*, sc.name AS category_name FROM service_requests sr
          JOIN service_categories sc ON sr.category_id = sc.id
-         WHERE sr.status IN (\'open\', \'partially_staffed\')
+         WHERE sr.status IN (' . public_job_statuses_sql() . ')
            AND sr.posting_fee_status != \'pending\'
            AND sr.customer_id != ?
-         ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 9'
+         ORDER BY (sr.featured=1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date>=CURDATE())) DESC, sr.created_at DESC LIMIT 9'
     );
     $browseStmt->execute([$user['id']]);
     $browseJobs = $browseStmt->fetchAll();
@@ -201,9 +201,6 @@ if ($user) {
     <header class="app-topbar">
         <span class="brand"><span class="brand-icon">🏠</span> AkuapemConnect</span>
         <div style="display: flex; align-items: center; gap: 10px;">
-            <a href="notifications.php" class="bottom-nav-item" style="flex: none; flex-direction: row; gap: 6px; color: var(--text);">
-                <span class="nav-icon<?php echo $notificationCount ? ' nav-badge' : ''; ?>" <?php echo $notificationCount ? 'data-count="' . (int)$notificationCount . '"' : ''; ?>>🔔</span>
-            </a>
             <!-- Avatar with dropdown -->
             <div id="avatar-wrap" style="position:relative;">
                 <button id="avatar-btn" aria-expanded="false" aria-haspopup="true"
@@ -277,14 +274,19 @@ if ($user) {
         <?php endif; ?>
 
         <!-- ── Logged-in user views ──────────────────────────────── -->
-        <?php if (!is_email_verified()): ?>
+        <?php
+        $__requiresPost  = requires_verified_email('job_post');
+        $__requiresApply = requires_verified_email('job_apply');
+        $__actions = array_filter([$__requiresPost ? 'post' : null, $__requiresApply ? 'apply for' : null]);
+        ?>
+        <?php if (!is_email_verified() && $__actions): ?>
             <div class="alert alert-warning" style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;">
                 <span style="font-size:1.2rem;line-height:1;">📧</span>
                 <div style="flex:1;min-width:200px;">
                     <strong>Please verify your email address</strong><br>
                     <span style="font-size:0.9rem;">
                         We sent a link to <strong><?php echo sanitize($user['email']); ?></strong>.
-                        You need to verify your email before you can post or apply for jobs.
+                        You need to verify your email before you can <?php echo implode(' or ', $__actions); ?> jobs.
                     </span>
                 </div>
                 <form method="post" action="resend_verification.php" style="margin:0;">
@@ -539,7 +541,7 @@ if ($user) {
                             <span class="status" style="background:var(--text-muted);color:#fff;">DRAFT</span>
                         </div>
                         <h3 class="job-title"><?php echo sanitize($dr['title']); ?></h3>
-                        <p class="job-description"><?php echo sanitize($dr['description']); ?></p>
+                        <div class="job-description"><?php echo render_rich($dr['description']); ?></div>
                         <?php if ($dr['location']): ?><p class="meta">📍 <?php echo sanitize($dr['location']); ?></p><?php endif; ?>
                         <?php if ($dr['budget']): ?><p class="meta">💰 GH₵ <?php echo sanitize($dr['budget']); ?></p><?php endif; ?>
                         <p class="meta">Last saved: <?php echo date('d M Y', strtotime($dr['updated_at'])); ?></p>
@@ -640,7 +642,7 @@ if ($user) {
                                     <span class="job-type-badge <?php echo $wJtClass[$wJt]; ?>"><?php echo $wJtLabel[$wJt]; ?></span>
                                 </div>
                             </div>
-                            <p><?php echo sanitize($request['description']); ?></p>
+                            <div class="job-description"><?php echo render_rich($request['description']); ?></div>
                             <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($request['budget']); ?></p>
                             <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
                             <div class="card-bottom">
@@ -679,11 +681,13 @@ if ($user) {
                     </div>
                 <?php endif; ?>
             </section>
+            <?php if ($profile): ?>
             <section class="panel">
                 <h2>Your worker profile</h2>
                 <p>Availability: <?php echo sanitize($profile['availability']); ?></p>
                 <p>Location: <?php echo sanitize($profile['location'] ?: 'Not set'); ?></p>
             </section>
+            <?php endif; ?>
         <?php else: ?>
             <?php if (!empty($drafts)): ?>
             <section class="panel" style="margin-bottom:16px;" id="drafts-section">
@@ -699,7 +703,7 @@ if ($user) {
                             <span class="status" style="background:var(--text-muted);color:#fff;">DRAFT</span>
                         </div>
                         <h3 class="job-title"><?php echo sanitize($dr['title']); ?></h3>
-                        <p class="job-description"><?php echo sanitize($dr['description']); ?></p>
+                        <div class="job-description"><?php echo render_rich($dr['description']); ?></div>
                         <?php if ($dr['location']): ?>
                         <p class="meta">📍 <?php echo sanitize($dr['location']); ?></p>
                         <?php endif; ?>
@@ -796,7 +800,7 @@ if ($user) {
                                     <span class="job-type-badge <?php echo $cJtClass[$cJt]; ?>"><?php echo $cJtLabel[$cJt]; ?></span>
                                 </div>
                             </div>
-                            <p><?php echo sanitize($request['description']); ?></p>
+                            <div class="job-description"><?php echo render_rich($request['description']); ?></div>
                             <p class="meta" style="margin: 0;">
                                 GH₵ <?php echo sanitize($request['budget']); ?>
                                 <?php if (($request['workers_needed'] ?? 1) > 1 || ($request['workers_approved'] ?? 0) > 0): ?>
@@ -866,7 +870,7 @@ if ($user) {
                             </div>
                             <span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span>
                         </div>
-                        <p><?php echo sanitize($job['description']); ?></p>
+                        <div class="job-description"><?php echo render_rich($job['description']); ?></div>
                         <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($job['budget']); ?></p>
                         <div class="card-bottom">
                             <div class="card-mid-actions">

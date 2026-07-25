@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -121,7 +121,7 @@ $user = current_user();
         <?php if ($worker['bio']): ?>
             <section class="panel">
                 <h3 style="margin-top:0;">About</h3>
-                <p style="margin:0;line-height:1.6;"><?php echo nl2br(sanitize($worker['bio'])); ?></p>
+                <div style="margin:0;line-height:1.6;"><?php echo render_rich($worker['bio']); ?></div>
             </section>
         <?php endif; ?>
 

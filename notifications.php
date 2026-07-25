@@ -14,9 +14,7 @@ $notifStmt->execute([$user['id']]);
 $notifications = $notifStmt->fetchAll();
 
 $unreadCount = count(array_filter($notifications, fn($n) => !$n['is_read']));
-
-// Mark all as read after loading
-mark_notifications_read($user['id']);
+// Individual mark-as-read is handled via AJAX when each notification is expanded.
 
 // Group by date
 function notif_date_group(string $dt): string {
@@ -64,6 +62,11 @@ $typeBg     = ['info'=>'#eff6ff','success'=>'#f0fdf4','warning'=>'#fffbeb','erro
             background:var(--primary-soft,#f0fdf4);
         }
         .nf-card.unread .nf-title { font-weight:800; }
+
+        /* Read state — faded like iOS/Gmail */
+        .nf-card:not(.unread) { opacity:.55; }
+        .nf-card:not(.unread):hover { opacity:.85; transition:opacity .15s; }
+        .nf-card:not(.unread) .nf-title { font-weight:400; color:var(--muted,#6b7280); }
         .nf-card-inner {
             display:flex;
             align-items:flex-start;
@@ -142,8 +145,8 @@ $typeBg     = ['info'=>'#eff6ff','success'=>'#f0fdf4','warning'=>'#fffbeb','erro
     <div class="nf-card <?php echo $isUnread ? 'unread' : ''; ?>"
          style="border-left-color:<?php echo $border; ?>;">
         <!-- Summary row — click to expand -->
-        <div class="nf-card-inner" onclick="toggleNotif('<?php echo $cardId; ?>')" role="button" tabindex="0"
-             onkeydown="if(event.key==='Enter')toggleNotif('<?php echo $cardId; ?>')">
+        <div class="nf-card-inner" onclick="toggleNotif('<?php echo $cardId; ?>',<?php echo (int)$n['id']; ?>)" role="button" tabindex="0"
+             onkeydown="if(event.key==='Enter')toggleNotif('<?php echo $cardId; ?>',<?php echo (int)$n['id']; ?>)">
             <span class="nf-icon"><?php echo $icon; ?></span>
             <div class="nf-content">
                 <p class="nf-title"><?php echo sanitize($n['title']); ?></p>
@@ -174,15 +177,51 @@ $typeBg     = ['info'=>'#eff6ff','success'=>'#f0fdf4','warning'=>'#fffbeb','erro
 <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 
 <script>
-function toggleNotif(id) {
+var CSRF_NOTIF = <?php echo json_encode(csrf_token()); ?>;
+
+function toggleNotif(id, notifId) {
     var el = document.getElementById(id);
     if (!el) return;
     var isOpen = el.classList.contains('open');
+
     // Close all others
     document.querySelectorAll('.nf-expanded.open').forEach(function(e) { e.classList.remove('open'); });
+
     // Toggle this one
-    if (!isOpen) el.classList.add('open');
+    if (!isOpen) {
+        el.classList.add('open');
+
+        // Mark this notification as read if it was unread
+        var card = el.closest('.nf-card');
+        if (card && card.classList.contains('unread')) {
+            card.classList.remove('unread');
+            // Update the dot
+            var dot = card.querySelector('.nf-dot');
+            if (dot) dot.style.visibility = 'hidden';
+            // Send AJAX
+            fetch('ajax.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=mark_notification_read&notification_id=' + encodeURIComponent(notifId) + '&csrf_token=' + encodeURIComponent(CSRF_NOTIF)
+            }).catch(function() {});
+            // Decrement the bell badge in nav
+            decrementNotifBadge();
+        }
+    }
 }
+
+function decrementNotifBadge() {
+    var badge = document.querySelector('#notif-bell .nav-badge');
+    if (!badge) return;
+    var count = parseInt(badge.getAttribute('data-count') || '0', 10) - 1;
+    if (count <= 0) {
+        badge.classList.remove('nav-badge');
+        badge.removeAttribute('data-count');
+    } else {
+        badge.setAttribute('data-count', count);
+    }
+}
+
 // Auto-expand if only one unread notification
 var unreadCards = document.querySelectorAll('.nf-card.unread');
 if (unreadCards.length === 1) {

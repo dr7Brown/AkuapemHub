@@ -53,7 +53,8 @@ if (!$isTerminal) {
                 <?php endif; ?>
             </div>
             <?php if (!empty($app['bio'])): ?>
-                <p style="font-size:0.83rem;color:var(--muted,#6b7280);margin:4px 0 0;"><?php echo sanitize(mb_substr($app['bio'], 0, 120)); ?><?php echo mb_strlen($app['bio']) > 120 ? '…' : ''; ?></p>
+                <?php $appBioText = trim(strip_tags($app['bio'])); ?>
+                <p style="font-size:0.83rem;color:var(--muted,#6b7280);margin:4px 0 0;"><?php echo sanitize(mb_substr($appBioText, 0, 120)); ?><?php echo mb_strlen($appBioText) > 120 ? '…' : ''; ?></p>
             <?php endif; ?>
         </div>
         <span class="status <?php echo sanitize($statusInfo['class']); ?>"><?php echo strtoupper($statusInfo['label']); ?></span>

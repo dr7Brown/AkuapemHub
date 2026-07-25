@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/chat_functions.php';
@@ -562,18 +562,10 @@ document.addEventListener('submit', function (e) {
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            if (submitBtn) submitBtn.disabled = false;
-            if (data.error) { alert(data.error); return; }
-            var card = form.closest('.applicant-card');
-            if (card) {
-                var statusEl = card.querySelector('.status');
-                if (statusEl && data.new_status) {
-                    statusEl.textContent = STATUS_LABELS[data.new_status] || data.new_status.toUpperCase().replace(/_/g,' ');
-                    statusEl.className   = 'status ' + (STATUS_CLASSES[data.new_status] || '');
-                }
-                // Update the select to remove chosen option and reset
-                sel.value = '';
-            }
+            if (data.error) { if (submitBtn) submitBtn.disabled = false; alert(data.error); return; }
+            // Full reload so stat cards, staffing bars, and every other
+            // applicant's card (not just this one) stay in sync.
+            window.location.reload();
         })
         .catch(function () { if (submitBtn) submitBtn.disabled = false; });
         return;
@@ -581,7 +573,6 @@ document.addEventListener('submit', function (e) {
 
     // approve / reject
     if (!confirm(act === 'approve' ? 'Approve this worker?' : 'Reject this application?')) return;
-    var card = form.closest('.applicant-card');
     if (actionBtn) actionBtn.disabled = true;
 
     var body = new URLSearchParams(new FormData(form));
@@ -595,44 +586,9 @@ document.addEventListener('submit', function (e) {
     .then(function (r) { return r.json(); })
     .then(function (data) {
         if (data.error) { alert(data.error); if (actionBtn) actionBtn.disabled = false; return; }
-
-        var statusEl = card ? card.querySelector('.status') : null;
-        if (statusEl) {
-            statusEl.textContent = STATUS_LABELS[data.new_status] || data.new_status.toUpperCase();
-            statusEl.className   = 'status ' + (STATUS_CLASSES[data.new_status] || '');
-        }
-
-        // Remove approve/reject/update forms, add Message link if approved
-        var btnRow = card ? (card.querySelector('.card-actions') || card.querySelector('div:last-child')) : null;
-        if (btnRow) {
-            btnRow.querySelectorAll('form').forEach(function (f) { f.remove(); });
-            if (data.new_status === 'approved') {
-                var msgLink = document.createElement('a');
-                msgLink.href = 'chat_start.php?user_id=' + data.worker_id + '&job_id=' + data.request_id;
-                msgLink.className = 'button button-secondary button-small';
-                msgLink.textContent = '💬 Message';
-                btnRow.appendChild(msgLink);
-            }
-        }
-
-        var staffingBar = document.querySelector('.staffing-bar');
-        if (staffingBar && data.new_status === 'approved') {
-            staffingBar.querySelectorAll('span').forEach(function (s) {
-                if (s.textContent.startsWith('Approved:')) s.textContent = 'Approved: ' + data.workers_approved;
-                if (s.textContent.startsWith('Remaining:')) s.textContent = 'Remaining: ' + (data.workers_needed - data.workers_approved);
-            });
-        }
-
-        if (data.job_status === 'fully_staffed' && !document.querySelector('.fully-staffed-banner')) {
-            var header = document.querySelector('.job-focus-header');
-            if (header) {
-                var banner = document.createElement('div');
-                banner.className = 'fully-staffed-banner';
-                banner.style.marginTop = '10px';
-                banner.textContent = '✅ This job is fully staffed — all positions filled.';
-                header.appendChild(banner);
-            }
-        }
+        // Full reload so stat cards, staffing bars, and every other
+        // applicant's card (not just this one) stay in sync.
+        window.location.reload();
     })
     .catch(function () { if (actionBtn) actionBtn.disabled = false; });
 });

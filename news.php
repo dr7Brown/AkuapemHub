@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -13,8 +13,9 @@ $fetchLimit = ($page === 1) ? $perPage + 1 : $perPage + 1; // +1 to detect hasMo
 
 $search  = trim($_GET['q'] ?? '');
 $nFilter = in_array($_GET['filter'] ?? '', ['latest','popular']) ? $_GET['filter'] : 'latest';
-$orderBy = $nFilter === 'popular' ? 'view_count DESC, COALESCE(published_at, created_at) DESC'
-                                  : 'COALESCE(published_at, created_at) DESC';
+$orderBy = $nFilter === 'popular'
+    ? '(featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, view_count DESC, COALESCE(published_at, created_at) DESC'
+    : '(featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, COALESCE(published_at, created_at) DESC';
 
 $whereExtra = '';
 $stmtParams = [$fetchLimit, $offset];
@@ -24,7 +25,7 @@ if ($search) {
 }
 
 $stmt = $pdo->prepare("
-    SELECT id, title, slug, summary, featured_image, view_count, published_at
+    SELECT id, title, slug, summary, featured_image, view_count, published_at, featured, featured_end_date
     FROM news
     WHERE status='published'
     $whereExtra
@@ -54,7 +55,11 @@ if ($isAjax) {
         $date  = $a['published_at'] ? date('M j, Y', strtotime($a['published_at'])) : '';
         $slug  = urlencode($a['slug']);
 ?>
-<article class="nc-card">
+<?php $isFeatArt = !empty($a['featured']) && (empty($a['featured_end_date']) || $a['featured_end_date'] >= date('Y-m-d')); ?>
+<article class="nc-card" <?php echo $isFeatArt ? 'style="border-color:var(--secondary,#f97316);box-shadow:0 0 0 1px var(--secondary,#f97316);"' : ''; ?>>
+    <?php if ($isFeatArt): ?>
+    <div style="background:var(--secondary,#f97316);color:#fff;font-size:.68rem;font-weight:800;padding:4px 12px;letter-spacing:.06em;">⭐ FEATURED ARTICLE</div>
+    <?php endif; ?>
     <?php if ($thumb): ?>
     <a href="news_article.php?slug=<?php echo $slug; ?>" class="nc-img-wrap">
         <img src="<?php echo $thumb; ?>" alt="<?php echo sanitize($a['title']); ?>" loading="lazy">
@@ -110,8 +115,12 @@ $topAd     = $bannerAds[0] ?? null;
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>News &amp; Updates — <?php echo sanitize(APP_NAME); ?></title>
-    <meta name="description" content="Stay informed with the latest news, updates and stories from <?php echo sanitize(APP_NAME); ?>.">
+    <?php echo seo_meta([
+        'title'       => 'Community News & Updates — Akuapem Area, Ghana | ' . APP_NAME,
+        'description' => 'Read the latest community news, stories, and updates from across the Akuapem area of Ghana, shared and read by the ' . APP_NAME . ' community.',
+        'url'         => rtrim(BASE_URL, '/') . '/news.php',
+        'noindex'     => !empty($_GET['q']) || !empty($_GET['page']),
+    ]); ?>
     <meta property="og:title"       content="News — <?php echo sanitize(APP_NAME); ?>">
     <meta property="og:description" content="Latest news, updates and community stories from <?php echo sanitize(APP_NAME); ?>.">
     <meta property="og:type"        content="website">

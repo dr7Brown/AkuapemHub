@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -11,7 +11,7 @@ $stmt->execute([$user['id']]);
 $existingProfile = $stmt->fetch();
 
 function refresh_session_user($pdo, $userId) {
-    $stmt = $pdo->prepare('SELECT id, name, email, email_verified, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT id, name, email, email_verified, role, phone, town_id, custom_town, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $_SESSION['user'] = $stmt->fetch();
 }
@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Add a phone number to your account in Settings before becoming a worker.';
     } else {
         $idDocumentPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
-        $townName = get_town_name($user['town_id']) ?: '';
+        $townName = get_user_town_display($user) ?: '';
 
         $pdo->beginTransaction();
         try {

@@ -212,11 +212,6 @@ function appBadgeLabel(string $s): string {
 
 <header class="app-topbar">
     <span class="brand"><span class="brand-icon">📋</span> My Applications</span>
-    <?php if ($notificationCount > 0): ?>
-    <a href="notifications.php" class="button button-secondary button-small" style="position:relative;">
-        🔔<span style="position:absolute;top:-4px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;"><?php echo (int)$notificationCount; ?></span>
-    </a>
-    <?php endif; ?>
 </header>
 
 <main class="page-shell">

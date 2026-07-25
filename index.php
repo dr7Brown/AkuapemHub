@@ -1,18 +1,19 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/delivery_functions.php';
 
 $user  = current_user();
 $today = date('Y-m-d');
 
 $upcomingEvents = $pdo->query(
     "SELECT * FROM events WHERE status='published' AND start_date >= '$today'
-     ORDER BY featured DESC, start_date ASC LIMIT 4"
+     ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 4"
 )->fetchAll();
 
 $recentFunerals = $pdo->query(
     "SELECT * FROM funeral_announcements WHERE status='approved'
-     ORDER BY featured DESC, created_at DESC LIMIT 4"
+     ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, created_at DESC LIMIT 4"
 )->fetchAll();
 
 $latestNews = $pdo->query(
@@ -21,12 +22,12 @@ $latestNews = $pdo->query(
 )->fetchAll();
 
 $openJobs = $pdo->query(
-    "SELECT sr.id, sr.title, sr.budget_amount, sr.location, sr.created_at,
-            c.name AS category
+    "SELECT sr.id, sr.title, sr.description, sr.budget_amount, sr.budget, sr.location, sr.created_at,
+            sr.payment_status, sr.payment_mode, c.name AS category
      FROM service_requests sr
      LEFT JOIN service_categories c ON sr.category_id = c.id
-     WHERE sr.status IN ('open','partially_staffed') AND sr.posting_fee_status != 'pending'
-     ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 4"
+     WHERE sr.status IN (" . public_job_statuses_sql() . ") AND sr.posting_fee_status != 'pending'
+     ORDER BY (sr.featured=1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date>=CURDATE())) DESC, sr.created_at DESC LIMIT 4"
 )->fetchAll();
 
 // Marketplace featured products
@@ -49,16 +50,36 @@ try {
     )->fetchAll();
 } catch (Exception $e) {}
 
+// Admin can independently show/hide each delivery source on the homepage feed,
+// and restrict the whole feed to delivery agents only — delivery agents still
+// see every open job on their own dashboard regardless of these settings.
 $openDeliveries = [];
 try {
-    $openDeliveries = $pdo->query(
-        "SELECT dr.id, dr.item_description, dr.item_category,
-                dr.pickup_location, dr.dropoff_location,
-                dr.delivery_fee, dr.preferred_date, dr.created_at
-         FROM delivery_requests dr
-         WHERE dr.status = 'approved' AND dr.agent_id IS NULL
-         ORDER BY dr.preferred_date ASC, dr.created_at DESC LIMIT 4"
-    )->fetchAll();
+    $feedAudience  = get_platform_setting('homepage_delivery_feed_audience', 'everyone');
+    $viewerIsAgent = $user && get_delivery_agent_for_user((int)$user['id']);
+
+    if ($feedAudience !== 'agents_only' || $viewerIsAgent) {
+        $showMpDeliveries       = get_platform_setting('homepage_show_marketplace_deliveries', '1') === '1';
+        $showPersonalDeliveries = get_platform_setting('homepage_show_personal_deliveries', '1') === '1';
+
+        $sourceFilter = '';
+        if ($showMpDeliveries && !$showPersonalDeliveries) {
+            $sourceFilter = 'AND EXISTS (SELECT 1 FROM mp_orders mo WHERE mo.delivery_request_id = dr.id)';
+        } elseif (!$showMpDeliveries && $showPersonalDeliveries) {
+            $sourceFilter = 'AND NOT EXISTS (SELECT 1 FROM mp_orders mo WHERE mo.delivery_request_id = dr.id)';
+        }
+
+        if ($showMpDeliveries || $showPersonalDeliveries) {
+            $openDeliveries = $pdo->query(
+                "SELECT dr.id, dr.item_description, dr.item_category,
+                        dr.pickup_location, dr.dropoff_location,
+                        dr.delivery_fee, dr.preferred_date, dr.created_at
+                 FROM delivery_requests dr
+                 WHERE dr.status = 'approved' AND dr.agent_id IS NULL $sourceFilter
+                 ORDER BY dr.preferred_date ASC, dr.created_at DESC LIMIT 4"
+            )->fetchAll();
+        }
+    }
 } catch (Exception $e) { /* delivery tables not yet created */ }
 ?>
 <!DOCTYPE html>
@@ -66,8 +87,34 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo APP_NAME; ?> — Community, Jobs &amp; Services</title>
-    <meta name="description" content="<?php echo APP_NAME; ?> — Find skilled workers, post service requests, discover community events, news &amp; announcements in Ghana.">
+    <?php echo seo_meta([
+        'title'       => APP_NAME . ' — Find Trusted Workers & Jobs in the Akuapem Area, Ghana',
+        'description' => 'Hire verified local workers, post jobs and service requests, buy and sell on the marketplace, and stay updated with community news, events & funeral announcements across the Akuapem area of Ghana.',
+        'url'         => rtrim(BASE_URL, '/') . '/',
+    ]); ?>
+    <script type="application/ld+json">
+    <?php echo json_encode([
+        '@context' => 'https://schema.org',
+        '@graph'   => [
+            [
+                '@type' => 'Organization',
+                'name'  => APP_NAME,
+                'url'   => rtrim(BASE_URL, '/') . '/',
+                'logo'  => rtrim(BASE_URL, '/') . '/assets/images/ac%20logo.png',
+            ],
+            [
+                '@type'           => 'WebSite',
+                'name'            => APP_NAME,
+                'url'             => rtrim(BASE_URL, '/') . '/',
+                'potentialAction' => [
+                    '@type'       => 'SearchAction',
+                    'target'      => rtrim(BASE_URL, '/') . '/browse_jobs.php?q={search_term_string}',
+                    'query-input' => 'required name=search_term_string',
+                ],
+            ],
+        ],
+    ], JSON_UNESCAPED_SLASHES); ?>
+    </script>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .cm-hero {
@@ -99,7 +146,7 @@ try {
         .cm-job-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--primary,#0f766e); border-radius:4px 0 0 4px; }
         .cm-job-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-2px); }
         .cm-job-cat   { display:inline-block; font-size:.67rem; font-weight:800; padding:3px 9px; border-radius:20px; background:#f0fdf4; color:#065f46; align-self:flex-start; margin-bottom:8px; letter-spacing:.04em; text-transform:uppercase; }
-        .cm-job-title { font-weight:800; font-size:.92rem; line-height:1.4; flex:1; padding-bottom:10px; }
+        .cm-job-title { font-weight:800; font-size:.92rem; line-height:1.4; padding-bottom:8px; }
         .cm-job-footer{ display:flex; align-items:flex-end; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border,#e5e7eb); gap:8px; }
         .cm-job-budget{ font-size:.88rem; font-weight:900; color:var(--primary,#0f766e); white-space:nowrap; }
         .cm-job-meta  { font-size:.72rem; color:var(--muted,#6b7280); line-height:1.6; }
@@ -172,27 +219,30 @@ try {
             .cm-hero h1 { font-size:1.35rem; margin:0 0 6px; }
             .cm-hero p  { font-size:.86rem; }
 
-            /* ── Module strip: horizontal scroll, 3 per view ── */
+            /* ── Module strip: horizontal scroll, ~4.5 per view ── */
             .cm-modules {
                 display:flex;
                 flex-wrap:nowrap;
                 overflow-x:auto;
-                gap:10px;
-                padding:0 16px 10px;
+                gap:8px;
+                padding:0 0 12px 16px;
                 margin:-20px 0 0;
                 scroll-snap-type:x mandatory;
                 scrollbar-width:none;
                 -webkit-overflow-scrolling:touch;
+                width:100%;
+                max-width:100%;
             }
             .cm-modules::-webkit-scrollbar { display:none; }
             .cm-mod {
-                flex:0 0 calc(33.333vw - 14px);
-                min-width:88px;
-                padding:14px 8px;
+                flex:0 0 calc(21vw);
+                min-width:68px;
+                max-width:100px;
+                padding:12px 6px;
                 scroll-snap-align:start;
             }
-            .cm-mod-icon  { font-size:1.6rem; margin-bottom:5px; }
-            .cm-mod-title { font-size:.76rem; margin-bottom:0; }
+            .cm-mod-icon  { font-size:1.5rem; margin-bottom:4px; }
+            .cm-mod-title { font-size:.65rem; margin-bottom:0; line-height:1.25; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
             .cm-mod-desc  { display:none; }
 
             /* ── Shared row layout: flex horizontal scroll ── */
@@ -275,18 +325,22 @@ try {
             .cm-cta { margin:0 16px; border-radius:12px; padding:16px; }
         }
 
-        /* ── Mid-tablet (540 – 767 px): 4 cards per view ── */
+        /* ── Mid-tablet (540 – 767 px): ~4.5 module cards, 3 content cards ── */
         @media (min-width:540px) and (max-width:767px) {
-            .cm-mod,
+            .cm-mod {
+                flex:0 0 calc(21vw);
+                min-width:80px;
+                max-width:120px;
+            }
+            .cm-mod-desc { display:block; font-size:.66rem; }
             .cm-job-card,
             .cm-ev-card,
             .cm-fa-card,
             .cm-news-card,
             .cm-mp-card {
-                flex:0 0 calc(25vw - 12px);
-                min-width:110px;
+                flex:0 0 calc(33.333vw - 12px);
+                min-width:140px;
             }
-            .cm-mod-desc { display:block; font-size:.68rem; }
         }
     </style>
 </head>
@@ -428,14 +482,46 @@ try {
         <div class="cm-job-row">
             <?php foreach ($openJobs as $job): ?>
             <a href="request_detail.php?id=<?php echo (int)$job['id']; ?>" class="cm-job-card">
-                <?php if ($job['category']): ?><span class="cm-job-cat"><?php echo sanitize($job['category']); ?></span><?php endif; ?>
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
+                    <?php if ($job['category']): ?><span class="cm-job-cat" style="margin-bottom:0;"><?php echo sanitize($job['category']); ?></span><?php endif; ?>
+                    <?php
+                    $pMode   = $job['payment_mode']   ?? 'direct';
+                    $pStatus = $job['payment_status'] ?? 'unpaid';
+                    if ($pMode === 'escrow' && $pStatus === 'paid'):
+                    ?><span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#d1fae5;color:#065f46;white-space:nowrap;">🔒 Escrow Paid</span>
+                    <?php elseif ($pMode === 'escrow' && $pStatus !== 'paid'): ?>
+                    <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#fef3c7;color:#92400e;white-space:nowrap;">🔒 Escrow</span>
+                    <?php elseif ($pStatus === 'paid'): ?>
+                    <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#dbeafe;color:#1e40af;white-space:nowrap;">✓ Paid</span>
+                    <?php else: ?>
+                    <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#f3f4f6;color:#6b7280;white-space:nowrap;">Unpaid</span>
+                    <?php endif; ?>
+                </div>
                 <div class="cm-job-title"><?php echo sanitize($job['title']); ?></div>
+                <?php if (!empty($job['description'])): ?>
+                <div style="font-size:.78rem;color:var(--muted,#6b7280);line-height:1.5;margin-bottom:10px;
+                            display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
+                    <?php echo sanitize(strip_tags($job['description'])); ?>
+                </div>
+                <?php endif; ?>
                 <div class="cm-job-footer">
                     <div>
                         <?php if ($job['location']): ?><div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($job['location'],0,36)); ?></div><?php endif; ?>
                         <div class="cm-job-meta">🕐 <?php echo date('d M Y', strtotime($job['created_at'])); ?></div>
                     </div>
-                    <?php if ($job['budget_amount']): ?><div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?></div><?php endif; ?>
+                    <div style="text-align:right;flex-shrink:0;">
+                        <?php if ($job['budget_amount']): ?>
+                        <div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?></div>
+                        <?php elseif (!empty($job['budget'])): ?>
+                        <div class="cm-job-budget" style="font-size:.8rem;"><?php echo sanitize(mb_substr($job['budget'],0,24)); ?></div>
+                        <?php endif; ?>
+                        <?php
+                        $budgetLower = strtolower($job['budget'] ?? '');
+                        if (str_contains($budgetLower,'negotiable') || str_contains($budgetLower,'open') || str_contains($budgetLower,'discuss')):
+                        ?>
+                        <div style="font-size:.67rem;font-weight:700;color:var(--muted,#6b7280);margin-top:1px;">Negotiable</div>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </a>
             <?php endforeach; ?>

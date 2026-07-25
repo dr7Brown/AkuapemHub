@@ -40,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($receiverName === '')   $error = 'Receiver name is required.';
     elseif ($receiverPhone === '')  $error = 'Receiver phone number is required.';
     elseif ($itemDescription === '') $error = 'Describe the item(s) to be delivered.';
+    elseif (requires_verified_email('delivery_request') && !is_email_verified()) {
+        $error = 'Please verify your email address before creating a delivery request.';
+    }
 
     if (!$error) {
         // Fraud check

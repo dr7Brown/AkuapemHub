@@ -14,21 +14,25 @@ $tab       = $_GET['tab'] ?? 'pending';
 if (isset($_GET['export']) && is_admin()) {
     csrf_check();
     if ($_GET['export'] === 'agents') {
-        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="delivery_agents_' . date('Y-m-d') . '.csv"');
-        $rows = $pdo->query("SELECT u.name,u.email,u.phone,da.vehicle_type,da.vehicle_registration,da.service_area,da.verification_status,da.availability_status,da.is_premium,da.is_sponsored,da.is_verified,da.rating,da.completed_deliveries,da.trust_level,da.created_at FROM delivery_agents da JOIN users u ON da.user_id=u.id ORDER BY da.created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $pdo->query("SELECT u.name,u.email,u.phone,da.vehicle_type,da.vehicle_registration,da.service_area,da.verification_status,da.availability_status,da.is_premium,da.is_sponsored,da.is_verified,da.rating,da.completed_deliveries,da.trust_level,da.commission_owed,da.created_at FROM delivery_agents da JOIN users u ON da.user_id=u.id ORDER BY da.created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
         $out = fopen('php://output','w');
-        fputcsv($out,['Name','Email','Phone','Vehicle','Reg','Area','Status','Availability','Premium','Sponsored','Verified','Rating','Done','Trust','Registered']);
-        foreach($rows as $r) fputcsv($out,array_values($r));
+        fputcsv($out,['Name','Email','Phone','Vehicle','Reg','Area','Status','Availability','Premium','Sponsored','Verified','Rating','Done','Trust','Commission Owed','Registered']);
+        foreach($rows as $r) {
+            fputcsv($out,[csv_safe($r['name']),$r['email'],$r['phone'],$r['vehicle_type'],csv_safe($r['vehicle_registration']),csv_safe($r['service_area']),$r['verification_status'],$r['availability_status'],$r['is_premium'],$r['is_sponsored'],$r['is_verified'],$r['rating'],$r['completed_deliveries'],$r['trust_level'],$r['commission_owed'],$r['created_at']]);
+        }
         fclose($out); exit;
     }
     if ($_GET['export'] === 'requests') {
-        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="delivery_requests_' . date('Y-m-d') . '.csv"');
         $rows = $pdo->query("SELECT dr.id,cu.name AS customer,au.name AS agent,dr.pickup_location,dr.dropoff_location,dr.item_category,dr.item_description,dr.delivery_fee,dr.payment_method,dr.payment_status,dr.status,dr.is_flagged,dr.auto_approved,dr.created_at FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id LEFT JOIN delivery_agents dda ON dr.agent_id=dda.id LEFT JOIN users au ON dda.user_id=au.id ORDER BY dr.created_at DESC")->fetchAll(PDO::FETCH_ASSOC);
         $out = fopen('php://output','w');
         fputcsv($out,['ID','Customer','Agent','Pickup','Dropoff','Category','Description','Fee','Payment','Pay Status','Status','Flagged','Auto-Approved','Created']);
-        foreach($rows as $r) fputcsv($out,array_values($r));
+        foreach($rows as $r) {
+            fputcsv($out,[$r['id'],csv_safe($r['customer']),csv_safe($r['agent']),csv_safe($r['pickup_location']),csv_safe($r['dropoff_location']),$r['item_category'],csv_safe($r['item_description']),$r['delivery_fee'],$r['payment_method'],$r['payment_status'],$r['status'],$r['is_flagged'],$r['auto_approved'],$r['created_at']]);
+        }
         fclose($out); exit;
     }
 }
@@ -53,6 +57,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $agentRow->execute([$agentId]);
         $agent = $agentRow->fetch();
         if ($agent) {
+            if (in_array($postAction,['approve_agent','reject_agent'],true) && check_mod_coi('delivery_agent', $agentId, $adminUser['id'])) {
+                log_coi_violation($adminUser['id'], 'delivery_agent', $agentId, $postAction);
+                flash('Conflict of interest: you cannot moderate your own rider application.','error');
+                header('Location: delivery.php?tab=agents'); exit;
+            }
             if ($postAction === 'approve_agent') {
                 $pdo->prepare("UPDATE delivery_agents SET verification_status='approved',availability_status='available',updated_at=NOW() WHERE id=?")->execute([$agentId]);
                 notify_user((int)$agent['user_id'],'Agent Profile Approved ✅','Your delivery agent profile has been approved. You can now accept delivery jobs.','success');
@@ -168,7 +177,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'delivery_enable_premium','delivery_premium_requires_payment','delivery_premium_monthly_price',
                         'delivery_premium_quarterly_price','delivery_premium_yearly_price','delivery_enable_verification_fee',
                         'delivery_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment',
-                        'delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price','delivery_enabled'];
+                        'delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price','delivery_enabled',
+                        'delivery_commission_percent','delivery_commission_block_threshold'];
         foreach ($settingsMap as $k) {
             if (isset($_POST[$k])) set_platform_setting($k, trim($_POST[$k]));
         }
@@ -180,6 +190,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         log_audit_action($adminUser['id'],'delivery_settings_save','Updated delivery monetization settings');
         flash('Settings saved.','success');
         header('Location: delivery.php?tab=settings'); exit;
+    }
+
+    // Mark a rider's commission balance as settled (paid outside the system)
+    if ($postAction === 'settle_commission' && is_admin() && !empty($_POST['agent_id'])) {
+        $agentId = (int)$_POST['agent_id'];
+        $agentRow = $pdo->prepare('SELECT commission_owed, user_id FROM delivery_agents WHERE id=?');
+        $agentRow->execute([$agentId]);
+        $agentRow = $agentRow->fetch();
+        if ($agentRow && (float)$agentRow['commission_owed'] > 0) {
+            $owed = (float)$agentRow['commission_owed'];
+            $pdo->prepare('UPDATE delivery_agents SET commission_owed = 0 WHERE id=?')->execute([$agentId]);
+            $pdo->prepare("INSERT INTO delivery_commission_ledger (agent_id, type, amount) VALUES (?,'settlement',?)")
+                ->execute([$agentId, $owed]);
+            notify_user((int)$agentRow['user_id'], 'Commission Settled ✅',
+                'Your commission balance of GH₵ ' . number_format($owed, 2) . ' has been marked as settled. You can accept new jobs again.',
+                'success');
+            log_audit_action($adminUser['id'], 'delivery_commission_settled', "Settled GHS " . number_format($owed, 2) . " commission for agent #$agentId");
+            flash('Commission marked as settled.', 'success');
+        }
+        $cqRedirect = !empty($_POST['cq']) ? '&cq=' . urlencode($_POST['cq']) : '';
+        header('Location: delivery.php?tab=commission' . $cqRedirect); exit;
     }
 }
 
@@ -193,6 +224,7 @@ $subPending     = (int)$pdo->query("SELECT COUNT(*) FROM delivery_subscriptions 
 $spPending      = (int)$pdo->query("SELECT COUNT(*) FROM delivery_sponsored_listings WHERE status='pending'")->fetchColumn();
 $totalAgents    = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents")->fetchColumn();
 $approvedAgents = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE verification_status='approved'")->fetchColumn();
+$commissionOwedCount = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE commission_owed > 0")->fetchColumn();
 $premiumAgents  = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE is_premium=1 AND premium_end>=CURDATE()")->fetchColumn();
 $verifiedAgents = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE is_verified=1")->fetchColumn();
 $sponsoredAgents= (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE is_sponsored=1 AND sponsored_end>=CURDATE()")->fetchColumn();
@@ -231,12 +263,66 @@ if ($tab === 'monetization') {
     $subscriptions     = $pdo->query("SELECT ds.*,u.name,u.username FROM delivery_subscriptions ds JOIN delivery_agents da ON ds.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE ds.status='pending' ORDER BY ds.created_at ASC")->fetchAll();
     $sponsoredListings = $pdo->query("SELECT dsl.*,u.name,u.username FROM delivery_sponsored_listings dsl JOIN delivery_agents da ON dsl.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE dsl.status='pending' ORDER BY dsl.created_at ASC")->fetchAll();
 }
+if ($tab === 'commission') {
+    $cq = trim($_GET['cq'] ?? '');
+    $cWhere  = 'WHERE da.commission_owed > 0';
+    $cParams = [];
+    if ($cq !== '') {
+        $cWhere .= ' AND (u.name LIKE ? OR u.email LIKE ?)';
+        $like = '%' . $cq . '%';
+        $cParams = [$like, $like];
+    }
+    $caStmt = $pdo->prepare(
+        "SELECT da.id, da.commission_owed, u.name, u.username, u.email
+         FROM delivery_agents da JOIN users u ON da.user_id=u.id
+         $cWhere ORDER BY da.commission_owed DESC LIMIT 100"
+    );
+    $caStmt->execute($cParams);
+    $commissionAgents = $caStmt->fetchAll();
+    $totalOwed = (float)$pdo->query("SELECT COALESCE(SUM(commission_owed),0) FROM delivery_agents")->fetchColumn();
+
+    // Period-filtered ledger analytics
+    $cPeriod = $_GET['cperiod'] ?? 'month';
+    $cDateFilter = match($cPeriod) {
+        'today' => 'AND DATE(created_at) = CURDATE()',
+        'week'  => 'AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+        'month' => 'AND MONTH(created_at)=MONTH(NOW()) AND YEAR(created_at)=YEAR(NOW())',
+        'year'  => 'AND YEAR(created_at)=YEAR(NOW())',
+        default => '',
+    };
+    $cAccrued   = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM delivery_commission_ledger WHERE type='commission_owed' $cDateFilter")->fetchColumn();
+    $cSettled   = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM delivery_commission_ledger WHERE type='settlement' $cDateFilter")->fetchColumn();
+    $cReversed  = (float)$pdo->query("SELECT COALESCE(ABS(SUM(amount)),0) FROM delivery_commission_ledger WHERE type='reversal' $cDateFilter")->fetchColumn();
+    $cBlockThreshold = (float)get_platform_setting('delivery_commission_block_threshold', '50');
+    $cBlockedCount = 0;
+    if ($cBlockThreshold > 0) {
+        $cBlockedStmt = $pdo->prepare('SELECT COUNT(*) FROM delivery_agents WHERE commission_owed >= ?');
+        $cBlockedStmt->execute([$cBlockThreshold]);
+        $cBlockedCount = (int)$cBlockedStmt->fetchColumn();
+    }
+
+    $cDaily = $pdo->query(
+        "SELECT DATE(created_at) AS d, SUM(amount) AS amt
+         FROM delivery_commission_ledger
+         WHERE type='commission_owed' AND created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+         GROUP BY DATE(created_at)"
+    )->fetchAll();
+    $cDailyMap = array_column($cDaily, 'amt', 'd');
+    $cDailyLabels = $cDailyAmounts = [];
+    for ($i = 29; $i >= 0; $i--) {
+        $d = date('Y-m-d', strtotime("-{$i} days"));
+        $cDailyLabels[] = date('d M', strtotime($d));
+        $cDailyAmounts[] = (float)($cDailyMap[$d] ?? 0);
+    }
+}
 
 // Settings values
 $cfg = [];
 if ($tab === 'settings') {
-    $keys = ['delivery_require_approval','delivery_auto_approve_min_deliveries','delivery_auto_approve_min_days','delivery_enable_premium','delivery_premium_requires_payment','delivery_premium_monthly_price','delivery_premium_quarterly_price','delivery_premium_yearly_price','delivery_enable_verification_fee','delivery_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment','delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price','delivery_enabled'];
+    $keys = ['delivery_require_approval','delivery_auto_approve_min_deliveries','delivery_auto_approve_min_days','delivery_enable_premium','delivery_premium_requires_payment','delivery_premium_monthly_price','delivery_premium_quarterly_price','delivery_premium_yearly_price','delivery_enable_verification_fee','delivery_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment','delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price','delivery_enabled','delivery_commission_percent','delivery_commission_block_threshold'];
     foreach ($keys as $k) $cfg[$k] = get_platform_setting($k,'');
+    if ($cfg['delivery_commission_percent'] === '') $cfg['delivery_commission_percent'] = '10';
+    if ($cfg['delivery_commission_block_threshold'] === '') $cfg['delivery_commission_block_threshold'] = '50';
 }
 ?>
 <!DOCTYPE html>
@@ -320,7 +406,12 @@ if ($tab === 'settings') {
         <a href="?tab=monetization" class="adm-tab <?php echo $tab==='monetization'?'active':''; ?>">
             Monetization <?php $mPending=$subPending+$spPending; if($mPending): ?><span style="background:#8b5cf6;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $mPending; ?></span><?php endif; ?>
         </a>
-        <?php if (is_admin()): ?><a href="?tab=settings" class="adm-tab <?php echo $tab==='settings'?'active':''; ?>">&#9881; Settings</a><?php endif; ?>
+        <?php if (is_admin()): ?>
+        <a href="?tab=commission" class="adm-tab <?php echo $tab==='commission'?'active':''; ?>">
+            💰 Commission <?php if ($commissionOwedCount): ?><span style="background:#ef4444;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $commissionOwedCount; ?></span><?php endif; ?>
+        </a>
+        <a href="?tab=settings" class="adm-tab <?php echo $tab==='settings'?'active':''; ?>">&#9881; Settings</a>
+        <?php endif; ?>
     </div>
 
     <!-- ═══════════════ PENDING APPROVAL ═══════════════ -->
@@ -348,7 +439,11 @@ if ($tab === 'settings') {
         <?php if ($r['flag_reason']): ?>
         <div style="font-size:.78rem;background:#fef3c7;border-radius:6px;padding:5px 9px;margin-bottom:10px;">&#9888; <?php echo sanitize($r['flag_reason']); ?></div>
         <?php endif; ?>
+        <?php $drCoi = !is_admin() && (int)($r['customer_id'] ?? 0) === (int)$adminUser['id']; ?>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <?php if ($drCoi): ?>
+            <span style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:4px 10px;border-radius:8px;">&#9888; Your request — cannot moderate</span>
+            <?php else: ?>
             <form method="post" action="../delivery_ajax.php">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="action"      value="approve_request">
@@ -362,6 +457,7 @@ if ($tab === 'settings') {
                 <input type="text" name="rejection_reason" placeholder="Rejection reason" style="font-size:.78rem;padding:5px 10px;width:200px;" required>
                 <button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;" onclick="return confirm('Reject this request?');">&#10007; Reject</button>
             </form>
+            <?php endif; ?>
         </div>
     </div>
     <?php endforeach; else: ?>
@@ -524,6 +620,82 @@ if ($tab === 'settings') {
     <?php if (!$subscriptions && !$sponsoredListings): ?><div class="empty-state">No pending monetization requests.</div><?php endif; ?>
     <?php endif; ?>
 
+    <!-- ═══════════════ COMMISSION ═══════════════ -->
+    <?php if ($tab === 'commission' && is_admin()): ?>
+    <p class="meta" style="margin:0 0 12px;">Riders collect delivery fees directly (cash/MoMo) — this tracks what each owes the platform in commission. Once an agent crosses the block threshold set in Settings, they can't accept new jobs until you mark them settled here.</p>
+
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+        <?php foreach (['today'=>'Today','week'=>'7 Days','month'=>'This Month','year'=>'This Year','all'=>'All Time'] as $v=>$l): ?>
+        <a href="?tab=commission&cperiod=<?php echo $v; ?>" class="button <?php echo $cPeriod===$v?'button-primary':'button-secondary'; ?> button-small"><?php echo $l; ?></a>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="adm-stats" style="margin-bottom:16px;">
+        <div class="adm-stat"><strong style="color:#ef4444;">GHS <?php echo number_format($totalOwed,2); ?></strong><span>Total Currently Owed</span></div>
+        <div class="adm-stat"><strong>GHS <?php echo number_format($cAccrued,2); ?></strong><span>Accrued (period)</span></div>
+        <div class="adm-stat"><strong style="color:#10b981;">GHS <?php echo number_format($cSettled,2); ?></strong><span>Settled (period)</span></div>
+        <div class="adm-stat"><strong>GHS <?php echo number_format($cReversed,2); ?></strong><span>Reversed (period)</span></div>
+        <div class="adm-stat"><strong style="color:<?php echo $cBlockedCount?'#ef4444':'inherit'; ?>"><?php echo $cBlockedCount; ?></strong><span>Riders Blocked</span></div>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;">
+        <p style="font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 12px;">Commission Accrued — Last 30 Days</p>
+        <div style="position:relative;height:200px;"><canvas id="dl-commission-chart"></canvas></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+    (function () {
+        var ctx = document.getElementById('dl-commission-chart');
+        if (!ctx) return;
+        var style = getComputedStyle(document.documentElement);
+        var primary = style.getPropertyValue('--primary').trim() || '#0f766e';
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: <?php echo json_encode($cDailyLabels); ?>,
+                datasets: [{ label: 'Commission Accrued (GHS)', data: <?php echo json_encode($cDailyAmounts); ?>, backgroundColor: primary, borderRadius: 4, maxBarThickness: 18 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { beginAtZero: true, grid: { color: 'rgba(128,128,128,.15)' } } }
+            }
+        });
+    })();
+    </script>
+
+    <form method="get" style="display:flex;gap:8px;margin-bottom:12px;">
+        <input type="hidden" name="tab" value="commission">
+        <input type="text" name="cq" value="<?php echo sanitize($cq); ?>" placeholder="Search rider name or email…" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <button type="submit" class="button button-secondary button-small">Search</button>
+        <?php if ($cq !== ''): ?><a href="?tab=commission" class="button button-secondary button-small">Clear</a><?php endif; ?>
+    </form>
+
+    <?php if ($commissionAgents): ?>
+    <?php foreach ($commissionAgents as $ca): ?>
+    <div class="adm-row">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+            <div>
+                <div style="font-weight:800;"><?php echo sanitize(display_name(['name'=>$ca['name'],'username'=>$ca['username']])); ?></div>
+                <div style="font-size:.75rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($ca['email']); ?></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <strong style="color:#ef4444;">GHS <?php echo number_format((float)$ca['commission_owed'],2); ?></strong>
+                <form method="post" style="margin:0;">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="settle_commission">
+                    <input type="hidden" name="agent_id" value="<?php echo $ca['id']; ?>">
+                    <input type="hidden" name="cq" value="<?php echo sanitize($cq); ?>">
+                    <button type="submit" class="button button-primary button-small" onclick="return confirm('Mark this rider\'s GH₵ <?php echo number_format((float)$ca['commission_owed'],2); ?> commission as settled? Only do this once they\'ve actually paid you.');">Mark Settled</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; else: ?>
+    <div class="empty-state">No riders currently owe commission.</div>
+    <?php endif; ?>
+    <?php endif; ?>
+
     <!-- ═══════════════ SETTINGS ═══════════════ -->
     <?php if ($tab === 'settings' && is_admin()): ?>
     <form method="post" action="delivery.php?tab=settings">
@@ -552,6 +724,22 @@ if ($tab === 'settings') {
                 <div class="form-group">
                     <label>Min account age (days) for auto-approval</label>
                     <input type="number" name="delivery_auto_approve_min_days" min="0" value="<?php echo sanitize($cfg['delivery_auto_approve_min_days']??'60'); ?>">
+                </div>
+            </div>
+        </div>
+
+        <div class="adm-set-section">
+            <p class="adm-set-title">Rider Commission</p>
+            <p class="meta" style="margin:0 0 10px;">Riders collect delivery fees directly — this just tracks what they owe the platform and blocks new job acceptance past the threshold.</p>
+            <div class="adm-grid2">
+                <div class="form-group">
+                    <label>Commission (% of delivery fee owed)</label>
+                    <input type="number" name="delivery_commission_percent" min="0" max="100" step="0.5" value="<?php echo sanitize($cfg['delivery_commission_percent']); ?>">
+                </div>
+                <div class="form-group">
+                    <label>Block new jobs once owed exceeds (GH₵)</label>
+                    <input type="number" name="delivery_commission_block_threshold" min="0" step="1" value="<?php echo sanitize($cfg['delivery_commission_block_threshold']); ?>">
+                    <p class="meta" style="margin-top:4px;">0 = never block.</p>
                 </div>
             </div>
         </div>

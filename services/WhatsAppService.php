@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 
 /**
  * Provider-agnostic WhatsApp messaging service.

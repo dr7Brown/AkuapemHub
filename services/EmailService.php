@@ -222,9 +222,16 @@ class EmailService
         return self::send($toEmail, $subject, self::buildVerificationTemplate($appName, $name, $link));
     }
 
+    /**
+     * @param array $lineItems Optional itemized rows: [['name','qty','unit_price','amount'], ...].
+     *                         When provided, replaces the single "Description" row with a full table.
+     * @param array|null $shopInfo Optional ['name','phone','region'] — shown as a "Sold By" block
+     *                             (marketplace orders).
+     */
     public static function sendReceipt(
         string $toEmail, string $name, string $receiptNumber,
-        string $description, float $amount, string $date, ?int $userId = null
+        string $description, float $amount, string $date, ?int $userId = null,
+        array $lineItems = [], ?array $shopInfo = null
     ): bool {
         $appName = defined('APP_NAME') ? APP_NAME : 'AkuapemConnect';
         $subject = "{$appName} — Payment Receipt {$receiptNumber}";
@@ -235,26 +242,66 @@ class EmailService
         $safeAmt    = 'GHS ' . number_format($amount, 2);
         $safeDate   = htmlspecialchars($date,           ENT_QUOTES, 'UTF-8');
 
+        $shopBlock = '';
+        if ($shopInfo && !empty($shopInfo['name'])) {
+            $safeShopName   = htmlspecialchars($shopInfo['name'], ENT_QUOTES, 'UTF-8');
+            $shopBlock = '<p style="margin:0 0 20px;font-size:13px;color:#475569;">Sold by <strong>' . $safeShopName . '</strong>'
+                . (!empty($shopInfo['phone']) ? ' &middot; ' . htmlspecialchars($shopInfo['phone'], ENT_QUOTES, 'UTF-8') : '')
+                . (!empty($shopInfo['region']) ? ' &middot; ' . htmlspecialchars($shopInfo['region'], ENT_QUOTES, 'UTF-8') : '')
+                . '</p>';
+        }
+
+        if ($lineItems) {
+            $rows = '';
+            foreach ($lineItems as $item) {
+                $safeItemName = htmlspecialchars($item['name'], ENT_QUOTES, 'UTF-8');
+                $rows .= '<tr>'
+                    . '<td style="padding:8px 0;font-size:13px;color:#111;border-bottom:1px solid #f1f5f9;">' . $safeItemName . '</td>'
+                    . '<td style="padding:8px 0;font-size:13px;text-align:center;border-bottom:1px solid #f1f5f9;">' . (int)$item['qty'] . '</td>'
+                    . '<td style="padding:8px 0;font-size:13px;text-align:right;border-bottom:1px solid #f1f5f9;">GHS ' . number_format((float)$item['unit_price'], 2) . '</td>'
+                    . '<td style="padding:8px 0;font-size:13px;text-align:right;font-weight:600;border-bottom:1px solid #f1f5f9;">GHS ' . number_format((float)$item['amount'], 2) . '</td>'
+                    . '</tr>';
+            }
+            $itemsTable = <<<HTML
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e5e7eb;margin-bottom:6px;">
+    <tr><td style="padding:6px 0;font-size:11px;text-transform:uppercase;color:#94a3b8;">Item</td>
+        <td style="padding:6px 0;font-size:11px;text-transform:uppercase;color:#94a3b8;text-align:center;">Qty</td>
+        <td style="padding:6px 0;font-size:11px;text-transform:uppercase;color:#94a3b8;text-align:right;">Unit Price</td>
+        <td style="padding:6px 0;font-size:11px;text-transform:uppercase;color:#94a3b8;text-align:right;">Subtotal</td></tr>
+    {$rows}
+  </table>
+HTML;
+        } else {
+            $itemsTable = <<<HTML
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e5e7eb;">
+    <tr><td style="padding:10px 0;font-size:13px;color:#6b7280;">Description</td>
+        <td style="padding:10px 0;font-size:13px;text-align:right;">{$safeDesc}</td></tr>
+  </table>
+HTML;
+        }
+
         $html = <<<HTML
 <!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 0;background:#f1f5f9;">
 <tr><td align="center">
-<table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;">
 <tr><td style="background:#0f766e;padding:24px 32px;text-align:center;">
   <h1 style="margin:0;color:#fff;font-size:20px;">{$safeApp}</h1>
   <p style="margin:4px 0 0;color:#a7f3d0;font-size:13px;">Payment Receipt</p>
 </td></tr>
 <tr><td style="padding:32px;">
   <p style="margin:0 0 16px;font-size:15px;color:#111;">Hi <strong>{$safeName}</strong>,</p>
-  <p style="margin:0 0 24px;font-size:14px;color:#475569;">Thank you for your payment. Here is your receipt:</p>
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e5e7eb;">
+  <p style="margin:0 0 16px;font-size:14px;color:#475569;">Thank you for your payment. Here is your receipt:</p>
+  {$shopBlock}
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #e5e7eb;margin-bottom:16px;">
     <tr><td style="padding:10px 0;font-size:13px;color:#6b7280;border-bottom:1px solid #f1f5f9;">Receipt #</td>
         <td style="padding:10px 0;font-size:13px;text-align:right;font-weight:600;border-bottom:1px solid #f1f5f9;">{$safeRef}</td></tr>
-    <tr><td style="padding:10px 0;font-size:13px;color:#6b7280;border-bottom:1px solid #f1f5f9;">Date</td>
-        <td style="padding:10px 0;font-size:13px;text-align:right;border-bottom:1px solid #f1f5f9;">{$safeDate}</td></tr>
-    <tr><td style="padding:10px 0;font-size:13px;color:#6b7280;">Description</td>
-        <td style="padding:10px 0;font-size:13px;text-align:right;">{$safeDesc}</td></tr>
+    <tr><td style="padding:10px 0;font-size:13px;color:#6b7280;">Date</td>
+        <td style="padding:10px 0;font-size:13px;text-align:right;">{$safeDate}</td></tr>
+  </table>
+  {$itemsTable}
+  <table width="100%" cellpadding="0" cellspacing="0">
     <tr><td style="padding:14px 0;font-size:16px;font-weight:700;color:#0f766e;border-top:2px solid #e5e7eb;">Total Paid</td>
         <td style="padding:14px 0;font-size:16px;font-weight:700;color:#0f766e;text-align:right;border-top:2px solid #e5e7eb;">{$safeAmt}</td></tr>
   </table>

@@ -29,7 +29,8 @@ switch ($type) {
     // ── Marketplace order ──────────────────────────────────────────────────
     case 'marketplace_order': {
         $stmt = $pdo->prepare(
-            'SELECT mo.*, ms.shop_name, u.name AS customer_name, u.email AS customer_email
+            'SELECT mo.*, ms.shop_name, ms.phone AS shop_phone, ms.email AS shop_email, ms.region AS shop_region,
+                    u.name AS customer_name, u.email AS customer_email
              FROM mp_orders mo
              JOIN mp_shops ms ON mo.shop_id = ms.id
              JOIN users u ON mo.customer_id = u.id
@@ -44,8 +45,10 @@ switch ($type) {
         $items = $itemsStmt->fetchAll();
         foreach ($items as $i) {
             $lineItems[] = [
-                'desc'   => sanitize($i['product_name']) . ' × ' . $i['quantity'],
-                'amount' => (float)$i['subtotal'],
+                'name'       => $i['product_name'],
+                'qty'        => (int)$i['quantity'],
+                'unit_price' => (float)$i['price'],
+                'amount'     => (float)$i['subtotal'],
             ];
         }
         $receipt = [
@@ -57,6 +60,13 @@ switch ($type) {
             'method'  => ucwords(str_replace('_',' ',$row['payment_method'])),
             'status'  => $row['payment_status'] === 'paid' ? 'Paid' : 'Unpaid',
             'total'   => (float)$row['total_amount'],
+            'itemized' => true,
+            'shop'    => [
+                'name'   => $row['shop_name'],
+                'phone'  => $row['shop_phone'],
+                'email'  => $row['shop_email'],
+                'region' => $row['shop_region'],
+            ],
         ];
         break;
     }
@@ -249,12 +259,20 @@ $receiptDate = date('d M Y, g:i A', strtotime($receipt['date']));
         </div>
 
         <!-- Billed to -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;flex-wrap:wrap;">
+        <div style="display:grid;grid-template-columns:repeat(<?php echo !empty($receipt['shop']) ? 3 : 2; ?>,1fr);gap:20px;margin-bottom:20px;flex-wrap:wrap;">
             <div>
                 <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:4px;">Billed To</div>
                 <div style="font-weight:700;"><?php echo sanitize($receipt['to']); ?></div>
                 <div class="rc-meta"><?php echo sanitize($receipt['email']); ?></div>
             </div>
+            <?php if (!empty($receipt['shop'])): ?>
+            <div>
+                <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:4px;">Sold By</div>
+                <div style="font-weight:700;"><?php echo sanitize($receipt['shop']['name']); ?></div>
+                <?php if ($receipt['shop']['phone']): ?><div class="rc-meta"><?php echo sanitize($receipt['shop']['phone']); ?></div><?php endif; ?>
+                <?php if ($receipt['shop']['region']): ?><div class="rc-meta"><?php echo sanitize($receipt['shop']['region']); ?></div><?php endif; ?>
+            </div>
+            <?php endif; ?>
             <div>
                 <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:4px;">Payment Details</div>
                 <div class="rc-meta">Method: <strong><?php echo sanitize($receipt['method']); ?></strong></div>
@@ -267,6 +285,27 @@ $receiptDate = date('d M Y, g:i A', strtotime($receipt['date']));
         <!-- Line items -->
         <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:6px;"><?php echo sanitize($receipt['title']); ?></div>
         <table class="rc-table">
+            <?php if (!empty($receipt['itemized'])): ?>
+            <thead>
+                <tr style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;">
+                    <td>Item</td><td style="text-align:center;">Qty</td><td style="text-align:right;">Unit Price</td><td style="text-align:right;">Subtotal</td>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($lineItems as $item): ?>
+                <tr>
+                    <td><?php echo sanitize($item['name']); ?></td>
+                    <td style="text-align:center;"><?php echo $item['qty']; ?></td>
+                    <td style="text-align:right;">GHS <?php echo number_format($item['unit_price'], 2); ?></td>
+                    <td style="text-align:right;font-weight:600;">GHS <?php echo number_format($item['amount'], 2); ?></td>
+                </tr>
+                <?php endforeach; ?>
+                <tr class="rc-total-row">
+                    <td colspan="3">Total Paid</td>
+                    <td style="text-align:right;">GHS <?php echo number_format($receipt['total'], 2); ?></td>
+                </tr>
+            </tbody>
+            <?php else: ?>
             <tbody>
                 <?php foreach ($lineItems as $item): ?>
                 <tr>
@@ -279,6 +318,7 @@ $receiptDate = date('d M Y, g:i A', strtotime($receipt['date']));
                     <td>GHS <?php echo number_format($receipt['total'], 2); ?></td>
                 </tr>
             </tbody>
+            <?php endif; ?>
         </table>
 
         <hr class="rc-divider">

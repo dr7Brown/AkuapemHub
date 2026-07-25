@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -28,7 +28,7 @@ function event_cards($pdo, $search, $filter, $page, $perPage) {
         $order  = "ORDER BY e.start_date ASC";
     } else { // upcoming (default)
         $where .= " AND e.start_date >= ?"; $params[] = $today;
-        $order  = "ORDER BY e.featured DESC, e.start_date ASC";
+        $order  = "ORDER BY (e.featured=1 AND (e.featured_end_date IS NULL OR e.featured_end_date>=CURDATE())) DESC, e.start_date ASC";
     }
     $sql = "SELECT e.* FROM events e $where $order
             LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
@@ -75,8 +75,12 @@ if ($isAjax) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Events — <?php echo APP_NAME; ?></title>
-    <meta name="description" content="Community events, conferences, festivals, church programs and more on <?php echo APP_NAME; ?>.">
+    <?php echo seo_meta([
+        'title'       => 'Community Events — Akuapem Area, Ghana | ' . APP_NAME,
+        'description' => 'Discover upcoming community events, conferences, festivals, and church programs across the Akuapem area of Ghana.',
+        'url'         => rtrim(BASE_URL, '/') . '/events.php',
+        'noindex'     => !empty($_GET['q']) || !empty($_GET['page']),
+    ]); ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .ev-shell { max-width:1060px; margin:0 auto; padding:20px 16px 60px; }

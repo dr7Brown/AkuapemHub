@@ -1,0 +1,47 @@
+-----FEATURES---------------
+---FEATURE 1-------------------------
+Full COI Implementation
+Three-layer defence — every moderation path is blocked
+Layer 1 — Quick action queue (admin/mod_action.php)
+Before any approve/reject runs, a type map fires check_mod_coi(). If the moderator owns the record → flash error + redirect. All 14 actions covered.
+Layer 2 — Individual admin listing pages (UI hides buttons proactively)
+Each listing page now evaluates $isCoi per row and replaces approve/reject buttons with an amber "⚠️ Yours" badge. No buttons = nothing to click through:
+
+Page	What's hidden
+admin/requests.php	Approve + Reject buttons
+admin/events.php	Publish + Reject buttons
+admin/funerals.php	Approve + Reject buttons
+admin/news.php	Publish button
+admin/marketplace.php	Approve + Reject buttons
+admin/delivery.php	Approve + Reject buttons (requests)
+Layer 3 — POST handler double-check (belt + braces)
+
+Even if someone bypasses the UI (e.g., crafted form POST), each page's PHP handler calls check_mod_coi() again before writing to the database.
+Violation trail
+Every blocked attempt: log_audit_action($modId, 'coi_violation', ...) + notification to all admins.
+approved_by column in database
+All 8 content tables now have the column. It's written when a moderator approves via mod_action.php. Enables direct SQL audit: WHERE created_by = approved_by finds any violations that somehow slipped through.
+
+---FEATURE 2-------------------------
+1. Buyer pays (Paystack) → paid
+2. Seller clicks "Accept Order" → processing (collapsed pending→confirmed→processing into one click)
+3. Seller clicks "Mark Ready for Delivery" → auto-creates delivery request already approved, agents notified immediately (admin approval step removed for marketplace orders — general courier requests from strangers still go through admin, since those aren't pre-vetted)
+4. First qualified agent to apply is auto-assigned — buyer and seller both get a "Rider Assigned" notification, no one has to pick anyone (this was the standout bug — buyers were silently expected to dispatch their own courier)
+5. Agent: Picked Up → In Transit → Delivered → starts the payout timer
+6. Wait ~3 days (unchanged, this is fraud protection)
+7. Seller requests withdrawal → Admin clicks "Approve & Pay" once (merged from two separate admin clicks)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

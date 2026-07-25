@@ -2039,3 +2039,169 @@ CREATE TABLE IF NOT EXISTS mp_payout_requests (
     KEY idx_mpr_status (status),
     FOREIGN KEY (shop_id) REFERENCES mp_shops(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v034  Homepage delivery feed visibility toggles.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Marketplace order deliveries now auto-approve (v033 follow-up), so they show
+-- up in the homepage "Open Delivery Requests" feed alongside personal delivery
+-- requests. Lets admin show/hide each source independently on that feed only —
+-- delivery agents still see every open job on their own dashboard regardless.
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('homepage_show_marketplace_deliveries', '1', 'Show marketplace order deliveries in the homepage Open Delivery Requests feed'),
+    ('homepage_show_personal_deliveries',    '1', 'Show personal delivery requests in the homepage Open Delivery Requests feed'),
+    ('homepage_delivery_feed_audience',      'everyone', 'Who can see the homepage Open Delivery Requests feed: everyone or agents_only');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v035  Delivery complaints — buyer can dispute a delivery marked 'delivered'.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- The existing `disputes` table has a hard FK to service_requests (jobs only),
+-- so delivery complaints get their own table. Filing one on a marketplace-order
+-- delivery pauses that order's payout_release_at until admin resolves it —
+-- 'resolved' (complaint upheld) refunds the buyer via mp_refund_order(),
+-- 'dismissed' (no fault found) resumes the payout release timer.
+
+CREATE TABLE IF NOT EXISTS delivery_disputes (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    delivery_request_id INT UNSIGNED NOT NULL,
+    reported_by         INT UNSIGNED NOT NULL,
+    reported_user_id    INT UNSIGNED NOT NULL,
+    dispute_type        ENUM('not_delivered','damaged','wrong_item','late','other') NOT NULL,
+    description         TEXT NOT NULL,
+    status              ENUM('open','investigating','resolved','dismissed') NOT NULL DEFAULT 'open',
+    resolution_notes    TEXT,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME NULL,
+    INDEX idx_dd_delivery (delivery_request_id),
+    INDEX idx_dd_reported_by (reported_by),
+    INDEX idx_dd_status (status),
+    FOREIGN KEY (delivery_request_id) REFERENCES delivery_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (reported_by)         REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (reported_user_id)    REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v036  Delivery rider commission — running "owed" ledger.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Riders still collect the delivery fee directly (cash/MoMo) — the platform
+-- never touches that money. Instead, each completed delivery adds a debt line
+-- (fee x commission%) to the agent's running balance. Once that balance
+-- crosses delivery_commission_block_threshold, the agent can no longer apply
+-- for new jobs until an admin marks their debt settled (paid outside the
+-- system) on the Commission tab of admin/delivery.php.
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('delivery_commission_percent',           '10', 'Percent of each delivery fee riders owe the platform'),
+    ('delivery_commission_block_threshold',   '50', 'GHS owed above which a rider is blocked from accepting new jobs (0 = never block)');
+
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS commission_owed DECIMAL(10,2) NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS delivery_commission_ledger (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    agent_id            INT UNSIGNED NOT NULL,
+    delivery_request_id INT UNSIGNED DEFAULT NULL,
+    type                ENUM('commission_owed','settlement','reversal') NOT NULL,
+    amount              DECIMAL(10,2) NOT NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_dcl_agent (agent_id),
+    FOREIGN KEY (agent_id)            REFERENCES delivery_agents(id) ON DELETE CASCADE,
+    FOREIGN KEY (delivery_request_id) REFERENCES delivery_requests(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v037  Fix: mp_orders.payment_status never got widened for refunds.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- mp_refund_order() sets payment_status='refunded', but the ENUM was only ever
+-- ('unpaid','paid') — on this server's non-strict sql_mode that silently
+-- truncated to an empty string instead of erroring, so it went unnoticed.
+-- Confirmed by direct query against the dev DB, not just code review.
+
+ALTER TABLE mp_orders MODIFY COLUMN payment_status ENUM('unpaid','paid','refunded') NOT NULL DEFAULT 'unpaid';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v038  Automated seller payouts via Paystack Transfers.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Sellers save one MoMo + one bank payout account and pick per-request which
+-- to pay out to. mp_payout_mode ('manual'|'auto') decides whether an admin
+-- must approve each withdrawal or Paystack fires the transfer immediately —
+-- both paths call the same process_marketplace_payout() so Paystack always
+-- does the actual money movement, only the timing differs. mp_banks is a
+-- local cache of Paystack's bank/MoMo-network list so the payout-setup form
+-- doesn't hit the live API on every page load.
+
+CREATE TABLE IF NOT EXISTS mp_banks (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    code        VARCHAR(20) NOT NULL,
+    name        VARCHAR(100) NOT NULL,
+    type        ENUM('bank','mobile_money') NOT NULL,
+    currency    VARCHAR(10) NOT NULL DEFAULT 'GHS',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_bank_code_type (code, type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Safe baseline so the MoMo payout form works even before an admin has
+-- clicked "Sync Banks" — full bank list still requires a live sync since
+-- hardcoding dozens of bank codes isn't safe without verifying against
+-- Paystack's current list.
+INSERT IGNORE INTO mp_banks (code, name, type, currency) VALUES
+    ('MTN', 'MTN Mobile Money',      'mobile_money', 'GHS'),
+    ('VOD', 'Vodafone Cash',         'mobile_money', 'GHS'),
+    ('ATL', 'AirtelTigo Money',      'mobile_money', 'GHS');
+
+CREATE TABLE IF NOT EXISTS mp_payout_accounts (
+    id                      INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id                 INT UNSIGNED NOT NULL,
+    method                  ENUM('momo','bank') NOT NULL,
+    account_name            VARCHAR(150) NOT NULL,
+    account_number          VARCHAR(30) NOT NULL,
+    bank_code               VARCHAR(20) DEFAULT NULL,
+    bank_name               VARCHAR(100) DEFAULT NULL,
+    paystack_recipient_code VARCHAR(60) DEFAULT NULL,
+    is_default              TINYINT(1) NOT NULL DEFAULT 0,
+    created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_mpa_shop_method (shop_id, method),
+    FOREIGN KEY (shop_id) REFERENCES mp_shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE mp_payout_requests MODIFY COLUMN momo_number VARCHAR(30) NULL;
+ALTER TABLE mp_payout_requests MODIFY COLUMN status ENUM('pending','approved','processing','rejected','paid','failed') NOT NULL DEFAULT 'pending';
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS payout_account_id INT UNSIGNED DEFAULT NULL;
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS method ENUM('momo','bank') NOT NULL DEFAULT 'momo';
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS account_name VARCHAR(150) DEFAULT NULL;
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS account_number VARCHAR(30) DEFAULT NULL;
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS bank_name VARCHAR(100) DEFAULT NULL;
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS bank_code VARCHAR(20) DEFAULT NULL;
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS paystack_transfer_code VARCHAR(60) DEFAULT NULL;
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS paystack_transfer_reference VARCHAR(80) DEFAULT NULL;
+ALTER TABLE mp_payout_requests ADD COLUMN IF NOT EXISTS failure_reason VARCHAR(255) DEFAULT NULL;
+
+-- Backfill so pre-existing rows display uniformly under the new columns.
+UPDATE mp_payout_requests SET account_number = momo_number WHERE account_number IS NULL AND momo_number IS NOT NULL;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('mp_payout_mode', 'manual', 'manual|auto — whether seller withdrawals need admin approval or Paystack pays instantly');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v039  "Stay logged in" — persistent login tokens.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Selector/validator pattern: selector is a plain lookup key, validator is
+-- only ever stored as a SHA-256 hash — a DB leak alone can't forge a cookie.
+-- Rotated on every successful auto-login so a stolen cookie has a shrinking
+-- window before the legitimate user's next visit invalidates it.
+
+CREATE TABLE IF NOT EXISTS remember_tokens (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id        INT UNSIGNED NOT NULL,
+    selector       VARCHAR(24) NOT NULL,
+    validator_hash CHAR(64) NOT NULL,
+    expires_at     DATETIME NOT NULL,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_remember_selector (selector),
+    KEY idx_remember_user (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('remember_me_days', '30', 'How many days a "Stay logged in" session lasts before requiring a fresh login');

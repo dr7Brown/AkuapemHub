@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -39,10 +39,11 @@ function funeral_cards($pdo, array $filters, int $page, int $perPage, bool $feat
         $where[] = "fa.featured=1";
     }
 
+    $featExpr = '(fa.featured=1 AND (fa.featured_end_date IS NULL OR fa.featured_end_date>=CURDATE()))';
     $orderBy = match($filters['sort'] ?? 'burial_asc') {
-        'burial_desc' => 'fa.burial_date DESC, fa.featured DESC',
+        'burial_desc' => "fa.burial_date DESC, {$featExpr} DESC",
         'newest'      => 'fa.created_at DESC',
-        default       => 'fa.featured DESC, fa.burial_date ASC',
+        default       => "{$featExpr} DESC, fa.burial_date ASC",
     };
 
     $whereClause = 'WHERE ' . implode(' AND ', $where);
@@ -66,8 +67,7 @@ function funeral_count($pdo, array $filters): int {
     return (int)$st->fetchColumn();
 }
 
-$activeFilters = compact('q', 'month', 'gender', 'venue', 'sort');
-$activeFilters['q'] = $search;
+$activeFilters = ['q' => $search, 'month' => $month, 'gender' => $gender, 'venue' => $venue, 'sort' => $sort];
 
 // Distinct months that have approved burials — for the month dropdown
 $availableMonths = $pdo->query(
@@ -92,7 +92,7 @@ $cards = funeral_cards($pdo, $activeFilters, $page, $perPage);
 
 // Sidebar data
 $today           = date('Y-m-d');
-$sidebarEvents   = $pdo->query("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND start_date >= '$today' ORDER BY featured DESC, start_date ASC LIMIT 5")->fetchAll();
+$sidebarEvents   = $pdo->query("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND start_date >= '$today' ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 5")->fetchAll();
 $sidebarNews     = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 4")->fetchAll();
 $sidebarAd       = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
 
@@ -133,8 +133,12 @@ if ($isAjax) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Funeral Announcements — <?php echo APP_NAME; ?></title>
-    <meta name="description" content="Funeral announcements and memorial information from the <?php echo APP_NAME; ?> community.">
+    <?php echo seo_meta([
+        'title'       => 'Funeral Announcements — Akuapem Area, Ghana | ' . APP_NAME,
+        'description' => 'Find funeral announcements, obituaries, and burial/memorial service details for families across the Akuapem area of Ghana.',
+        'url'         => rtrim(BASE_URL, '/') . '/funerals.php',
+        'noindex'     => !empty($_GET['q']) || !empty($_GET['page']),
+    ]); ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .fa-shell { max-width:1060px; margin:0 auto; padding:20px 16px 60px; }

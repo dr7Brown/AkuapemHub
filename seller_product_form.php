@@ -50,12 +50,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($price <= 0) $error = 'Price must be greater than 0.';
     elseif ($stockQty < 0) $error = 'Stock quantity cannot be negative.';
     elseif ($discountPrice !== null && $discountPrice >= $price) $error = 'Discount price must be less than the regular price.';
+    elseif (!$editId && requires_verified_email('product_post') && !is_email_verified()) {
+        $error = 'Please verify your email address before listing a product.';
+    }
 
     if (!$error) {
         if ($editId) {
+            $wasRejected = ($product['status'] ?? '') === 'rejected';
+            if ($product['status'] === 'approved') {
+                $newStatus = 'approved';
+            } elseif ($product['status'] === 'out_of_stock') {
+                // Restocking (or just editing while still out) shouldn't require
+                // re-approval — it was already an approved listing.
+                $newStatus = $stockQty > 0 ? 'approved' : 'out_of_stock';
+            } else {
+                $newStatus = $status;
+            }
+            // If previously rejected and user submits for approval, clear rejection reason
+            $clearRejection = $wasRejected && $status === 'pending_approval' ? ', rejection_reason=NULL' : '';
             $pdo->prepare(
-                'UPDATE mp_products SET name=?,description=?,category_id=?,price=?,discount_price=?,stock_quantity=?,sku=?,condition_type=?,delivery_available=?,status=?,updated_at=NOW() WHERE id=?'
-            )->execute([$name, $description ?: null, $categoryId, $price, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, ($product['status']==='approved'?'approved':$status), $editId]);
+                "UPDATE mp_products SET name=?,description=?,category_id=?,price=?,discount_price=?,stock_quantity=?,sku=?,condition_type=?,delivery_available=?,status=?,updated_at=NOW()$clearRejection WHERE id=?"
+            )->execute([$name, $description ?: null, $categoryId, $price, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, $newStatus, $editId]);
         } else {
             $slug = mp_unique_slug($name, 'mp_products', 'slug', $pdo);
             $pdo->prepare(
@@ -86,14 +101,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Notify admins + moderators with approve_products permission
+        // Notify admins + moderators on new submission or resubmission after rejection
         if ($status === 'pending_approval') {
-            notify_moderators('approve_products',
-                'New Product Pending Approval',
-                $shop['shop_name'] . ' submitted "' . $name . '" for review. Check Admin → Marketplace.');
+            $notifTitle = isset($wasRejected) && $wasRejected
+                ? 'Product Resubmitted After Rejection'
+                : 'New Product Pending Approval';
+            $notifBody  = $shop['shop_name'] . ' submitted "' . $name . '" for review. Check Admin → Marketplace.';
+            notify_moderators('approve_products', $notifTitle, $notifBody);
         }
 
-        flash($editId ? 'Product saved.' : ($status==='pending_approval'?'Product submitted for admin approval.':'Product saved as draft.'), 'success');
+        $successMsg = $status === 'pending_approval'
+            ? (isset($wasRejected) && $wasRejected ? 'Product resubmitted for review. Admin has been notified.' : 'Product submitted for admin approval.')
+            : 'Product saved.';
+        flash($successMsg, 'success');
         header('Location: seller_dashboard.php?tab=products');
         exit;
     }

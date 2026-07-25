@@ -1,0 +1,9 @@
+Next steps, in order:
+
+Upload via FileZilla — connect to public_html (or the domain's document root if this is an addon domain), upload everything except the excluded files I listed earlier.
+Import the database — in cPanel → phpMyAdmin, select royayfxh_akuapemconnectx, go to Import, choose install.sql, run it. It's idempotent so safe if you need to re-run.
+Set up the cron job — cPanel → Cron Jobs → add a daily job (e.g. midnight) running: php /home/royayfxh/public_html/_cron.php (adjust path to wherever the files land — tell me the actual path once uploaded and I'll give you the exact command).
+Create your admin account — register normally on the live site, then in phpMyAdmin run: UPDATE users SET role='admin' WHERE email='your-register-email';
+Configure SMTP in Admin → Email Settings and send a test — this is the single biggest thing that can silently break registration/password-reset.
+Let me know once the upload and DB import are done and I'll help verify the site loads and walk through the rest (cron, admin account, SMTP, smoke test).
+

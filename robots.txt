@@ -1,0 +1,97 @@
+User-agent: *
+
+# Public content — crawlable
+Allow: /
+Allow: /index.php
+Allow: /browse_jobs.php
+Allow: /find_workers.php
+Allow: /news.php
+Allow: /events.php
+Allow: /funerals.php
+Allow: /marketplace.php
+Allow: /request_detail.php
+Allow: /news_article.php
+Allow: /event.php
+Allow: /funeral.php
+Allow: /product.php
+Allow: /shop.php
+Allow: /worker_profile_public.php
+Allow: /about.php
+Allow: /contact.php
+Allow: /terms.php
+Allow: /privacy.php
+Allow: /support.php
+
+# Admin area
+Disallow: /admin/
+
+# Account, auth, and personal-dashboard pages — not useful search results
+Disallow: /login.php
+Disallow: /register.php
+Disallow: /logout.php
+Disallow: /forgot_password.php
+Disallow: /reset_password.php
+Disallow: /verify_email.php
+Disallow: /verify_otp.php
+Disallow: /resend_verification.php
+Disallow: /delete_account.php
+Disallow: /settings.php
+Disallow: /jobs.php
+Disallow: /my_applications.php
+Disallow: /my_events.php
+Disallow: /my_funerals.php
+Disallow: /my_news.php
+Disallow: /my_payments.php
+Disallow: /my_saved.php
+Disallow: /notifications.php
+Disallow: /worker_profile.php
+Disallow: /worker_history.php
+Disallow: /customer_profile.php
+Disallow: /customer_payments.php
+Disallow: /switch_to_customer.php
+Disallow: /become_worker.php
+Disallow: /become_delivery_agent.php
+Disallow: /seller_dashboard.php
+Disallow: /seller_boost.php
+Disallow: /seller_product_form.php
+Disallow: /request_verification.php
+
+# Cart, checkout, and payment flow — never index
+Disallow: /cart.php
+Disallow: /checkout.php
+Disallow: /orders.php
+Disallow: /escrow_checkout.php
+Disallow: /escrow_release.php
+Disallow: /pay_*.php
+Disallow: /resume_payment.php
+Disallow: /payment_receipt.php
+Disallow: /platform_receipt.php
+Disallow: /receipt.php
+Disallow: /toggle_payment.php
+Disallow: /toggle_subscription.php
+Disallow: /feature_*.php
+
+# Chat and messaging
+Disallow: /chat.php
+Disallow: /chat_api.php
+Disallow: /chat_start.php
+Disallow: /messages.php
+
+# Delivery agent flows
+Disallow: /delivery.php
+Disallow: /delivery_*.php
+
+# Action/form-handler endpoints (no standalone content)
+Disallow: /ajax.php
+Disallow: /marketplace_ajax.php
+Disallow: /news_ajax.php
+Disallow: /location_api.php
+Disallow: /apply_job.php
+Disallow: /cancel_request.php
+Disallow: /complete_job.php
+Disallow: /rate_job.php
+Disallow: /file_dispute.php
+Disallow: /manage_applicants.php
+Disallow: /request.php
+
+Sitemap: https://akuapemconnect.com/sitemap.php

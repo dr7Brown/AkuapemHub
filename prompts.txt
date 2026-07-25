@@ -603,6 +603,154 @@ ie. Empty line space denotes a new paragraph
 6. all text area field in the app should consume this model
 7. any future textfield should use this model
 
+Next: 
+1. unable to set worker profile. i get the message "unable to set up 
+your worker profile. Please try again.
+2. Request.php items shift out of place on mobile
+3. when job owner approve, page does not auto refresh to produce the 
+the update.
+4. admin must set whether fully staffed and completed jobs to still be listed on the platform or not
+5. when worker is assigned to an applied job, should receive notification, should be also allowed
+ to see contact details of job owner. and also be allowed to chat.
+6. Though worker, when i click on worker profile, i get the 
+message, "You don't have a worker profile yet. Become a worker to create one. is it becuase, admin set
+my worker profile, dirrectly from his dashboard?
+8. 
+
+next:
+the following are not implemented:
+1. Worker marks job as complete    
+2. Customer confirms completion
+3. Customer rates worker (1–5 stars)
+
+next:
+1. when session expires, show login page instead of "Failed to load the page. Open directly →"
+
+next: 
+1. profile picture on account menu is broken, does not show image
+2. design a popup that shows the notifications, rather that using system notification.
+3. notification bell covers carts button
+4. allow admin to set how log session to take to expired
+for each user type and events that triggers it to expire to require login
+5. when admin or manager rejects news article, it doesnt work, nothing happens
+6. when admin enable payment for events featuring, users still does it for free, 
+check that of funeral and the others and if such problem exist, fix it.
+6. when i open funeral, events, news from the index page, it opens a blank page
+
+next: 
+1. Contact page intro, Intro line shown at the top of the Contact page shows html element <p>
+2. Featuring shop packages does not reflect packages set by admin
+
+next:
+1. admin page, tabs dont show the site favicon
+2. want to rank well on google search, so meta data 
+must be fully enhanced.
+
+next:
+1. add "Other" category to the existing location category
+then users can select "Other" then they specify their Location
+such that all those not in akuapem will fall under the "Other"
+category.
+2. Closing account under "Privacy & Security" should be a request with reasons,
+admin then review to take final action.
+the password must still be taken as it is now too.
+3. Contact page intro, Intro line shown at the top of the Contact page still shows html element <p>
+4. akuapemconnect.com/seller_dashboard.php should contain field google map address/link
+this to guide users especially delivery guys pick up items for delivery
+
+
+
+next: 
+how sellers get their money.
+The flow would be:
+
+Buyer pays through Paystack.
+Funds are recorded in the seller's Pending Balance.
+After delivery and the confirmation period, the funds move to Available Balance.
+The seller requests a withdrawal.
+An admin reviews and approves it. dedicated page for this
+
+admin sets percentage of charges
+
+next: still on delivery
+1. 
+
+
+
+
+
+next:
+1. Bio & Availability -> About you (optional)
+when i update the above field for worker profile, it still shows blank
+2. when user is asked to sign in to be able to
+perform an activity on the site, after signing in, 
+he is taken to a different page, must be able to continue where he left off.
+
+
+
+
+
+
+
+
+Next:
+password field on signup and loggin forms
+should contain button to show/hide password.
+
+Next: w
+purchased item from the market, but receipt
+does not contain the purchased item details, 
+quantity, unit price, etc and shop details. 
+i want all shown on the receipt. when admin 
+enters receipt in his portal too, he should see details of that transaction.
+
+
+Next:
+0. add filter by date and time too
+1. when rider apply for delivery job, 
+the purchaser must approve before delivery guy should proceed. 
+many delivery guys can apply at the same time, but only one approvals required
+onces item is delivered, system auto decline all other applications to that delivery job
+2. Admin should be able to export registered user data as csv
+
+Next:
+0. the sort by date and time i mean for agent to be able to 
+filter orders to order by time/date 
+1. add stay logged in checkbox to login page
+when user checks it, he/she stays logged in even for weeks 
+until he logs out
+2. 
+
+next:
+1. i want the csv to be downloaded
+2.when logged in as admin, unable to see site favicon
+
+next:
+0. export as excel file and pdf file instead
+1. remove the date and time filter.
+2. time on purchased item is wrong. delivery gut seeing
+4hours ago on items that was just purchased. 
+
+next:
+1. when rider apply for delivery job, 
+the purchaser must approve before delivery guy should proceed. 
+many delivery guys can apply at the same time, but only one approvals required
+onces item is delivered, system auto decline all other applications to that delivery job
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

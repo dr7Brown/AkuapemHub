@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || empty($_POST['request_id'])) {
 }
 csrf_check();
 
-if (!is_email_verified()) {
+if (requires_verified_email('job_apply') && !is_email_verified()) {
     flash('Please verify your email address before applying for jobs. Check your inbox.', 'error');
     header('Location: request_detail.php?id=' . intval($_POST['request_id']));
     exit;

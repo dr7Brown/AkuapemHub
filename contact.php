@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 $user = current_user();
@@ -7,6 +7,7 @@ $sent    = isset($_GET['sent']);
 $fError  = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $fname   = trim($_POST['fullname'] ?? '');
     $femail  = trim($_POST['email'] ?? '');
     $fsubj   = trim($_POST['subject'] ?? '');
@@ -64,7 +65,7 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
     </header>
     <div class="static-shell">
         <h1 style="margin:0 0 6px;font-size:1.6rem;">Contact Us</h1>
-        <p class="meta" style="margin:0 0 24px;"><?php echo sanitize($ci['tagline']); ?></p>
+        <div class="meta" style="margin:0 0 24px;"><?php echo render_rich($ci['tagline']); ?></div>
 
         <div class="contact-grid">
             <!-- Contact info -->
@@ -153,7 +154,7 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
 
                     <?php if ($sent): ?>
                         <div class="alert alert-success" style="margin-bottom:0;">
-                            <strong>Message sent!</strong> We'll reply to <strong><?php echo sanitize($femail); ?></strong> as soon as possible. Usually within 1–2 business days.
+                            <strong>Message sent!</strong> We'll reply to the email address you provided as soon as possible. Usually within 1–2 business days.
                         </div>
                     <?php else: ?>
 
@@ -162,6 +163,7 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
                         <?php endif; ?>
 
                         <form method="post" action="contact.php">
+                            <?php echo csrf_field(); ?>
                             <div class="form-row" style="margin-bottom:14px;">
                                 <div>
                                     <label for="cf-name" style="display:block;font-size:.85rem;margin-bottom:4px;font-weight:600;">Full name *</label>

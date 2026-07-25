@@ -22,14 +22,17 @@ $productId = (int)($_GET['product_id'] ?? 0);
 $validTypes = ['featured_product','sponsored_product','featured_shop','sponsored_shop'];
 if (!in_array($boostType, $validTypes, true)) $boostType = 'featured_product';
 
-// Pricing from platform settings
-$prices = [
-    'featured_product'  => ['7'=>(float)get_platform_setting('mp_featured_product_7day_price','15.00'),  '30'=>(float)get_platform_setting('mp_featured_product_30day_price','40.00')],
-    'sponsored_product' => ['7'=>(float)get_platform_setting('mp_featured_product_7day_price','15.00'),  '30'=>(float)get_platform_setting('mp_featured_product_30day_price','40.00')],
-    'featured_shop'     => ['7'=>(float)get_platform_setting('mp_featured_shop_7day_price','20.00'),     '30'=>(float)get_platform_setting('mp_featured_shop_30day_price','55.00')],
-    'sponsored_shop'    => ['7'=>(float)get_platform_setting('mp_featured_shop_7day_price','20.00'),     '30'=>(float)get_platform_setting('mp_featured_shop_30day_price','55.00')],
-];
-$activePrices = $prices[$boostType];
+// Load packages from mp_boost_packages table, filtered by the selected type
+$pkgRows = $pdo->query("SELECT * FROM mp_boost_packages WHERE status='active' ORDER BY boost_type, duration_days ASC")->fetchAll();
+$packagesByType = [];
+foreach ($pkgRows as $pk) { $packagesByType[$pk['boost_type']][] = $pk; }
+$activePkgs = $packagesByType[$boostType] ?? [];
+
+// Enabled check per boost type
+if (get_platform_setting('mp_'.$boostType.'_enabled','1') !== '1') {
+    flash('This boost type is not currently available.', 'info');
+    header('Location: seller_dashboard.php?tab=products'); exit;
+}
 
 // Load product if applicable
 $product = null;
@@ -58,18 +61,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $postBoostType = $_POST['boost_type'] ?? $boostType;
     $postProductId = (int)($_POST['product_id'] ?? 0);
-    $days          = (int)($_POST['package_days'] ?? 7);
+    $packageId     = (int)($_POST['package_id'] ?? 0);
     $method        = $_POST['payment_method'] ?? '';
     $mobi          = trim($_POST['mobi_number'] ?? '');
 
+    // Resolve package from DB
+    $selPkg = null;
+    if ($packageId) {
+        $pkgSt = $pdo->prepare("SELECT * FROM mp_boost_packages WHERE id=? AND boost_type=? AND status='active'");
+        $pkgSt->execute([$packageId, $postBoostType]);
+        $selPkg = $pkgSt->fetch();
+    }
+
     if (!in_array($postBoostType, $validTypes, true)) $error = 'Invalid boost type.';
-    elseif (!in_array($days, [7,30], true)) $error = 'Select a package.';
+    elseif (!$selPkg) $error = 'Select a valid package.';
     elseif (!array_key_exists($method, $paymentMethods)) $error = 'Select a payment method.';
     elseif ($method !== 'wallet' && $mobi === '') $error = 'Enter your mobile money number.';
     elseif (str_contains($postBoostType, 'product') && !$postProductId) $error = 'Select a product to boost.';
 
     if (!$error) {
-        $price = $prices[$postBoostType][(string)$days] ?? 0.00;
+        $price = (float)$selPkg['price'];
+        $days  = (int)$selPkg['duration_days'];
         $start = date('Y-m-d');
         $end   = date('Y-m-d', strtotime("+{$days} days"));
 
@@ -93,7 +105,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'Your boost order has been submitted. An admin will activate it once payment is confirmed.',
             'info');
 
-        $requiresPayment = get_platform_setting('delivery_sponsored_requires_payment', '0') === '1' && $price > 0;
+        $requiresPayment = get_platform_setting('mp_boost_requires_payment', '1') === '1' && $price > 0;
         if ($requiresPayment) {
             // Redirect to Paystack checkout
             header('Location: pay_mp_boost.php?boost_id=' . $boostId);
@@ -188,7 +200,7 @@ $boostLabels = [
                 <div class="bst-type">
                     <input type="radio" name="boost_type" id="bt_<?php echo $type; ?>" value="<?php echo $type; ?>"
                            <?php echo $boostType===$type?'checked':''; ?>
-                           onchange="toggleProductRow()">
+                           onchange="switchBoostType(this.value)">
                     <label for="bt_<?php echo $type; ?>">
                         <span class="bst-icon"><?php echo $info['icon']; ?></span>
                         <strong style="font-size:.86rem;"><?php echo sanitize($info['label']); ?></strong>
@@ -216,22 +228,22 @@ $boostLabels = [
         <!-- 3. Package -->
         <div class="bst-card">
             <p class="bst-card-title">Choose Package</p>
+            <?php if ($activePkgs): ?>
             <div class="bst-pkgs">
+                <?php foreach ($activePkgs as $i => $pkg): ?>
                 <div class="bst-pkg">
-                    <input type="radio" name="package_days" id="pkg7" value="7" checked onchange="updatePrice()">
-                    <label for="pkg7">
-                        <span class="bst-price" id="price_7">GHS <?php echo number_format($activePrices['7'],2); ?></span>
-                        <span style="font-size:.8rem;color:var(--text-muted,#6b7280);">7 Days</span>
+                    <input type="radio" name="package_id" id="pkg_<?php echo $pkg['id']; ?>" value="<?php echo $pkg['id']; ?>"
+                           <?php echo $i===0?'checked':''; ?>>
+                    <label for="pkg_<?php echo $pkg['id']; ?>">
+                        <span class="bst-price">GHS <?php echo number_format((float)$pkg['price'],2); ?></span>
+                        <span style="font-size:.8rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($pkg['name']); ?> — <?php echo (int)$pkg['duration_days']; ?> days</span>
                     </label>
                 </div>
-                <div class="bst-pkg">
-                    <input type="radio" name="package_days" id="pkg30" value="30" onchange="updatePrice()">
-                    <label for="pkg30">
-                        <span class="bst-price" id="price_30">GHS <?php echo number_format($activePrices['30'],2); ?></span>
-                        <span style="font-size:.8rem;color:var(--text-muted,#6b7280);">30 Days</span>
-                    </label>
-                </div>
+                <?php endforeach; ?>
             </div>
+            <?php else: ?>
+            <p style="color:var(--muted,#6b7280);font-size:.85rem;">No packages available for this boost type. Contact admin.</p>
+            <?php endif; ?>
         </div>
 
         <!-- 4. Payment -->
@@ -264,22 +276,11 @@ $boostLabels = [
 <?php require_once __DIR__ . '/partials/bottom_nav.php'; ?>
 
 <script>
-var priceData = <?php echo json_encode($prices); ?>;
-
-function toggleProductRow() {
-    var sel = document.querySelector('input[name="boost_type"]:checked');
-    var show = sel && (sel.value.indexOf('product') !== -1);
-    document.getElementById('product-row').style.display = show ? 'block' : 'none';
-    updatePrice();
-}
-
-function updatePrice() {
-    var type = (document.querySelector('input[name="boost_type"]:checked') || {}).value || 'featured_product';
-    var p = priceData[type] || {};
-    var p7  = document.getElementById('price_7');
-    var p30 = document.getElementById('price_30');
-    if (p7)  p7.textContent  = 'GHS ' + (p['7']  || 0).toFixed(2);
-    if (p30) p30.textContent = 'GHS ' + (p['30'] || 0).toFixed(2);
+// The package list ("Choose Package") is filtered server-side by boost type,
+// so switching types must reload the page — a client-side-only toggle left
+// the same package list showing regardless of which type was selected.
+function switchBoostType(type) {
+    location.href = 'seller_boost.php?type=' + encodeURIComponent(type);
 }
 </script>
 </body>

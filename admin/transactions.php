@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
@@ -21,7 +21,13 @@ $page    = max(1, intval($_GET['page'] ?? 1));
 $perPage = 25;
 $offset  = ($page - 1) * $perPage;
 
-$validTypes = ['featured_job','featured_worker','verification','job_post','worker_service','escrow_payment'];
+$validTypes = [
+    'featured_job','featured_worker','verification','job_post','escrow_with_posting',
+    'worker_service','featured_event','featured_funeral','featured_news',
+    'mp_boost','mp_subscription','news_post',
+    'delivery_subscription','delivery_sponsored','delivery_verification',
+    'escrow_payment',
+];
 if (!in_array($type, $validTypes, true)) $type = '';
 
 // ── Build WHERE ───────────────────────────────────────────────────────────────
@@ -72,7 +78,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv' && is_admin()) {
     $exportStmt->execute();
     $rows = $exportStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    header('Content-Type: text/csv');
+    header('Content-Type: application/octet-stream');
     header('Content-Disposition: attachment; filename="transactions-' . date('Y-m-d') . '.csv"');
     $out = fopen('php://output', 'w');
     if ($rows) {
@@ -103,12 +109,22 @@ $listStmt->execute();
 $transactions = $listStmt->fetchAll(PDO::FETCH_ASSOC);
 
 $typeLabels = [
-    'featured_job'    => 'Featured Job',
-    'featured_worker' => 'Featured Worker',
-    'verification'    => 'Verification',
-    'job_post'        => 'Job Posting',
-    'worker_service'  => 'Worker Service',
-    'escrow_payment'  => 'Escrow',
+    'featured_job'          => 'Featured Job',
+    'featured_worker'       => 'Featured Worker',
+    'verification'          => 'Verification Badge',
+    'job_post'              => 'Job Posting',
+    'escrow_with_posting'   => 'Escrow + Job Post',
+    'worker_service'        => 'Worker Service',
+    'featured_event'        => 'Featured Event',
+    'featured_funeral'      => 'Featured Funeral',
+    'featured_news'         => 'Featured News',
+    'mp_boost'              => 'Marketplace Boost',
+    'mp_subscription'       => 'Seller Subscription',
+    'news_post'             => 'News Post Fee',
+    'delivery_subscription' => 'Delivery Subscription',
+    'delivery_sponsored'    => 'Delivery Sponsored',
+    'delivery_verification' => 'Delivery Verification',
+    'escrow_payment'        => 'Escrow',
 ];
 $statusColors = [
     'paid'      => '#16a34a',
@@ -259,7 +275,7 @@ function qstr(array $overrides = []): string {
                                 <td>
                                     <?php if ($tx['flagged']): ?><span class="flag-icon" title="Flagged">⚑</span> <?php endif; ?>
                                     <a href="transaction_detail.php?id=<?php echo $tx['id']; ?>" style="font-weight:600;color:var(--primary);text-decoration:none;">#<?php echo $tx['id']; ?></a>
-                                    <br><span class="meta" style="font-size:0.75rem;word-break:break-all;"><?php echo sanitize(substr($tx['reference_code'] ?? '', 0, 22)); ?></span>
+                                    <br><span class="meta" style="font-size:0.72rem;word-break:break-all;font-family:monospace;"><?php echo sanitize(strtoupper($tx['reference_code'] ?? '')); ?></span>
                                 </td>
                                 <td>
                                     <?php echo sanitize($tx['user_name']); ?><br>

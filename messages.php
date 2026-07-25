@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -78,6 +78,7 @@ mark_messages_read($requestId, $user['id']);
 
 $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['content'])) {
+    csrf_check();
     $content = trim($_POST['content']);
     $recipientId = intval($_POST['recipient_id'] ?? 0);
 
@@ -141,6 +142,7 @@ $otherUserName = ($user['id'] === $request['customer_id']) ? $request['worker_na
                     <div class="alert alert-error"><?php echo sanitize($error); ?></div>
                 <?php endif; ?>
                 <form method="post" action="messages.php?request_id=<?php echo $requestId; ?>">
+                    <?php echo csrf_field(); ?>
                     <input type="hidden" name="recipient_id" value="<?php echo $otherUserId; ?>" />
                     <textarea name="content" rows="3" placeholder="Type your message..." required></textarea>
                     <button type="submit" class="button button-primary" style="width: 100%; margin-top: 12px;">Send</button>

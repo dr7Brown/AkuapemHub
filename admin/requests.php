@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
@@ -10,6 +10,7 @@ if (!is_admin_or_manager()) {
 require_mod_permission('approve_jobs');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
+    csrf_check();
     if ($_POST['action'] === 'bulk' && !empty($_POST['selected_requests']) && is_array($_POST['selected_requests'])) {
         $requestIds   = array_map('intval', $_POST['selected_requests']);
         $bulkAction   = $_POST['bulk_action'] ?? '';
@@ -42,6 +43,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         $request = $stmt->fetch();
 
         if ($_POST['action'] === 'approve' && $request) {
+            if (check_mod_coi('job', $requestId, $user['id'])) {
+                log_coi_violation($user['id'], 'job', $requestId, 'approve');
+                header('Location: requests.php?err=' . urlencode('Conflict of interest: you cannot approve your own job posting.'));
+                exit;
+            }
             if (($request['posting_fee_status'] ?? 'free') === 'pending') {
                 header('Location: requests.php?err=' . urlencode('Cannot approve — posting fee payment not yet confirmed.'));
                 exit;
@@ -62,9 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             send_email_notification($request['customer_email'], 'Your job listing was not approved',
                 "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' was not approved.{$reasonNote}\n\nYou can edit and resubmit it from your jobs page.",
                 $request['customer_id']);
-            notify_user($request['customer_id'], 'Job listing not approved',
-                "Your request \"{$request['title']}\" was not approved." . ($reason ? " Reason: {$reason}" : ' Contact admin for details.') . ' You can edit and resubmit it.',
-                'warning');
+            notify_user($request['customer_id'], '❌ Job Listing Rejected — Action Required',
+                "Your request \"{$request['title']}\" was not approved." . ($reason ? "\n\nReason: {$reason}" : '') . "\n\nClick to edit and resubmit.",
+                'error', 'request_detail.php?id=' . $requestId);
         } elseif ($_POST['action'] === 'remove' && $request) {
             $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$requestId]);
             send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
@@ -394,9 +400,14 @@ $statusMeta = [
                         </div>
 
                         <!-- action buttons -->
+                        <?php $isCoi = !is_admin() && (int)($request['customer_id'] ?? 0) === (int)$user['id']; ?>
                         <div class="rq-actions">
                             <form method="post" action="requests.php">
+                                <?php echo csrf_field(); ?>
                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
+                                <?php if ($isCoi && $request['status'] === 'pending'): ?>
+                                    <span title="Conflict of interest — you submitted this job" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:8px;white-space:nowrap;">⚠️ Your listing</span>
+                                <?php else: ?>
                                 <?php if (!in_array($request['status'], ['open','partially_staffed','fully_staffed','completed','cancelled','rejected'], true)): ?>
                                     <?php if ($feeStatus === 'pending'): ?>
                                         <button type="button" class="button button-primary button-small" disabled title="Posting fee not confirmed">Approve</button>
@@ -404,9 +415,10 @@ $statusMeta = [
                                         <button type="submit" name="action" value="approve" class="button button-primary button-small">Approve</button>
                                     <?php endif; ?>
                                 <?php endif; ?>
-                                <?php if ($request['status'] === 'pending'): ?>
+                                <?php if (!in_array($request['status'], ['rejected','cancelled','completed'], true)): ?>
                                 <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;"
                                     onclick="openRejectModal(<?php echo (int)$request['id']; ?>)">Reject</button>
+                                <?php endif; ?>
                                 <?php endif; ?>
                                 <button type="submit" name="action" value="feature" class="button button-secondary button-small"
                                     style="<?php echo $arFeatActive ? 'color:#854d0e;border-color:#f59e0b;' : ''; ?>">
@@ -454,7 +466,7 @@ $statusMeta = [
                         </div>
 
                         <?php if (!empty($request['description'])): ?>
-                            <div class="rq-desc"><?php echo sanitize($request['description']); ?></div>
+                            <div class="rq-desc"><?php echo render_rich($request['description']); ?></div>
                         <?php endif; ?>
 
                         <?php if ($feeStatus === 'pending'): ?>
@@ -482,6 +494,27 @@ $statusMeta = [
             <?php endforeach; ?>
         </div>
         <?php endif; ?>
+
+        <!-- Reject modal: must stay inside <main> — the admin AJAX loader
+             (admin/index.php) only injects main.outerHTML, so anything placed
+             after </main> never reaches the DOM when this page loads via AJAX. -->
+        <div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeRejectModal()">
+            <div style="background:#fff;border-radius:14px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+                <h3 style="margin:0 0 6px;font-size:1rem;">Reject Job Listing</h3>
+                <p style="font-size:.85rem;color:#6b7280;margin:0 0 14px;">Explain why this listing was rejected. The customer will see this message and can edit and resubmit.</p>
+                <form method="post" action="requests.php">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="reject">
+                    <input type="hidden" name="request_id" id="reject-target-id" value="">
+                    <textarea name="rejection_reason" rows="4" placeholder="e.g. The job description is too vague. Please add more detail about the location, duration, and specific tasks involved."
+                        style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;margin-bottom:12px;"></textarea>
+                    <div style="display:flex;gap:8px;">
+                        <button type="submit" class="button" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject listing</button>
+                        <button type="button" class="button button-secondary" onclick="closeRejectModal()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -530,24 +563,5 @@ $statusMeta = [
         document.getElementById('reject-modal').style.display = 'none';
     }
     </script>
-
-<!-- Reject modal -->
-<div id="reject-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeRejectModal()">
-    <div style="background:#fff;border-radius:14px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-        <h3 style="margin:0 0 6px;font-size:1rem;">Reject Job Listing</h3>
-        <p style="font-size:.85rem;color:#6b7280;margin:0 0 14px;">Explain why this listing was rejected. The customer will see this message and can edit and resubmit.</p>
-        <form method="post" action="requests.php">
-            <?php echo csrf_field(); ?>
-            <input type="hidden" name="action" value="reject">
-            <input type="hidden" name="request_id" id="reject-target-id" value="">
-            <textarea name="rejection_reason" rows="4" placeholder="e.g. The job description is too vague. Please add more detail about the location, duration, and specific tasks involved."
-                style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;margin-bottom:12px;"></textarea>
-            <div style="display:flex;gap:8px;">
-                <button type="submit" class="button" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject listing</button>
-                <button type="button" class="button button-secondary" onclick="closeRejectModal()">Cancel</button>
-            </div>
-        </form>
-    </div>
-</div>
 </body>
 </html>

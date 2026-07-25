@@ -9,11 +9,13 @@ if (!$id) { header('Location: marketplace.php'); exit; }
 $product = get_product($id);
 $user    = current_user();
 
-// Admins/managers and the shop owner can preview any status; everyone else only sees approved products
+// Admins/managers and the shop owner can preview any status; everyone else can
+// view approved or (out of stock — still a real listing, just unavailable to buy)
 $isShopOwner   = $user && (int)$product['shop_owner_id'] === (int)$user['id'];
 $isAdminViewer = is_admin_or_manager();
+$publicStatuses = ['approved', 'out_of_stock'];
 
-if (!$product || ($product['status'] !== 'approved' && !$isAdminViewer && !$isShopOwner)) {
+if (!$product || (!in_array($product['status'], $publicStatuses, true) && !$isAdminViewer && !$isShopOwner)) {
     header('Location: marketplace.php');
     exit;
 }
@@ -25,7 +27,7 @@ $discPct   = mp_discount_pct($product);
 
 // Only count views for publicly visible products
 $viewKey = 'viewed_product_' . $id;
-if ($product['status'] === 'approved' && empty($_SESSION[$viewKey])) {
+if (in_array($product['status'], $publicStatuses, true) && empty($_SESSION[$viewKey])) {
     $pdo->prepare('UPDATE mp_products SET view_count = view_count + 1 WHERE id = ?')->execute([$id]);
     $_SESSION[$viewKey] = true;
 }
@@ -91,7 +93,7 @@ if ($product['category_id']) {
          FROM mp_products mp
          LEFT JOIN mp_product_images mpi ON mpi.product_id=mp.id AND mpi.is_primary=1
          WHERE mp.category_id=? AND mp.id!=? AND mp.status="approved"
-         ORDER BY mp.is_featured DESC, mp.created_at DESC LIMIT 4'
+         ORDER BY (mp.is_featured=1 AND (mp.featured_end IS NULL OR mp.featured_end>=CURDATE())) DESC, mp.created_at DESC LIMIT 4'
     );
     $relSt->execute([$product['category_id'], $id]);
     $related = $relSt->fetchAll();
@@ -102,10 +104,44 @@ if ($product['category_id']) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo sanitize($product['name']); ?> — AkuapemConnect Marketplace</title>
+    <?php
+    $pdIsPublic = in_array($product['status'], ['approved', 'out_of_stock'], true);
+    $pdImage    = $images ? (rtrim(BASE_URL,'/') . '/' . ltrim($images[0]['image_path'],'/')) : null;
+    echo seo_meta([
+        'title'       => $product['name'] . ' — GHS ' . number_format((float)$effPrice, 2) . ' | ' . APP_NAME . ' Marketplace',
+        'description' => mb_substr(strip_tags($product['description'] ?? ''), 0, 300) ?: ('Buy ' . $product['name'] . ' on ' . APP_NAME . ' Marketplace.'),
+        'image'       => $pdImage,
+        'url'         => rtrim(BASE_URL, '/') . '/product.php?id=' . (int)$product['id'],
+        'type'        => 'product',
+        'noindex'     => !$pdIsPublic,
+    ]);
+    ?>
+    <?php if ($pdIsPublic): ?>
+    <script type="application/ld+json">
+    <?php
+    $pdLd = [
+        '@context'    => 'https://schema.org/',
+        '@type'       => 'Product',
+        'name'        => $product['name'],
+        'description' => mb_substr(strip_tags($product['description'] ?? ''), 0, 500) ?: $product['name'],
+        'sku'         => $product['sku'] ?: (string)$product['id'],
+        'offers'      => [
+            '@type'         => 'Offer',
+            'url'           => rtrim(BASE_URL,'/') . '/product.php?id=' . (int)$product['id'],
+            'priceCurrency' => 'GHS',
+            'price'         => (float)$effPrice,
+            'availability'  => (int)$product['stock_quantity'] > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+            'itemCondition' => $product['condition_type'] === 'new' ? 'https://schema.org/NewCondition' : 'https://schema.org/UsedCondition',
+        ],
+    ];
+    if ($pdImage) $pdLd['image'] = [$pdImage];
+    echo json_encode($pdLd, JSON_UNESCAPED_SLASHES);
+    ?>
+    </script>
+    <?php endif; ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .pd-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .pd-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 64px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
         .pd-shell  { max-width:1060px; margin:0 auto; padding:16px 16px 60px; }
         .pd-layout { display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-bottom:28px; }
         @media(max-width:680px){ .pd-layout { grid-template-columns:1fr; } }

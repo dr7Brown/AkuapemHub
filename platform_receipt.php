@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -37,6 +37,25 @@ if (in_array($type, ['escrow_payment', 'escrow_with_posting'], true)) {
     $eStmt = $pdo->prepare("SELECT * FROM escrow_payments WHERE job_id = ? LIMIT 1");
     $eStmt->execute([$p['reference_id']]);
     $escrow = $eStmt->fetch();
+}
+
+// ── 2b. Marketplace order breakdown (mp_order type) ──────────────────────────
+// One Paystack payment can cover several orders (one per shop in the cart),
+// each with its own shop details and line items.
+$mpOrders = [];
+if ($type === 'mp_order') {
+    $moStmt = $pdo->prepare(
+        'SELECT mo.*, ms.shop_name, ms.phone AS shop_phone, ms.region AS shop_region
+         FROM mp_orders mo JOIN mp_shops ms ON mo.shop_id = ms.id
+         WHERE mo.platform_payment_id = ?'
+    );
+    $moStmt->execute([$p['id']]);
+    foreach ($moStmt->fetchAll() as $mo) {
+        $itemsStmt = $pdo->prepare('SELECT product_name, quantity, price, subtotal FROM mp_order_items WHERE order_id=?');
+        $itemsStmt->execute([$mo['id']]);
+        $mo['items'] = $itemsStmt->fetchAll();
+        $mpOrders[] = $mo;
+    }
 }
 
 // ── 3. Job / service-request details (where reference_id = job) ─────────────
@@ -369,6 +388,39 @@ if ($type === 'escrow_with_posting' && $escrow) {
                             <td>
                                 Identity verification fee
                                 <span class="sub">Unlocks admin review of your verification documents</span>
+                            </td>
+                            <td><?php echo number_format((float)$p['amount'], 2); ?></td>
+                        </tr>
+
+                    <?php elseif ($type === 'mp_order' && $mpOrders): ?>
+                        <?php foreach ($mpOrders as $mo): ?>
+                        <tr>
+                            <td colspan="2" style="padding-top:14px;padding-bottom:2px;font-weight:700;color:#0f766e;">
+                                <?php echo sanitize($mo['shop_name']); ?>
+                                <?php if ($mo['shop_phone'] || $mo['shop_region']): ?>
+                                <span class="sub" style="font-weight:400;">
+                                    <?php echo $mo['shop_phone'] ? sanitize($mo['shop_phone']) : ''; ?>
+                                    <?php echo $mo['shop_region'] ? ' · ' . sanitize($mo['shop_region']) : ''; ?>
+                                </span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php foreach ($mo['items'] as $it): ?>
+                        <tr>
+                            <td>
+                                <?php echo sanitize($it['product_name']); ?>
+                                <span class="sub"><?php echo (int)$it['quantity']; ?> × GH₵ <?php echo number_format((float)$it['price'], 2); ?></span>
+                            </td>
+                            <td><?php echo number_format((float)$it['subtotal'], 2); ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php endforeach; ?>
+
+                    <?php elseif ($type === 'mp_order'): ?>
+                        <tr>
+                            <td>
+                                Marketplace order
+                                <span class="sub">Order details unavailable</span>
                             </td>
                             <td><?php echo number_format((float)$p['amount'], 2); ?></td>
                         </tr>

@@ -1,11 +1,11 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
 require_login();
 $user = current_user();
 
-if (!is_email_verified()) {
+if (requires_verified_email('job_post') && !is_email_verified()) {
     flash('Please verify your email address before posting a job. Check your inbox.', 'error');
     header('Location: jobs.php');
     exit;
@@ -357,7 +357,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                    placeholder="https://maps.google.com/…">
             <label>Hiring type</label>
             <?php $draftHiringType = ($draft && ($draft['workers_needed'] ?? 1) > 1) ? 'multiple' : 'single'; ?>
-            <div style="display:flex;gap:16px;margin-bottom:4px;" id="hiring-type-group">
+            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:4px;" id="hiring-type-group">
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
                     <input type="radio" name="hiring_type" value="single" <?php echo $draftHiringType === 'single' ? 'checked' : ''; ?> onchange="toggleWorkersNeeded(this)"> Single worker
                 </label>
@@ -431,9 +431,9 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             </div>
 
             <label style="margin-top:12px;">Deadline <span class="meta">(optional)</span></label>
-            <div style="display:flex;gap:8px;align-items:center;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
                 <input type="number" name="deadline_value" id="deadline-value" min="1" max="999" placeholder="e.g. 3" style="width:80px;" value="<?php echo $draft ? sanitize($draft['deadline_value'] ?? '') : ''; ?>" />
-                <select name="deadline_unit" id="deadline-unit" style="flex:1;">
+                <select name="deadline_unit" id="deadline-unit" style="flex:1;min-width:140px;">
                     <option value="">No deadline</option>
                     <option value="hours" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'hours') ? 'selected' : ''; ?>>Hour(s)</option>
                     <option value="days" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'days') ? 'selected' : ''; ?>>Day(s)</option>

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -8,44 +8,77 @@ if (current_user()) {
     exit;
 }
 
-$categories     = get_categories();
-$categoryFilter = $_GET['category'] ?? '';
-$locationFilter = trim($_GET['location'] ?? '');
-$searchQuery    = trim($_GET['q'] ?? '');
-$jobTypeFilter  = $_GET['job_type'] ?? '';
+$categories      = get_categories();
+$categoryFilter  = $_GET['category']    ?? '';
+$locationFilter  = trim($_GET['location']  ?? '');
+$searchQuery     = trim($_GET['q']         ?? '');
+$jobTypeFilter   = $_GET['job_type']    ?? '';
+$budgetMin       = ($_GET['budget_min'] ?? '') !== '' ? (float)$_GET['budget_min'] : null;
+$budgetMax       = ($_GET['budget_max'] ?? '') !== '' ? (float)$_GET['budget_max'] : null;
+$paymentFilter   = $_GET['payment']     ?? '';   // escrow_paid | escrow | paid | unpaid
+$sortFilter      = $_GET['sort']        ?? 'newest'; // newest | budget_high | budget_low | featured
 
 // Build job query
-$where  = ["sr.status IN ('open','partially_staffed')", "sr.posting_fee_status != 'pending'"];
+$where  = ["sr.status IN (" . public_job_statuses_sql() . ")", "sr.posting_fee_status != 'pending'"];
 $params = [];
-if ($categoryFilter) { $where[] = 'sr.category_id = ?';            $params[] = $categoryFilter; }
-if ($locationFilter) { $where[] = 'sr.location LIKE ?';            $params[] = '%' . $locationFilter . '%'; }
+
+if ($categoryFilter) {
+    $where[] = 'sr.category_id = ?'; $params[] = $categoryFilter;
+}
+if ($locationFilter) {
+    $where[] = 'sr.location LIKE ?'; $params[] = '%' . $locationFilter . '%';
+}
 if ($jobTypeFilter && in_array($jobTypeFilter, ['on_site','remote','hybrid'], true)) {
-    $where[] = 'sr.job_type = ?';
-    $params[] = $jobTypeFilter;
+    $where[] = 'sr.job_type = ?'; $params[] = $jobTypeFilter;
 }
-if ($searchQuery)    {
-    $where[]  = '(sr.title LIKE ? OR sr.description LIKE ? OR sc.name LIKE ? OR sr.location LIKE ?)';
-    $params[] = '%' . $searchQuery . '%';
-    $params[] = '%' . $searchQuery . '%';
-    $params[] = '%' . $searchQuery . '%';
-    $params[] = '%' . $searchQuery . '%';
+if ($searchQuery) {
+    $where[] = '(sr.title LIKE ? OR sr.description LIKE ? OR sc.name LIKE ? OR sr.location LIKE ?)';
+    $like = '%' . $searchQuery . '%';
+    array_push($params, $like, $like, $like, $like);
 }
+if ($budgetMin !== null) { $where[] = 'sr.budget_amount >= ?'; $params[] = $budgetMin; }
+if ($budgetMax !== null) { $where[] = 'sr.budget_amount <= ?'; $params[] = $budgetMax; }
+if ($paymentFilter === 'escrow_paid') { $where[] = "sr.payment_mode='escrow' AND sr.payment_status='paid'"; }
+elseif ($paymentFilter === 'escrow')  { $where[] = "sr.payment_mode='escrow'"; }
+elseif ($paymentFilter === 'paid')    { $where[] = "sr.payment_status='paid'"; }
+elseif ($paymentFilter === 'unpaid')  { $where[] = "sr.payment_status='unpaid'"; }
+
+$featExpr = '(sr.featured=1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date>=CURDATE()))';
+$orderBy = match($sortFilter) {
+    'budget_high' => "$featExpr DESC, sr.budget_amount DESC",
+    'budget_low'  => "$featExpr DESC, sr.budget_amount ASC",
+    'oldest'      => 'sr.created_at ASC',
+    default       => "$featExpr DESC, sr.created_at DESC",
+};
 
 $jobs = $pdo->prepare(
     'SELECT sr.id, sr.title, sr.description, sr.location, sr.budget, sr.budget_amount,
             sr.status, sr.featured, sr.featured_end_date, sr.created_at,
             sr.workers_needed, sr.workers_approved, sr.job_type,
+            sr.payment_status, sr.payment_mode,
             sc.name AS category_name
      FROM service_requests sr
      JOIN service_categories sc ON sr.category_id = sc.id
-     WHERE ' . implode(' AND ', $where) . '
-     ORDER BY sr.featured DESC, sr.created_at DESC LIMIT 80'
+     WHERE ' . implode(' AND ', $where) . "
+     ORDER BY $orderBy LIMIT 80"
 );
 $jobs->execute($params);
 $jobs = $jobs->fetchAll();
 
+// Active filter summary for chips
+$activeFilters = array_filter([
+    'q'          => $searchQuery,
+    'location'   => $locationFilter,
+    'category'   => $categoryFilter ? (array_filter($categories, fn($c) => $c['id'] == $categoryFilter)[0]['name'] ?? '') : '',
+    'job_type'   => $jobTypeFilter  ? ['on_site'=>'On-site','remote'=>'Remote','hybrid'=>'Hybrid'][$jobTypeFilter] ?? '' : '',
+    'budget_min' => $budgetMin !== null ? 'Min GH₵ ' . number_format($budgetMin, 2) : '',
+    'budget_max' => $budgetMax !== null ? 'Max GH₵ ' . number_format($budgetMax, 2) : '',
+    'payment'    => $paymentFilter  ? ['escrow_paid'=>'🔒 Escrow Paid','escrow'=>'🔒 Escrow','paid'=>'✓ Paid','unpaid'=>'Unpaid'][$paymentFilter] ?? '' : '',
+    'sort'       => $sortFilter !== 'newest' ? ['budget_high'=>'Budget ↓','budget_low'=>'Budget ↑','oldest'=>'Oldest first'][$sortFilter] ?? '' : '',
+]);
+
 // Quick stats
-$totalOpen  = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WHERE status IN ('open','partially_staffed') AND posting_fee_status != 'pending'")->fetchColumn();
+$totalOpen  = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WHERE status IN (" . public_job_statuses_sql() . ") AND posting_fee_status != 'pending'")->fetchColumn();
 $totalCats  = (int)$pdo->query("SELECT COUNT(*) FROM service_categories")->fetchColumn();
 $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchColumn();
 ?>
@@ -54,7 +87,14 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Browse Jobs — AkuapemConnect</title>
+    <?php echo seo_meta([
+        'title'       => 'Browse Jobs & Service Requests in the Akuapem Area — ' . APP_NAME,
+        'description' => 'Find open jobs and service requests posted by customers across the Akuapem area. Filter by category, location, and budget — apply as a verified worker today.',
+        'url'         => rtrim(BASE_URL, '/') . '/browse_jobs.php',
+        // Filtered/search views are variants of the same page — keep only the
+        // canonical unfiltered listing indexed to avoid duplicate-content dilution.
+        'noindex'     => !empty($_GET) ,
+    ]); ?>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         /* ── Page reset ── */
@@ -95,31 +135,30 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
         .bj-hero-btns a:hover { opacity: .9; }
 
         /* ── Filter bar ── */
-        .bj-filters {
-            background: var(--surface, #fff);
-            border-bottom: 1px solid var(--border, #e5e7eb);
-            padding: 14px 16px;
+        .bj-filters { background:var(--surface,#fff); border-bottom:1px solid var(--border,#e5e7eb); padding:14px 16px; }
+        .bj-filter-wrap { max-width:920px; margin:0 auto; }
+        .bj-filter-row { display:flex; gap:8px; flex-wrap:wrap; }
+        .bj-filter-row + .bj-filter-row { margin-top:8px; }
+        .bj-filter-row select,
+        .bj-filter-row input[type="text"],
+        .bj-filter-row input[type="number"] {
+            flex:1; min-width:120px; padding:9px 12px;
+            border:1px solid var(--border,#d1d5db); border-radius:8px; font-size:.86rem;
+            background:var(--bg,#f9fafb); color:var(--text,#111827);
         }
-        .bj-filter-form {
-            display: flex; gap: 8px; flex-wrap: wrap; max-width: 860px; margin: 0 auto;
-        }
-        .bj-filter-form select,
-        .bj-filter-form input[type="text"] {
-            flex: 1; min-width: 130px;
-            padding: 9px 12px;
-            border: 1px solid var(--border, #d1d5db);
-            border-radius: 8px; font-size: .88rem;
-            background: var(--bg, #f9fafb);
-            color: var(--text, #111827);
-        }
-        .bj-filter-form select:focus,
-        .bj-filter-form input:focus { outline: 2px solid var(--primary, #0f766e); border-color: transparent; }
-        .bj-filter-form .btn-search {
-            padding: 9px 18px; background: var(--primary, #0f766e); color: #fff;
-            border: none; border-radius: 8px; font-weight: 700; font-size: .88rem; cursor: pointer;
-        }
-        .bj-filter-form .btn-search:hover { opacity: .9; }
-        .bj-filter-clear { font-size: .82rem; color: var(--muted, #6b7280); text-decoration: none; align-self: center; white-space: nowrap; }
+        .bj-filter-row select:focus,
+        .bj-filter-row input:focus { outline:2px solid var(--primary,#0f766e); border-color:transparent; }
+        .btn-search { padding:9px 18px; background:var(--primary,#0f766e); color:#fff;
+                      border:none; border-radius:8px; font-weight:700; font-size:.88rem; cursor:pointer; white-space:nowrap; }
+        .btn-search:hover { opacity:.9; }
+        .bj-filter-clear { font-size:.82rem; color:var(--muted,#6b7280); text-decoration:none; align-self:center; white-space:nowrap; }
+        /* Active filter chips */
+        .bj-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; }
+        .bj-chip  { display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px;
+                    background:var(--primary-soft,#d1fae5); color:var(--primary-dark,#065f46);
+                    font-size:.74rem; font-weight:700; }
+        .bj-chip a { color:inherit; text-decoration:none; font-weight:900; margin-left:2px; opacity:.7; }
+        .bj-chip a:hover { opacity:1; }
 
         /* ── Content area ── */
         .bj-content { max-width: 920px; margin: 0 auto; padding: 20px 16px 80px; }
@@ -213,26 +252,74 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 
 <!-- ── Filters ──────────────────────────────────────────────────────────────── -->
 <div class="bj-filters">
-    <form method="get" class="bj-filter-form">
-        <select name="category">
-            <option value="">All categories</option>
-            <?php foreach ($categories as $cat): ?>
-                <option value="<?php echo $cat['id']; ?>" <?php echo $categoryFilter == $cat['id'] ? 'selected' : ''; ?>>
-                    <?php echo sanitize($cat['name']); ?>
-                </option>
+    <form method="get" class="bj-filter-wrap">
+        <!-- Row 1: search + location + category + type -->
+        <div class="bj-filter-row">
+            <input type="text" name="q"        value="<?php echo sanitize($searchQuery); ?>"   placeholder="Search jobs…" style="min-width:160px;" />
+            <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location…" style="min-width:120px;" />
+            <select name="category" style="min-width:140px;">
+                <option value="">All categories</option>
+                <?php foreach ($categories as $cat): ?>
+                    <option value="<?php echo $cat['id']; ?>" <?php echo $categoryFilter == $cat['id'] ? 'selected' : ''; ?>>
+                        <?php echo sanitize($cat['name']); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+            <select name="job_type" style="min-width:120px;">
+                <option value="">Any type</option>
+                <option value="on_site" <?php echo $jobTypeFilter==='on_site' ?'selected':''; ?>>📍 On-site</option>
+                <option value="remote"  <?php echo $jobTypeFilter==='remote'  ?'selected':''; ?>>💻 Remote</option>
+                <option value="hybrid"  <?php echo $jobTypeFilter==='hybrid'  ?'selected':''; ?>>🔄 Hybrid</option>
+            </select>
+        </div>
+        <!-- Row 2: budget range + payment + sort + submit -->
+        <div class="bj-filter-row">
+            <input type="number" name="budget_min" value="<?php echo $budgetMin !== null ? sanitize($budgetMin) : ''; ?>"
+                   placeholder="Min budget (GH₵)" min="0" step="1" style="min-width:140px;" />
+            <input type="number" name="budget_max" value="<?php echo $budgetMax !== null ? sanitize($budgetMax) : ''; ?>"
+                   placeholder="Max budget (GH₵)" min="0" step="1" style="min-width:140px;" />
+            <select name="payment" style="min-width:150px;">
+                <option value="">Any payment</option>
+                <option value="escrow_paid" <?php echo $paymentFilter==='escrow_paid'?'selected':''; ?>>🔒 Escrow Paid</option>
+                <option value="escrow"      <?php echo $paymentFilter==='escrow'     ?'selected':''; ?>>🔒 Escrow</option>
+                <option value="paid"        <?php echo $paymentFilter==='paid'       ?'selected':''; ?>>✓ Paid</option>
+                <option value="unpaid"      <?php echo $paymentFilter==='unpaid'     ?'selected':''; ?>>Unpaid</option>
+            </select>
+            <select name="sort" style="min-width:140px;">
+                <option value="newest"      <?php echo $sortFilter==='newest'      ?'selected':''; ?>>Newest first</option>
+                <option value="budget_high" <?php echo $sortFilter==='budget_high' ?'selected':''; ?>>Budget: high → low</option>
+                <option value="budget_low"  <?php echo $sortFilter==='budget_low'  ?'selected':''; ?>>Budget: low → high</option>
+                <option value="oldest"      <?php echo $sortFilter==='oldest'      ?'selected':''; ?>>Oldest first</option>
+            </select>
+            <button type="submit" class="btn-search">Search</button>
+            <?php if ($activeFilters): ?>
+                <a href="browse_jobs.php" class="bj-filter-clear">✕ Clear all</a>
+            <?php endif; ?>
+        </div>
+        <!-- Active filter chips -->
+        <?php if ($activeFilters): ?>
+        <div class="bj-chips">
+            <?php
+            $chipRemoveKeys = ['q','location','category','job_type','budget_min','budget_max','payment','sort'];
+            $currentParams  = array_filter([
+                'q'          => $searchQuery,
+                'location'   => $locationFilter,
+                'category'   => $categoryFilter,
+                'job_type'   => $jobTypeFilter,
+                'budget_min' => $budgetMin !== null ? $budgetMin : '',
+                'budget_max' => $budgetMax !== null ? $budgetMax : '',
+                'payment'    => $paymentFilter,
+                'sort'       => $sortFilter !== 'newest' ? $sortFilter : '',
+            ]);
+            foreach ($activeFilters as $key => $label):
+                if (!$label) continue;
+                $removeParams = $currentParams;
+                unset($removeParams[$key]);
+                $removeUrl = 'browse_jobs.php' . ($removeParams ? '?' . http_build_query($removeParams) : '');
+            ?>
+            <span class="bj-chip"><?php echo sanitize($label); ?> <a href="<?php echo sanitize($removeUrl); ?>">✕</a></span>
             <?php endforeach; ?>
-        </select>
-        <input type="text" name="q"        value="<?php echo sanitize($searchQuery); ?>"   placeholder="Search jobs…" />
-        <input type="text" name="location" value="<?php echo sanitize($locationFilter); ?>" placeholder="Location…" />
-        <select name="job_type">
-            <option value="">Any type</option>
-            <option value="on_site"  <?php echo $jobTypeFilter === 'on_site'  ? 'selected' : ''; ?>>On-site</option>
-            <option value="remote"   <?php echo $jobTypeFilter === 'remote'   ? 'selected' : ''; ?>>Remote</option>
-            <option value="hybrid"   <?php echo $jobTypeFilter === 'hybrid'   ? 'selected' : ''; ?>>Hybrid</option>
-        </select>
-        <button type="submit" class="btn-search">Search</button>
-        <?php if ($searchQuery || $locationFilter || $categoryFilter || $jobTypeFilter): ?>
-            <a href="browse_jobs.php" class="bj-filter-clear">Clear filters</a>
+        </div>
         <?php endif; ?>
     </form>
 </div>
@@ -241,11 +328,9 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 <div class="bj-content">
     <div class="bj-results-bar">
         <p>
-            <?php if ($searchQuery || $locationFilter || $categoryFilter): ?>
-                <?php echo count($jobs); ?> result<?php echo count($jobs) !== 1 ? 's' : ''; ?> for your search
-            <?php else: ?>
-                <?php echo count($jobs); ?> open job<?php echo count($jobs) !== 1 ? 's' : ''; ?> available
-            <?php endif; ?>
+            <?php echo count($jobs); ?> job<?php echo count($jobs) !== 1 ? 's' : ''; ?>
+            <?php echo $activeFilters ? 'match your filters' : 'available'; ?>
+            <?php if (count($jobs) === 80): ?><span style="color:var(--muted);font-size:.8rem;"> (showing first 80)</span><?php endif; ?>
         </p>
         <a href="register.php" class="bj-btn bj-btn-primary" style="padding:6px 14px;font-size:.8rem;">Post a Job →</a>
     </div>
@@ -283,14 +368,30 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
                 </div>
             </div>
 
-            <p class="bj-card-desc"><?php echo sanitize($job['description']); ?></p>
+            <div class="bj-card-desc"><?php echo render_rich($job['description']); ?></div>
 
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
-                <?php if ($job['budget'] || $job['budget_amount']): ?>
-                    <span class="bj-card-budget">GH₵ <?php echo sanitize($job['budget'] ?: number_format((float)$job['budget_amount'], 2)); ?></span>
-                <?php else: ?>
-                    <span class="bj-card-meta">Budget: negotiable</span>
-                <?php endif; ?>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <?php if ($job['budget_amount']): ?>
+                        <span class="bj-card-budget">GH₵ <?php echo number_format((float)$job['budget_amount'], 2); ?></span>
+                    <?php elseif ($job['budget']): ?>
+                        <span class="bj-card-budget"><?php echo sanitize(mb_substr($job['budget'], 0, 30)); ?></span>
+                    <?php else: ?>
+                        <span class="bj-card-meta">Budget: negotiable</span>
+                    <?php endif; ?>
+                    <?php
+                    $pMode   = $job['payment_mode']   ?? 'direct';
+                    $pStatus = $job['payment_status'] ?? 'unpaid';
+                    if ($pMode === 'escrow' && $pStatus === 'paid'): ?>
+                        <span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:#d1fae5;color:#065f46;">🔒 Escrow Paid</span>
+                    <?php elseif ($pMode === 'escrow'): ?>
+                        <span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:#fef3c7;color:#92400e;">🔒 Escrow</span>
+                    <?php elseif ($pStatus === 'paid'): ?>
+                        <span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:#dbeafe;color:#1e40af;">✓ Paid</span>
+                    <?php else: ?>
+                        <span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:#f3f4f6;color:#6b7280;">Unpaid</span>
+                    <?php endif; ?>
+                </div>
                 <?php if (($job['workers_needed'] ?? 1) > 1): ?>
                     <span class="bj-card-meta"><?php echo (int)($job['workers_approved'] ?? 0); ?>/<?php echo (int)$job['workers_needed']; ?> hired</span>
                 <?php endif; ?>

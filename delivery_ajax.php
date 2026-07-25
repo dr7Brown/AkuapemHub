@@ -39,6 +39,15 @@ if ($action === 'apply_delivery') {
         delivery_error('You must be an approved delivery agent to apply.', 'delivery_agent_jobs.php');
     }
 
+    // Commission owed too high — settle up before taking new jobs
+    $blockThreshold = (float)get_platform_setting('delivery_commission_block_threshold', '50');
+    if ($blockThreshold > 0 && (float)$agentProfile['commission_owed'] >= $blockThreshold) {
+        delivery_error(
+            'You owe GH₵ ' . number_format((float)$agentProfile['commission_owed'], 2) . ' in commission — settle up with admin before accepting new jobs.',
+            'delivery_agent_jobs.php?tab=earnings'
+        );
+    }
+
     $delivery = get_delivery_request($deliveryId);
     if (!$delivery || $delivery['status'] !== 'approved') {
         delivery_error('This request is no longer open for applications.', 'delivery_agent_jobs.php');
@@ -50,8 +59,35 @@ if ($action === 'apply_delivery') {
     $pdo->prepare(
         'INSERT INTO delivery_applications (delivery_request_id, agent_id, offer_note, offered_fee) VALUES (?,?,?,?)'
     )->execute([$deliveryId, $agentProfile['id'], $offerNote ?: null, $offeredFee]);
+    $appId = (int)$pdo->lastInsertId();
 
-    // Notify customer
+    // Marketplace-sourced deliveries: auto-assign the first applicant instead of
+    // making the buyer manually pick a rider for an order they never consciously
+    // requested delivery for — the product/shop were already vetted at checkout.
+    $mpOrderStmt = $pdo->prepare('SELECT id, shop_id FROM mp_orders WHERE delivery_request_id=?');
+    $mpOrderStmt->execute([$deliveryId]);
+    $mpOrder = $mpOrderStmt->fetch();
+
+    if ($mpOrder) {
+        $app = ['id' => $appId, 'agent_id' => $agentProfile['id'], 'offered_fee' => $offeredFee];
+        if (assign_delivery_application($deliveryId, $app, (float)($delivery['delivery_fee'] ?? 0))) {
+            notify_user((int)$delivery['customer_id'], 'Rider Assigned 🚚',
+                'A delivery agent has been assigned to your order #' . $mpOrder['id'] . '.', 'info');
+            $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+            $shopOwner->execute([$mpOrder['shop_id']]);
+            if ($ownerUid = $shopOwner->fetchColumn()) {
+                notify_user((int)$ownerUid, 'Rider Assigned 🚚',
+                    'A delivery agent has been assigned to order #' . $mpOrder['id'] . '.', 'info');
+            }
+            flash('You have been assigned to this delivery!', 'success');
+        } else {
+            flash('This delivery was just taken by another rider.', 'info');
+        }
+        header('Location: delivery_agent_jobs.php?tab=applications');
+        exit;
+    }
+
+    // General delivery requests: notify the customer to review and pick a rider
     notify_user(
         (int)$delivery['customer_id'],
         'New Application for Your Delivery',
@@ -96,44 +132,15 @@ if ($action === 'select_rider') {
         delivery_error('Riders can only be selected on approved requests.', 'delivery_detail.php?id=' . $deliveryId);
     }
 
-    $appStmt = $pdo->prepare('SELECT da.*, da.id AS app_id, da.agent_id FROM delivery_applications da WHERE da.id = ? AND da.delivery_request_id = ?');
+    $appStmt = $pdo->prepare('SELECT * FROM delivery_applications WHERE id = ? AND delivery_request_id = ?');
     $appStmt->execute([$appId, $deliveryId]);
     $app = $appStmt->fetch();
     if (!$app || $app['status'] === 'withdrawn') {
         delivery_error('Application not found.', 'delivery_detail.php?id=' . $deliveryId);
     }
 
-    $pdo->beginTransaction();
-    try {
-        // Assign agent to request
-        $agentRow = $pdo->prepare('SELECT user_id FROM delivery_agents WHERE id = ?');
-        $agentRow->execute([$app['agent_id']]);
-        $agentUserId = $agentRow->fetchColumn();
-
-        $usedFee = $app['offered_fee'] ?? $delivery['delivery_fee'];
-        $pdo->prepare("UPDATE delivery_requests SET agent_id=?, status='assigned', delivery_fee=?, updated_at=NOW() WHERE id=?")
-            ->execute([$app['agent_id'], $usedFee, $deliveryId]);
-
-        // Mark selected application
-        $pdo->prepare("UPDATE delivery_applications SET status='assigned', updated_at=NOW() WHERE id=?")
-            ->execute([$appId]);
-
-        // Reject all other pending/shortlisted applications
-        $pdo->prepare("UPDATE delivery_applications SET status='rejected', updated_at=NOW()
-                        WHERE delivery_request_id=? AND id!=? AND status IN('applied','shortlisted')")
-            ->execute([$deliveryId, $appId]);
-
-        // Notify selected agent
-        if ($agentUserId) {
-            notify_user((int)$agentUserId, 'You Got the Job! 🎉',
-                "You have been selected for delivery request #$deliveryId. Check your active deliveries.",
-                'success');
-        }
-
-        $pdo->commit();
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        delivery_error('Could not assign rider. Please try again.', 'delivery_detail.php?id=' . $deliveryId);
+    if (!assign_delivery_application($deliveryId, $app, (float)($delivery['delivery_fee'] ?? 0))) {
+        delivery_error('This request was already assigned to another rider.', 'delivery_detail.php?id=' . $deliveryId);
     }
 
     flash('Rider assigned! They have been notified.', 'success');
@@ -224,6 +231,7 @@ if ($action === 'update_status') {
     $pdo->prepare("UPDATE delivery_requests SET status=?, updated_at=NOW() WHERE id=?")->execute([$newStatus, $deliveryId]);
 
     $notifMap = [
+        'accepted'    => ['Delivery Accepted 👍',      'Your delivery agent has accepted the job and will pick it up soon.', 'info'],
         'picked_up'   => ['Parcel Picked Up 📦',      'Your delivery agent has picked up the item.',                          'info'],
         'in_progress' => ['Delivery In Progress 🚚',   'Your item is on the way.',                                            'info'],
         'in_transit'  => ['Delivery In Transit 🚚',    'Your item is on the way to the drop-off point.',                      'info'],
@@ -240,6 +248,31 @@ if ($action === 'update_status') {
         if ($emailAddr) send_email_notification($emailAddr, "$title — Delivery #$deliveryId", "$body\n\nView: " . BASE_URL . "delivery_detail.php?id=$deliveryId", (int)$delivery['customer_id']);
     }
 
+    // ── Marketplace: keep the seller's order card in sync with delivery progress ──
+    // (the 'delivered' transition below already handles its own mp_orders update)
+    if (in_array($newStatus, ['accepted', 'picked_up', 'in_transit'], true)) {
+        $mpOrderRow = $pdo->prepare(
+            "SELECT mo.id, ms.user_id AS seller_user_id
+             FROM mp_orders mo JOIN mp_shops ms ON mo.shop_id = ms.id
+             WHERE mo.delivery_request_id=? AND mo.status NOT IN ('delivered','cancelled','refunded')"
+        );
+        $mpOrderRow->execute([$deliveryId]);
+        if ($mpOrder = $mpOrderRow->fetch()) {
+            if (in_array($newStatus, ['picked_up', 'in_transit'], true)) {
+                $pdo->prepare("UPDATE mp_orders SET status='in_transit', updated_at=NOW() WHERE id=?")->execute([$mpOrder['id']]);
+            }
+            $orderNotifMap = [
+                'accepted'   => 'A delivery agent has accepted your order and will pick it up soon.',
+                'picked_up'  => 'Your order has been picked up and is on its way to the customer.',
+                'in_transit' => 'Your order is in transit to the customer.',
+            ];
+            if ($mpOrder['seller_user_id']) {
+                notify_user((int)$mpOrder['seller_user_id'], 'Order Update 📦',
+                    $orderNotifMap[$newStatus], 'info', 'seller_dashboard.php?tab=orders');
+            }
+        }
+    }
+
     if ($newStatus === 'delivered') {
         $pdo->prepare("UPDATE delivery_requests SET payment_status='paid', updated_at=NOW() WHERE id=?")->execute([$deliveryId]);
         refresh_agent_stats((int)$agentProfile['id']);
@@ -250,6 +283,22 @@ if ($action === 'update_status') {
 
         notify_user((int)$user['id'], 'Delivery Complete — Rate Your Customer',
             "Delivery #$deliveryId marked as delivered. You can now rate the customer.", 'info');
+
+        // ── Commission owed on the delivery fee the agent just collected ──────
+        $deliveryFee = (float)($delivery['delivery_fee'] ?? 0);
+        if ($deliveryFee > 0) {
+            $commissionPct = (float)get_platform_setting('delivery_commission_percent', '10');
+            $commissionAmt = round($deliveryFee * $commissionPct / 100, 2);
+            if ($commissionAmt > 0) {
+                $pdo->prepare('UPDATE delivery_agents SET commission_owed = commission_owed + ? WHERE id=?')
+                    ->execute([$commissionAmt, $agentProfile['id']]);
+                $pdo->prepare('INSERT INTO delivery_commission_ledger (agent_id, delivery_request_id, type, amount) VALUES (?,?,\'commission_owed\',?)')
+                    ->execute([$agentProfile['id'], $deliveryId, $commissionAmt]);
+                notify_user((int)$user['id'], 'Commission Owed',
+                    'GH₵ ' . number_format($commissionAmt, 2) . ' (' . $commissionPct . '% of this delivery\'s fee) has been added to your commission balance.',
+                    'info', 'delivery_agent_jobs.php?tab=earnings');
+            }
+        }
 
         // ── Marketplace: start the payout confirmation window ──────────────
         $mpOrder = $pdo->prepare("SELECT id FROM mp_orders WHERE delivery_request_id=? AND payment_status='paid'");
@@ -344,6 +393,74 @@ if ($action === 'rate_delivery') {
 
     flash('Thank you for your rating!', 'success');
     header('Location: ' . ($rater === 'agent' ? 'delivery_agent_jobs.php?tab=history' : 'delivery_detail.php?id=' . $deliveryId));
+    exit;
+}
+
+// ── file_delivery_dispute ────────────────────────────────────────────────────
+if ($action === 'file_delivery_dispute') {
+    $deliveryId  = (int)($_POST['delivery_id'] ?? 0);
+    $disputeType = $_POST['dispute_type'] ?? '';
+    $description = trim($_POST['description'] ?? '');
+
+    $delivery = get_delivery_request($deliveryId);
+    if (!$delivery || (int)$delivery['customer_id'] !== (int)$user['id']) {
+        delivery_error('Delivery not found or not yours.', 'delivery.php');
+    }
+    if ($delivery['status'] !== 'delivered') {
+        delivery_error('You can only report a problem once a delivery is marked delivered.', 'delivery_detail.php?id=' . $deliveryId);
+    }
+    // Window matches the marketplace payout confirmation period — filing after
+    // that point can no longer pause a payout that's likely already released
+    // (and possibly withdrawn), so keep the window bounded rather than open-ended.
+    $complaintWindowDays = (int)get_platform_setting('mp_payout_confirmation_days', 3);
+    $deliveredAt = strtotime($delivery['updated_at']);
+    if ($deliveredAt && (time() - $deliveredAt) > $complaintWindowDays * 86400) {
+        delivery_error("The window to report a problem ({$complaintWindowDays} days after delivery) has passed. Contact support directly if you still need help.", 'delivery_detail.php?id=' . $deliveryId);
+    }
+    if (!in_array($disputeType, ['not_delivered','damaged','wrong_item','late','other'], true)) {
+        delivery_error('Select a valid complaint type.', 'delivery_detail.php?id=' . $deliveryId);
+    }
+    if ($description === '') {
+        delivery_error('Please describe the problem.', 'delivery_detail.php?id=' . $deliveryId);
+    }
+    if (!$delivery['agent_user_id']) {
+        delivery_error('This delivery has no assigned agent to report.', 'delivery_detail.php?id=' . $deliveryId);
+    }
+
+    $existing = $pdo->prepare("SELECT id FROM delivery_disputes WHERE delivery_request_id=? AND status IN('open','investigating')");
+    $existing->execute([$deliveryId]);
+    if ($existing->fetchColumn()) {
+        delivery_error('You already have an open complaint for this delivery.', 'delivery_detail.php?id=' . $deliveryId);
+    }
+
+    $pdo->prepare(
+        'INSERT INTO delivery_disputes (delivery_request_id, reported_by, reported_user_id, dispute_type, description) VALUES (?,?,?,?,?)'
+    )->execute([$deliveryId, $user['id'], $delivery['agent_user_id'], $disputeType, $description]);
+    $disputeId = (int)$pdo->lastInsertId();
+
+    // Marketplace: pause the payout release timer until admin resolves this
+    $mpOrderStmt = $pdo->prepare("SELECT id, shop_id FROM mp_orders WHERE delivery_request_id=? AND payment_status='paid' AND payout_released=0");
+    $mpOrderStmt->execute([$deliveryId]);
+    if ($mpOrder = $mpOrderStmt->fetch()) {
+        $pdo->prepare('UPDATE mp_orders SET payout_release_at=NULL, updated_at=NOW() WHERE id=?')->execute([$mpOrder['id']]);
+        $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+        $shopOwner->execute([$mpOrder['shop_id']]);
+        if ($ownerUid = $shopOwner->fetchColumn()) {
+            notify_user((int)$ownerUid, 'Delivery Dispute Filed ⚠️',
+                'The buyer has reported a problem with order #' . $mpOrder['id'] . '. Payout release is paused pending admin review.',
+                'warning', 'seller_dashboard.php?tab=orders');
+        }
+    }
+
+    notify_user((int)$delivery['agent_user_id'], 'Delivery Complaint Filed',
+        "A complaint was filed regarding delivery #$deliveryId. Admin will review it.", 'warning');
+
+    notify_moderators('manage_disputes', 'New Delivery Complaint',
+        "Delivery #$deliveryId was reported (" . str_replace('_', ' ', $disputeType) . ") by " . display_name($user) . '.');
+
+    log_audit_action((int)$user['id'], 'delivery_dispute_filed', "Filed complaint #$disputeId on delivery #$deliveryId ($disputeType)");
+    flash('Your complaint has been filed. An admin will review it shortly.', 'success');
+    header('Location: delivery_detail.php?id=' . $deliveryId);
     exit;
 }
 

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -135,7 +135,7 @@ $ledgerRows = array_reverse($ledgerRows);
                             </div>
                             <span class="status <?php echo $badge[1]; ?>"><?php echo $badge[0]; ?></span>
                         </div>
-                        <p><?php echo sanitize($app['description']); ?></p>
+                        <div><?php echo render_rich($app['description']); ?></div>
                         <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($app['budget']); ?></p>
                         <div class="card-bottom">
                             <?php if ($app['app_status'] === 'approved'): ?>

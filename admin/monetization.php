@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
@@ -33,17 +33,165 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prevMode = get_platform_setting('monetization_mode', 'free');
         $mode = $_POST['monetization_mode'] ?? 'free';
         if (!in_array($mode, ['free', 'hybrid', 'paid'], true)) $mode = 'free';
+
+        $featureKeys = [
+            'enable_paid_featured_jobs', 'enable_paid_featured_workers',
+            'enable_paid_verification_badges', 'enable_paid_job_posting',
+            'enable_paid_worker_service',
+            'enable_paid_featured_events', 'enable_paid_featured_funerals', 'enable_paid_featured_news',
+        ];
+        $anyFeaturePaid = false;
+        foreach ($featureKeys as $key) {
+            if (($_POST[$key] ?? '0') === '1') { $anyFeaturePaid = true; break; }
+        }
+        // In Free mode every individual toggle is ignored (is_feature_paid()
+        // short-circuits to false) — so turning a specific feature to Paid
+        // while still in Free mode would silently do nothing. Auto-upgrade to
+        // Hybrid so the admin's explicit choice actually takes effect.
+        $autoUpgraded = false;
+        if ($mode === 'free' && $anyFeaturePaid) {
+            $mode = 'hybrid';
+            $autoUpgraded = true;
+        }
+
         set_platform_setting('monetization_mode', $mode);
-        foreach (['enable_paid_featured_jobs', 'enable_paid_featured_workers', 'enable_paid_verification_badges', 'enable_paid_job_posting', 'enable_paid_worker_service'] as $key) {
+        foreach ($featureKeys as $key) {
             set_platform_setting($key, ($_POST[$key] ?? '0') === '1' ? '1' : '0');
         }
         if ($prevMode !== $mode) {
-            log_audit_action($user['id'], 'monetization_updated', "Monetization mode changed from '{$prevMode}' to '{$mode}'");
+            log_audit_action($user['id'], 'monetization_updated', "Monetization mode changed from '{$prevMode}' to '{$mode}'" . ($autoUpgraded ? ' (auto-upgraded from Free because a feature was set to Paid)' : ''));
         } else {
             log_audit_action($user['id'], 'monetization_updated', "Monetization feature toggles updated (mode: '{$mode}')");
         }
-        $success = 'Monetization settings saved.';
+        $success = $autoUpgraded
+            ? 'Monetization settings saved. Switched to Hybrid mode automatically since you enabled a paid feature — Free mode ignores individual toggles.'
+            : 'Monetization settings saved.';
         $tab = 'settings';
+
+    } elseif ($action === 'save_verification_settings') {
+        foreach ([
+            'require_verified_email_login',
+            'require_verified_email_job_post', 'require_verified_email_job_apply',
+            'require_verified_email_news_post', 'require_verified_email_event_post',
+            'require_verified_email_funeral_post', 'require_verified_email_shop_create',
+            'require_verified_email_product_post', 'require_verified_email_delivery_request',
+            'require_verified_email_delivery_agent',
+        ] as $key) {
+            set_platform_setting($key, ($_POST[$key] ?? '0') === '1' ? '1' : '0');
+        }
+        log_audit_action($user['id'], 'verification_requirements_updated', 'Updated email verification requirements');
+        $success = 'Verification requirements saved.';
+        $tab = 'settings';
+
+    } elseif ($action === 'save_job_listing_settings') {
+        set_platform_setting('jobs_list_staffed_completed', ($_POST['jobs_list_staffed_completed'] ?? '0') === '1' ? '1' : '0');
+        log_audit_action($user['id'], 'job_listing_settings_updated', 'Updated job listing visibility settings');
+        $success = 'Job listing settings saved.';
+        $tab = 'settings';
+
+    } elseif ($action === 'save_delivery_feed_settings') {
+        set_platform_setting('homepage_show_marketplace_deliveries', ($_POST['homepage_show_marketplace_deliveries'] ?? '0') === '1' ? '1' : '0');
+        set_platform_setting('homepage_show_personal_deliveries', ($_POST['homepage_show_personal_deliveries'] ?? '0') === '1' ? '1' : '0');
+        $audience = ($_POST['homepage_delivery_feed_audience'] ?? 'everyone') === 'agents_only' ? 'agents_only' : 'everyone';
+        set_platform_setting('homepage_delivery_feed_audience', $audience);
+        log_audit_action($user['id'], 'delivery_feed_settings_updated', 'Updated homepage delivery feed visibility settings');
+        $success = 'Delivery feed settings saved.';
+        $tab = 'settings';
+
+    } elseif ($action === 'save_session_settings') {
+        foreach (['customer', 'worker', 'manager', 'admin'] as $role) {
+            $minutes = max(0, (int)($_POST["session_timeout_{$role}"] ?? 120));
+            set_platform_setting("session_timeout_{$role}", (string)$minutes);
+        }
+        log_audit_action($user['id'], 'session_settings_updated', 'Updated per-role session timeout settings');
+        $success = 'Session settings saved.';
+        $tab = 'settings';
+
+    } elseif ($action === 'save_mp_settings') {
+        csrf_check();
+        foreach (['mp_boost_requires_payment','mp_featured_product_enabled','mp_sponsored_product_enabled',
+                  'mp_featured_shop_enabled','mp_sponsored_shop_enabled','mp_subscription_enabled'] as $k) {
+            set_platform_setting($k, ($_POST[$k]??'0')==='1'?'1':'0');
+        }
+        set_platform_setting('mp_verified_seller_fee', max(0,(float)($_POST['mp_verified_seller_fee']??0)));
+        log_audit_action($user['id'],'mp_settings_update','Updated marketplace monetization settings');
+        $success = 'Marketplace settings saved.'; $tab = 'marketplace';
+
+    } elseif ($action === 'save_mp_boost_pkg') {
+        csrf_check();
+        $pkgId    = (int)($_POST['pkg_id']??0);
+        $bType    = $_POST['boost_type']??'';
+        $pName    = trim($_POST['pkg_name']??'');
+        $pDays    = max(1,(int)($_POST['pkg_days']??7));
+        $pPrice   = max(0,(float)($_POST['pkg_price']??0));
+        $pStatus  = ($_POST['pkg_status']??'active')==='active'?'active':'inactive';
+        $validBT  = ['featured_product','sponsored_product','featured_shop','sponsored_shop'];
+        if ($pName && in_array($bType,$validBT,true)) {
+            if ($pkgId > 0) {
+                $pdo->prepare("UPDATE mp_boost_packages SET name=?,boost_type=?,duration_days=?,price=?,status=? WHERE id=?")->execute([$pName,$bType,$pDays,$pPrice,$pStatus,$pkgId]);
+            } else {
+                $pdo->prepare("INSERT INTO mp_boost_packages (boost_type,name,duration_days,price,status) VALUES (?,?,?,?,?)")->execute([$bType,$pName,$pDays,$pPrice,$pStatus]);
+            }
+            log_audit_action($user['id'],'mp_pkg_save',"Saved boost package: $bType $pName");
+            $success = 'Boost package saved.';
+        } else { $error = 'Name and boost type required.'; }
+        $tab = 'marketplace';
+
+    } elseif ($action === 'delete_mp_boost_pkg') {
+        csrf_check();
+        $pkgId = (int)($_POST['pkg_id']??0);
+        if ($pkgId) { $pdo->prepare("DELETE FROM mp_boost_packages WHERE id=?")->execute([$pkgId]); $success='Package deleted.'; }
+        $tab = 'marketplace';
+
+    } elseif ($action === 'save_mp_sub_plan') {
+        csrf_check();
+        $planId    = (int)($_POST['plan_id']??0);
+        $planName  = trim($_POST['plan_name']??'');
+        $planDesc  = trim($_POST['plan_desc']??'');
+        $planDays  = max(1,(int)($_POST['plan_days']??30));
+        $planPrice = max(0,(float)($_POST['plan_price']??0));
+        $planLimit = (int)($_POST['plan_limit']??-1);
+        $planSt    = ($_POST['plan_status']??'active')==='active'?'active':'inactive';
+        if ($planName) {
+            if ($planId > 0) {
+                $pdo->prepare("UPDATE mp_seller_subscription_plans SET name=?,description=?,duration_days=?,price=?,product_limit=?,status=? WHERE id=?")->execute([$planName,$planDesc?:null,$planDays,$planPrice,$planLimit,$planSt,$planId]);
+            } else {
+                $pdo->prepare("INSERT INTO mp_seller_subscription_plans (name,description,duration_days,price,product_limit,status) VALUES (?,?,?,?,?,?)")->execute([$planName,$planDesc?:null,$planDays,$planPrice,$planLimit,$planSt]);
+            }
+            $success = 'Subscription plan saved.';
+        } else { $error = 'Plan name required.'; }
+        $tab = 'marketplace';
+
+    } elseif ($action === 'delete_mp_sub_plan') {
+        csrf_check();
+        $planId = (int)($_POST['plan_id']??0);
+        if ($planId) { $pdo->prepare("DELETE FROM mp_seller_subscription_plans WHERE id=?")->execute([$planId]); $success='Plan deleted.'; }
+        $tab = 'marketplace';
+
+    } elseif ($action === 'activate_boost') {
+        csrf_check();
+        $boostId = (int)($_POST['boost_id']??0);
+        if ($boostId) {
+            require_once __DIR__ . '/../marketplace_functions.php';
+            $b = $pdo->prepare("SELECT mb.*, ms.shop_name FROM mp_boost_orders mb JOIN mp_shops ms ON mb.shop_id=ms.id WHERE mb.id=?")->execute([$boostId]) ? null : null;
+            $bSt = $pdo->prepare("SELECT mb.*, ms.shop_name FROM mp_boost_orders mb JOIN mp_shops ms ON mb.shop_id=ms.id WHERE mb.id=?"); $bSt->execute([$boostId]); $b = $bSt->fetch();
+            if ($b) {
+                $pdo->prepare("UPDATE mp_boost_orders SET status='active', activated_by=?, activated_at=NOW() WHERE id=?")->execute([$user['id'],$boostId]);
+                $isSponsored = str_contains($b['boost_type'],'sponsored');
+                $isProduct   = str_contains($b['boost_type'],'product');
+                if ($isProduct && $b['product_id']) {
+                    $pdo->prepare("UPDATE mp_products SET is_featured=?,featured_end=?,is_sponsored=?,sponsored_end=?,updated_at=NOW() WHERE id=?")->execute([$isSponsored?0:1,$isSponsored?null:$b['end_date'],$isSponsored?1:0,$isSponsored?$b['end_date']:null,$b['product_id']]);
+                } else {
+                    $pdo->prepare("UPDATE mp_shops SET is_featured=?,featured_end=?,is_sponsored=?,sponsored_end=?,updated_at=NOW() WHERE id=?")->execute([$isSponsored?0:1,$isSponsored?null:$b['end_date'],$isSponsored?1:0,$isSponsored?$b['end_date']:null,$b['shop_id']]);
+                }
+                $ownerUid = $pdo->prepare("SELECT user_id FROM mp_shops WHERE id=?")->execute([$b['shop_id']]) ? null : null;
+                $oSt = $pdo->prepare("SELECT user_id FROM mp_shops WHERE id=?"); $oSt->execute([$b['shop_id']]); $ownerUid = $oSt->fetchColumn();
+                if ($ownerUid) notify_user((int)$ownerUid, '⚡ Boost Activated!', ucwords(str_replace('_',' ',$b['boost_type'])).' for '.$b['shop_name'].' is now live until '.date('d M Y',strtotime($b['end_date'])).'.','success');
+                log_audit_action($user['id'],'mp_boost_activate',"Activated boost #{$boostId}: {$b['boost_type']} for {$b['shop_name']}");
+                $success = 'Boost activated.';
+            }
+        }
+        $tab = 'marketplace';
 
     } elseif ($action === 'save_package') {
         $pkgType = $_POST['pkg_type'] ?? '';
@@ -54,11 +202,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pkgStatus = ($_POST['pkg_status'] ?? '') === 'active' ? 'active' : 'inactive';
 
         $tableMap = [
-            'featured_job'   => 'featured_job_packages',
-            'featured_worker'=> 'worker_promotion_packages',
-            'verification'   => 'verification_packages',
-            'job_posting'    => 'job_posting_packages',
-            'worker_service' => 'worker_service_packages',
+            'featured_job'    => 'featured_job_packages',
+            'featured_worker' => 'worker_promotion_packages',
+            'verification'    => 'verification_packages',
+            'job_posting'     => 'job_posting_packages',
+            'worker_service'  => 'worker_service_packages',
+            'featured_event'  => 'featured_event_packages',
+            'featured_funeral'=> 'featured_funeral_packages',
+            'featured_news'   => 'featured_news_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgName !== '') {
@@ -104,18 +255,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $error = 'Package name is required.';
         }
-        $tabMap = ['featured_job' => 'featured_jobs', 'featured_worker' => 'featured_workers', 'verification' => 'verification', 'job_posting' => 'job_posting', 'worker_service' => 'worker_service'];
+        $tabMap = [
+            'featured_job'    => 'featured_jobs',
+            'featured_worker' => 'featured_workers',
+            'verification'    => 'verification',
+            'job_posting'     => 'job_posting',
+            'worker_service'  => 'worker_service',
+            'featured_event'  => 'community',
+            'featured_funeral'=> 'community',
+            'featured_news'   => 'community',
+        ];
         $tab = $tabMap[$pkgType] ?? 'settings';
 
     } elseif ($action === 'delete_package') {
         $pkgType = $_POST['pkg_type'] ?? '';
         $pkgId = intval($_POST['pkg_id'] ?? 0);
         $tableMap = [
-            'featured_job'   => 'featured_job_packages',
-            'featured_worker'=> 'worker_promotion_packages',
-            'verification'   => 'verification_packages',
-            'job_posting'    => 'job_posting_packages',
-            'worker_service' => 'worker_service_packages',
+            'featured_job'    => 'featured_job_packages',
+            'featured_worker' => 'worker_promotion_packages',
+            'verification'    => 'verification_packages',
+            'job_posting'     => 'job_posting_packages',
+            'worker_service'  => 'worker_service_packages',
+            'featured_event'  => 'featured_event_packages',
+            'featured_funeral'=> 'featured_funeral_packages',
+            'featured_news'   => 'featured_news_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgId > 0) {
@@ -123,7 +286,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'] ?? 0, 'package_deleted', "Deleted {$pkgType} package ID {$pkgId}");
             $success = 'Package deleted.';
         }
-        $tabMap2 = ['featured_job' => 'featured_jobs', 'featured_worker' => 'featured_workers', 'verification' => 'verification', 'job_posting' => 'job_posting', 'worker_service' => 'worker_service'];
+        $tabMap2 = [
+            'featured_job'    => 'featured_jobs',
+            'featured_worker' => 'featured_workers',
+            'verification'    => 'verification',
+            'job_posting'     => 'job_posting',
+            'worker_service'  => 'worker_service',
+            'featured_event'  => 'community',
+            'featured_funeral'=> 'community',
+            'featured_news'   => 'community',
+        ];
         $tab = $tabMap2[$pkgType] ?? 'settings';
 
     } elseif ($action === 'confirm_payment') {
@@ -187,6 +359,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$days, $payment['reference_id']]);
                 notify_user($payment['user_id'], 'Service listing confirmed', 'Your worker service listing is now active. You will appear in search results for ' . $days . ' days.', 'success');
                 log_audit_action($user['id'], 'payment_confirmed', "Confirmed worker_service payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}, worker profile ID {$payment['reference_id']}");
+            } elseif ($payment['payment_type'] === 'featured_event' && $payment['reference_id']) {
+                $pkgRow = $pdo->prepare('SELECT duration_days FROM featured_event_packages WHERE id = ?');
+                $pkgRow->execute([$payment['package_id']]);
+                $pkgRow = $pkgRow->fetch();
+                $days = $pkgRow ? (int)$pkgRow['duration_days'] : 30;
+                $pdo->prepare("UPDATE events SET featured=1, featured_end_date=DATE_ADD(CURDATE(),INTERVAL ? DAY) WHERE id=?")
+                    ->execute([$days, $payment['reference_id']]);
+                notify_user($payment['user_id'], '⭐ Event is now featured!', "Your event is featured for {$days} days and will appear at the top of listings.", 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed featured_event payment ref {$payment['reference_code']} for user ID {$payment['user_id']}");
+            } elseif ($payment['payment_type'] === 'featured_funeral' && $payment['reference_id']) {
+                $pkgRow = $pdo->prepare('SELECT duration_days FROM featured_funeral_packages WHERE id = ?');
+                $pkgRow->execute([$payment['package_id']]);
+                $pkgRow = $pkgRow->fetch();
+                $days = $pkgRow ? (int)$pkgRow['duration_days'] : 30;
+                $pdo->prepare("UPDATE funeral_announcements SET featured=1, featured_end_date=DATE_ADD(CURDATE(),INTERVAL ? DAY) WHERE id=?")
+                    ->execute([$days, $payment['reference_id']]);
+                notify_user($payment['user_id'], '⭐ Announcement is now featured!', "The announcement is featured for {$days} days.", 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed featured_funeral payment ref {$payment['reference_code']} for user ID {$payment['user_id']}");
+            } elseif ($payment['payment_type'] === 'featured_news' && $payment['reference_id']) {
+                $pkgRow = $pdo->prepare('SELECT duration_days FROM featured_news_packages WHERE id = ?');
+                $pkgRow->execute([$payment['package_id']]);
+                $pkgRow = $pkgRow->fetch();
+                $days = $pkgRow ? (int)$pkgRow['duration_days'] : 30;
+                $pdo->prepare("UPDATE news SET featured=1, featured_end_date=DATE_ADD(CURDATE(),INTERVAL ? DAY) WHERE id=?")
+                    ->execute([$days, $payment['reference_id']]);
+                notify_user($payment['user_id'], '⭐ Article is now featured!', "Your article is featured for {$days} days and will appear at the top of the news feed.", 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed featured_news payment ref {$payment['reference_code']} for user ID {$payment['user_id']}");
+            } elseif ($payment['payment_type'] === 'mp_subscription' && $payment['reference_id']) {
+                $subR = $pdo->prepare("SELECT mss.*, msp.name AS plan_name, ms.user_id AS owner_id, ms.shop_name FROM mp_seller_subscriptions mss JOIN mp_seller_subscription_plans msp ON mss.plan_id=msp.id JOIN mp_shops ms ON mss.shop_id=ms.id WHERE mss.id=?");
+                $subR->execute([$payment['reference_id']]);
+                $sub = $subR->fetch();
+                if ($sub) {
+                    $pdo->prepare("UPDATE mp_seller_subscriptions SET status='active', payment_id=?, activated_at=NOW() WHERE id=?")->execute([$payment['id'], $sub['id']]);
+                    $pdo->prepare("UPDATE mp_shops SET is_subscribed=1, subscription_plan_id=?, subscription_end=?, updated_at=NOW() WHERE id=?")->execute([$sub['plan_id'], $sub['end_date'], $sub['shop_id']]);
+                    notify_user((int)$sub['owner_id'], '⭐ Subscription Activated!', $sub['plan_name'] . ' for ' . $sub['shop_name'] . ' is active until ' . date('d M Y', strtotime($sub['end_date'])) . '.', 'success');
+                    log_audit_action($user['id'], 'payment_confirmed', "Confirmed mp_subscription payment ref {$payment['reference_code']} for user ID {$payment['user_id']}");
+                }
             }
             $success = 'Payment confirmed and feature activated.';
         }
@@ -304,11 +513,40 @@ $filterType   = trim($_GET['filter_type'] ?? '');
 $filterSearch = trim($_GET['filter_search'] ?? '');
 
 $monetizationMode = get_platform_setting('monetization_mode', 'free');
-$enableFeaturedJobs = get_platform_setting('enable_paid_featured_jobs', '0');
-$enableFeaturedWorkers = get_platform_setting('enable_paid_featured_workers', '0');
-$enableVerification = get_platform_setting('enable_paid_verification_badges', '0');
-$enablePaidJobPosting = get_platform_setting('enable_paid_job_posting', '0');
+$enableFeaturedJobs      = get_platform_setting('enable_paid_featured_jobs', '0');
+$enableFeaturedWorkers   = get_platform_setting('enable_paid_featured_workers', '0');
+$enableVerification      = get_platform_setting('enable_paid_verification_badges', '0');
+$enablePaidJobPosting    = get_platform_setting('enable_paid_job_posting', '0');
 $enablePaidWorkerService = get_platform_setting('enable_paid_worker_service', '0');
+$enableFeaturedEvents    = get_platform_setting('enable_paid_featured_events', '0');
+$enableFeaturedFunerals  = get_platform_setting('enable_paid_featured_funerals', '0');
+$enableFeaturedNews      = get_platform_setting('enable_paid_featured_news', '0');
+
+$verifyReqs = [
+    'login'             => get_platform_setting('require_verified_email_login', '1') === '1',
+    'job_post'          => get_platform_setting('require_verified_email_job_post', '1') === '1',
+    'job_apply'         => get_platform_setting('require_verified_email_job_apply', '1') === '1',
+    'news_post'         => get_platform_setting('require_verified_email_news_post', '0') === '1',
+    'event_post'        => get_platform_setting('require_verified_email_event_post', '0') === '1',
+    'funeral_post'      => get_platform_setting('require_verified_email_funeral_post', '0') === '1',
+    'shop_create'       => get_platform_setting('require_verified_email_shop_create', '0') === '1',
+    'product_post'      => get_platform_setting('require_verified_email_product_post', '0') === '1',
+    'delivery_request'  => get_platform_setting('require_verified_email_delivery_request', '0') === '1',
+    'delivery_agent'    => get_platform_setting('require_verified_email_delivery_agent', '0') === '1',
+];
+
+$jobsListStaffedCompleted = get_platform_setting('jobs_list_staffed_completed', '0') === '1';
+
+$showMarketplaceDeliveriesOnHome = get_platform_setting('homepage_show_marketplace_deliveries', '1') === '1';
+$showPersonalDeliveriesOnHome    = get_platform_setting('homepage_show_personal_deliveries', '1') === '1';
+$deliveryFeedAudience            = get_platform_setting('homepage_delivery_feed_audience', 'everyone');
+
+$sessionTimeouts = [
+    'customer' => (int)get_platform_setting('session_timeout_customer', '120'),
+    'worker'   => (int)get_platform_setting('session_timeout_worker', '120'),
+    'manager'  => (int)get_platform_setting('session_timeout_manager', '120'),
+    'admin'    => (int)get_platform_setting('session_timeout_admin', '120'),
+];
 
 $psMode    = get_platform_setting('paystack_mode', 'test');
 $psPubKey  = get_platform_setting('paystack_public_key', '');
@@ -320,8 +558,11 @@ $workerPromoPackages = get_active_packages('worker_promotion_packages');
 $allWorkerPromoPackages = $pdo->query("SELECT * FROM worker_promotion_packages ORDER BY price ASC")->fetchAll();
 $verificationPackages = get_active_packages('verification_packages');
 $allVerificationPackages = $pdo->query("SELECT * FROM verification_packages ORDER BY price ASC")->fetchAll();
-$allJobPostingPackages = $pdo->query("SELECT * FROM job_posting_packages ORDER BY price ASC")->fetchAll();
+$allJobPostingPackages   = $pdo->query("SELECT * FROM job_posting_packages ORDER BY price ASC")->fetchAll();
 $allWorkerServicePackages = $pdo->query("SELECT * FROM worker_service_packages ORDER BY price ASC")->fetchAll();
+$allFeaturedEventPackages   = $pdo->query("SELECT * FROM featured_event_packages ORDER BY price ASC")->fetchAll();
+$allFeaturedFuneralPackages = $pdo->query("SELECT * FROM featured_funeral_packages ORDER BY price ASC")->fetchAll();
+$allFeaturedNewsPackages    = $pdo->query("SELECT * FROM featured_news_packages ORDER BY price ASC")->fetchAll();
 
 // Pending payments with context
 $pendingPayments = $pdo->query("
@@ -329,20 +570,31 @@ $pendingPayments = $pdo->query("
         COALESCE(pp.gateway, 'manual') AS gateway,
         sr.title AS job_title,
         CASE pp.payment_type
-            WHEN 'featured_job'   THEN COALESCE(fp.name, '—')
-            WHEN 'featured_worker'THEN COALESCE(wp2.name, '—')
-            WHEN 'verification'   THEN COALESCE(vp.name, '—')
-            WHEN 'job_post'       THEN COALESCE(jp.name, '—')
-            WHEN 'worker_service' THEN COALESCE(ws.name, '—')
+            WHEN 'featured_job'    THEN COALESCE(fp.name, '—')
+            WHEN 'featured_worker' THEN COALESCE(wp2.name, '—')
+            WHEN 'verification'    THEN COALESCE(vp.name, '—')
+            WHEN 'job_post'        THEN COALESCE(jp.name, '—')
+            WHEN 'worker_service'  THEN COALESCE(ws.name, '—')
+            WHEN 'featured_event'  THEN COALESCE(fep.name, '—')
+            WHEN 'featured_funeral'THEN COALESCE(ffp.name, '—')
+            WHEN 'featured_news'   THEN COALESCE(fnp.name, '—')
+            WHEN 'mp_subscription' THEN COALESCE(msp.name, '—')
+            WHEN 'mp_boost'        THEN COALESCE(mbp.name, '—')
+            ELSE '—'
         END AS package_name
     FROM platform_payments pp
     JOIN users u ON pp.user_id = u.id
     LEFT JOIN service_requests sr ON pp.payment_type IN ('featured_job','job_post') AND sr.id = pp.reference_id
-    LEFT JOIN featured_job_packages fp ON pp.payment_type = 'featured_job' AND fp.id = pp.package_id
+    LEFT JOIN featured_job_packages fp      ON pp.payment_type = 'featured_job'    AND fp.id  = pp.package_id
     LEFT JOIN worker_promotion_packages wp2 ON pp.payment_type = 'featured_worker' AND wp2.id = pp.package_id
-    LEFT JOIN verification_packages vp ON pp.payment_type = 'verification' AND vp.id = pp.package_id
-    LEFT JOIN job_posting_packages jp ON pp.payment_type = 'job_post' AND jp.id = pp.package_id
-    LEFT JOIN worker_service_packages ws ON pp.payment_type = 'worker_service' AND ws.id = pp.package_id
+    LEFT JOIN verification_packages vp      ON pp.payment_type = 'verification'    AND vp.id  = pp.package_id
+    LEFT JOIN job_posting_packages jp       ON pp.payment_type = 'job_post'        AND jp.id  = pp.package_id
+    LEFT JOIN worker_service_packages ws    ON pp.payment_type = 'worker_service'  AND ws.id  = pp.package_id
+    LEFT JOIN featured_event_packages fep   ON pp.payment_type = 'featured_event'  AND fep.id = pp.package_id
+    LEFT JOIN featured_funeral_packages ffp ON pp.payment_type = 'featured_funeral'AND ffp.id = pp.package_id
+    LEFT JOIN featured_news_packages fnp    ON pp.payment_type = 'featured_news'   AND fnp.id = pp.package_id
+    LEFT JOIN mp_seller_subscription_plans msp ON pp.payment_type = 'mp_subscription' AND msp.id = pp.package_id
+    LEFT JOIN mp_boost_packages mbp         ON pp.payment_type = 'mp_boost'        AND mbp.id = pp.package_id
     WHERE pp.status = 'pending'
     ORDER BY pp.created_at DESC
 ")->fetchAll();
@@ -438,6 +690,49 @@ $pendingVerificationPayments = $pdo->query("
 $pendingVerificationUserIds = array_column($pendingVerificationPayments, 'user_id');
 
 $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name FROM audit_logs al LEFT JOIN users u ON al.admin_id = u.id ORDER BY al.created_at DESC LIMIT 50")->fetchAll();
+
+// ── Marketplace Monetization Data ─────────────────────────────────────────────
+// Revenue by boost type
+$mpBoostRevenue = [];
+try {
+    $btr = $pdo->query("SELECT boost_type, COUNT(*) cnt, SUM(price_paid) rev FROM mp_boost_orders WHERE status IN('active','expired') GROUP BY boost_type")->fetchAll();
+    foreach ($btr as $b) $mpBoostRevenue[$b['boost_type']] = ['cnt'=>(int)$b['cnt'],'rev'=>(float)$b['rev']];
+} catch(Exception $e){}
+
+$mpTotalRevenue   = array_sum(array_column($mpBoostRevenue,'rev'));
+$mpSubRevenue     = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type='mp_subscription' AND status='paid'")->fetchColumn();
+
+// Boost packages
+$mpBoostPackages = $pdo->query("SELECT * FROM mp_boost_packages ORDER BY boost_type, duration_days")->fetchAll();
+$mpBoostPkgByType = [];
+foreach ($mpBoostPackages as $pk) $mpBoostPkgByType[$pk['boost_type']][] = $pk;
+
+// Subscription plans
+$mpSubPlans = $pdo->query("SELECT * FROM mp_seller_subscription_plans ORDER BY price")->fetchAll();
+
+// Active boosts
+$mpActiveBoosts = $pdo->query(
+    "SELECT mb.*, ms.shop_name, u.name AS owner_name
+     FROM mp_boost_orders mb JOIN mp_shops ms ON mb.shop_id=ms.id JOIN users u ON ms.user_id=u.id
+     WHERE mb.status='active' AND mb.end_date>=CURDATE()
+     ORDER BY mb.end_date ASC LIMIT 40"
+)->fetchAll();
+
+// Pending boost orders (not yet activated)
+$mpPendingBoosts = $pdo->query(
+    "SELECT mb.*, ms.shop_name, u.name AS owner_name
+     FROM mp_boost_orders mb JOIN mp_shops ms ON mb.shop_id=ms.id JOIN users u ON ms.user_id=u.id
+     WHERE mb.status='pending'
+     ORDER BY mb.created_at ASC LIMIT 30"
+)->fetchAll();
+
+// Settings
+$mpSettings = [];
+foreach (['mp_boost_requires_payment','mp_featured_product_enabled','mp_sponsored_product_enabled',
+          'mp_featured_shop_enabled','mp_sponsored_shop_enabled','mp_subscription_enabled','mp_verified_seller_fee'] as $k) {
+    $mpSettings[$k] = get_platform_setting($k, '1');
+}
+$mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller_fee','0.00');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -485,6 +780,8 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
             <button class="mono-tab <?php echo $tab === 'verification' ? 'active' : ''; ?>" data-tab="verification">Verification</button>
             <button class="mono-tab <?php echo $tab === 'job_posting' ? 'active' : ''; ?>" data-tab="job_posting">Job Posting Pkgs</button>
             <button class="mono-tab <?php echo $tab === 'worker_service' ? 'active' : ''; ?>" data-tab="worker_service">Listing Pkgs</button>
+            <button class="mono-tab <?php echo $tab === 'marketplace' ? 'active' : ''; ?>" data-tab="marketplace">🛍️ Marketplace <?php if (count($mpPendingBoosts)): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($mpPendingBoosts); ?></span><?php endif; ?></button>
+            <button class="mono-tab <?php echo $tab === 'community' ? 'active' : ''; ?>" data-tab="community">📢 Community Pkgs</button>
             <button class="mono-tab <?php echo $tab === 'payments' ? 'active' : ''; ?>" data-tab="payments">Pending Payments <?php if ($pendingPayments): ?><span style="background:var(--primary);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($pendingPayments); ?></span><?php endif; ?></button>
             <button class="mono-tab <?php echo $tab === 'audit' ? 'active' : ''; ?>" data-tab="audit">Audit Log</button>
         </nav>
@@ -553,6 +850,30 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                                         <label><input type="radio" name="enable_paid_worker_service" value="1" <?php echo $enablePaidWorkerService ? 'checked' : ''; ?>> Paid</label>
                                     </td>
                                 </tr>
+                                <tr>
+                                    <td colspan="2" style="background:var(--surface-muted,#f8fafc);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#6b7280);padding:8px 12px;">Community Content Featuring</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Event Featuring</strong><br><span class="meta">Charge event organisers to pin events at the top</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_events" value="0" <?php echo !$enableFeaturedEvents ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_featured_events" value="1" <?php echo $enableFeaturedEvents ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Funeral Announcement Featuring</strong><br><span class="meta">Charge families to pin announcements at the top</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_funerals" value="0" <?php echo !$enableFeaturedFunerals ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_featured_funerals" value="1" <?php echo $enableFeaturedFunerals ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>News Article Featuring</strong><br><span class="meta">Charge writers to pin articles at the top of the news feed</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_news" value="0" <?php echo !$enableFeaturedNews ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_featured_news" value="1" <?php echo $enableFeaturedNews ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -589,6 +910,155 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                     <label>Secret key <span class="meta">(leave blank to keep existing)</span></label>
                     <input type="password" name="paystack_secret_key" placeholder="sk_test_xxxxxxxxxxxxxxxx — leave blank to keep current" autocomplete="new-password" />
                     <button type="submit" class="button button-primary" style="margin-top:12px;">Save Paystack settings</button>
+                </form>
+            </section>
+
+            <!-- Job listing visibility -->
+            <section class="panel">
+                <h2>Job Listing Visibility</h2>
+                <p class="meta">Controls whether jobs stay visible in public job listings (jobs page, browse jobs, homepage, similar jobs) once they're no longer accepting applicants.</p>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_job_listing_settings" />
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.9rem;">
+                        <input type="checkbox" name="jobs_list_staffed_completed" value="1" <?php echo $jobsListStaffedCompleted ? 'checked' : ''; ?> />
+                        Keep fully-staffed and completed jobs listed publicly
+                    </label>
+                    <p class="meta" style="margin-top:6px;">Unchecked (default): only Open and Partially Staffed jobs appear in listings.</p>
+                    <button type="submit" class="button button-primary" style="margin-top:12px;">Save job listing settings</button>
+                </form>
+            </section>
+
+            <!-- Homepage delivery feed visibility -->
+            <section class="panel">
+                <h2>Delivery Feed Visibility</h2>
+                <p class="meta">Controls which open delivery requests appear in the "Open Delivery Requests" section on the homepage. This only affects the homepage — delivery agents can still browse and apply to every open job from their own dashboard regardless of these settings.</p>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_delivery_feed_settings" />
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.9rem;">
+                        <input type="checkbox" name="homepage_show_marketplace_deliveries" value="1" <?php echo $showMarketplaceDeliveriesOnHome ? 'checked' : ''; ?> />
+                        Show marketplace order deliveries (auto-created when a seller ships an order)
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.9rem;margin-top:8px;">
+                        <input type="checkbox" name="homepage_show_personal_deliveries" value="1" <?php echo $showPersonalDeliveriesOnHome ? 'checked' : ''; ?> />
+                        Show personal delivery requests (submitted directly by users via "Request Delivery")
+                    </label>
+
+                    <p class="meta" style="margin-top:16px;margin-bottom:6px;font-weight:700;">Who can see this feed?</p>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.9rem;">
+                        <input type="radio" name="homepage_delivery_feed_audience" value="everyone" <?php echo $deliveryFeedAudience !== 'agents_only' ? 'checked' : ''; ?> />
+                        Everyone — all visitors and users see it on the homepage
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.9rem;margin-top:8px;">
+                        <input type="radio" name="homepage_delivery_feed_audience" value="agents_only" <?php echo $deliveryFeedAudience === 'agents_only' ? 'checked' : ''; ?> />
+                        Delivery agents only — customers and other users won't see this section at all
+                    </label>
+
+                    <button type="submit" class="button button-primary" style="margin-top:12px;">Save delivery feed settings</button>
+                </form>
+            </section>
+
+            <!-- Session timeout settings -->
+            <section class="panel">
+                <h2>Session Settings</h2>
+                <p class="meta">How long a session stays valid after the last activity, per account type. Set to 0 to disable idle timeout for that role. A session is also always force-ended immediately when its user changes their password.</p>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_session_settings" />
+                    <table class="pkg-table">
+                        <thead><tr><th>Account type</th><th style="width:160px;">Idle timeout (minutes)</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Customer</strong></td>
+                                <td><input type="number" name="session_timeout_customer" min="0" max="10080" value="<?php echo (int)$sessionTimeouts['customer']; ?>" /></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Worker</strong></td>
+                                <td><input type="number" name="session_timeout_worker" min="0" max="10080" value="<?php echo (int)$sessionTimeouts['worker']; ?>" /></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Manager</strong></td>
+                                <td><input type="number" name="session_timeout_manager" min="0" max="10080" value="<?php echo (int)$sessionTimeouts['manager']; ?>" /></td>
+                            </tr>
+                            <tr>
+                                <td><strong>Admin</strong></td>
+                                <td><input type="number" name="session_timeout_admin" min="0" max="10080" value="<?php echo (int)$sessionTimeouts['admin']; ?>" /></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button type="submit" class="button button-primary" style="margin-top:12px;">Save session settings</button>
+                </form>
+            </section>
+
+            <!-- Email verification requirements -->
+            <section class="panel">
+                <h2>Email Verification Requirements</h2>
+                <p class="meta">Choose which actions require a user to have verified their email address first. Unchecked = allowed even if unverified.</p>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_verification_settings" />
+                    <table class="pkg-table">
+                        <tbody>
+                            <tr>
+                                <td><strong>Login to the platform</strong><br><span class="meta">Blocks unverified accounts from logging in at all</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_login" value="1" <?php echo $verifyReqs['login'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Post a Job</strong><br><span class="meta">Customer must verify email before posting a job</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_job_post" value="1" <?php echo $verifyReqs['job_post'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Apply for a Job</strong><br><span class="meta">Worker must verify email before applying to a job</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_job_apply" value="1" <?php echo $verifyReqs['job_apply'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Submit News Article</strong><br><span class="meta">Author must verify email before submitting an article</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_news_post" value="1" <?php echo $verifyReqs['news_post'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Submit Event</strong><br><span class="meta">Organiser must verify email before submitting an event</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_event_post" value="1" <?php echo $verifyReqs['event_post'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Submit Funeral Announcement</strong><br><span class="meta">Family/organiser must verify email before submitting an announcement</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_funeral_post" value="1" <?php echo $verifyReqs['funeral_post'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Create Marketplace Shop</strong><br><span class="meta">Seller must verify email before creating a shop</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_shop_create" value="1" <?php echo $verifyReqs['shop_create'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>List Marketplace Product</strong><br><span class="meta">Seller must verify email before listing a new product</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_product_post" value="1" <?php echo $verifyReqs['product_post'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Create Delivery Request</strong><br><span class="meta">Customer must verify email before requesting a delivery</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_delivery_request" value="1" <?php echo $verifyReqs['delivery_request'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Register as Delivery Agent</strong><br><span class="meta">Rider must verify email before registering</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_delivery_agent" value="1" <?php echo $verifyReqs['delivery_agent'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <button type="submit" class="button button-primary" style="margin-top:12px;">Save verification requirements</button>
                 </form>
             </section>
         </div>
@@ -992,6 +1462,309 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
             </section>
         </div>
 
+        <!-- ═══════════════ COMMUNITY PACKAGES TAB ═══════════════ -->
+        <div class="tab-panel <?php echo $tab === 'community' ? 'active' : ''; ?>" id="tab-community">
+
+            <?php
+            $communityPackageSections = [
+                ['type' => 'featured_event',   'label' => 'Featured Event Packages',   'icon' => '📅', 'packages' => $allFeaturedEventPackages],
+                ['type' => 'featured_funeral',  'label' => 'Featured Funeral Packages', 'icon' => '🕊️', 'packages' => $allFeaturedFuneralPackages],
+                ['type' => 'featured_news',     'label' => 'Featured News Packages',    'icon' => '📰', 'packages' => $allFeaturedNewsPackages],
+            ];
+            foreach ($communityPackageSections as $sec):
+            ?>
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;"><?php echo $sec['icon']; ?> <?php echo $sec['label']; ?></h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Name</th><th>Duration</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        <?php if (empty($sec['packages'])): ?>
+                        <tr><td colspan="5" style="text-align:center;color:var(--muted,#6b7280);padding:18px;">No packages yet — add one below.</td></tr>
+                        <?php endif; ?>
+                        <?php foreach ($sec['packages'] as $pkg): ?>
+                        <tr>
+                            <td><?php echo sanitize($pkg['name']); ?></td>
+                            <td><?php echo (int)$pkg['duration_days']; ?> days</td>
+                            <td><?php echo number_format((float)$pkg['price'], 2); ?></td>
+                            <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
+                            <td>
+                                <button class="button button-small button-secondary" onclick="editCommPkg('<?php echo $sec['type']; ?>', <?php echo $pkg['id']; ?>, '<?php echo addslashes(sanitize($pkg['name'])); ?>', <?php echo (int)$pkg['duration_days']; ?>, <?php echo (float)$pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
+                                    <input type="hidden" name="action" value="delete_package">
+                                    <input type="hidden" name="pkg_type" value="<?php echo $sec['type']; ?>">
+                                    <input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>">
+                                    <button type="submit" class="button button-small button-secondary">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <h3 style="margin-top:20px;">Add / Edit Package</h3>
+                <form method="post" action="monetization.php" id="form-<?php echo $sec['type']; ?>">
+                    <input type="hidden" name="action" value="save_package">
+                    <input type="hidden" name="pkg_type" value="<?php echo $sec['type']; ?>">
+                    <input type="hidden" name="pkg_id" id="<?php echo $sec['type']; ?>_id" value="0">
+                    <label>Package name</label>
+                    <input type="text" name="pkg_name" id="<?php echo $sec['type']; ?>_name" required placeholder="e.g. 7-Day Spotlight">
+                    <label>Duration (days)</label>
+                    <input type="number" name="pkg_days" id="<?php echo $sec['type']; ?>_days" required min="1" value="7">
+                    <label>Price (GH₵)</label>
+                    <input type="number" name="pkg_price" id="<?php echo $sec['type']; ?>_price" required min="0" step="0.01" value="0">
+                    <label>Status</label>
+                    <select name="pkg_status" id="<?php echo $sec['type']; ?>_status">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <button type="submit" class="button button-primary">Save package</button>
+                        <button type="button" class="button button-secondary" onclick="resetCommPkg('<?php echo $sec['type']; ?>')">Clear</button>
+                    </div>
+                </form>
+            </section>
+            <?php endforeach; ?>
+
+            <script>
+            function editCommPkg(type, id, name, days, price, status) {
+                document.getElementById(type+'_id').value   = id;
+                document.getElementById(type+'_name').value = name;
+                document.getElementById(type+'_days').value = days;
+                document.getElementById(type+'_price').value = price;
+                document.getElementById(type+'_status').value = status;
+                document.getElementById('form-'+type).scrollIntoView({behavior:'smooth',block:'center'});
+            }
+            function resetCommPkg(type) {
+                document.getElementById(type+'_id').value    = 0;
+                document.getElementById(type+'_name').value  = '';
+                document.getElementById(type+'_days').value  = 7;
+                document.getElementById(type+'_price').value = 0;
+                document.getElementById(type+'_status').value = 'active';
+            }
+            </script>
+        </div>
+
+        <!-- ═══════════════ MARKETPLACE TAB ═══════════════ -->
+        <div class="tab-panel <?php echo $tab === 'marketplace' ? 'active' : ''; ?>" id="tab-marketplace">
+
+            <?php
+            $boostTypeLabels = [
+                'featured_product'  => ['icon'=>'⭐','label'=>'Featured Product'],
+                'sponsored_product' => ['icon'=>'🌟','label'=>'Sponsored Product'],
+                'featured_shop'     => ['icon'=>'🏆','label'=>'Featured Shop'],
+                'sponsored_shop'    => ['icon'=>'💎','label'=>'Sponsored Shop'],
+            ];
+            $settingKeys = [
+                'featured_product'  => 'mp_featured_product_enabled',
+                'sponsored_product' => 'mp_sponsored_product_enabled',
+                'featured_shop'     => 'mp_featured_shop_enabled',
+                'sponsored_shop'    => 'mp_sponsored_shop_enabled',
+            ];
+            ?>
+
+            <!-- Revenue Dashboard -->
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;font-size:1rem;">📊 Marketplace Revenue</h2>
+                <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px;">
+                    <div style="background:var(--primary-soft,#d1fae5);border-radius:12px;padding:14px;text-align:center;">
+                        <strong style="display:block;font-size:1.4rem;font-weight:900;color:var(--primary,#0f766e);">GH₵ <?php echo number_format($mpTotalRevenue,2); ?></strong>
+                        <span style="font-size:.72rem;color:var(--primary-dark,#065f46);">Total Boost Revenue</span>
+                    </div>
+                    <?php foreach ($boostTypeLabels as $bt => $bl): ?>
+                    <div style="background:var(--surface-muted,#f8fafc);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;">
+                        <strong style="display:block;font-size:1.2rem;font-weight:900;color:var(--primary,#0f766e);">GH₵ <?php echo number_format($mpBoostRevenue[$bt]['rev']??0,2); ?></strong>
+                        <span style="font-size:.68rem;color:var(--muted,#6b7280);"><?php echo $bl['icon'].' '.$bl['label']; ?></span>
+                        <div style="font-size:.66rem;color:var(--muted,#6b7280);"><?php echo $mpBoostRevenue[$bt]['cnt']??0; ?> orders</div>
+                    </div>
+                    <?php endforeach; ?>
+                    <?php if ((float)$mpSubRevenue > 0): ?>
+                    <div style="background:var(--surface-muted,#f8fafc);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;">
+                        <strong style="display:block;font-size:1.2rem;font-weight:900;color:#8b5cf6;">GH₵ <?php echo number_format($mpSubRevenue,2); ?></strong>
+                        <span style="font-size:.68rem;color:var(--muted,#6b7280);">Subscriptions</span>
+                    </div>
+                    <?php endif; ?>
+                    <div style="background:var(--surface-muted,#f8fafc);border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center;">
+                        <strong style="display:block;font-size:1.2rem;font-weight:900;"><?php echo count($mpActiveBoosts); ?></strong>
+                        <span style="font-size:.68rem;color:var(--muted,#6b7280);">Active Boosts</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Global Settings -->
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;font-size:1rem;">⚙️ Global Settings</h2>
+                <form method="post" action="monetization.php?tab=marketplace">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="save_mp_settings">
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+                        <?php foreach ($boostTypeLabels as $bt => $bl): ?>
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.86rem;">
+                            <input type="checkbox" name="<?php echo $settingKeys[$bt]; ?>" value="1" <?php echo ($mpSettings[$settingKeys[$bt]]??'1')==='1'?'checked':''; ?>>
+                            <?php echo $bl['icon'].' Enable '.$bl['label']; ?>
+                        </label>
+                        <?php endforeach; ?>
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.86rem;">
+                            <input type="checkbox" name="mp_boost_requires_payment" value="1" <?php echo ($mpSettings['mp_boost_requires_payment']??'1')==='1'?'checked':''; ?>>
+                            🔒 Require Paystack payment for boosts
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.86rem;">
+                            <input type="checkbox" name="mp_subscription_enabled" value="1" <?php echo ($mpSettings['mp_subscription_enabled']??'0')==='1'?'checked':''; ?>>
+                            ⭐ Enable seller subscriptions
+                        </label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+                        <label style="font-size:.86rem;font-weight:600;">Verified Seller Fee (GH₵ — 0 = free)</label>
+                        <input type="number" name="mp_verified_seller_fee" min="0" step="0.01"
+                               value="<?php echo htmlspecialchars($mpSettings['mp_verified_seller_fee']??'0.00'); ?>"
+                               style="width:100px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                    <button type="submit" class="button button-primary">Save Settings</button>
+                </form>
+            </section>
+
+            <!-- Boost Packages per Type -->
+            <?php foreach ($boostTypeLabels as $bt => $bl): ?>
+            <section class="panel" style="margin-bottom:16px;">
+                <h3 style="margin-top:0;font-size:.95rem;"><?php echo $bl['icon'].' '.$bl['label']; ?> Packages</h3>
+                <?php $typePkgs = $mpBoostPkgByType[$bt] ?? []; ?>
+                <?php if ($typePkgs): ?>
+                <table class="pkg-table" style="margin-bottom:12px;">
+                    <thead><tr><th>Name</th><th>Days</th><th>Price</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($typePkgs as $pk): ?>
+                    <tr style="<?php echo $pk['status']==='inactive'?'opacity:.5':''; ?>">
+                        <td><?php echo sanitize($pk['name']); ?></td>
+                        <td><?php echo (int)$pk['duration_days']; ?></td>
+                        <td style="font-weight:700;color:var(--primary);">GH₵ <?php echo number_format((float)$pk['price'],2); ?></td>
+                        <td><span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:<?php echo $pk['status']==='active'?'#d1fae5':'#f3f4f6'; ?>;color:<?php echo $pk['status']==='active'?'#065f46':'#6b7280'; ?>;"><?php echo ucfirst($pk['status']); ?></span></td>
+                        <td>
+                            <form method="post" style="display:inline;">
+                                <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_boost_pkg">
+                                <input type="hidden" name="pkg_id" value="<?php echo $pk['id']; ?>">
+                                <input type="hidden" name="boost_type" value="<?php echo $bt; ?>">
+                                <input type="hidden" name="pkg_name" value="<?php echo htmlspecialchars($pk['name']); ?>">
+                                <input type="hidden" name="pkg_days" value="<?php echo $pk['duration_days']; ?>">
+                                <input type="hidden" name="pkg_price" value="<?php echo $pk['price']; ?>">
+                                <input type="hidden" name="pkg_status" value="<?php echo $pk['status']==='active'?'inactive':'active'; ?>">
+                                <button type="submit" class="button button-small button-secondary" style="font-size:.7rem;padding:2px 8px;"><?php echo $pk['status']==='active'?'Disable':'Enable'; ?></button>
+                            </form>
+                            <form method="post" style="display:inline;" onsubmit="return confirm('Delete?')">
+                                <?php echo csrf_field(); ?><input type="hidden" name="action" value="delete_mp_boost_pkg"><input type="hidden" name="pkg_id" value="<?php echo $pk['id']; ?>">
+                                <button type="submit" class="button button-small" style="font-size:.7rem;padding:2px 8px;background:#fee2e2;color:#991b1b;border-color:transparent;">Del</button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+                <!-- Add package -->
+                <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                    <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_boost_pkg"><input type="hidden" name="boost_type" value="<?php echo $bt; ?>"><input type="hidden" name="pkg_id" value="0">
+                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Name</label><input type="text" name="pkg_name" placeholder="e.g. 7 Days" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:110px;"></div>
+                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Days</label><input type="number" name="pkg_days" min="1" value="7" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:70px;"></div>
+                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label><input type="number" name="pkg_price" min="0" step="0.01" value="0" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:90px;"></div>
+                    <input type="hidden" name="pkg_status" value="active">
+                    <button type="submit" class="button button-primary button-small">+ Add Package</button>
+                </form>
+            </section>
+            <?php endforeach; ?>
+
+            <!-- Seller Subscription Plans -->
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;font-size:1rem;">⭐ Seller Subscription Plans</h2>
+                <?php if ($mpSubPlans): ?>
+                <table class="pkg-table" style="margin-bottom:14px;">
+                    <thead><tr><th>Plan</th><th>Days</th><th>Price</th><th>Product Limit</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($mpSubPlans as $plan): ?>
+                    <tr style="<?php echo $plan['status']==='inactive'?'opacity:.5':''; ?>">
+                        <td><strong><?php echo sanitize($plan['name']); ?></strong><?php if ($plan['description']): ?><br><span style="font-size:.76rem;color:var(--muted,#6b7280);"><?php echo sanitize(mb_substr($plan['description'],0,60)); ?></span><?php endif; ?></td>
+                        <td><?php echo (int)$plan['duration_days']; ?></td>
+                        <td style="font-weight:700;color:var(--primary);">GH₵ <?php echo number_format((float)$plan['price'],2); ?></td>
+                        <td><?php echo $plan['product_limit']==-1?'Unlimited':(int)$plan['product_limit']; ?></td>
+                        <td><span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:<?php echo $plan['status']==='active'?'#d1fae5':'#f3f4f6'; ?>;color:<?php echo $plan['status']==='active'?'#065f46':'#6b7280'; ?>;"><?php echo ucfirst($plan['status']); ?></span></td>
+                        <td>
+                            <form method="post" style="display:inline;" onsubmit="return confirm('Delete plan?')">
+                                <?php echo csrf_field(); ?><input type="hidden" name="action" value="delete_mp_sub_plan"><input type="hidden" name="plan_id" value="<?php echo $plan['id']; ?>">
+                                <button type="submit" class="button button-small" style="font-size:.7rem;padding:2px 8px;background:#fee2e2;color:#991b1b;border-color:transparent;">Del</button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+                <details style="margin-top:10px;">
+                    <summary style="font-size:.84rem;font-weight:700;cursor:pointer;color:var(--primary);">+ Add Subscription Plan</summary>
+                    <form method="post" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+                        <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_sub_plan"><input type="hidden" name="plan_id" value="0">
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Plan Name *</label><input type="text" name="plan_name" required placeholder="e.g. Growth" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Duration (days)</label><input type="number" name="plan_days" min="1" value="30" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label><input type="number" name="plan_price" min="0" step="0.01" value="0" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Product Limit (-1 = unlimited)</label><input type="number" name="plan_limit" value="-1" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div style="grid-column:1/-1;"><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Description</label><input type="text" name="plan_desc" placeholder="Describe what sellers get..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div style="grid-column:1/-1;"><button type="submit" class="button button-primary">Save Plan</button></div>
+                    </form>
+                </details>
+            </section>
+
+            <!-- Pending Boost Orders -->
+            <?php if ($mpPendingBoosts): ?>
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;font-size:1rem;color:#f59e0b;">⏳ Pending Boost Orders (<?php echo count($mpPendingBoosts); ?>)</h2>
+                <p style="font-size:.8rem;color:var(--muted,#6b7280);margin:0 0 14px;">These orders are awaiting payment confirmation or manual activation.</p>
+                <?php foreach ($mpPendingBoosts as $b): ?>
+                <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+                        <div>
+                            <div style="font-weight:800;font-size:.9rem;"><?php echo sanitize($b['shop_name']); ?> <span style="font-size:.72rem;color:var(--muted,#6b7280);">by <?php echo sanitize($b['owner_name']); ?></span></div>
+                            <div style="font-size:.78rem;color:var(--muted,#6b7280);margin-top:3px;">
+                                <?php echo sanitize($boostTypeLabels[$b['boost_type']]['icon']??''); ?> <?php echo sanitize($boostTypeLabels[$b['boost_type']]['label']??$b['boost_type']); ?> &nbsp;·&nbsp;
+                                <?php echo (int)$b['package_days']; ?> days &nbsp;·&nbsp;
+                                <strong>GH₵ <?php echo number_format((float)$b['price_paid'],2); ?></strong> &nbsp;·&nbsp;
+                                <?php echo sanitize($b['payment_method']); ?> <?php if ($b['mobi_number']): ?>(<?php echo sanitize($b['mobi_number']); ?>)<?php endif; ?>
+                            </div>
+                            <div style="font-size:.72rem;color:var(--muted,#6b7280);">Would run <?php echo date('d M Y',strtotime($b['start_date'])); ?> → <?php echo date('d M Y',strtotime($b['end_date'])); ?></div>
+                        </div>
+                        <form method="post" style="margin:0;">
+                            <?php echo csrf_field(); ?><input type="hidden" name="action" value="activate_boost"><input type="hidden" name="boost_id" value="<?php echo $b['id']; ?>">
+                            <button type="submit" class="button button-primary button-small">✓ Activate</button>
+                        </form>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </section>
+            <?php endif; ?>
+
+            <!-- Active Boosts -->
+            <?php if ($mpActiveBoosts): ?>
+            <section class="panel">
+                <h2 style="margin-top:0;font-size:1rem;">✅ Active Boosts (<?php echo count($mpActiveBoosts); ?>)</h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Shop</th><th>Type</th><th>Duration</th><th>Expires</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($mpActiveBoosts as $b): ?>
+                    <tr>
+                        <td><strong><?php echo sanitize($b['shop_name']); ?></strong><br><span style="font-size:.74rem;color:var(--muted,#6b7280);"><?php echo sanitize($b['owner_name']); ?></span></td>
+                        <td><?php echo sanitize($boostTypeLabels[$b['boost_type']]['icon']??''); ?> <?php echo sanitize($boostTypeLabels[$b['boost_type']]['label']??$b['boost_type']); ?></td>
+                        <td><?php echo (int)$b['package_days']; ?> days</td>
+                        <td><?php
+                        $daysLeft = (int)ceil((strtotime($b['end_date'])-time())/86400);
+                        $col = $daysLeft<=3?'#ef4444':($daysLeft<=7?'#f59e0b':'#10b981');
+                        ?><span style="color:<?php echo $col; ?>;font-weight:700;"><?php echo date('d M Y',strtotime($b['end_date'])); ?></span>
+                        <span style="font-size:.72rem;color:var(--muted,#6b7280);"> (<?php echo $daysLeft; ?>d left)</span></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </section>
+            <?php else: ?>
+            <div class="empty-state">No active boosts right now.</div>
+            <?php endif; ?>
+
+        </div>
+        <!-- END MARKETPLACE TAB -->
+
         <!-- PENDING PAYMENTS TAB -->
         <div class="tab-panel <?php echo $tab === 'payments' ? 'active' : ''; ?>" id="tab-payments">
 
@@ -1012,11 +1785,31 @@ $auditLogs = $pdo->query("SELECT al.*, COALESCE(u.name, 'System') AS admin_name 
                         <label style="font-size:0.82rem;font-weight:600;">Type</label>
                         <select name="filter_type" style="padding:6px 10px;font-size:0.9rem;">
                             <option value="">All types</option>
-                            <option value="featured_job"   <?php echo $filterType === 'featured_job'    ? 'selected' : ''; ?>>Featured Job</option>
-                            <option value="featured_worker"<?php echo $filterType === 'featured_worker' ? 'selected' : ''; ?>>Featured Worker</option>
-                            <option value="verification"   <?php echo $filterType === 'verification'    ? 'selected' : ''; ?>>Verification</option>
-                            <option value="job_post"       <?php echo $filterType === 'job_post'        ? 'selected' : ''; ?>>Job Posting</option>
-                            <option value="worker_service" <?php echo $filterType === 'worker_service'  ? 'selected' : ''; ?>>Service Listing</option>
+                            <optgroup label="Jobs &amp; Workers">
+                            <option value="featured_job"    <?php echo $filterType === 'featured_job'    ? 'selected' : ''; ?>>Featured Job</option>
+                            <option value="featured_worker" <?php echo $filterType === 'featured_worker' ? 'selected' : ''; ?>>Featured Worker</option>
+                            <option value="verification"    <?php echo $filterType === 'verification'    ? 'selected' : ''; ?>>Verification</option>
+                            <option value="job_post"        <?php echo $filterType === 'job_post'        ? 'selected' : ''; ?>>Job Posting</option>
+                            <option value="worker_service"  <?php echo $filterType === 'worker_service'  ? 'selected' : ''; ?>>Service Listing</option>
+                            <option value="escrow_payment"  <?php echo $filterType === 'escrow_payment'  ? 'selected' : ''; ?>>Escrow Payment</option>
+                            </optgroup>
+                            <optgroup label="Community">
+                            <option value="featured_event"  <?php echo $filterType === 'featured_event'  ? 'selected' : ''; ?>>Featured Event</option>
+                            <option value="featured_funeral"<?php echo $filterType === 'featured_funeral' ? 'selected' : ''; ?>>Featured Funeral</option>
+                            <option value="featured_news"   <?php echo $filterType === 'featured_news'   ? 'selected' : ''; ?>>Featured News</option>
+                            <option value="event_post"      <?php echo $filterType === 'event_post'      ? 'selected' : ''; ?>>Event Post Fee</option>
+                            <option value="funeral_post"    <?php echo $filterType === 'funeral_post'    ? 'selected' : ''; ?>>Funeral Post Fee</option>
+                            <option value="news_post"       <?php echo $filterType === 'news_post'       ? 'selected' : ''; ?>>News Post Fee</option>
+                            </optgroup>
+                            <optgroup label="Marketplace">
+                            <option value="mp_boost"        <?php echo $filterType === 'mp_boost'        ? 'selected' : ''; ?>>Marketplace Boost</option>
+                            <option value="mp_subscription" <?php echo $filterType === 'mp_subscription' ? 'selected' : ''; ?>>Seller Subscription</option>
+                            </optgroup>
+                            <optgroup label="Delivery">
+                            <option value="delivery_subscription" <?php echo $filterType === 'delivery_subscription' ? 'selected' : ''; ?>>Rider Subscription</option>
+                            <option value="delivery_sponsored"    <?php echo $filterType === 'delivery_sponsored'    ? 'selected' : ''; ?>>Rider Sponsored</option>
+                            <option value="delivery_verification" <?php echo $filterType === 'delivery_verification' ? 'selected' : ''; ?>>Rider Verification</option>
+                            </optgroup>
                         </select>
                     </div>
                     <div style="display:flex;flex-direction:column;gap:4px;">

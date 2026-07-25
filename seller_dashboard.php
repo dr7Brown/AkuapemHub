@@ -47,6 +47,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'shop_se
             if ($logoPath) $pdo->prepare('UPDATE mp_shops SET logo_path=? WHERE id=?')->execute([$logoPath, $shopId]);
         }
 
+        // Handle banner upload
+        if (!empty($_FILES['banner']['name']) && is_valid_image_upload($_FILES['banner'])) {
+            $shopId = $shop ? $shop['id'] : (int)$pdo->lastInsertId();
+            $bannerPath = save_uploaded_image($_FILES['banner'], 'uploads/marketplace/shops/' . $shopId . '/banner');
+            if ($bannerPath) $pdo->prepare('UPDATE mp_shops SET banner_path=? WHERE id=?')->execute([$bannerPath, $shopId]);
+        }
+
         flash($shop ? 'Shop settings saved.' : 'Shop created! Now add your first product.', 'success');
         header('Location: seller_dashboard.php?tab=products');
         exit;
@@ -62,8 +69,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'order_s
 
     $orderId   = (int)$_POST['order_id'];
     $newStatus = $_POST['new_status'] ?? '';
+    // Collapsed: "confirmed" was pure busywork between pending and processing
+    // with no operational difference, so one click now takes an order straight
+    // from pending to processing ("Accept Order"). 'confirmed' stays a valid
+    // transition target only so any pre-existing order stuck there isn't stranded.
     $validTransitions = [
-        'pending'    => ['confirmed','cancelled'],
+        'pending'    => ['processing','cancelled'],
         'confirmed'  => ['processing','cancelled'],
         'processing' => ['ready_for_delivery','cancelled'],
     ];
@@ -141,23 +152,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'request
     csrf_check();
     if (!$shop) { flash('Create your shop first.', 'warning'); header('Location: seller_dashboard.php'); exit; }
 
-    $amount = (float)($_POST['amount'] ?? 0);
-    $momo   = trim($_POST['momo_number'] ?? '');
+    $amount          = (float)($_POST['amount'] ?? 0);
+    $payoutAccountId = (int)($_POST['payout_account_id'] ?? 0);
 
-    $pendSt = $pdo->prepare("SELECT COUNT(*) FROM mp_payout_requests WHERE shop_id=? AND status='pending'");
+    $pendSt = $pdo->prepare("SELECT COUNT(*) FROM mp_payout_requests WHERE shop_id=? AND status IN ('pending','processing')");
     $pendSt->execute([$shop['id']]);
     $hasPendingPayout = (int)$pendSt->fetchColumn() > 0;
+
+    $payoutAccount = null;
+    if ($payoutAccountId) {
+        $paStmt = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE id=? AND shop_id=?');
+        $paStmt->execute([$payoutAccountId, $shop['id']]);
+        $payoutAccount = $paStmt->fetch();
+    }
 
     if ($hasPendingPayout) $payoutError = 'You already have a pending withdrawal request. Wait for it to be processed.';
     elseif ($amount < 1) $payoutError = 'Enter a valid withdrawal amount.';
     elseif ($amount > (float)$shop['available_balance']) $payoutError = 'You only have GH₵ ' . number_format($shop['available_balance'], 2) . ' available.';
-    elseif (!$momo) $payoutError = 'Enter your mobile money number.';
+    elseif (!$payoutAccount) $payoutError = 'Select which account to pay out to.';
 
     if (!$payoutError) {
-        $pdo->prepare('INSERT INTO mp_payout_requests (shop_id, amount, momo_number, status) VALUES (?,?,?,\'pending\')')
-            ->execute([$shop['id'], $amount, $momo]);
-        log_audit_action((int)$user['id'], 'mp_payout_request', "Requested withdrawal of GHS " . number_format($amount, 2) . " via $momo");
-        flash('Withdrawal request submitted! An admin will review it shortly.', 'success');
+        $pdo->prepare(
+            'INSERT INTO mp_payout_requests
+                (shop_id, amount, payout_account_id, method, account_name, account_number, bank_name, bank_code, momo_number, status)
+             VALUES (?,?,?,?,?,?,?,?,?,\'pending\')'
+        )->execute([
+            $shop['id'], $amount, $payoutAccount['id'], $payoutAccount['method'],
+            $payoutAccount['account_name'], $payoutAccount['account_number'],
+            $payoutAccount['bank_name'], $payoutAccount['bank_code'],
+            $payoutAccount['method'] === 'momo' ? $payoutAccount['account_number'] : null,
+        ]);
+        $newRequestId = (int)$pdo->lastInsertId();
+        log_audit_action((int)$user['id'], 'mp_payout_request', "Requested withdrawal of GHS " . number_format($amount, 2) . " via {$payoutAccount['method']} #{$payoutAccount['id']}");
+
+        if (get_platform_setting('mp_payout_mode', 'manual') === 'auto') {
+            require_once __DIR__ . '/marketplace_functions.php';
+            process_marketplace_payout($newRequestId, 0);
+            flash('Withdrawal request submitted and sent for payout.', 'success');
+        } else {
+            flash('Withdrawal request submitted! An admin will review it shortly.', 'success');
+        }
         header('Location: seller_dashboard.php?tab=wallet');
         exit;
     }
@@ -225,23 +259,32 @@ $analytics = null;
 if ($shop && $tab === 'analytics') {
     $paidStatuses = "'confirmed','processing','ready_for_delivery','in_transit','delivered'"; // excludes pending/cancelled/refunded
 
+    $period = $_GET['period'] ?? 'month';
+    $periodDateFilter = match($period) {
+        'today' => 'AND mo.created_at >= CURDATE()',
+        'week'  => 'AND mo.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+        'month' => "AND mo.created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')",
+        'year'  => 'AND YEAR(mo.created_at)=YEAR(NOW())',
+        default => '',
+    };
+
     $rev = $pdo->prepare("SELECT COALESCE(SUM(total_amount),0) FROM mp_orders WHERE shop_id=? AND status IN ($paidStatuses)");
     $rev->execute([$shop['id']]);
     $totalRevenue = (float)$rev->fetchColumn();
 
-    $revMonth = $pdo->prepare("SELECT COALESCE(SUM(total_amount),0) FROM mp_orders WHERE shop_id=? AND status IN ($paidStatuses) AND created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')");
-    $revMonth->execute([$shop['id']]);
-    $monthRevenue = (float)$revMonth->fetchColumn();
+    $revPeriod = $pdo->prepare("SELECT COALESCE(SUM(total_amount),0) FROM mp_orders mo WHERE shop_id=? AND status IN ($paidStatuses) $periodDateFilter");
+    $revPeriod->execute([$shop['id']]);
+    $monthRevenue = (float)$revPeriod->fetchColumn();
 
-    $ordCount = $pdo->prepare("SELECT COUNT(*) FROM mp_orders WHERE shop_id=? AND status IN ($paidStatuses)");
+    $ordCount = $pdo->prepare("SELECT COUNT(*) FROM mp_orders mo WHERE shop_id=? AND status IN ($paidStatuses) $periodDateFilter");
     $ordCount->execute([$shop['id']]);
     $orderCount = (int)$ordCount->fetchColumn();
 
-    $cancelCount = $pdo->prepare("SELECT COUNT(*) FROM mp_orders WHERE shop_id=? AND status IN ('cancelled','refunded')");
+    $cancelCount = $pdo->prepare("SELECT COUNT(*) FROM mp_orders mo WHERE shop_id=? AND status IN ('cancelled','refunded') $periodDateFilter");
     $cancelCount->execute([$shop['id']]);
     $cancelledCount = (int)$cancelCount->fetchColumn();
 
-    $avgOrder = $orderCount > 0 ? $totalRevenue / $orderCount : 0;
+    $avgOrder = $orderCount > 0 ? $monthRevenue / $orderCount : 0;
 
     // Daily revenue, last 30 days (for the chart)
     $daily = $pdo->prepare("
@@ -259,11 +302,11 @@ if ($shop && $tab === 'analytics') {
         $dailyRevenue[] = (float)($dailyMap[$d] ?? 0);
     }
 
-    // Top products by revenue (paid orders only)
+    // Top products by revenue (paid orders only, within the selected period)
     $topProducts = $pdo->prepare("
         SELECT moi.product_name, SUM(moi.quantity) AS units_sold, SUM(moi.subtotal) AS revenue
         FROM mp_order_items moi JOIN mp_orders mo ON moi.order_id = mo.id
-        WHERE mo.shop_id=? AND mo.status IN ($paidStatuses)
+        WHERE mo.shop_id=? AND mo.status IN ($paidStatuses) $periodDateFilter
         GROUP BY moi.product_name ORDER BY revenue DESC LIMIT 5
     ");
     $topProducts->execute([$shop['id']]);
@@ -276,25 +319,46 @@ if ($shop && $tab === 'analytics') {
 // ── Wallet (balances, pending releases, payout history, activity ledger) ──
 $payoutRequests = [];
 if ($shop && $tab === 'wallet') {
-    $payoutStmt = $pdo->prepare('SELECT * FROM mp_payout_requests WHERE shop_id=? ORDER BY created_at DESC LIMIT 20');
-    $payoutStmt->execute([$shop['id']]);
+    $withdrawalStatusFilter = $_GET['wstatus'] ?? 'all';
+    $ledgerTypeFilter       = $_GET['ltype'] ?? 'all';
+
+    $payoutWhere  = 'WHERE shop_id=?';
+    $payoutParams = [$shop['id']];
+    if (in_array($withdrawalStatusFilter, ['pending','approved','processing','paid','rejected','failed'], true)) {
+        $payoutWhere .= ' AND status=?';
+        $payoutParams[] = $withdrawalStatusFilter;
+    }
+    $payoutStmt = $pdo->prepare("SELECT * FROM mp_payout_requests $payoutWhere ORDER BY created_at DESC LIMIT 20");
+    $payoutStmt->execute($payoutParams);
     $payoutRequests = $payoutStmt->fetchAll();
-    $hasPendingPayoutDisplay = (bool)array_filter($payoutRequests, fn($p) => $p['status'] === 'pending');
+
+    // "Pending request" guard for the request form always checks the true state,
+    // not the filtered list — otherwise filtering could hide an active pending one.
+    $truePendingStmt = $pdo->prepare("SELECT COUNT(*) FROM mp_payout_requests WHERE shop_id=? AND status='pending'");
+    $truePendingStmt->execute([$shop['id']]);
+    $hasPendingPayoutDisplay = (bool)$truePendingStmt->fetchColumn();
 
     // Orders still contributing to the pending balance — paid but not yet released
     $pendingReleaseStmt = $pdo->prepare(
-        "SELECT id, net_amount, status, payout_release_at
-         FROM mp_orders
-         WHERE shop_id=? AND payment_status='paid' AND payout_released=0
-         ORDER BY (payout_release_at IS NULL) DESC, payout_release_at ASC, created_at DESC
+        "SELECT mo.id, mo.net_amount, mo.status, mo.payout_release_at,
+                EXISTS (SELECT 1 FROM delivery_disputes dd WHERE dd.delivery_request_id = mo.delivery_request_id AND dd.status IN ('open','investigating')) AS has_open_dispute
+         FROM mp_orders mo
+         WHERE mo.shop_id=? AND mo.payment_status='paid' AND mo.payout_released=0
+         ORDER BY (mo.payout_release_at IS NULL) DESC, mo.payout_release_at ASC, mo.created_at DESC
          LIMIT 15"
     );
     $pendingReleaseStmt->execute([$shop['id']]);
     $pendingReleases = $pendingReleaseStmt->fetchAll();
 
     // Recent wallet ledger — sales credited, releases, withdrawals, reversals
-    $ledgerStmt = $pdo->prepare('SELECT * FROM mp_wallet_transactions WHERE shop_id=? ORDER BY created_at DESC LIMIT 25');
-    $ledgerStmt->execute([$shop['id']]);
+    $ledgerWhere  = 'WHERE shop_id=?';
+    $ledgerParams = [$shop['id']];
+    if (in_array($ledgerTypeFilter, ['sale_pending','released_to_available','withdrawal','reversal'], true)) {
+        $ledgerWhere .= ' AND type=?';
+        $ledgerParams[] = $ledgerTypeFilter;
+    }
+    $ledgerStmt = $pdo->prepare("SELECT * FROM mp_wallet_transactions $ledgerWhere ORDER BY created_at DESC LIMIT 25");
+    $ledgerStmt->execute($ledgerParams);
     $walletLedger = $ledgerStmt->fetchAll();
 
     $confirmDaysDisplay = (int)get_platform_setting('mp_payout_confirmation_days', 3);
@@ -430,7 +494,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <?php endif; ?>
 
 <?php elseif ($tab === 'orders' && $shop): ?>
-<?php $orderStatusMap = ['pending'=>['confirmed','cancelled'],'confirmed'=>['processing','cancelled'],'processing'=>['ready_for_delivery','cancelled']]; ?>
+<?php $orderStatusMap = ['pending'=>['processing','cancelled'],'confirmed'=>['processing','cancelled'],'processing'=>['ready_for_delivery','cancelled']]; ?>
 <?php if ($orders): foreach ($orders as $order):
     $oItems = $pdo->prepare('SELECT product_name, quantity, subtotal FROM mp_order_items WHERE order_id=?');
     $oItems->execute([$order['id']]);
@@ -438,6 +502,12 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     $oStockIssues = $pdo->prepare('SELECT product_name, requested_qty FROM mp_order_stock_issues WHERE order_id=?');
     $oStockIssues->execute([$order['id']]);
     $oStockIssues = $oStockIssues->fetchAll();
+    $oDispute = null;
+    if ($order['delivery_request_id']) {
+        $oDisputeStmt = $pdo->prepare("SELECT status, dispute_type FROM delivery_disputes WHERE delivery_request_id=? AND status IN('open','investigating') ORDER BY created_at DESC LIMIT 1");
+        $oDisputeStmt->execute([$order['delivery_request_id']]);
+        $oDispute = $oDisputeStmt->fetch();
+    }
 ?>
 <div class="sd-ord-card">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
@@ -456,6 +526,11 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     <?php foreach ($oStockIssues as $si): ?>
     <div style="font-size:.78rem;padding:3px 6px;margin-top:4px;background:#fef3c7;border-radius:6px;color:#92400e;">⚠️ Also requested: <?php echo sanitize($si['product_name']); ?> ×<?php echo $si['requested_qty']; ?> — sold out at checkout, excluded &amp; not charged</div>
     <?php endforeach; ?>
+    <?php if ($oDispute): ?>
+    <div style="font-size:.78rem;padding:6px 8px;margin-top:6px;background:#fee2e2;border-radius:6px;color:#c0392b;">
+        🚩 Buyer filed a complaint (<?php echo sanitize(ucfirst(str_replace('_',' ',$oDispute['dispute_type']))); ?>) — <?php echo $oDispute['status'] === 'investigating' ? 'under admin review' : 'awaiting admin review'; ?>. Payout release is paused.
+    </div>
+    <?php endif; ?>
     <?php if ($order['status'] === 'ready_for_delivery' && !$order['delivery_request_id']): ?>
     <div style="font-size:.78rem;padding:6px 8px;margin-top:6px;background:#fee2e2;border-radius:6px;color:#c0392b;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <span>⚠️ Delivery request failed to create.</span>
@@ -474,7 +549,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
             <?php foreach ($orderStatusMap[$order['status']] as $ns):
                 if ($ns === 'cancelled' && $order['payment_status'] === 'paid') continue; // paid orders: admin-only cancellation
                 $nsColors=['confirmed'=>'#3b82f6','processing'=>'#8b5cf6','ready_for_delivery'=>'#f97316','cancelled'=>'#ef4444'];
-                $nsLabels=['confirmed'=>'Confirm','processing'=>'Start Processing','ready_for_delivery'=>'Mark Ready for Delivery','cancelled'=>'Cancel'];
+                $nsLabels=['confirmed'=>'Confirm','processing'=>($order['status']==='pending'?'Accept Order':'Start Processing'),'ready_for_delivery'=>'Mark Ready for Delivery','cancelled'=>'Cancel'];
             ?>
             <form method="post" style="margin:0;">
                 <?php echo csrf_field(); ?>
@@ -493,12 +568,18 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <?php endif; ?>
 
 <?php elseif ($tab === 'analytics' && $shop): ?>
+<?php $periodLabels = ['today'=>'Today','week'=>'7 Days','month'=>'This Month','year'=>'This Year','all'=>'All Time']; ?>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+    <?php foreach ($periodLabels as $pv=>$pl): ?>
+    <a href="?tab=analytics&period=<?php echo $pv; ?>" class="button <?php echo $period===$pv?'button-primary':'button-secondary'; ?> button-small"><?php echo $pl; ?></a>
+    <?php endforeach; ?>
+</div>
 <div class="sd-an-stats">
-    <div class="sd-an-tile"><strong>GH&#8373; <?php echo number_format($analytics['totalRevenue'],2); ?></strong><span>Total Revenue</span></div>
-    <div class="sd-an-tile"><strong>GH&#8373; <?php echo number_format($analytics['monthRevenue'],2); ?></strong><span>This Month</span></div>
-    <div class="sd-an-tile"><strong><?php echo number_format($analytics['orderCount']); ?></strong><span>Paid Orders</span></div>
+    <div class="sd-an-tile"><strong>GH&#8373; <?php echo number_format($analytics['totalRevenue'],2); ?></strong><span>All-Time Revenue</span></div>
+    <div class="sd-an-tile"><strong>GH&#8373; <?php echo number_format($analytics['monthRevenue'],2); ?></strong><span><?php echo $periodLabels[$period]; ?> Revenue</span></div>
+    <div class="sd-an-tile"><strong><?php echo number_format($analytics['orderCount']); ?></strong><span>Paid Orders (<?php echo $periodLabels[$period]; ?>)</span></div>
     <div class="sd-an-tile"><strong>GH&#8373; <?php echo number_format($analytics['avgOrder'],2); ?></strong><span>Avg. Order Value</span></div>
-    <div class="sd-an-tile"><strong><?php echo number_format($analytics['cancelledCount']); ?></strong><span>Cancelled/Refunded</span></div>
+    <div class="sd-an-tile"><strong><?php echo number_format($analytics['cancelledCount']); ?></strong><span>Cancelled/Refunded (<?php echo $periodLabels[$period]; ?>)</span></div>
 </div>
 
 <div class="sd-an-card">
@@ -507,9 +588,9 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 </div>
 
 <div class="sd-an-card">
-    <p class="sd-an-title">Top Products</p>
+    <p class="sd-an-title">Top Products (<?php echo $periodLabels[$period]; ?>)</p>
     <?php if (!$analytics['topProducts']): ?>
-    <p class="meta">No sales yet — once orders come in, your best sellers will show up here.</p>
+    <p class="meta">No sales in this period yet.</p>
     <?php else: ?>
     <?php foreach ($analytics['topProducts'] as $tp): $pct = $analytics['topProductsMax'] > 0 ? (float)$tp['revenue'] / $analytics['topProductsMax'] * 100 : 0; ?>
     <div class="sd-an-prod-row">
@@ -568,34 +649,37 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 </script>
 
 <?php elseif ($tab === 'wallet' && $shop): ?>
-<div class="sd-wal-hero">
-    <div class="sd-wal-balance sd-wal-balance-pending">
-        <div class="sd-wal-bal-icon">⏳</div>
-        <div>
-            <strong>GH&#8373; <?php echo number_format((float)$shop['pending_balance'],2); ?></strong>
-            <span>Pending Balance</span>
-        </div>
+
+<div class="sdw-card">
+    <div class="sdw-card-shine"></div>
+    <div class="sdw-card-row">
+        <span class="sdw-card-eyebrow">Available Balance</span>
+        <span class="sdw-card-chip">GHS</span>
     </div>
-    <div class="sd-wal-balance sd-wal-balance-available">
-        <div class="sd-wal-bal-icon">💰</div>
-        <div>
-            <strong>GH&#8373; <?php echo number_format((float)$shop['available_balance'],2); ?></strong>
-            <span>Available Balance</span>
-        </div>
+    <div class="sdw-card-amount">GH&#8373; <?php echo number_format((float)$shop['available_balance'],2); ?></div>
+    <div class="sdw-card-sub">
+        <span class="sdw-dot"></span>
+        GH&#8373; <?php echo number_format((float)$shop['pending_balance'],2); ?> pending release
     </div>
 </div>
-<p class="meta" style="margin:0 0 16px;text-align:center;">💡 Funds move from Pending to Available <?php echo $confirmDaysDisplay; ?> day(s) after an order is marked delivered.</p>
+<p class="sdw-hint">💡 Funds move from Pending to Available <?php echo $confirmDaysDisplay; ?> day(s) after an order is marked delivered.</p>
 
 <?php if ($pendingReleases): ?>
-<div class="sd-an-card">
-    <p class="sd-an-title">⏳ Pending Releases (<?php echo count($pendingReleases); ?>)</p>
+<div class="sdw-panel">
+    <p class="sdw-panel-title">⏳ Pending Releases <span class="sdw-count"><?php echo count($pendingReleases); ?></span></p>
     <?php foreach ($pendingReleases as $pr):
-        if ($pr['status'] !== 'delivered' || !$pr['payout_release_at']) {
+        $progressPct = null;
+        if ($pr['has_open_dispute']) {
+            $releaseLabel = 'Paused — complaint under review';
+            $releaseColor = '#c0392b';
+        } elseif ($pr['status'] !== 'delivered' || !$pr['payout_release_at']) {
             $releaseLabel = 'Awaiting delivery confirmation';
             $releaseColor = '#6b7280';
         } else {
             $secsLeft = strtotime($pr['payout_release_at']) - time();
-            if ($secsLeft <= 0) { $releaseLabel = 'Releasing soon'; $releaseColor = '#0f766e'; }
+            $totalSecs = max(1, $confirmDaysDisplay * 86400);
+            $progressPct = max(0, min(100, (($totalSecs - $secsLeft) / $totalSecs) * 100));
+            if ($secsLeft <= 0) { $releaseLabel = 'Releasing soon'; $releaseColor = '#2f8f5b'; }
             else {
                 $daysLeft = max(1, (int)ceil($secsLeft / 86400));
                 $releaseLabel = 'Releases in ' . $daysLeft . ' day' . ($daysLeft === 1 ? '' : 's');
@@ -603,116 +687,209 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
             }
         }
     ?>
-    <div class="sd-wal-release-row">
-        <div>
-            <span style="font-weight:700;">Order #<?php echo $pr['id']; ?></span>
-            <span style="font-size:.76rem;color:<?php echo $releaseColor; ?>;margin-left:6px;font-weight:600;"><?php echo sanitize($releaseLabel); ?></span>
+    <div class="sdw-release">
+        <div class="sdw-release-top">
+            <div>
+                <span class="sdw-release-order">Order #<?php echo $pr['id']; ?></span>
+                <span class="sdw-release-status" style="color:<?php echo $releaseColor; ?>;"><?php echo sanitize($releaseLabel); ?></span>
+            </div>
+            <strong class="sdw-release-amt">GH&#8373; <?php echo number_format((float)$pr['net_amount'],2); ?></strong>
         </div>
-        <strong style="color:var(--primary,#0f766e);">GH&#8373; <?php echo number_format((float)$pr['net_amount'],2); ?></strong>
+        <?php if ($progressPct !== null): ?>
+        <div class="sdw-progress-track"><div class="sdw-progress-fill" style="width:<?php echo $progressPct; ?>%;background:<?php echo $releaseColor; ?>;"></div></div>
+        <?php endif; ?>
     </div>
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
 
-<div class="sd-an-card">
-    <p class="sd-an-title">💸 Request Withdrawal</p>
+<div class="sdw-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+        <p class="sdw-panel-title" style="margin:0;">💸 Request Withdrawal</p>
+        <a href="seller_payout_accounts.php" style="font-size:.78rem;font-weight:700;">⚙️ Payout Accounts</a>
+    </div>
     <?php if ($payoutError): ?><div class="alert alert-error"><?php echo sanitize($payoutError); ?></div><?php endif; ?>
-    <?php if ($hasPendingPayoutDisplay): ?>
-    <div class="sd-wal-notice">⏳ You have a pending withdrawal request. Please wait for it to be processed before requesting another.</div>
+    <?php
+    $payoutAccountsStmt = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE shop_id=? ORDER BY is_default DESC');
+    $payoutAccountsStmt->execute([$shop['id']]);
+    $sellerPayoutAccounts = $payoutAccountsStmt->fetchAll();
+    ?>
+    <?php if (!$sellerPayoutAccounts): ?>
+    <div class="sdw-empty">
+        <span class="sdw-empty-icon">⚙️</span>
+        <p>Set up a MoMo or bank account to receive withdrawals.</p>
+        <a href="seller_payout_accounts.php" class="button button-primary button-small">Set Up Payout Account →</a>
+    </div>
+    <?php elseif ($hasPendingPayoutDisplay): ?>
+    <div class="sdw-notice">⏳ You have a pending withdrawal request. Please wait for it to be processed before requesting another.</div>
     <?php elseif ((float)$shop['available_balance'] < 1): ?>
-    <p class="meta">No funds available to withdraw yet.</p>
+    <div class="sdw-empty">
+        <span class="sdw-empty-icon">💳</span>
+        <p>No funds available to withdraw yet.</p>
+    </div>
     <?php else: ?>
     <form method="post" action="seller_dashboard.php?tab=wallet">
         <?php echo csrf_field(); ?>
         <input type="hidden" name="form" value="request_payout">
-        <div class="form-group">
+        <div class="sdw-input-group">
             <label for="amount">Amount (GH&#8373;)</label>
-            <input type="number" id="amount" name="amount" step="0.01" min="1" max="<?php echo (float)$shop['available_balance']; ?>" value="<?php echo sanitize($_POST['amount'] ?? number_format((float)$shop['available_balance'],2,'.','')); ?>" required>
-            <p style="font-size:.74rem;color:var(--text-muted,#6b7280);margin:4px 0 0;">Max GH&#8373; <?php echo number_format((float)$shop['available_balance'],2); ?> available.</p>
+            <div class="sdw-input-wrap">
+                <input type="number" id="amount" name="amount" step="0.01" min="1" max="<?php echo (float)$shop['available_balance']; ?>" value="<?php echo sanitize($_POST['amount'] ?? number_format((float)$shop['available_balance'],2,'.','')); ?>" required>
+                <button type="button" class="sdw-max-btn" onclick="document.getElementById('amount').value='<?php echo number_format((float)$shop['available_balance'],2,'.',''); ?>'">MAX</button>
+            </div>
+            <p class="sdw-input-hint">Max GH&#8373; <?php echo number_format((float)$shop['available_balance'],2); ?> available.</p>
         </div>
-        <div class="form-group">
-            <label for="momo_number">Mobile Money Number</label>
-            <input type="tel" id="momo_number" name="momo_number" placeholder="e.g. 024xxxxxxx" value="<?php echo sanitize($_POST['momo_number'] ?? ($shop['phone']??'')); ?>" required>
+        <div class="sdw-input-group">
+            <label>Pay To</label>
+            <?php foreach ($sellerPayoutAccounts as $pa): ?>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:500;font-size:.86rem;padding:6px 0;cursor:pointer;">
+                <input type="radio" name="payout_account_id" value="<?php echo $pa['id']; ?>" style="width:auto;" <?php echo ($_POST['payout_account_id'] ?? ($pa['is_default'] ? $pa['id'] : null)) == $pa['id'] ? 'checked' : ''; ?> required>
+                <?php echo $pa['method'] === 'momo' ? '📱' : '🏦'; ?> <?php echo sanitize($pa['bank_name']); ?> — •••• <?php echo sanitize(substr($pa['account_number'], -4)); ?>
+            </label>
+            <?php endforeach; ?>
+            <p class="sdw-input-hint"><a href="seller_payout_accounts.php">Manage payout accounts →</a></p>
         </div>
-        <button type="submit" class="button button-primary" style="width:100%;padding:12px;">Request Withdrawal</button>
+        <button type="submit" class="sdw-submit-btn">Request Withdrawal →</button>
     </form>
     <?php endif; ?>
 </div>
 
-<div class="sd-an-card">
-    <p class="sd-an-title">📋 Withdrawal History</p>
+<div class="sdw-panel">
+    <p class="sdw-panel-title">📋 Withdrawal History</p>
+    <div class="sdw-seg">
+        <?php foreach (['all'=>'All','pending'=>'Pending','processing'=>'Processing','paid'=>'Paid','failed'=>'Failed','rejected'=>'Rejected'] as $wv=>$wl): ?>
+        <a href="?tab=wallet&wstatus=<?php echo $wv; ?>" class="<?php echo $withdrawalStatusFilter===$wv?'active':''; ?>"><?php echo $wl; ?></a>
+        <?php endforeach; ?>
+    </div>
     <?php if (!$payoutRequests): ?>
-    <p class="meta">No withdrawal requests yet.</p>
+    <div class="sdw-empty"><span class="sdw-empty-icon">📭</span><p>No withdrawal requests match this filter.</p></div>
     <?php else: ?>
-    <?php $poIcons = ['pending'=>'⏳','approved'=>'✅','paid'=>'💵','rejected'=>'❌']; ?>
-    <?php $poColors = ['pending'=>['#fef3c7','#b45309'],'approved'=>['#dbeafe','#1d4ed8'],'paid'=>['#d1fae5','#065f46'],'rejected'=>['#fee2e2','#c0392b']]; ?>
+    <?php $poIcons = ['pending'=>'⏳','approved'=>'✅','processing'=>'🔄','paid'=>'💵','rejected'=>'❌','failed'=>'⚠️']; ?>
+    <?php $poColors = ['pending'=>['#fef3c7','#b45309'],'approved'=>['#dbeafe','#1d4ed8'],'processing'=>['#dbeafe','#1d4ed8'],'paid'=>['#d1fae5','#065f46'],'rejected'=>['#fee2e2','#c0392b'],'failed'=>['#fee2e2','#c0392b']]; ?>
     <?php foreach ($payoutRequests as $po): [$bg,$col] = $poColors[$po['status']] ?? ['#f3f4f6','#6b7280']; ?>
-    <div class="sd-wal-history-row">
-        <div>
-            <div style="font-weight:700;">GH&#8373; <?php echo number_format((float)$po['amount'],2); ?></div>
-            <div style="font-size:.76rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($po['momo_number']); ?> &nbsp;·&nbsp; <?php echo time_ago($po['created_at']); ?></div>
+    <div class="sdw-row" style="border-left-color:<?php echo $col; ?>;">
+        <div class="sdw-row-icon" style="background:<?php echo $bg; ?>;"><?php echo $poIcons[$po['status']] ?? '•'; ?></div>
+        <div class="sdw-row-body">
+            <div class="sdw-row-title">GH&#8373; <?php echo number_format((float)$po['amount'],2); ?></div>
+            <div class="sdw-row-meta"><?php echo sanitize($po['bank_name'] ?: 'Mobile Money'); ?> — •••• <?php echo sanitize(substr((string)$po['account_number'], -4)); ?> &nbsp;·&nbsp; <?php echo time_ago($po['created_at']); ?></div>
             <?php if ($po['status']==='rejected' && $po['admin_notes']): ?>
-            <div style="font-size:.76rem;color:#c0392b;margin-top:2px;">Reason: <?php echo sanitize($po['admin_notes']); ?></div>
+            <div class="sdw-row-reason">Reason: <?php echo sanitize($po['admin_notes']); ?></div>
+            <?php endif; ?>
+            <?php if ($po['status']==='failed' && $po['failure_reason']): ?>
+            <div class="sdw-row-reason">Issue: <?php echo sanitize($po['failure_reason']); ?></div>
             <?php endif; ?>
         </div>
-        <span class="sd-badge" style="background:<?php echo $bg; ?>;color:<?php echo $col; ?>;"><?php echo $poIcons[$po['status']] ?? ''; ?> <?php echo ucfirst($po['status']); ?></span>
+        <span class="sdw-badge" style="background:<?php echo $bg; ?>;color:<?php echo $col; ?>;"><?php echo ucfirst($po['status']); ?></span>
     </div>
     <?php endforeach; ?>
     <?php endif; ?>
 </div>
 
-<div class="sd-an-card">
-    <p class="sd-an-title">📜 Recent Wallet Activity</p>
+<div class="sdw-panel">
+    <p class="sdw-panel-title">📜 Recent Wallet Activity</p>
+    <div class="sdw-seg">
+        <?php foreach (['all'=>'All','sale_pending'=>'Sales','released_to_available'=>'Released','withdrawal'=>'Withdrawals','reversal'=>'Reversals'] as $lv=>$ll): ?>
+        <a href="?tab=wallet&ltype=<?php echo $lv; ?>" class="<?php echo $ledgerTypeFilter===$lv?'active':''; ?>"><?php echo $ll; ?></a>
+        <?php endforeach; ?>
+    </div>
     <?php if (!$walletLedger): ?>
-    <p class="meta">No wallet activity yet.</p>
+    <div class="sdw-empty"><span class="sdw-empty-icon">📜</span><p>No wallet activity matches this filter.</p></div>
     <?php else: ?>
     <?php
     $ledgerMeta = [
-        'sale_pending'          => ['icon'=>'💰','label'=>'Sale credited (pending)', 'sign'=>1],
-        'released_to_available' => ['icon'=>'🔓','label'=>'Released to available',  'sign'=>0],
-        'withdrawal'            => ['icon'=>'💸','label'=>'Withdrawal approved',     'sign'=>-1],
-        'reversal'              => ['icon'=>'↩️','label'=>'Refund reversal',         'sign'=>-1],
+        'sale_pending'          => ['icon'=>'💰','label'=>'Sale credited (pending)', 'sign'=>1,  'bg'=>'#e4f4ea'],
+        'released_to_available' => ['icon'=>'🔓','label'=>'Released to available',  'sign'=>0,  'bg'=>'#f1f5f9'],
+        'withdrawal'            => ['icon'=>'💸','label'=>'Withdrawal approved',     'sign'=>-1, 'bg'=>'#fee2e2'],
+        'reversal'              => ['icon'=>'↩️','label'=>'Refund reversal',         'sign'=>-1, 'bg'=>'#fee2e2'],
     ];
     ?>
     <?php foreach ($walletLedger as $tx):
-        $meta = $ledgerMeta[$tx['type']] ?? ['icon'=>'•','label'=>ucfirst(str_replace('_',' ',$tx['type'])),'sign'=>0];
+        $meta = $ledgerMeta[$tx['type']] ?? ['icon'=>'•','label'=>ucfirst(str_replace('_',' ',$tx['type'])),'sign'=>0,'bg'=>'#f1f5f9'];
         $amt  = abs((float)$tx['amount']);
-        if ($meta['sign'] > 0)      { $color = '#065f46'; $prefix = '+'; }
-        elseif ($meta['sign'] < 0)  { $color = '#c0392b'; $prefix = '−'; }
-        else                        { $color = 'var(--text-muted,#6b7280)'; $prefix = ''; }
+        if ($meta['sign'] > 0)      { $color = '#065f46'; $prefix = '+'; $accent = '#2f8f5b'; }
+        elseif ($meta['sign'] < 0)  { $color = '#c0392b'; $prefix = '−'; $accent = '#c0392b'; }
+        else                        { $color = 'var(--text-muted,#6b7280)'; $prefix = ''; $accent = '#94a3b8'; }
     ?>
-    <div class="sd-wal-ledger-row">
-        <div style="display:flex;align-items:center;gap:10px;">
-            <span class="sd-wal-ledger-icon"><?php echo $meta['icon']; ?></span>
-            <div>
-                <div style="font-weight:600;font-size:.85rem;"><?php echo sanitize($meta['label']); ?></div>
-                <div style="font-size:.74rem;color:var(--text-muted,#6b7280);">
-                    <?php if ($tx['order_id']): ?>Order #<?php echo $tx['order_id']; ?> &nbsp;·&nbsp; <?php endif; ?>
-                    <?php echo time_ago($tx['created_at']); ?>
-                </div>
+    <div class="sdw-row" style="border-left-color:<?php echo $accent; ?>;">
+        <div class="sdw-row-icon" style="background:<?php echo $meta['bg']; ?>;"><?php echo $meta['icon']; ?></div>
+        <div class="sdw-row-body">
+            <div class="sdw-row-title"><?php echo sanitize($meta['label']); ?></div>
+            <div class="sdw-row-meta">
+                <?php if ($tx['order_id']): ?>Order #<?php echo $tx['order_id']; ?> &nbsp;·&nbsp; <?php endif; ?>
+                <?php echo time_ago($tx['created_at']); ?>
             </div>
         </div>
-        <strong style="color:<?php echo $color; ?>;white-space:nowrap;"><?php echo $prefix; ?>GH&#8373; <?php echo number_format($amt,2); ?></strong>
+        <strong class="sdw-row-amt" style="color:<?php echo $color; ?>;"><?php echo $prefix; ?>GH&#8373; <?php echo number_format($amt,2); ?></strong>
     </div>
     <?php endforeach; ?>
     <?php endif; ?>
 </div>
 
 <style>
-.sd-wal-hero { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px; }
-.sd-wal-balance { display:flex; align-items:center; gap:12px; border-radius:14px; padding:16px; border:1px solid var(--border); }
-.sd-wal-balance strong { display:block; font-size:1.25rem; font-weight:900; line-height:1.15; }
-.sd-wal-balance span { font-size:.72rem; color:var(--text-muted,#6b7280); }
-.sd-wal-balance-pending   { background:linear-gradient(135deg,#fef9ee,#fef3c7); }
-.sd-wal-balance-available { background:linear-gradient(135deg,#ecfdf5,#d1fae5); }
-.sd-wal-balance-pending strong   { color:#b45309; }
-.sd-wal-balance-available strong { color:#065f46; }
-.sd-wal-bal-icon { font-size:1.5rem; flex-shrink:0; }
-.sd-wal-notice { background:#fef3c7; border:1px solid #f59e0b; border-radius:12px; padding:14px; color:#92400e; font-size:.86rem; }
-.sd-wal-release-row, .sd-wal-history-row, .sd-wal-ledger-row { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); gap:8px; }
-.sd-wal-release-row:last-child, .sd-wal-history-row:last-child, .sd-wal-ledger-row:last-child { border-bottom:none; padding-bottom:0; }
-.sd-wal-ledger-icon { font-size:1.1rem; width:30px; height:30px; border-radius:50%; background:var(--surface-muted,#f1f5f9); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-@media(max-width:420px){ .sd-wal-hero { grid-template-columns:1fr; } }
+/* ── Wallet card ── */
+.sdw-card { position:relative; overflow:hidden; border-radius:20px; padding:22px 24px; margin-bottom:10px;
+    background:linear-gradient(135deg, var(--primary,#2f8f5b) 0%, var(--primary-dark,#246b45) 100%);
+    color:#fff; box-shadow:0 12px 28px -12px rgba(47,143,91,.45); }
+.sdw-card-shine { position:absolute; top:-70px; right:-40px; width:220px; height:220px; border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,255,.20), transparent 70%); pointer-events:none; }
+.sdw-card-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; position:relative; }
+.sdw-card-eyebrow { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; opacity:.85; }
+.sdw-card-chip { font-size:.65rem; font-weight:800; background:rgba(255,255,255,.2); padding:3px 10px; border-radius:20px; letter-spacing:.05em; }
+.sdw-card-amount { font-size:2.15rem; font-weight:900; letter-spacing:-.02em; position:relative; margin-bottom:16px; }
+.sdw-card-sub { display:flex; align-items:center; gap:8px; font-size:.83rem; font-weight:600; opacity:.95; position:relative; padding-top:13px; border-top:1px solid rgba(255,255,255,.22); }
+.sdw-dot { width:7px; height:7px; border-radius:50%; background:#fbbf24; flex-shrink:0; box-shadow:0 0 0 3px rgba(251,191,36,.28); }
+.sdw-hint { font-size:.78rem; color:var(--text-muted,#6b7280); text-align:center; margin:0 0 18px; }
+
+/* ── Panels ── */
+.sdw-panel { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.03); }
+.sdw-panel-title { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 14px; display:flex; align-items:center; gap:7px; }
+.sdw-count { background:var(--primary-soft,#e4f4ea); color:var(--primary,#2f8f5b); font-size:.68rem; font-weight:800; padding:1px 8px; border-radius:20px; }
+
+/* ── Segmented filter control ── */
+.sdw-seg { display:inline-flex; flex-wrap:wrap; gap:2px; background:var(--surface-muted,#f1f5f9); border-radius:10px; padding:3px; margin-bottom:14px; }
+.sdw-seg a { padding:6px 13px; border-radius:8px; font-size:.76rem; font-weight:700; text-decoration:none; color:var(--text-muted,#6b7280); transition:background .15s, color .15s; white-space:nowrap; }
+.sdw-seg a.active { background:var(--surface,#fff); color:var(--primary,#2f8f5b); box-shadow:0 1px 4px rgba(0,0,0,.1); }
+
+/* ── Pending release rows with progress ── */
+.sdw-release { padding:10px 0; border-bottom:1px solid var(--border); }
+.sdw-release:last-child { border-bottom:none; padding-bottom:0; }
+.sdw-release-top { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:7px; }
+.sdw-release-order { font-weight:700; font-size:.88rem; }
+.sdw-release-status { font-size:.76rem; margin-left:7px; font-weight:600; }
+.sdw-release-amt { color:var(--primary,#2f8f5b); }
+.sdw-progress-track { background:var(--surface-muted,#f1f5f9); border-radius:6px; height:6px; overflow:hidden; }
+.sdw-progress-fill { height:100%; border-radius:6px; transition:width .3s; }
+
+/* ── Notice / empty states ── */
+.sdw-notice { background:#fef3c7; border:1px solid #f59e0b; border-radius:12px; padding:14px; color:#92400e; font-size:.86rem; }
+.sdw-empty { text-align:center; padding:28px 10px; color:var(--text-muted,#6b7280); }
+.sdw-empty-icon { display:block; font-size:1.8rem; margin-bottom:8px; opacity:.6; }
+.sdw-empty p { margin:0; font-size:.86rem; }
+
+/* ── Withdrawal form ── */
+.sdw-input-group { margin-bottom:14px; }
+.sdw-input-group label { font-weight:600; font-size:.86rem; display:block; margin-bottom:4px; }
+.sdw-input-wrap { position:relative; display:flex; }
+.sdw-input-wrap input { flex:1; padding-right:56px; }
+.sdw-max-btn { position:absolute; right:6px; top:50%; transform:translateY(-50%); background:var(--primary-soft,#e4f4ea); color:var(--primary,#2f8f5b); border:none; border-radius:7px; font-size:.68rem; font-weight:800; padding:5px 9px; cursor:pointer; letter-spacing:.03em; }
+.sdw-max-btn:hover { background:var(--primary,#2f8f5b); color:#fff; }
+.sdw-input-hint { font-size:.74rem; color:var(--text-muted,#6b7280); margin:4px 0 0; }
+.sdw-submit-btn { width:100%; padding:13px; border:none; border-radius:11px; background:linear-gradient(135deg, var(--primary,#2f8f5b), var(--primary-dark,#246b45)); color:#fff; font-weight:800; font-size:.92rem; cursor:pointer; box-shadow:0 6px 16px -6px rgba(47,143,91,.5); transition:transform .12s, box-shadow .12s; }
+.sdw-submit-btn:hover { transform:translateY(-1px); box-shadow:0 8px 20px -6px rgba(47,143,91,.55); }
+.sdw-submit-btn:active { transform:translateY(0); }
+
+/* ── Generic list row (history + ledger) ── */
+.sdw-row { display:flex; align-items:center; gap:12px; padding:11px 4px 11px 12px; border-left:3px solid transparent; border-radius:8px; margin-bottom:2px; transition:background .12s; }
+.sdw-row:hover { background:var(--surface-muted,#f8fafc); }
+.sdw-row-icon { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1rem; flex-shrink:0; }
+.sdw-row-body { flex:1; min-width:0; }
+.sdw-row-title { font-weight:700; font-size:.87rem; }
+.sdw-row-meta { font-size:.74rem; color:var(--text-muted,#6b7280); margin-top:1px; }
+.sdw-row-reason { font-size:.75rem; color:#c0392b; margin-top:3px; }
+.sdw-row-amt { white-space:nowrap; font-size:.9rem; }
+.sdw-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:.68rem; font-weight:800; white-space:nowrap; }
+
+@media(max-width:420px){ .sdw-card-amount { font-size:1.8rem; } }
 </style>
 
 <?php elseif ($tab === 'setup'): ?>
@@ -753,6 +930,12 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
             <label for="logo">Shop Logo</label>
             <input type="file" id="logo" name="logo" accept="image/jpeg,image/png,image/webp">
             <?php if ($shop && $shop['logo_path']): ?><div style="margin-top:6px;"><img src="<?php echo sanitize($shop['logo_path']); ?>" style="height:50px;width:50px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" alt="Current logo"></div><?php endif; ?>
+        </div>
+        <div class="form-group">
+            <label for="banner">Shop Banner</label>
+            <input type="file" id="banner" name="banner" accept="image/jpeg,image/png,image/webp">
+            <p class="meta" style="margin-top:4px;">Wide cover image shown at the top of your shop page (e.g. 1200×300px). Optional — the banner area is hidden if you don't add one.</p>
+            <?php if ($shop && $shop['banner_path']): ?><div style="margin-top:6px;"><img src="<?php echo sanitize($shop['banner_path']); ?>" style="height:70px;width:100%;max-width:280px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" alt="Current banner"></div><?php endif; ?>
         </div>
     </div>
     <button type="submit" class="button button-primary" style="width:100%;padding:13px;"><?php echo $shop ? 'Save Shop Settings' : 'Create Shop'; ?></button>

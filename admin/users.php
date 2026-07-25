@@ -93,6 +93,32 @@ $orderBy = match($sort) {
 };
 
 $whereClause = implode(' AND ', $where);
+
+// ── CSV export — honors the current search/role/status filters ─────────────
+if (isset($_GET['export']) && is_admin()) {
+    csrf_check();
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="users_' . date('Y-m-d') . '.csv"');
+    $exportSt = $pdo->prepare(
+        "SELECT u.id, u.name, u.username, u.email, u.phone, u.role, u.banned,
+                u.email_verified, u.created_at
+         FROM users u WHERE $whereClause ORDER BY u.created_at DESC"
+    );
+    $exportSt->execute($params);
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['ID','Name','Username','Email','Phone','Role','Status','Email Verified','Registered']);
+    foreach ($exportSt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        fputcsv($out, [
+            $r['id'], csv_safe($r['name']), csv_safe($r['username']), $r['email'], $r['phone'],
+            $r['role'], $r['banned'] ? 'Banned' : 'Active', $r['email_verified'] ? 'Yes' : 'No',
+            $r['created_at'],
+        ]);
+    }
+    fclose($out);
+    log_audit_action($adminUser['id'], 'users_csv_export', 'Exported user list as CSV' . ($whereClause !== '1=1' ? ' (filtered)' : ''));
+    exit;
+}
+
 $total = (int)$pdo->prepare("SELECT COUNT(*) FROM users u WHERE $whereClause")->execute($params) ?
     (function() use ($pdo, $whereClause, $params) {
         $st = $pdo->prepare("SELECT COUNT(*) FROM users u WHERE $whereClause");
@@ -238,6 +264,8 @@ function pageUrl(array $extra = []): string {
         </select>
         <button type="submit" class="button button-primary button-small">Search</button>
         <?php if ($q||$role||$status): ?><a href="users.php" class="button button-secondary button-small">Clear</a><?php endif; ?>
+        <?php if (is_admin()): ?><a href="?<?php echo http_build_query(array_filter(['q'=>$q,'role'=>$role,'status'=>$status])); ?>&export=1&csrf_token=<?php echo urlencode(csrf_token()); ?>" class="button button-secondary button-small">&#8595; Export CSV</a><?php endif; ?>
+        <a href="users_print.php?<?php echo http_build_query(array_filter(['q'=>$q,'role'=>$role,'status'=>$status])); ?>" target="_blank" class="button button-secondary button-small">🖨 Print / PDF</a>
     </form>
 
     <form method="post" action="users.php" id="bulk-form">
@@ -315,6 +343,9 @@ function pageUrl(array $extra = []): string {
                         <td>
                             <div style="display:flex;gap:5px;flex-wrap:wrap;">
                                 <a href="user_edit.php?id=<?php echo $u['id']; ?>" class="button button-primary button-small">Manage</a>
+                                <?php if (is_admin() || has_mod_permission('view_reports')): ?>
+                                <a href="user_statement.php?id=<?php echo $u['id']; ?>" class="button button-secondary button-small" title="Statement">📄</a>
+                                <?php endif; ?>
                                 <?php if ($u['role'] !== 'admin' || is_admin()): ?>
                                 <button type="button" class="button button-small" style="<?php echo $u['banned']?'background:#10b981;color:#fff;border-color:transparent;':'background:#ef4444;color:#fff;border-color:transparent;'; ?>"
                                         onclick="quickAction(<?php echo $u['id']; ?>,'<?php echo $u['banned']?'unban':'ban'; ?>')">

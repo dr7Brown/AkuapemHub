@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -130,12 +130,18 @@ if (!empty($_GET['ajax'])) {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Find Workers — AkuapemConnect</title>
+    <?php echo seo_meta([
+        'title'       => 'Find Skilled Workers in the Akuapem Area, Ghana | ' . APP_NAME,
+        'description' => 'Browse verified skilled workers and tradespeople across the Akuapem area of Ghana. Filter by skill, location, and rating to hire the right person for your job.',
+        'url'         => rtrim(BASE_URL, '/') . '/find_workers.php',
+        'noindex'     => !empty($_GET['q']) || !empty($_GET['skill']) || !empty($_GET['location']),
+    ]); ?>
     <link rel="stylesheet" href="assets/css/style.css" />
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
     <header class="app-topbar">
-        <span class="brand"><span class="brand-icon">🔍</span> Find Workers</span>
+        <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;"><?php echo APP_NAME; ?></a>
+        <span class="brand" style="font-size:.88rem;color:var(--muted,#6b7280);">/ Find Workers</span>
         <div style="display: flex; align-items: center; gap: 8px;">
             <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>
             <?php if (!$user): ?>

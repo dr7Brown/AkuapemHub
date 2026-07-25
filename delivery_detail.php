@@ -34,6 +34,16 @@ $ratingStmt = $pdo->prepare('SELECT * FROM delivery_ratings WHERE delivery_reque
 $ratingStmt->execute([$id]);
 $rating = $ratingStmt->fetch() ?: null;
 
+// ── Existing complaint ────────────────────────────────────────────────────────
+$disputeStmt = $pdo->prepare('SELECT * FROM delivery_disputes WHERE delivery_request_id = ? ORDER BY created_at DESC LIMIT 1');
+$disputeStmt->execute([$id]);
+$dispute = $disputeStmt->fetch() ?: null;
+
+// Complaint window matches the marketplace payout confirmation period
+$complaintWindowDays = (int)get_platform_setting('mp_payout_confirmation_days', 3);
+$complaintWindowOpen = $delivery['status'] === 'delivered'
+    && (time() - strtotime($delivery['updated_at'])) <= $complaintWindowDays * 86400;
+
 // ── Applications (for approved requests) ─────────────────────────────────────
 $applications = [];
 if ($isCustomer && $delivery['status'] === 'approved') {
@@ -429,6 +439,7 @@ $stepLabels  = ['pending_approval'=>'Pending Review','approved'=>'Open','assigne
             <div style="display:flex;gap:10px;flex-wrap:wrap;">
                 <?php
                 $statusActions = [
+                    'accepted'   => ['label'=>'Accept Job',          'color'=>'#3b82f6'],
                     'picked_up'  => ['label'=>'Mark as Picked Up',  'color'=>'#8b5cf6'],
                     'in_transit' => ['label'=>'Mark In Transit',     'color'=>'#f97316'],
                     'delivered'  => ['label'=>'Mark as Delivered',   'color'=>'#10b981'],
@@ -491,6 +502,57 @@ $stepLabels  = ['pending_approval'=>'Pending Review','approved'=>'Open','assigne
             </div>
             <button type="submit" class="button button-primary">Submit Rating</button>
         </form>
+    </div>
+    <?php endif; ?>
+
+    <!-- ── CUSTOMER: Report a Problem ── -->
+    <?php if ($isCustomer && $delivery['status'] === 'delivered' && $delivery['agent_id']): ?>
+    <div class="dd-card">
+        <?php if ($dispute && in_array($dispute['status'], ['open','investigating'], true)): ?>
+            <p class="dd-label">Complaint Filed</p>
+            <p style="margin:0 0 4px;font-size:.86rem;">
+                Status: <strong><?php echo ucfirst($dispute['status']); ?></strong> — an admin will review your report.
+            </p>
+            <p class="meta" style="margin:0;"><?php echo sanitize($dispute['description']); ?></p>
+        <?php elseif ($dispute && in_array($dispute['status'], ['resolved','dismissed'], true)): ?>
+            <p class="dd-label">Complaint <?php echo $dispute['status'] === 'resolved' ? 'Resolved' : 'Reviewed'; ?></p>
+            <p style="margin:0 0 4px;font-size:.86rem;">
+                <?php echo $dispute['status'] === 'resolved' ? 'Your complaint was upheld.' : 'Admin reviewed your complaint and found no issue.'; ?>
+            </p>
+            <?php if ($dispute['resolution_notes']): ?>
+            <p class="meta" style="margin:0;">Admin note: <?php echo sanitize($dispute['resolution_notes']); ?></p>
+            <?php endif; ?>
+        <?php elseif (!$complaintWindowOpen): ?>
+            <p class="dd-label">Not What You Expected?</p>
+            <p class="meta" style="margin:0;">The window to report a problem (<?php echo $complaintWindowDays; ?> days after delivery) has passed. Contact support directly if you still need help.</p>
+        <?php else: ?>
+            <p class="dd-label">Not What You Expected?</p>
+            <p class="meta" style="margin:0 0 10px;">If this item was not truly delivered, arrived damaged, or something else went wrong, let us know within <?php echo $complaintWindowDays; ?> days of delivery.</p>
+            <form method="post" action="delivery_ajax.php">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="file_delivery_dispute">
+                <input type="hidden" name="delivery_id" value="<?php echo $id; ?>">
+                <div class="form-group">
+                    <label for="dispute_type">What went wrong? *</label>
+                    <select id="dispute_type" name="dispute_type" required>
+                        <option value="">Select…</option>
+                        <option value="not_delivered">Item was not actually delivered</option>
+                        <option value="damaged">Item arrived damaged</option>
+                        <option value="wrong_item">Wrong item received</option>
+                        <option value="late">Delivered very late</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="dispute_description">Describe the problem *</label>
+                    <textarea id="dispute_description" name="description" rows="3" placeholder="Tell us what happened…" required></textarea>
+                </div>
+                <button type="submit" class="button" style="background:#ef4444;color:#fff;border-color:transparent;"
+                        onclick="return confirm('File a complaint about this delivery? An admin will review it.');">
+                    🚩 Report a Problem
+                </button>
+            </form>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 

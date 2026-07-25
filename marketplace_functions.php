@@ -283,6 +283,11 @@ function mp_refund_order(array $order, string $reason = ''): void {
 
 /**
  * When a seller marks an order ready_for_delivery, auto-create a delivery_request.
+ *
+ * Skips the admin approval queue — an arbitrary courier request from a
+ * stranger needs screening, but the product and shop here were already
+ * vetted by the platform at listing/checkout time, so requiring a second
+ * manual admin approval just adds delay with no real safety benefit.
  */
 function mp_create_delivery_for_order(array $order, array $shop): ?int {
     global $pdo;
@@ -297,8 +302,8 @@ function mp_create_delivery_for_order(array $order, array $shop): ?int {
              (customer_id, pickup_location, pickup_maps_link, pickup_contact_name, pickup_contact_phone,
               dropoff_location, receiver_name, receiver_phone,
               item_description, item_category, delivery_fee, payment_method,
-              status, created_at, updated_at)
-             VALUES (?,?,?,?,?,?,?,?,?,\'parcels\',?,\'cash\',\'pending_approval\',NOW(),NOW())'
+              status, auto_approved, created_at, updated_at)
+             VALUES (?,?,?,?,?,?,?,?,?,\'parcels\',?,\'cash\',\'approved\',1,NOW(),NOW())'
         );
         $stmt->execute([
             $order['customer_id'],
@@ -313,10 +318,172 @@ function mp_create_delivery_for_order(array $order, array $shop): ?int {
             $order['delivery_fee'],
         ]);
         $deliveryId = (int)$pdo->lastInsertId();
+
+        // Notify active agents immediately — same notification the admin-approval
+        // path sends, since this request is posted and open for applications now.
+        $agents = $pdo->query(
+            "SELECT user_id FROM delivery_agents WHERE verification_status='approved' AND availability_status IN('available','busy')"
+        )->fetchAll();
+        foreach ($agents as $ag) {
+            notify_user((int)$ag['user_id'], 'New Delivery Job Available',
+                "A new delivery request (#$deliveryId) is open. Open your agent dashboard to apply.", 'info');
+        }
+
+        notify_user((int)$order['customer_id'], 'Order Out for Delivery Matching 🚚',
+            'Your order #' . $order['id'] . ' is ready and now visible to delivery riders nearby.', 'info');
         $pdo->prepare('UPDATE mp_orders SET delivery_request_id = ? WHERE id = ?')
             ->execute([$deliveryId, $order['id']]);
         return $deliveryId;
     } catch (Exception $e) {
         return null;
     }
+}
+
+// ── Seller payouts (Paystack Transfers) ───────────────────────────────────────
+
+/**
+ * Fires (or retries) the actual Paystack transfer for a withdrawal request.
+ * Used by BOTH auto mode (called right after the seller submits the request)
+ * and manual mode (called when an admin clicks "Approve & Pay") — Paystack
+ * always does the money movement, only the timing/human-checkpoint differs.
+ *
+ * Startable from 'pending' (first attempt) or 'failed' (admin retry).
+ * Leaves the request in 'failed' with a reason on any error — the admin can
+ * retry, or fall back to "Mark Paid Manually" if Paystack isn't viable for it.
+ */
+function process_marketplace_payout(int $payoutRequestId, int $adminId = 0): array {
+    global $pdo;
+    require_once __DIR__ . '/paystack.php';
+
+    $req = $pdo->prepare("SELECT * FROM mp_payout_requests WHERE id=? AND status IN ('pending','failed')");
+    $req->execute([$payoutRequestId]);
+    $req = $req->fetch();
+    if (!$req) {
+        return ['success' => false, 'error' => 'Request not found or already processed.'];
+    }
+    if (!$req['payout_account_id']) {
+        return ['success' => false, 'error' => 'This request has no saved payout account to transfer to — use "Mark Paid Manually" instead.'];
+    }
+
+    // Atomically "claim" the request first — this is the actual mutex against
+    // two concurrent calls (e.g. a double-click) both processing the same
+    // request; the balance check alone wouldn't stop that since a healthy
+    // balance would let both deductions through.
+    $claim = $pdo->prepare("UPDATE mp_payout_requests SET status='processing', failure_reason=NULL WHERE id=? AND status IN ('pending','failed')");
+    $claim->execute([$payoutRequestId]);
+    if ($claim->rowCount() === 0) {
+        return ['success' => false, 'error' => 'Request not found or already being processed.'];
+    }
+
+    // Atomic — only deduct if the shop still has enough available balance.
+    $upd = $pdo->prepare("UPDATE mp_shops SET available_balance = available_balance - ? WHERE id=? AND available_balance >= ?");
+    $upd->execute([$req['amount'], $req['shop_id'], $req['amount']]);
+    if ($upd->rowCount() === 0) {
+        $pdo->prepare("UPDATE mp_payout_requests SET status='failed', failure_reason=? WHERE id=?")
+            ->execute(['Shop no longer has enough available balance.', $payoutRequestId]);
+        return ['success' => false, 'error' => 'Shop no longer has enough available balance for this payout.'];
+    }
+
+    $account = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE id=?');
+    $account->execute([$req['payout_account_id']]);
+    $account = $account->fetch();
+
+    $fail = function (string $reason) use ($pdo, $req, $payoutRequestId, $adminId) {
+        // Roll back the balance deduction and put the request back for retry.
+        $pdo->prepare('UPDATE mp_shops SET available_balance = available_balance + ? WHERE id=?')
+            ->execute([$req['amount'], $req['shop_id']]);
+        $pdo->prepare("UPDATE mp_payout_requests SET status='failed', failure_reason=?, reviewed_by=?, reviewed_at=NOW() WHERE id=?")
+            ->execute([$reason, $adminId ?: null, $payoutRequestId]);
+        $shopOwner = $pdo->prepare('SELECT user_id, shop_name FROM mp_shops WHERE id=?');
+        $shopOwner->execute([$req['shop_id']]);
+        $shop = $shopOwner->fetch();
+        notify_admins_and_managers('Seller Payout Failed',
+            ($shop['shop_name'] ?? 'A shop') . "'s withdrawal of GH₵ " . number_format((float)$req['amount'], 2) . " failed: {$reason}. Review in Admin → Marketplace Payouts.",
+            'error');
+        log_audit_action($adminId, 'mp_payout_transfer_failed', "Payout #{$payoutRequestId} failed: {$reason}");
+        return ['success' => false, 'error' => $reason];
+    };
+
+    if (!$account) {
+        return $fail('Saved payout account was not found.');
+    }
+
+    $recipient = paystack_get_or_create_recipient($account);
+    if (!$recipient['success']) {
+        return $fail($recipient['error']);
+    }
+
+    $transfer = paystack_initiate_transfer($payoutRequestId, $recipient['recipient_code'], (float)$req['amount'], 'AkuapemConnect seller withdrawal #' . $payoutRequestId);
+    if (!$transfer['success']) {
+        return $fail($transfer['error']);
+    }
+
+    $finalStatus = $transfer['status'] === 'success' ? 'paid' : 'processing';
+    $pdo->prepare("UPDATE mp_payout_requests SET status=?, paystack_transfer_code=?, paystack_transfer_reference=?, reviewed_by=?, reviewed_at=NOW(), paid_at=? WHERE id=?")
+        ->execute([$finalStatus, $transfer['transfer_code'], $transfer['reference'], $adminId ?: null, $finalStatus === 'paid' ? date('Y-m-d H:i:s') : null, $payoutRequestId]);
+
+    $pdo->prepare('INSERT INTO mp_wallet_transactions (shop_id, payout_id, type, amount, created_at) VALUES (?,?,\'withdrawal\',?,NOW())')
+        ->execute([$req['shop_id'], $payoutRequestId, $req['amount']]);
+
+    $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+    $shopOwner->execute([$req['shop_id']]);
+    if ($uid = $shopOwner->fetchColumn()) {
+        notify_user((int)$uid,
+            $finalStatus === 'paid' ? 'Withdrawal Paid 💵' : 'Withdrawal Processing ⏳',
+            'Your withdrawal of GH₵ ' . number_format((float)$req['amount'], 2) . ($finalStatus === 'paid' ? ' has been paid.' : ' has been sent and is processing — you\'ll be notified once it completes.'),
+            'success', 'seller_dashboard.php?tab=wallet');
+    }
+    log_audit_action($adminId, 'mp_payout_transfer_initiated', "Payout #{$payoutRequestId} — GHS " . number_format((float)$req['amount'], 2) . " — status: {$finalStatus}");
+
+    return ['success' => true, 'status' => $finalStatus];
+}
+
+/**
+ * Finalizes a payout once Paystack's transfer.success/failed/reversed webhook
+ * arrives. Idempotent — only acts on requests still in 'processing', so
+ * duplicate webhook deliveries (or a request already resolved another way)
+ * are safely ignored.
+ */
+function finalize_marketplace_payout_transfer(string $reference, string $event): void {
+    global $pdo;
+
+    $req = $pdo->prepare("SELECT * FROM mp_payout_requests WHERE paystack_transfer_reference=? AND status='processing'");
+    $req->execute([$reference]);
+    $req = $req->fetch();
+    if (!$req) return; // already finalized, or not one of ours
+
+    if ($event === 'transfer.success') {
+        $pdo->prepare("UPDATE mp_payout_requests SET status='paid', paid_at=NOW() WHERE id=?")->execute([$req['id']]);
+        $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+        $shopOwner->execute([$req['shop_id']]);
+        if ($uid = $shopOwner->fetchColumn()) {
+            notify_user((int)$uid, 'Withdrawal Paid 💵',
+                'Your withdrawal of GH₵ ' . number_format((float)$req['amount'], 2) . ' has been paid.',
+                'success', 'seller_dashboard.php?tab=wallet');
+        }
+        log_audit_action(0, 'mp_payout_transfer_confirmed', "Payout #{$req['id']} confirmed paid via Paystack webhook");
+        return;
+    }
+
+    // transfer.failed or transfer.reversed — reverse the deduction so the
+    // seller can retry or the admin can pay another way.
+    $pdo->prepare('UPDATE mp_shops SET available_balance = available_balance + ? WHERE id=?')
+        ->execute([$req['amount'], $req['shop_id']]);
+    $pdo->prepare('INSERT INTO mp_wallet_transactions (shop_id, payout_id, type, amount, created_at) VALUES (?,?,\'reversal\',?,NOW())')
+        ->execute([$req['shop_id'], $req['id'], -$req['amount']]);
+    $pdo->prepare("UPDATE mp_payout_requests SET status='failed', failure_reason=? WHERE id=?")
+        ->execute(["Paystack reported: {$event}", $req['id']]);
+
+    $shopOwner = $pdo->prepare('SELECT user_id, shop_name FROM mp_shops WHERE id=?');
+    $shopOwner->execute([$req['shop_id']]);
+    $shop = $shopOwner->fetch();
+    if ($shop) {
+        notify_user((int)$shop['user_id'], 'Withdrawal Failed',
+            'Your withdrawal of GH₵ ' . number_format((float)$req['amount'], 2) . ' could not be completed. The amount has been returned to your available balance.',
+            'error', 'seller_dashboard.php?tab=wallet');
+    }
+    notify_admins_and_managers('Seller Payout Failed (Paystack)',
+        ($shop['shop_name'] ?? 'A shop') . "'s withdrawal of GH₵ " . number_format((float)$req['amount'], 2) . " failed via webhook ({$event}). Review in Admin → Marketplace Payouts.",
+        'error');
+    log_audit_action(0, 'mp_payout_transfer_failed_webhook', "Payout #{$req['id']} failed via webhook: {$event}");
 }

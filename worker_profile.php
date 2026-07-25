@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -9,10 +9,20 @@ require_role('worker');
 $stmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
 $stmt->execute([$user['id']]);
 $profile = $stmt->fetch();
+if (!$profile) {
+    // Shouldn't normally happen (install.sql backfills a minimal profile for
+    // any role='worker' user missing one), but guard anyway since
+    // become_worker.php requires role=customer and would just bounce this
+    // user right back — there's no self-service recovery path from here.
+    flash('Your worker profile could not be found. Please contact support.', 'error');
+    header('Location: jobs.php');
+    exit;
+}
 $error = '';
 $success = ($_GET['msg'] ?? '') === 'updated' ? 'Profile updated.' : '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $bio = trim($_POST['bio'] ?? '');
     $location = trim($_POST['location'] ?? '');
     $contact = trim($user['phone'] ?? '');
@@ -144,6 +154,7 @@ $schedule = get_worker_schedule($profile['id']);
             <span id="avail-status" style="font-size:0.82rem;color:var(--text-muted);"></span>
         </div>
         <form class="card form-card" method="post" action="worker_profile.php">
+            <?php echo csrf_field(); ?>
             <label>Bio</label>
             <textarea name="bio" class="rich-editor" rows="4" placeholder="Describe your experience, skills, and what makes you a great worker…"><?php echo $profile['bio']; ?></textarea>
             <label>Location</label>

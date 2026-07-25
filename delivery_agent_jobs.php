@@ -18,8 +18,31 @@ $agentId = (int)$agentProfile['id'];
 $tab     = $_GET['tab'] ?? 'available';
 
 // ── Available jobs: approved, no agent assigned, not already full ─────────────
-$availableJobs = [];
+$categoryFilter = $_GET['category'] ?? 'all';
+$availableQ     = trim($_GET['q'] ?? '');
+$sortFilter     = $_GET['sort'] ?? 'soonest';
+$totalOpenJobs  = 0;
+$availableJobs  = [];
 if ($agentProfile['verification_status'] === 'approved') {
+    $totalOpenJobs = (int)$pdo->query("SELECT COUNT(*) FROM delivery_requests WHERE status='approved' AND agent_id IS NULL")->fetchColumn();
+
+    $avWhere  = ["dr.status = 'approved'", 'dr.agent_id IS NULL'];
+    $avParams = [$agentId];
+    $validCategories = ['documents','food','electronics','clothing','medical_supplies','groceries','parcels','other'];
+    if (in_array($categoryFilter, $validCategories, true)) {
+        $avWhere[] = 'dr.item_category = ?';
+        $avParams[] = $categoryFilter;
+    }
+    if ($availableQ !== '') {
+        $avWhere[] = '(dr.pickup_location LIKE ? OR dr.dropoff_location LIKE ? OR dr.item_description LIKE ?)';
+        $like = '%' . $availableQ . '%';
+        array_push($avParams, $like, $like, $like);
+    }
+    $avWhereSql = implode(' AND ', $avWhere);
+    $avSortSql  = $sortFilter === 'latest'
+        ? 'dr.preferred_date DESC, dr.preferred_time DESC, dr.created_at DESC'
+        : 'dr.preferred_date ASC, dr.preferred_time ASC, dr.created_at ASC';
+
     $avStmt = $pdo->prepare(
         "SELECT dr.*,
                 cu.name AS customer_name, cu.username AS customer_username,
@@ -29,13 +52,13 @@ if ($agentProfile['verification_status'] === 'approved') {
          JOIN users cu ON dr.customer_id = cu.id
          LEFT JOIN delivery_applications da_app
                 ON da_app.delivery_request_id = dr.id AND da_app.agent_id = ?
-         WHERE dr.status = 'approved' AND dr.agent_id IS NULL
+         WHERE $avWhereSql
          ORDER BY
              (da_app.id IS NOT NULL) DESC,
-             dr.preferred_date ASC, dr.created_at ASC
+             $avSortSql
          LIMIT 40"
     );
-    $avStmt->execute([$agentId]);
+    $avStmt->execute($avParams);
     $availableJobs = $avStmt->fetchAll();
 }
 
@@ -90,6 +113,70 @@ $earnings = $earningsStmt->fetch();
 
 $pendingAppCount = count(array_filter($myApplications, fn($a) => $a['da_status'] ?? $a['status'] === 'applied'));
 $activeCount     = count($activeDeliveries);
+
+$commissionOwed     = (float)($agentProfile['commission_owed'] ?? 0);
+$commissionThreshold = (float)get_platform_setting('delivery_commission_block_threshold', '50');
+$commissionBlocked   = $commissionThreshold > 0 && $commissionOwed >= $commissionThreshold;
+
+// ── Earnings tab: period-filtered breakdown, 30-day chart, commission ledger ──
+$earningsAnalytics = null;
+if ($tab === 'earnings') {
+    $period = $_GET['period'] ?? 'month';
+    $deliveredDateFilter = match($period) {
+        'today' => 'AND updated_at >= CURDATE()',
+        'week'  => 'AND updated_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+        'month' => "AND updated_at >= DATE_FORMAT(NOW(),'%Y-%m-01')",
+        'year'  => 'AND YEAR(updated_at)=YEAR(NOW())',
+        default => '',
+    };
+    $ledgerDateFilter = match($period) {
+        'today' => 'AND created_at >= CURDATE()',
+        'week'  => 'AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+        'month' => "AND created_at >= DATE_FORMAT(NOW(),'%Y-%m-01')",
+        'year'  => 'AND YEAR(created_at)=YEAR(NOW())',
+        default => '',
+    };
+
+    $periodEarnedStmt = $pdo->prepare("SELECT COALESCE(SUM(delivery_fee),0) AS earned, COUNT(*) AS cnt FROM delivery_requests WHERE agent_id=? AND status='delivered' $deliveredDateFilter");
+    $periodEarnedStmt->execute([$agentId]);
+    $periodEarned = $periodEarnedStmt->fetch();
+
+    $periodCommissionStmt = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM delivery_commission_ledger WHERE agent_id=? AND type='commission_owed' $ledgerDateFilter");
+    $periodCommissionStmt->execute([$agentId]);
+    $periodCommission = (float)$periodCommissionStmt->fetchColumn();
+
+    $periodSettledStmt = $pdo->prepare("SELECT COALESCE(SUM(amount),0) FROM delivery_commission_ledger WHERE agent_id=? AND type='settlement' $ledgerDateFilter");
+    $periodSettledStmt->execute([$agentId]);
+    $periodSettled = (float)$periodSettledStmt->fetchColumn();
+
+    // Daily gross earnings, last 30 days
+    $dailyStmt = $pdo->prepare(
+        "SELECT DATE(updated_at) AS d, SUM(delivery_fee) AS fee
+         FROM delivery_requests
+         WHERE agent_id=? AND status='delivered' AND updated_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+         GROUP BY DATE(updated_at)"
+    );
+    $dailyStmt->execute([$agentId]);
+    $dailyMap = array_column($dailyStmt->fetchAll(), 'fee', 'd');
+    $earnDailyLabels = $earnDailyAmounts = [];
+    for ($i = 29; $i >= 0; $i--) {
+        $d = date('Y-m-d', strtotime("-{$i} days"));
+        $earnDailyLabels[] = date('d M', strtotime($d));
+        $earnDailyAmounts[] = (float)($dailyMap[$d] ?? 0);
+    }
+
+    $commissionLedgerStmt = $pdo->prepare('SELECT * FROM delivery_commission_ledger WHERE agent_id=? ORDER BY created_at DESC LIMIT 20');
+    $commissionLedgerStmt->execute([$agentId]);
+    $commissionLedger = $commissionLedgerStmt->fetchAll();
+
+    $earningsAnalytics = [
+        'periodEarned'     => (float)$periodEarned['earned'],
+        'periodCount'      => (int)$periodEarned['cnt'],
+        'periodCommission' => $periodCommission,
+        'periodSettled'    => $periodSettled,
+        'periodNet'        => (float)$periodEarned['earned'] - $periodCommission,
+    ];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -183,13 +270,20 @@ $activeCount     = count($activeDeliveries);
 </div>
 <?php endif; ?>
 
+<?php if ($commissionBlocked): ?>
+<div class="alert alert-error" style="margin-bottom:10px;">
+    ⚠️ You owe GH&#8373; <?php echo number_format($commissionOwed,2); ?> in commission — you can't accept new jobs until an admin marks it settled. Contact admin to pay up.
+</div>
+<?php endif; ?>
+
 <!-- Stats -->
 <div class="ag-stats">
-    <div class="ag-stat"><strong><?php echo count($availableJobs); ?></strong><span>Open Jobs</span></div>
+    <div class="ag-stat"><strong><?php echo $totalOpenJobs; ?></strong><span>Open Jobs</span></div>
     <div class="ag-stat"><strong><?php echo $activeCount; ?></strong><span>Active</span></div>
     <div class="ag-stat"><strong><?php echo $agentProfile['completed_deliveries']; ?></strong><span>Done</span></div>
     <div class="ag-stat"><strong><?php echo $agentProfile['rating'] > 0 ? number_format((float)$agentProfile['rating'],1).'★' : '—'; ?></strong><span>Rating</span></div>
     <div class="ag-stat"><strong>GH&#8373; <?php echo number_format((float)$earnings['total_earned'],2); ?></strong><span>Earned</span></div>
+    <div class="ag-stat"><strong style="color:<?php echo $commissionOwed>0?'#ef4444':'inherit'; ?>">GH&#8373; <?php echo number_format($commissionOwed,2); ?></strong><span>Commission Owed</span></div>
 </div>
 
 <!-- Availability toggle -->
@@ -212,7 +306,7 @@ $activeCount     = count($activeDeliveries);
 <div class="ag-tabs">
     <a href="?tab=available" class="ag-tab <?php echo $tab==='available'?'active':''; ?>">
         Available
-        <?php if ($availableJobs): ?><span style="background:var(--primary,#0f766e);color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo count($availableJobs); ?></span><?php endif; ?>
+        <?php if ($totalOpenJobs): ?><span style="background:var(--primary,#0f766e);color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $totalOpenJobs; ?></span><?php endif; ?>
     </a>
     <a href="?tab=applications" class="ag-tab <?php echo $tab==='applications'?'active':''; ?>">
         My Applications
@@ -223,6 +317,7 @@ $activeCount     = count($activeDeliveries);
         <?php if ($activeDeliveries): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $activeCount; ?></span><?php endif; ?>
     </a>
     <a href="?tab=history" class="ag-tab <?php echo $tab==='history'?'active':''; ?>">History</a>
+    <a href="?tab=earnings" class="ag-tab <?php echo $tab==='earnings'?'active':''; ?>">💰 Earnings</a>
 </div>
 
 <div class="ag-section">
@@ -230,7 +325,24 @@ $activeCount     = count($activeDeliveries);
 <?php if ($tab === 'available'): ?>
     <?php if ($agentProfile['verification_status'] !== 'approved'): ?>
     <div style="text-align:center;padding:32px;color:var(--text-muted,#6b7280);">Your profile must be approved to see and apply for jobs.</div>
-    <?php elseif ($availableJobs): ?>
+    <?php else: ?>
+    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <input type="hidden" name="tab" value="available">
+        <select name="category" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+            <option value="all" <?php echo $categoryFilter==='all'?'selected':''; ?>>All Categories</option>
+            <?php foreach ($validCategories as $vc): ?>
+            <option value="<?php echo $vc; ?>" <?php echo $categoryFilter===$vc?'selected':''; ?>><?php echo item_category_icon($vc); ?> <?php echo item_category_label($vc); ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="text" name="q" value="<?php echo sanitize($availableQ); ?>" placeholder="Search pickup, drop-off, item…" style="flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <select name="sort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+            <option value="soonest" <?php echo $sortFilter==='soonest'?'selected':''; ?>>Sort: Soonest First</option>
+            <option value="latest" <?php echo $sortFilter==='latest'?'selected':''; ?>>Sort: Latest First</option>
+        </select>
+        <button type="submit" class="button button-secondary button-small">Filter</button>
+        <?php if ($categoryFilter !== 'all' || $availableQ !== '' || $sortFilter !== 'soonest'): ?><a href="?tab=available" class="button button-secondary button-small">Clear</a><?php endif; ?>
+    </form>
+    <?php if ($availableJobs): ?>
         <?php foreach ($availableJobs as $j): ?>
         <?php
         $myStatus  = $j['my_app_status'];    // null if no application yet
@@ -317,6 +429,7 @@ $activeCount     = count($activeDeliveries);
             <p>No approved delivery requests right now. Check back soon.</p>
         </div>
     <?php endif; ?>
+    <?php endif; ?>
 <?php endif; ?>
 
 <?php if ($tab === 'applications'): ?>
@@ -381,7 +494,7 @@ $activeCount     = count($activeDeliveries);
             </div>
             <div class="ag-card-foot">
                 <?php $nextSts = delivery_agent_next_statuses($d['status']); ?>
-                <?php $sColors = ['picked_up'=>'#8b5cf6','in_transit'=>'#f97316','in_progress'=>'#f97316','delivered'=>'#10b981','failed'=>'#ef4444']; ?>
+                <?php $sColors = ['accepted'=>'#3b82f6','picked_up'=>'#8b5cf6','in_transit'=>'#f97316','in_progress'=>'#f97316','delivered'=>'#10b981','failed'=>'#ef4444']; ?>
                 <div class="ag-status-btns">
                 <?php foreach ($nextSts as $ns): ?>
                 <form method="post" action="delivery_ajax.php" style="margin:0;">
@@ -389,7 +502,7 @@ $activeCount     = count($activeDeliveries);
                     <input type="hidden" name="action"      value="update_status">
                     <input type="hidden" name="delivery_id" value="<?php echo $d['id']; ?>">
                     <input type="hidden" name="new_status"  value="<?php echo $ns; ?>">
-                    <?php $nsL=['picked_up'=>'Picked Up','in_transit'=>'In Transit','in_progress'=>'In Progress','delivered'=>'Delivered','failed'=>'Failed']; ?>
+                    <?php $nsL=['accepted'=>'Accept Job','picked_up'=>'Picked Up','in_transit'=>'In Transit','in_progress'=>'In Progress','delivered'=>'Delivered','failed'=>'Failed']; ?>
                     <button type="submit" class="button button-small"
                             style="background:<?php echo $sColors[$ns]??'var(--primary)'; ?>;color:#fff;border-color:transparent;">
                         <?php echo $nsL[$ns]??ucfirst($ns); ?>
@@ -445,6 +558,78 @@ $activeCount     = count($activeDeliveries);
             <p>No delivery history yet.</p>
         </div>
     <?php endif; ?>
+<?php endif; ?>
+
+<?php if ($tab === 'earnings'): ?>
+<?php $earnPeriodLabels = ['today'=>'Today','week'=>'7 Days','month'=>'This Month','year'=>'This Year','all'=>'All Time']; ?>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+    <?php foreach ($earnPeriodLabels as $ev=>$el): ?>
+    <a href="?tab=earnings&period=<?php echo $ev; ?>" class="button <?php echo $period===$ev?'button-primary':'button-secondary'; ?> button-small"><?php echo $el; ?></a>
+    <?php endforeach; ?>
+</div>
+
+<div class="ag-earn-stats">
+    <div class="ag-earn-tile"><strong>GH&#8373; <?php echo number_format($earningsAnalytics['periodEarned'],2); ?></strong><span>Gross Earned</span></div>
+    <div class="ag-earn-tile"><strong style="color:#ef4444;">GH&#8373; <?php echo number_format($earningsAnalytics['periodCommission'],2); ?></strong><span>Commission Accrued</span></div>
+    <div class="ag-earn-tile"><strong style="color:#10b981;">GH&#8373; <?php echo number_format($earningsAnalytics['periodNet'],2); ?></strong><span>Net (after commission)</span></div>
+    <div class="ag-earn-tile"><strong><?php echo number_format($earningsAnalytics['periodCount']); ?></strong><span>Deliveries</span></div>
+</div>
+<?php if ($commissionBlocked): ?>
+<div class="alert alert-error" style="margin-bottom:14px;">⚠️ You owe GH&#8373; <?php echo number_format($commissionOwed,2); ?> in commission and can't accept new jobs until it's settled with admin.</div>
+<?php endif; ?>
+
+<div class="ag-earn-card">
+    <p class="ag-earn-title">Earnings — Last 30 Days</p>
+    <div style="position:relative;height:200px;"><canvas id="ag-earnings-chart"></canvas></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+    var ctx = document.getElementById('ag-earnings-chart');
+    if (!ctx) return;
+    var style = getComputedStyle(document.documentElement);
+    var primary = style.getPropertyValue('--primary').trim() || '#0f766e';
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: <?php echo json_encode($earnDailyLabels); ?>,
+            datasets: [{ label: 'Earned (GHS)', data: <?php echo json_encode($earnDailyAmounts); ?>, backgroundColor: primary, borderRadius: 4, maxBarThickness: 18 }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { beginAtZero: true, grid: { color: 'rgba(128,128,128,.15)' } } }
+        }
+    });
+})();
+</script>
+
+<div class="ag-earn-card">
+    <p class="ag-earn-title">Commission Activity</p>
+    <?php if (!$commissionLedger): ?>
+    <p class="meta">No commission activity yet.</p>
+    <?php else: ?>
+    <?php $clMeta = ['commission_owed'=>['icon'=>'📉','label'=>'Commission accrued','color'=>'#c0392b','sign'=>-1],'settlement'=>['icon'=>'✅','label'=>'Settled with admin','color'=>'#065f46','sign'=>0],'reversal'=>['icon'=>'↩️','label'=>'Reversed (complaint upheld)','color'=>'#065f46','sign'=>0]]; ?>
+    <?php foreach ($commissionLedger as $cl): $clm = $clMeta[$cl['type']] ?? ['icon'=>'•','label'=>ucfirst($cl['type']),'color'=>'#6b7280','sign'=>0]; ?>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:.85rem;">
+        <div>
+            <span><?php echo $clm['icon']; ?> <?php echo sanitize($clm['label']); ?></span>
+            <div style="font-size:.72rem;color:var(--text-muted,#6b7280);"><?php echo time_ago($cl['created_at']); ?></div>
+        </div>
+        <strong style="color:<?php echo $clm['color']; ?>;"><?php echo $clm['sign']<0?'+':''; ?>GH&#8373; <?php echo number_format(abs((float)$cl['amount']),2); ?></strong>
+    </div>
+    <?php endforeach; ?>
+    <?php endif; ?>
+</div>
+
+<style>
+.ag-earn-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:16px; }
+.ag-earn-tile  { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px; text-align:center; }
+.ag-earn-tile strong { display:block; font-size:1.1rem; font-weight:900; color:var(--primary,#0f766e); }
+.ag-earn-tile span   { font-size:.7rem; color:var(--text-muted,#6b7280); }
+.ag-earn-card  { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; }
+.ag-earn-title { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 12px; }
+</style>
 <?php endif; ?>
 
 </div><!-- /ag-section -->

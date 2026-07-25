@@ -1,0 +1,49 @@
+What's Not Working — Based on Code Audit
+🔴 CRITICAL — Will definitely fail testing
+1. Login does NOT block unverified users
+
+File: login.php line 31
+Bug: Only checks $user['banned'], skips email_verified
+Result: Users log in without verifying email, bypassing the verification flow
+Fix needed: Add || !$user['email_verified'] to the condition
+2. Escrow auto-release never runs automatically
+
+File: _cron.php
+Bug: No escrow sweep in the cron. Escrow auto-release only fires lazily when someone visits request_detail.php
+Result: If the page isn't visited after auto_release_at passes, funds stay stuck forever
+Fix needed: Add escrow sweep to _cron.php
+3. seller_subscribe.php is missing
+
+The seller subscription checkout page pay_mp_subscription.php exists, but seller_subscribe.php (which the subscription cancel/manage flow references) does not
+Minor impact since subscriptions are disabled by default
+🟡 INCOMPLETE — Works partially, has gaps
+4. Cron doesn't count events/funerals/news expiries in its report
+
+_cron.php tracks expired_featured_jobs, expired_featured_workers, expired_mp_products, expired_delivery etc in the before/after counts — but the NEW expiry sweeps added to functions.php for events, funerals, news, and marketplace subscriptions have no corresponding count entry in _cron.php's report. The sweeps DO run, but you can't see how many expired in the log.
+5. Email verification not enforced on community features
+
+Unverified users can post news, submit events, submit funerals, browse marketplace, chat — only job posting and applying is blocked. This may be acceptable but is inconsistent with checklist item 1.2.
+
+
+wide screen shows all 7 services "💼
+Jobs & Services
+Browse open jobs & post requests
+📰
+News & Updates
+Latest articles & platform news
+📅
+Events
+Community events & programs
+🕊️
+Funeral Announcements
+Memorial notices
+🔧
+Find Workers
+Skilled professionals near you
+🚚
+Delivery Services
+Send & receive parcels fast
+🛍️
+Marketplace
+Buy & sell products locally" 
+but small screen shows 3 or 4. i want it scroll horizontally to show all services tab on small screen for all users.

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -24,7 +24,7 @@ $isPast    = $ev['start_date'] < $today;
 $isCancelled = $ev['status'] === 'cancelled';
 
 // Sidebar data
-$sbEvents    = $pdo->prepare("SELECT title, slug, start_date, start_time, featured_image FROM events WHERE status='published' AND start_date >= ? AND id != ? ORDER BY featured DESC, start_date ASC LIMIT 5");
+$sbEvents    = $pdo->prepare("SELECT title, slug, start_date, start_time, featured_image FROM events WHERE status='published' AND start_date >= ? AND id != ? ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 5");
 $sbEvents->execute([$today, $ev['id']]);
 $sbEvents    = $sbEvents->fetchAll();
 $sbFunerals  = $pdo->query("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' ORDER BY created_at DESC LIMIT 4")->fetchAll();
@@ -40,10 +40,51 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
     <meta name="description" content="<?php echo sanitize(mb_substr(strip_tags($ev['description'] ?? ''), 0, 160)); ?>">
     <meta property="og:title"       content="<?php echo sanitize($ev['title']); ?>">
     <meta property="og:description" content="<?php echo sanitize(mb_substr(strip_tags($ev['description'] ?? ''), 0, 200)); ?>">
-    <?php if ($ev['featured_image']): ?><meta property="og:image" content="<?php echo sanitize($ev['featured_image']); ?>"><?php endif; ?>
+    <?php if ($ev['featured_image']): ?><meta property="og:image" content="<?php echo sanitize(rtrim(BASE_URL,'/') . '/' . ltrim($ev['featured_image'],'/')); ?>"><?php endif; ?>
     <meta property="og:url" content="<?php echo sanitize($pageUrl); ?>">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="<?php echo sanitize($pageUrl); ?>">
+    <?php if (!$isCancelled): ?>
+    <script type="application/ld+json">
+    <?php
+    $evStartIso = $ev['start_date'] . ($ev['start_time'] ? 'T' . $ev['start_time'] : 'T00:00:00');
+    $evEndIso   = ($ev['end_date'] ?: $ev['start_date']) . ($ev['end_time'] ? 'T' . $ev['end_time'] : '');
+    $evLd = [
+        '@context'    => 'https://schema.org',
+        '@type'       => 'Event',
+        'name'        => $ev['title'],
+        'startDate'   => $evStartIso,
+        'eventStatus' => 'https://schema.org/EventScheduled',
+        'eventAttendanceMode' => 'https://schema.org/OfflineEventAttendanceMode',
+        'location'    => [
+            '@type'   => 'Place',
+            'name'    => $ev['venue'] ?: $ev['title'],
+            'address' => [
+                '@type'          => 'PostalAddress',
+                'addressLocality'=> $ev['venue'] ?: 'Akuapem Area',
+                'addressRegion'  => 'Eastern Region',
+                'addressCountry' => 'GH',
+            ],
+        ],
+        'description' => mb_substr(strip_tags($ev['description'] ?? ''), 0, 500),
+        'organizer'   => [
+            '@type' => 'Organization',
+            'name'  => $ev['organizer_name'] ?: APP_NAME,
+        ],
+    ];
+    if (!empty($ev['end_date'])) $evLd['endDate'] = $evEndIso;
+    if (!empty($ev['featured_image'])) $evLd['image'] = [rtrim(BASE_URL,'/') . '/' . ltrim($ev['featured_image'],'/')];
+    $evLd['offers'] = [
+        '@type'         => 'Offer',
+        'url'           => $pageUrl,
+        'price'         => $ev['ticket_type'] === 'paid' ? (float)$ev['ticket_price'] : 0,
+        'priceCurrency' => 'GHS',
+        'availability'  => 'https://schema.org/InStock',
+    ];
+    echo json_encode($evLd, JSON_UNESCAPED_SLASHES);
+    ?>
+    </script>
+    <?php endif; ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .ed-wrap   { max-width:1200px; margin:0 auto; padding:24px 16px 60px; }
@@ -319,12 +360,12 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
         <div class="nsb-widget">
             <div class="nsb-head">Sponsored</div>
             <div class="nsb-ad">
-                <?php if ($sbAd['image_url']): ?>
-                <a href="<?php echo sanitize($sbAd['target_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored">
-                    <img src="<?php echo sanitize($sbAd['image_url']); ?>" alt="<?php echo sanitize($sbAd['title']); ?>">
+                <?php if ($sbAd['image']): ?>
+                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored">
+                    <img src="<?php echo sanitize($sbAd['image']); ?>" alt="<?php echo sanitize($sbAd['title']); ?>">
                 </a>
                 <?php else: ?>
-                <a href="<?php echo sanitize($sbAd['target_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored"
+                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored"
                    style="display:block;background:var(--primary,#0f766e);color:#fff;text-align:center;padding:20px 12px;border-radius:8px;font-weight:800;text-decoration:none;">
                     <?php echo sanitize($sbAd['title']); ?>
                 </a>

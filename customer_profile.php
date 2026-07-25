@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -10,7 +10,7 @@ if ($customerId <= 0) {
     exit;
 }
 
-$stmt = $pdo->prepare("SELECT id, name, username, created_at, profile_photo, town_id, role FROM users WHERE id = ? AND role IN ('customer','worker') AND banned = 0");
+$stmt = $pdo->prepare("SELECT id, name, username, created_at, profile_photo, town_id, custom_town, role FROM users WHERE id = ? AND role IN ('customer','worker') AND banned = 0");
 $stmt->execute([$customerId]);
 $customer = $stmt->fetch();
 
@@ -82,7 +82,7 @@ $currentUser = current_user();
                         <p class="meta" style="margin:0 0 4px;">@<?php echo sanitize($customer['username']); ?></p>
                     <?php endif; ?>
                     <p class="meta" style="margin:0;">
-                        <?php if ($customer['town_id']): ?>📍 <?php echo sanitize(get_town_name((int)$customer['town_id'])); ?> · <?php endif; ?>
+                        <?php if ($customer['town_id']): ?>📍 <?php echo sanitize(get_user_town_display($customer)); ?> · <?php endif; ?>
                         Member since <?php echo sanitize(date('M Y', strtotime($customer['created_at']))); ?>
                     </p>
                 </div>

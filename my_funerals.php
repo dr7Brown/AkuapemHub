@@ -57,6 +57,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
         if ($data[$f] === '') $data[$f] = null;
     }
     if (!$data['deceased_name']) $errors[] = 'Deceased name is required.';
+    if (!$postEditId && requires_verified_email('funeral_post') && !is_email_verified()) {
+        $errors[] = 'Please verify your email address before submitting an announcement.';
+    }
     if ($data['organizer_phone'] && !preg_match('/^[\d\s\+\-\(\)]{7,20}$/', $data['organizer_phone'])) {
         $errors[] = 'Invalid phone number.';
     }
@@ -107,10 +110,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                 $data['organizer_email'], $googleMapsLink, $postEditId, $user['id']
             ]);
             notify_admins_and_managers(
-                'Funeral announcement resubmitted',
-                display_name($user) . ' resubmitted a funeral announcement for "' . $data['deceased_name'] . '". Review in Admin → Funerals.',
+                'Funeral Announcement Resubmitted for Review',
+                display_name($user) . ' resubmitted the announcement for "' . $data['deceased_name'] . '" after rejection. Review in Admin → Funerals.',
                 'info'
             );
+            flash('Announcement resubmitted for review. Admin has been notified.', 'success');
             header('Location: my_funerals.php?msg=updated'); exit;
         }
 
@@ -221,7 +225,7 @@ $statusLabels = [
 
             <?php if ($editAnnouncement && !empty($editAnnouncement['rejection_reason'])): ?>
             <div class="alert alert-error" style="margin-bottom:14px;">
-                <strong>Not approved.</strong> Reason: <?php echo sanitize($editAnnouncement['rejection_reason']); ?>
+                <strong>Not approved.</strong> Reason: <?php echo nl2br(sanitize($editAnnouncement['rejection_reason'])); ?>
                 Please update and resubmit.
             </div>
             <?php endif; ?>
@@ -357,7 +361,8 @@ $statusLabels = [
                 <div class="mf-list">
                     <?php foreach ($myList as $fa): ?>
                     <?php $sl = $statusLabels[$fa['status']] ?? $statusLabels['pending']; ?>
-                    <div class="mf-item">
+                    <?php $faRejected = $fa['status'] === 'rejected'; ?>
+                    <div class="mf-item" style="<?php echo $faRejected ? 'border-left:4px solid #ef4444;' : ''; ?>">
                         <div class="mf-thumb">
                             <?php if ($fa['photograph']): ?>
                                 <img src="<?php echo sanitize($fa['photograph']); ?>" alt="">
@@ -366,6 +371,9 @@ $statusLabels = [
                             <?php endif; ?>
                         </div>
                         <div class="mf-info">
+                            <?php if ($faRejected): ?>
+                            <p style="font-size:.68rem;font-weight:800;color:#ef4444;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em;">❌ Rejected — Action needed</p>
+                            <?php endif; ?>
                             <p class="mf-name"><?php echo sanitize($fa['deceased_name']); ?></p>
                             <p class="mf-meta">
                                 <?php if ($fa['burial_date']): ?>⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?><?php endif; ?>
@@ -373,22 +381,37 @@ $statusLabels = [
                             <span class="mf-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                                 <?php echo $sl['label']; ?>
                             </span>
-                            <?php if ($fa['status'] === 'rejected' && !empty($fa['rejection_reason'])): ?>
-                            <p style="font-size:.72rem;color:#991b1b;margin:4px 0 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:4px 8px;">
-                                <strong>Reason:</strong> <?php echo sanitize($fa['rejection_reason']); ?>
-                            </p>
+                            <?php if ($faRejected): ?>
+                            <div style="background:#fee2e2;border-left:3px solid #ef4444;border-radius:0 6px 6px 0;padding:6px 8px;margin:5px 0;font-size:.76rem;color:#7f1d1d;line-height:1.5;">
+                                <?php echo !empty($fa['rejection_reason'])
+                                    ? nl2br(sanitize($fa['rejection_reason']))
+                                    : '<em style="color:#991b1b;">No reason given — contact admin.</em>'; ?>
+                            </div>
                             <?php endif; ?>
                             <div class="mf-actions">
                                 <?php if ($fa['status'] === 'approved' && $fa['slug']): ?>
                                 <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="button button-small" target="_blank">View</a>
+                                <?php
+                                $faFeatEnd    = $fa['featured_end_date'] ?? null;
+                                $faFeatActive = !empty($fa['featured']) && ($faFeatEnd === null || $faFeatEnd >= date('Y-m-d'));
+                                ?>
+                                <?php if ($faFeatActive): ?>
+                                <span style="font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:20px;background:#fef3c7;color:#92400e;">⭐ Featured</span>
+                                <?php else: ?>
+                                <a href="feature_funeral.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#f59e0b;">⭐ Feature</a>
+                                <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if ($fa['status'] === 'pending_payment'): ?>
                                 <a href="pay_funeral.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">Pay</a>
                                 <?php endif; ?>
-                                <?php if ($fa['status'] === 'rejected'): ?>
-                                <a href="my_funerals.php?edit=<?php echo (int)$fa['id']; ?>" class="button button-small button-secondary">Edit</a>
-                                <?php endif; ?>
-                                <?php if (in_array($fa['status'], ['pending_payment','pending','rejected'])): ?>
+                                <?php if ($faRejected): ?>
+                                <a href="my_funerals.php?edit=<?php echo (int)$fa['id']; ?>" class="button button-primary button-small" style="background:#ef4444;border-color:#ef4444;display:block;text-align:center;margin-bottom:5px;">✏️ Fix &amp; Resubmit</a>
+                                <form method="post" onsubmit="return confirm('Delete this announcement?')">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="delete_id" value="<?php echo (int)$fa['id']; ?>">
+                                    <button class="button button-small" style="width:100%;background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
+                                </form>
+                                <?php elseif (in_array($fa['status'], ['pending_payment','pending'])): ?>
                                 <form method="post" onsubmit="return confirm('Delete this announcement?')">
                                     <?php echo csrf_field(); ?>
                                     <input type="hidden" name="delete_id" value="<?php echo (int)$fa['id']; ?>">

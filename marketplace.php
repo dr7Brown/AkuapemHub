@@ -91,11 +91,15 @@ function mp_page_url(int $page): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marketplace — AkuapemConnect</title>
-    <meta name="description" content="Buy and sell products in the AkuapemConnect community marketplace.">
+    <?php echo seo_meta([
+        'title'       => 'Marketplace — Buy & Sell in the Akuapem Area | ' . APP_NAME,
+        'description' => 'Browse products from local shops and sellers across the Akuapem area of Ghana, or open your own shop and start selling on ' . APP_NAME . '.',
+        'url'         => rtrim(BASE_URL, '/') . '/marketplace.php',
+        'noindex'     => !empty($_GET['q']) || !empty($_GET['page']),
+    ]); ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .mp-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+        .mp-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 64px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
         .mp-brand  { font-weight:900; font-size:1.05rem; color:var(--primary,#0f766e); text-decoration:none; display:flex; align-items:center; gap:6px; }
         .mp-nav-actions { display:flex; gap:8px; align-items:center; }
         .mp-cart-btn { position:relative; text-decoration:none; }
@@ -156,7 +160,8 @@ function mp_page_url(int $page): string {
 
 <!-- Header -->
 <header class="mp-topbar">
-    <a href="marketplace.php" class="mp-brand">🛍️ Marketplace</a>
+    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;"><?php echo APP_NAME; ?></a>
+    <a href="marketplace.php" class="mp-brand" style="font-size:.88rem;">/ 🛍️ Marketplace</a>
     <div class="mp-nav-actions">
         <?php if ($user): ?>
         <a href="cart.php" class="mp-cart-btn button button-secondary button-small">

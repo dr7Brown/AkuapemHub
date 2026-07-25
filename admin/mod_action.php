@@ -26,6 +26,32 @@ function mod_flash_redirect(string $msg, string $type, string $back): never {
 
 if (!$itemId) mod_flash_redirect('Invalid item.', 'error', $back);
 
+// ── Conflict of Interest check ────────────────────────────────────────────────
+// Map action → record type for COI detection
+$coiTypeMap = [
+    'approve_job'              => 'job',
+    'reject_job'               => 'job',
+    'approve_product'          => 'product',
+    'reject_product'           => 'product',
+    'approve_event'            => 'event',
+    'reject_event'             => 'event',
+    'approve_funeral'          => 'funeral',
+    'reject_funeral'           => 'funeral',
+    'approve_news'             => 'news',
+    'reject_news'              => 'news',
+    'approve_delivery_request' => 'delivery_request',
+    'reject_delivery_request'  => 'delivery_request',
+    'approve_delivery_agent'   => 'delivery_agent',
+    'reject_delivery_agent'    => 'delivery_agent',
+];
+if (isset($coiTypeMap[$action]) && check_mod_coi($coiTypeMap[$action], $itemId, (int)$mod['id'])) {
+    log_coi_violation((int)$mod['id'], $coiTypeMap[$action], $itemId, $action);
+    mod_flash_redirect(
+        '⚠️ Conflict of Interest: You cannot moderate this item because you created it. Another moderator or admin must review it.',
+        'error', $back
+    );
+}
+
 // ── approve_job ───────────────────────────────────────────────────────────────
 if ($action === 'approve_job') {
     require_mod_permission('approve_jobs', $back);
@@ -34,7 +60,7 @@ if ($action === 'approve_job') {
     $job = $row->fetch();
     if (!$job) mod_flash_redirect('Job not found or already processed.', 'error', $back);
 
-    $pdo->prepare("UPDATE service_requests SET status='open', updated_at=NOW() WHERE id=?")->execute([$itemId]);
+    $pdo->prepare("UPDATE service_requests SET status='open', approved_by=?, updated_at=NOW() WHERE id=?")->execute([$mod['id'], $itemId]);
     notify_user((int)$job['customer_id'], 'Job Approved ✅',
         '"' . $job['title'] . '" is now live and visible to workers.',
         'success', 'request_detail.php?id=' . $itemId);
@@ -73,7 +99,7 @@ if ($action === 'approve_product') {
     $prod = $row->fetch();
     if (!$prod) mod_flash_redirect('Product not found or already processed.', 'error', $back);
 
-    $pdo->prepare("UPDATE mp_products SET status='approved', updated_at=NOW() WHERE id=?")->execute([$itemId]);
+    $pdo->prepare("UPDATE mp_products SET status='approved', approved_by=?, updated_at=NOW() WHERE id=?")->execute([$mod['id'], $itemId]);
     notify_user((int)$prod['owner_id'], 'Product Approved ✅',
         '"' . $prod['name'] . '" is now live on the marketplace.',
         'success', 'product.php?id=' . $itemId);
@@ -108,7 +134,7 @@ if ($action === 'approve_event') {
     $ev = $row->fetch();
     if (!$ev) mod_flash_redirect('Event not found.', 'error', $back);
 
-    $pdo->prepare("UPDATE events SET status='published', published_at=NOW() WHERE id=?")->execute([$itemId]);
+    $pdo->prepare("UPDATE events SET status='published', approved_by=?, published_at=NOW() WHERE id=?")->execute([$mod['id'], $itemId]);
     notify_user((int)$ev['owner_id'], 'Event Published ✅',
         '"' . $ev['title'] . '" is now live. Share it with your community!',
         'success', 'event.php?slug=' . urlencode($ev['slug']));
@@ -127,9 +153,9 @@ if ($action === 'reject_event') {
     if (!$ev) mod_flash_redirect('Event not found.', 'error', $back);
 
     $pdo->prepare("UPDATE events SET status='rejected', rejection_reason=? WHERE id=?")->execute([$reason, $itemId]);
-    notify_user((int)$ev['owner_id'], 'Event Rejected',
-        '"' . $ev['title'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nEdit and resubmit from My Events.",
-        'error', 'my_events.php');
+    notify_user((int)$ev['owner_id'], '❌ Event Rejected — Action Required',
+        '"' . $ev['title'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nClick to edit and resubmit.",
+        'error', 'my_events.php?edit=' . $itemId);
     log_audit_action($mod['id'], 'event_reject_quick', 'Rejected event #' . $itemId . '. Reason: ' . $reason);
     log_mod_activity($mod['id'], 'events', 'reject_event', $itemId, $ev['title']);
     mod_flash_redirect('"' . $ev['title'] . '" rejected.', 'info', $back);
@@ -143,7 +169,7 @@ if ($action === 'approve_funeral') {
     $fa = $row->fetch();
     if (!$fa) mod_flash_redirect('Announcement not found.', 'error', $back);
 
-    $pdo->prepare("UPDATE funeral_announcements SET status='approved' WHERE id=?")->execute([$itemId]);
+    $pdo->prepare("UPDATE funeral_announcements SET status='approved', approved_by=? WHERE id=?")->execute([$mod['id'], $itemId]);
     notify_user((int)$fa['owner_id'], 'Funeral Announcement Approved ✅',
         'The announcement for ' . $fa['deceased_name'] . ' is now published.',
         'success', 'funeral.php?slug=' . urlencode($fa['slug']));
@@ -162,9 +188,9 @@ if ($action === 'reject_funeral') {
     if (!$fa) mod_flash_redirect('Announcement not found.', 'error', $back);
 
     $pdo->prepare("UPDATE funeral_announcements SET status='rejected', rejection_reason=? WHERE id=?")->execute([$reason, $itemId]);
-    notify_user((int)$fa['owner_id'], 'Funeral Announcement Rejected',
-        'The announcement for ' . $fa['deceased_name'] . ' was not approved.' . "\n\nReason: " . $reason . "\n\nEdit and resubmit from My Funerals.",
-        'error', 'my_funerals.php');
+    notify_user((int)$fa['owner_id'], '❌ Announcement Rejected — Action Required',
+        'The announcement for "' . $fa['deceased_name'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nClick to edit and resubmit.",
+        'error', 'my_funerals.php?edit=' . $itemId);
     log_audit_action($mod['id'], 'funeral_reject_quick', 'Rejected funeral #' . $itemId . '. Reason: ' . $reason);
     log_mod_activity($mod['id'], 'funerals', 'reject_funeral', $itemId, $fa['deceased_name']);
     mod_flash_redirect('Funeral announcement rejected.', 'info', $back);
@@ -178,7 +204,7 @@ if ($action === 'approve_news') {
     $ns = $row->fetch();
     if (!$ns) mod_flash_redirect('Article not found.', 'error', $back);
 
-    $pdo->prepare("UPDATE news SET status='published', published_at=NOW() WHERE id=?")->execute([$itemId]);
+    $pdo->prepare("UPDATE news SET status='published', approved_by=?, published_at=NOW() WHERE id=?")->execute([$mod['id'], $itemId]);
     notify_user((int)$ns['owner_id'], 'Article Published ✅',
         '"' . $ns['title'] . '" is now live.',
         'success', 'news_article.php?slug=' . urlencode($ns['slug']));
@@ -197,9 +223,9 @@ if ($action === 'reject_news') {
     if (!$ns) mod_flash_redirect('Article not found.', 'error', $back);
 
     $pdo->prepare("UPDATE news SET status='rejected', rejection_reason=? WHERE id=?")->execute([$reason, $itemId]);
-    notify_user((int)$ns['owner_id'], 'Article Rejected',
-        '"' . $ns['title'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nEdit and resubmit from My Articles.",
-        'error', 'my_news.php');
+    notify_user((int)$ns['owner_id'], '❌ Article Rejected — Action Required',
+        '"' . $ns['title'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nClick to edit and resubmit.",
+        'error', 'my_news.php?edit=' . $itemId);
     log_audit_action($mod['id'], 'news_reject_quick', 'Rejected news #' . $itemId . '. Reason: ' . $reason);
     log_mod_activity($mod['id'], 'news', 'reject_news', $itemId, $ns['title']);
     mod_flash_redirect('"' . $ns['title'] . '" rejected.', 'info', $back);
@@ -213,7 +239,7 @@ if ($action === 'approve_delivery_request') {
     $dr = $row->fetch();
     if (!$dr) mod_flash_redirect('Delivery request not found.', 'error', $back);
 
-    $pdo->prepare("UPDATE delivery_requests SET status='approved', updated_at=NOW() WHERE id=?")->execute([$itemId]);
+    $pdo->prepare("UPDATE delivery_requests SET status='approved', approved_by=?, updated_at=NOW() WHERE id=?")->execute([$mod['id'], $itemId]);
     notify_user((int)$dr['customer_id'], 'Delivery Request Approved ✅',
         'Your delivery request #' . $itemId . ' is now live. Riders can now apply.',
         'success', 'delivery_detail.php?id=' . $itemId);
@@ -256,7 +282,7 @@ if ($action === 'approve_delivery_agent') {
     $ag = $row->fetch();
     if (!$ag) mod_flash_redirect('Agent not found or already processed.', 'error', $back);
 
-    $pdo->prepare("UPDATE delivery_agents SET verification_status='approved', availability_status='available', updated_at=NOW() WHERE id=?")->execute([$itemId]);
+    $pdo->prepare("UPDATE delivery_agents SET verification_status='approved', approved_by=?, availability_status='available', updated_at=NOW() WHERE id=?")->execute([$mod['id'], $itemId]);
     notify_user((int)$ag['user_id'], 'Agent Profile Approved ✅',
         'Your delivery agent profile has been approved. Start browsing and applying for delivery jobs!',
         'success', 'delivery_agent_jobs.php');

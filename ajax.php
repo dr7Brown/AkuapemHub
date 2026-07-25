@@ -29,6 +29,38 @@ switch ($action) {
         echo json_encode(['ok' => true]);
         break;
 
+    // ── Mark single notification read ────────────────────────────────────────
+    case 'mark_notification_read':
+        $nid = (int)($_POST['notification_id'] ?? 0);
+        if ($nid) {
+            $pdo->prepare('UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?')
+                ->execute([$nid, $user['id']]);
+        }
+        echo json_encode(['ok' => true]);
+        break;
+
+    // ── Recent notifications for the popup opened from the bell icon ─────────
+    case 'get_recent_notifications':
+        $stmt = $pdo->prepare(
+            'SELECT id, title, body, type, link, is_read, created_at FROM notifications
+             WHERE user_id = ? ORDER BY is_read ASC, created_at DESC LIMIT 8'
+        );
+        $stmt->execute([$user['id']]);
+        $rows = $stmt->fetchAll();
+        $out = array_map(function ($n) {
+            return [
+                'id'         => (int)$n['id'],
+                'title'      => $n['title'],
+                'preview'    => mb_substr($n['body'], 0, 120),
+                'type'       => $n['type'],
+                'link'       => $n['link'],
+                'is_read'    => (bool)$n['is_read'],
+                'time_ago'   => time_ago($n['created_at']),
+            ];
+        }, $rows);
+        echo json_encode(['ok' => true, 'notifications' => $out]);
+        break;
+
     // ── Delete a draft ────────────────────────────────────────────────────────
     case 'delete_draft':
         $id = intval($_POST['id'] ?? 0);

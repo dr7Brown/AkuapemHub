@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -95,6 +95,27 @@ $csrfField = csrf_field();
     <meta name="twitter:description" content="<?php echo sanitize($metaDesc); ?>">
     <?php if ($ogImage): ?><meta name="twitter:image" content="<?php echo sanitize($ogImage); ?>"><?php endif; ?>
     <link rel="canonical" href="<?php echo sanitize($pageUrl); ?>">
+    <script type="application/ld+json">
+    <?php
+    $naLd = [
+        '@context'      => 'https://schema.org',
+        '@type'         => 'NewsArticle',
+        'headline'      => mb_substr($article['title'], 0, 110),
+        'description'   => $metaDesc,
+        'datePublished' => date('c', strtotime($pubDate)),
+        'dateModified'  => date('c', strtotime($article['updated_at'] ?? $pubDate)),
+        'author'        => ['@type' => 'Organization', 'name' => APP_NAME],
+        'publisher'     => [
+            '@type' => 'Organization',
+            'name'  => APP_NAME,
+            'logo'  => ['@type' => 'ImageObject', 'url' => rtrim(BASE_URL,'/') . '/assets/images/ac%20logo.png'],
+        ],
+        'mainEntityOfPage' => ['@type' => 'WebPage', '@id' => $pageUrl],
+    ];
+    if ($ogImage) $naLd['image'] = [$ogImage];
+    echo json_encode($naLd, JSON_UNESCAPED_SLASHES);
+    ?>
+    </script>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         /* ── Outer shell + two-column layout ────────────────── */

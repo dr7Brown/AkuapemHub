@@ -1,6 +1,7 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../marketplace_functions.php';
 require_once __DIR__ . '/../paystack.php';
 
 require_login();
@@ -9,6 +10,7 @@ if (!is_admin() && !is_manager()) {
     exit;
 }
 require_mod_permission('view_reports');
+$user = current_user();
 
 $id = intval($_GET['id'] ?? 0);
 if ($id <= 0) {
@@ -137,6 +139,25 @@ if ($tx['payment_type'] === 'escrow_payment') {
         WHERE ep.job_id = ?");
     $escStmt->execute([$tx['reference_id']]);
     $escrow = $escStmt->fetch();
+}
+
+// Marketplace orders covered by this payment (if mp_order type) — a single
+// checkout can span several shops, so this is a list, each with its own
+// shop details and line items, mirroring what the customer's receipt shows.
+$mpOrdersDetail = [];
+if ($tx['payment_type'] === 'mp_order') {
+    $mpoStmt = $pdo->prepare(
+        'SELECT mo.*, ms.shop_name, ms.phone AS shop_phone, ms.region AS shop_region
+         FROM mp_orders mo JOIN mp_shops ms ON mo.shop_id = ms.id
+         WHERE mo.platform_payment_id = ?'
+    );
+    $mpoStmt->execute([$id]);
+    foreach ($mpoStmt->fetchAll() as $mo) {
+        $itemsStmt = $pdo->prepare('SELECT product_name, quantity, price, subtotal FROM mp_order_items WHERE order_id=?');
+        $itemsStmt->execute([$mo['id']]);
+        $mo['items'] = $itemsStmt->fetchAll();
+        $mpOrdersDetail[] = $mo;
+    }
 }
 
 // Build a simple payment timeline
@@ -360,6 +381,55 @@ $methodLabels = [
             <?php endif; ?>
         </div>
         <?php endif; ?>
+
+        <!-- Marketplace order details (if applicable) -->
+        <?php foreach ($mpOrdersDetail as $mo): ?>
+        <div class="info-card" style="border-color:#0f766e;">
+            <h2>Marketplace Order #<?php echo $mo['id']; ?></h2>
+            <div class="info-row">
+                <span class="label">Shop</span>
+                <span class="value">
+                    <a href="marketplace.php?tab=orders" style="color:var(--primary);"><?php echo sanitize($mo['shop_name']); ?></a>
+                </span>
+            </div>
+            <?php if ($mo['shop_phone']): ?>
+            <div class="info-row"><span class="label">Shop phone</span><span class="value"><?php echo sanitize($mo['shop_phone']); ?></span></div>
+            <?php endif; ?>
+            <?php if ($mo['shop_region']): ?>
+            <div class="info-row"><span class="label">Shop region</span><span class="value"><?php echo sanitize($mo['shop_region']); ?></span></div>
+            <?php endif; ?>
+            <div class="info-row">
+                <span class="label">Order status</span>
+                <span class="value"><?php echo sanitize(mp_order_status_label($mo['status'])); ?></span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:.86rem;">
+                <thead>
+                    <tr style="font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">
+                        <td style="padding:6px 0;">Item</td>
+                        <td style="padding:6px 0;text-align:center;">Qty</td>
+                        <td style="padding:6px 0;text-align:right;">Unit Price</td>
+                        <td style="padding:6px 0;text-align:right;">Subtotal</td>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($mo['items'] as $it): ?>
+                    <tr style="border-top:1px solid var(--border);">
+                        <td style="padding:6px 0;"><?php echo sanitize($it['product_name']); ?></td>
+                        <td style="padding:6px 0;text-align:center;"><?php echo (int)$it['quantity']; ?></td>
+                        <td style="padding:6px 0;text-align:right;">GH&#8373; <?php echo number_format((float)$it['price'], 2); ?></td>
+                        <td style="padding:6px 0;text-align:right;font-weight:600;">GH&#8373; <?php echo number_format((float)$it['subtotal'], 2); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                <tfoot>
+                    <tr style="border-top:2px solid var(--border);font-weight:700;">
+                        <td colspan="3" style="padding:8px 0;">Order Total</td>
+                        <td style="padding:8px 0;text-align:right;">GH&#8373; <?php echo number_format((float)$mo['total_amount'], 2); ?></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <?php endforeach; ?>
 
         <!-- Payment timeline -->
         <div class="info-card">

@@ -62,6 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
 
     if (!$title)     $errors[] = 'Event title is required.';
     if (!$startDate) $errors[] = 'Start date is required.';
+    if (!$editId && requires_verified_email('event_post') && !is_email_verified()) {
+        $errors[] = 'Please verify your email address before submitting an event.';
+    }
     if ($regLink && !filter_var($regLink, FILTER_VALIDATE_URL)) $errors[] = 'Invalid registration/ticket link URL.';
 
     // Verify ownership if editing
@@ -86,6 +89,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     if (!$errors) {
         $slug = ev_slug($pdo, $title . ' ' . date('Y', strtotime($startDate ?: 'now')), $editId);
         if ($editId) {
+            $prevEv = $pdo->prepare("SELECT status FROM events WHERE id=? AND user_id=? LIMIT 1");
+            $prevEv->execute([$editId, $user['id']]);
+            $wasRejected = ($prevEv->fetchColumn() ?? '') === 'rejected';
+
             $pdo->prepare(
                 "UPDATE events SET title=?,slug=?,featured_image=?,description=?,venue=?,gps_address=?,
                  start_date=?,end_date=?,start_time=?,end_time=?,organizer_name=?,
@@ -94,6 +101,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                  WHERE id=? AND user_id=?"
             )->execute([$title,$slug,$imgPath,$desc,$venue,$gps,$startDate,$endDate,$startTime,$endTime,
                         $organizer,$ticketType,$ticketPrice,$regLink,$googleMapsLink,$editId,$user['id']]);
+
+            if ($wasRejected) {
+                notify_admins_and_managers(
+                    'Event Resubmitted for Review',
+                    display_name($user) . ' has resubmitted "' . $title . '" after rejection. Review in Admin → Events.',
+                    'info'
+                );
+                flash('Event resubmitted for review. Admin has been notified.', 'success');
+            }
             header('Location: my_events.php?msg=updated'); exit;
         } else {
             $initStatus = $feeEnabled ? 'pending_payment' : 'draft';
@@ -336,7 +352,7 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                 <div class="me-list">
                     <?php foreach ($myList as $ev): ?>
                     <?php $sl = $statusLabels[$ev['status']] ?? $statusLabels['draft']; ?>
-                    <div class="me-item">
+                    <div class="me-item" style="<?php echo $ev['status']==='rejected' ? 'border-left:4px solid #ef4444;' : ''; ?>">
                         <div class="me-thumb">
                             <?php if ($ev['featured_image']): ?>
                                 <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="">
@@ -345,24 +361,40 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                             <?php endif; ?>
                         </div>
                         <div class="me-info">
+                            <?php if ($ev['status'] === 'rejected'): ?>
+                            <p style="font-size:.68rem;font-weight:800;color:#ef4444;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em;">❌ Rejected — Action needed</p>
+                            <?php endif; ?>
                             <p class="me-name"><?php echo sanitize($ev['title']); ?></p>
                             <p class="me-meta">📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?></p>
                             <span class="me-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                                 <?php echo $sl['label']; ?>
                             </span>
-                            <?php if ($ev['status'] === 'rejected' && !empty($ev['rejection_reason'])): ?>
-                            <p style="font-size:.72rem;color:#991b1b;margin:4px 0 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:4px 8px;">
-                                <strong>Reason:</strong> <?php echo sanitize($ev['rejection_reason']); ?>
-                            </p>
+                            <?php if ($ev['status'] === 'rejected'): ?>
+                            <div style="background:#fee2e2;border-left:3px solid #ef4444;border-radius:0 6px 6px 0;padding:6px 8px;margin:5px 0;font-size:.76rem;color:#7f1d1d;line-height:1.5;">
+                                <?php echo !empty($ev['rejection_reason'])
+                                    ? nl2br(sanitize($ev['rejection_reason']))
+                                    : '<em style="color:#991b1b;">No reason given — contact admin.</em>'; ?>
+                            </div>
                             <?php endif; ?>
                             <div class="me-actions">
                                 <?php if ($ev['status'] === 'published' && $ev['slug']): ?>
                                     <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="button button-small" target="_blank">View</a>
+                                    <?php
+                                    $evFeatEnd    = $ev['featured_end_date'] ?? null;
+                                    $evFeatActive = !empty($ev['featured']) && ($evFeatEnd === null || $evFeatEnd >= date('Y-m-d'));
+                                    ?>
+                                    <?php if ($evFeatActive): ?>
+                                    <span style="font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:20px;background:#fef3c7;color:#92400e;">⭐ Featured</span>
+                                    <?php else: ?>
+                                    <a href="feature_event.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#f59e0b;">⭐ Feature</a>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if ($ev['status'] === 'pending_payment'): ?>
                                     <a href="pay_event.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">Pay</a>
                                 <?php endif; ?>
-                                <?php if (in_array($ev['status'], ['pending_payment','draft','cancelled','rejected'])): ?>
+                                <?php if ($ev['status'] === 'rejected'): ?>
+                                    <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-primary button-small" style="background:#ef4444;border-color:#ef4444;">✏️ Fix &amp; Resubmit</a>
+                                <?php elseif (in_array($ev['status'], ['pending_payment','draft','cancelled'])): ?>
                                     <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-small button-secondary">Edit</a>
                                     <form method="post" onsubmit="return confirm('Delete this event?')">
                                         <?php echo csrf_field(); ?>

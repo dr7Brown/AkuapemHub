@@ -24,6 +24,14 @@ function sanitize($value) {
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
+/** Neutralize CSV/Excel formula injection: a cell starting with =, +, -, or @
+ *  can be interpreted as a formula by Excel/Sheets when a free-text field
+ *  (shop name, job title, item description, etc.) reaches a CSV export. */
+function csv_safe($value): string {
+    $value = (string)$value;
+    return preg_match('/^[=+\-@]/', $value) ? "'" . $value : $value;
+}
+
 /**
  * Safely render HTML stored by the RichEditor.
  * Strips everything except safe formatting tags; removes on* attributes and

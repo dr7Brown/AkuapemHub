@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -39,6 +39,7 @@ $paidVerifStmt->execute([$user['id']]);
 $hasPaidVerif = (bool)$paidVerifStmt->fetch();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     // Resubmission when admin requested updated docs — free if already paid once
     if ($vStatus === 'resubmission_requested' && $hasPaidVerif) {
         $idType       = $_POST['id_type'] ?? '';

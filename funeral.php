@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -30,7 +30,7 @@ $today       = date('Y-m-d');
 $sbFunerals  = $pdo->prepare("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' AND id != ? ORDER BY created_at DESC LIMIT 4");
 $sbFunerals->execute([$fa['id']]);
 $sbFunerals  = $sbFunerals->fetchAll();
-$sbEvents    = $pdo->query("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND start_date >= '$today' ORDER BY featured DESC, start_date ASC LIMIT 5")->fetchAll();
+$sbEvents    = $pdo->query("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND start_date >= '$today' ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 5")->fetchAll();
 $sbNews      = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 4")->fetchAll();
 $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
 ?>
@@ -43,7 +43,7 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
     <meta name="description" content="<?php echo sanitize(mb_substr($fa['biography'] ?? 'Funeral announcement from ' . APP_NAME, 0, 160)); ?>">
     <meta property="og:title"       content="In Memoriam: <?php echo sanitize($fa['deceased_name']); ?>">
     <meta property="og:description" content="<?php echo sanitize(mb_substr($fa['biography'] ?? '', 0, 200)); ?>">
-    <?php if ($fa['photograph']): ?><meta property="og:image" content="<?php echo sanitize($fa['photograph']); ?>"><?php endif; ?>
+    <?php if ($fa['photograph']): ?><meta property="og:image" content="<?php echo sanitize(rtrim(BASE_URL,'/') . '/' . ltrim($fa['photograph'],'/')); ?>"><?php endif; ?>
     <meta property="og:url" content="<?php echo sanitize($pageUrl); ?>">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="<?php echo sanitize($pageUrl); ?>">
@@ -338,12 +338,12 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
         <div class="nsb-widget">
             <div class="nsb-head">Sponsored</div>
             <div class="nsb-ad">
-                <?php if ($sbAd['image_url']): ?>
-                <a href="<?php echo sanitize($sbAd['target_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored">
-                    <img src="<?php echo sanitize($sbAd['image_url']); ?>" alt="<?php echo sanitize($sbAd['title']); ?>">
+                <?php if ($sbAd['image']): ?>
+                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored">
+                    <img src="<?php echo sanitize($sbAd['image']); ?>" alt="<?php echo sanitize($sbAd['title']); ?>">
                 </a>
                 <?php else: ?>
-                <a href="<?php echo sanitize($sbAd['target_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored"
+                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored"
                    style="display:block;background:var(--primary,#0f766e);color:#fff;text-align:center;padding:20px 12px;border-radius:8px;font-weight:800;text-decoration:none;">
                     <?php echo sanitize($sbAd['title']); ?>
                 </a>

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 require_once __DIR__ . '/../chat_functions.php';
@@ -15,6 +15,7 @@ $msg = '';
 
 // ── POST actions ──────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    csrf_check();
     $act = $_POST['action'] ?? '';
 
     if ($act === 'save_chat_settings') {
@@ -298,6 +299,7 @@ $chatSettings = [
                 <div style="display:flex;gap:8px;margin-bottom:14px;">
                     <?php if ($viewConv['status'] !== 'blocked'): ?>
                         <form method="post" style="display:inline;">
+                            <?php echo csrf_field(); ?>
                             <input type="hidden" name="action" value="block_conversation">
                             <input type="hidden" name="conversation_id" value="<?php echo $viewConvId; ?>">
                             <button class="button button-danger button-small" onclick="return confirm('Block this conversation?')">Block</button>
@@ -305,6 +307,7 @@ $chatSettings = [
                     <?php endif; ?>
                     <?php if ($viewConv['status'] !== 'closed'): ?>
                         <form method="post" style="display:inline;">
+                            <?php echo csrf_field(); ?>
                             <input type="hidden" name="action" value="close_conversation">
                             <input type="hidden" name="conversation_id" value="<?php echo $viewConvId; ?>">
                             <button class="button button-secondary button-small" onclick="return confirm('Close this conversation?')">Close</button>
@@ -322,6 +325,7 @@ $chatSettings = [
                                 <span style="color:var(--text-muted);font-size:0.75rem;margin-left:6px;"><?php echo date('M j, g:i a', strtotime($m['created_at'])); ?></span>
                                 <div style="margin-top:3px;"><?php echo nl2br(sanitize($m['message'])); ?></div>
                                 <form method="post" style="margin-top:4px;display:inline;">
+                                    <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete_message">
                                     <input type="hidden" name="message_id" value="<?php echo $m['id']; ?>">
                                     <button class="button button-danger button-small" style="font-size:0.7rem;padding:2px 8px;" onclick="return confirm('Delete this message?')">Delete</button>
@@ -353,6 +357,7 @@ $chatSettings = [
                                     <a href="communication.php?tab=conversations&view=<?php echo $c['id']; ?>" class="button button-secondary button-small">View</a>
                                     <?php if ($c['status']==='active'): ?>
                                         <form method="post" style="display:inline;">
+                                            <?php echo csrf_field(); ?>
                                             <input type="hidden" name="action" value="block_conversation">
                                             <input type="hidden" name="conversation_id" value="<?php echo $c['id']; ?>">
                                             <button class="button button-danger button-small" onclick="return confirm('Block?')">Block</button>
@@ -375,6 +380,7 @@ $chatSettings = [
             <h3 style="margin-top:0;">Grant Direct Chat Access</h3>
             <p style="font-size:0.85rem;color:var(--text-muted);">Allow two users to message each other regardless of job relationships.</p>
             <form method="post">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="grant_chat">
                 <div class="form-row">
                     <div><label>User 1</label><br><select name="user1_id" required>
@@ -422,6 +428,7 @@ $chatSettings = [
             <div style="background:var(--bg);border-radius:12px;padding:24px;width:360px;max-width:94vw;">
                 <h3 style="margin:0 0 16px;" id="restrictTitle">Restrict User</h3>
                 <form method="post">
+                    <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="restrict_user">
                     <input type="hidden" name="target_user_id" id="restrictUserId">
                     <label class="toggle-label"><input type="checkbox" name="can_send" id="rCanSend"> Can send messages</label>
@@ -460,17 +467,20 @@ $chatSettings = [
                         <?php if ($r['status']==='pending'): ?>
                             <div style="display:flex;gap:8px;margin-top:8px;">
                                 <form method="post" style="display:inline;">
+                                    <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="delete_message">
                                     <input type="hidden" name="message_id" value="<?php echo $r['message_id']; ?>">
                                     <button class="button button-danger button-small" onclick="return confirm('Delete this message from the platform?')">Delete Message</button>
                                 </form>
                                 <form method="post" style="display:inline;">
+                                    <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="review_report">
                                     <input type="hidden" name="report_id" value="<?php echo $r['id']; ?>">
                                     <input type="hidden" name="report_status" value="reviewed">
                                     <button class="button button-primary button-small">Mark Reviewed</button>
                                 </form>
                                 <form method="post" style="display:inline;">
+                                    <?php echo csrf_field(); ?>
                                     <input type="hidden" name="action" value="review_report">
                                     <input type="hidden" name="report_id" value="<?php echo $r['id']; ?>">
                                     <input type="hidden" name="report_status" value="dismissed">
@@ -515,6 +525,7 @@ $chatSettings = [
         <div class="panel">
             <h3 style="margin-top:0;">Chat Platform Settings</h3>
             <form method="post">
+                <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="save_chat_settings">
                 <label class="toggle-label">
                     <input type="checkbox" name="chat_disabled" <?php echo $chatSettings['chat_disabled']==='1'?'checked':''; ?>>

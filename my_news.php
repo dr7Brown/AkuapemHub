@@ -51,6 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
 
     if (!$title)   $errors[] = 'Title is required.';
     if (!$content) $errors[] = 'Article body is required.';
+    if (!$editId && requires_verified_email('news_post') && !is_email_verified()) {
+        $errors[] = 'Please verify your email address before submitting an article.';
+    }
 
     // Verify ownership if editing
     $existingImg = null;
@@ -74,11 +77,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     if (!$errors) {
         $slug = mn_slug($pdo, $title . ' ' . date('Y'), $editId);
         if ($editId) {
+            // Check if article was previously rejected (so we know this is a resubmission)
+            $prevStatus = $pdo->prepare("SELECT status FROM news WHERE id=? AND user_id=? LIMIT 1");
+            $prevStatus->execute([$editId, $user['id']]);
+            $prevRow = $prevStatus->fetch();
+            $wasRejected = ($prevRow['status'] ?? '') === 'rejected';
+
             $pdo->prepare(
                 "UPDATE news SET title=?,slug=?,summary=?,content=?,featured_image=?,
                  status='draft',rejection_reason=NULL,updated_at=NOW()
                  WHERE id=? AND user_id=? AND status != 'published'"
             )->execute([$title, $slug, $summary, $content, $imgPath, $editId, $user['id']]);
+
+            if ($wasRejected) {
+                notify_admins_and_managers(
+                    'Article Resubmitted for Review',
+                    display_name($user) . ' has resubmitted "' . $title . '" after rejection. Please review in Admin → News.',
+                    'info'
+                );
+                flash('Article resubmitted for review. Admin has been notified.', 'success');
+            }
             header('Location: my_news.php?msg=updated'); exit;
         } else {
             $initStatus = $feeEnabled ? 'pending_payment' : 'draft';
@@ -244,7 +262,8 @@ $statusLabels = [
                 <div class="mn-list">
                     <?php foreach ($myList as $art): ?>
                     <?php $sl = $statusLabels[$art['status']] ?? $statusLabels['draft']; ?>
-                    <div class="mn-item">
+                    <?php $isRejected = $art['status'] === 'rejected'; ?>
+                    <div class="mn-item" style="<?php echo $isRejected ? 'border-left:4px solid #ef4444;' : ''; ?>">
                         <div class="mn-thumb">
                             <?php if ($art['featured_image']): ?>
                                 <img src="<?php echo sanitize($art['featured_image']); ?>" alt="">
@@ -253,24 +272,45 @@ $statusLabels = [
                             <?php endif; ?>
                         </div>
                         <div class="mn-info">
+                            <?php if ($isRejected): ?>
+                            <p style="font-size:.68rem;font-weight:800;color:#ef4444;margin:0 0 4px;text-transform:uppercase;letter-spacing:.04em;">❌ Rejected — Action needed</p>
+                            <?php endif; ?>
                             <p class="mn-title"><?php echo sanitize($art['title']); ?></p>
                             <p class="mn-meta">Submitted <?php echo date('d M Y', strtotime($art['created_at'])); ?></p>
                             <span class="mn-status" style="color:<?php echo $sl['color']; ?>;background:<?php echo $sl['bg']; ?>;">
                                 <?php echo $sl['label']; ?>
                             </span>
-                            <?php if ($art['status'] === 'rejected' && !empty($art['rejection_reason'])): ?>
-                            <p style="font-size:.72rem;color:#991b1b;margin:4px 0 0;background:#fff1f2;border:1px solid #fecdd3;border-radius:6px;padding:4px 8px;">
-                                <strong>Reason:</strong> <?php echo sanitize($art['rejection_reason']); ?>
-                            </p>
+                            <?php if ($isRejected): ?>
+                            <div style="background:#fee2e2;border-left:3px solid #ef4444;border-radius:0 6px 6px 0;padding:6px 8px;margin:6px 0;font-size:.76rem;color:#7f1d1d;line-height:1.5;">
+                                <?php echo $isRejected && !empty($art['rejection_reason'])
+                                    ? nl2br(sanitize($art['rejection_reason']))
+                                    : '<em style="color:#991b1b;">No reason given — contact admin.</em>'; ?>
+                            </div>
                             <?php endif; ?>
                             <div class="mn-actions">
                                 <?php if ($art['status'] === 'published' && $art['slug']): ?>
                                     <a href="news_article.php?slug=<?php echo urlencode($art['slug']); ?>" class="button button-small" target="_blank">View</a>
+                                    <?php
+                                    $artFeatEnd    = $art['featured_end_date'] ?? null;
+                                    $artFeatActive = !empty($art['featured']) && ($artFeatEnd === null || $artFeatEnd >= date('Y-m-d'));
+                                    ?>
+                                    <?php if ($artFeatActive): ?>
+                                    <span style="font-size:.68rem;font-weight:800;padding:3px 8px;border-radius:20px;background:#fef3c7;color:#92400e;">⭐ Featured</span>
+                                    <?php else: ?>
+                                    <a href="feature_news.php?id=<?php echo (int)$art['id']; ?>" class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#f59e0b;">⭐ Feature</a>
+                                    <?php endif; ?>
                                 <?php endif; ?>
                                 <?php if ($art['status'] === 'pending_payment'): ?>
                                     <a href="pay_news.php?id=<?php echo (int)$art['id']; ?>" class="button button-small button-primary">Pay</a>
                                 <?php endif; ?>
-                                <?php if (in_array($art['status'], ['draft', 'pending_payment', 'rejected'])): ?>
+                                <?php if ($isRejected): ?>
+                                    <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-primary button-small" style="background:#ef4444;border-color:#ef4444;width:100%;text-align:center;display:block;margin-bottom:5px;">✏️ Fix &amp; Resubmit</a>
+                                    <form method="post" onsubmit="return confirm('Delete this article?')" style="width:100%;">
+                                        <?php echo csrf_field(); ?>
+                                        <input type="hidden" name="delete_id" value="<?php echo (int)$art['id']; ?>">
+                                        <button class="button button-small" style="width:100%;background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
+                                    </form>
+                                <?php elseif (in_array($art['status'], ['draft', 'pending_payment'])): ?>
                                     <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-small button-secondary">Edit</a>
                                     <form method="post" onsubmit="return confirm('Delete this article?')">
                                         <?php echo csrf_field(); ?>

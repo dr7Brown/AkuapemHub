@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -9,7 +9,7 @@ if ($requestId <= 0) {
     exit;
 }
 
-$stmt = $pdo->prepare('SELECT sr.*, c.name AS customer_name, c.username AS customer_username, c.profile_photo AS customer_photo, c.email AS customer_email, w.name AS worker_name, w.username AS worker_username, wc.name AS category_name FROM service_requests sr JOIN users c ON sr.customer_id = c.id JOIN service_categories wc ON sr.category_id = wc.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.id = ?');
+$stmt = $pdo->prepare('SELECT sr.*, c.name AS customer_name, c.username AS customer_username, c.profile_photo AS customer_photo, c.email AS customer_email, c.phone AS customer_phone, w.name AS worker_name, w.username AS worker_username, wc.name AS category_name FROM service_requests sr JOIN users c ON sr.customer_id = c.id JOIN service_categories wc ON sr.category_id = wc.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.id = ?');
 $stmt->execute([$requestId]);
 $request = $stmt->fetch();
 
@@ -26,22 +26,6 @@ if (!empty($request['deadline_date'])
     $request['status'] = 'expired';
 }
 
-if (!$user) {
-    // Guests may view open/partially_staffed public jobs only
-    if (!in_array($request['status'], ['open','partially_staffed'], true)) {
-        header('Location: jobs.php');
-        exit;
-    }
-} else {
-    $canView = is_admin()
-        || $request['customer_id'] === $user['id']
-        || (is_worker() && ($request['status'] === 'open' || $request['assigned_worker_id'] === $user['id']));
-    if (!$canView) {
-        header('Location: jobs.php');
-        exit;
-    }
-}
-
 $myApplicationStatus = null;
 if (is_worker()) {
     $appStmt = $pdo->prepare('SELECT status FROM applications WHERE request_id = ? AND worker_id = ? ORDER BY applied_at DESC LIMIT 1');
@@ -49,11 +33,47 @@ if (is_worker()) {
     $myApplication = $appStmt->fetch();
     $myApplicationStatus = $myApplication['status'] ?? null;
 }
+
+if (!$user) {
+    // Guests may view open/partially_staffed public jobs only
+    if (!in_array($request['status'], ['open','partially_staffed'], true)) {
+        header('Location: jobs.php');
+        exit;
+    }
+} else {
+    // A worker keeps access once they've applied/been approved, even after
+    // the job leaves 'open' status (e.g. multi-worker jobs where other
+    // approvals move status to partially_staffed/fully_staffed and this
+    // worker's own assigned_worker_id is never set — see manage_applicants.php).
+    $canView = is_admin()
+        || $request['customer_id'] === $user['id']
+        || (is_worker() && (
+            $request['status'] === 'open'
+            || $request['assigned_worker_id'] === $user['id']
+            || $myApplicationStatus !== null
+        ));
+    if (!$canView) {
+        header('Location: jobs.php');
+        exit;
+    }
+}
 $canApply = is_worker()
     && in_array($request['status'], ['open','partially_staffed'], true)
     && !in_array($myApplicationStatus, ['pending','approved','accepted'], true)
     && (int)$request['customer_id'] !== (int)$user['id'];
-$canComplete = is_worker() && $request['status'] === 'in_progress' && $request['assigned_worker_id'] === $user['id'];
+// 'in_progress' is never actually set by any code path today — jobs go
+// straight from staffing to 'fully_staffed' and stay there. complete_job.php
+// already accepts both statuses; this gate must match or the button never renders.
+$canComplete = is_worker()
+    && in_array($request['status'], ['in_progress', 'fully_staffed'], true)
+    && $request['assigned_worker_id'] === $user['id'];
+
+// True for the assigned worker on single-worker jobs (assigned_worker_id set)
+// AND for any approved worker on multi-worker jobs (assigned_worker_id is
+// never set there — see manage_applicants.php). Used to gate chat access,
+// contact-detail visibility, and dispute filing for approved workers.
+$isAssignedWorker = is_worker()
+    && ($request['assigned_worker_id'] === $user['id'] || $myApplicationStatus === 'approved');
 
 // Escrow: fetch record + lazy auto-release check (must run before can-flags)
 $escrowRecord = null;
@@ -110,16 +130,17 @@ if (is_customer() && $request['customer_id'] === $user['id'] && in_array($reques
 }
 
 // Sidebar: similar open jobs in the same category
-$sbSimilar = $pdo->prepare("
+$sbSimilarSql = "
     SELECT sr.id, sr.title, sr.budget, sr.location, sr.created_at, c.name AS category_name
     FROM service_requests sr
     LEFT JOIN service_categories c ON sr.category_id = c.id
-    WHERE sr.category_id = ? AND sr.status IN ('open','partially_staffed')
+    WHERE sr.category_id = ? AND sr.status IN (" . public_job_statuses_sql() . ")
       AND (sr.posting_fee_status IS NULL OR sr.posting_fee_status != 'pending')
       AND sr.id != ?
-    ORDER BY sr.featured DESC, sr.created_at DESC
+    ORDER BY (sr.featured=1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date>=CURDATE())) DESC, sr.created_at DESC
     LIMIT 5
-");
+";
+$sbSimilar = $pdo->prepare($sbSimilarSql);
 $sbSimilar->execute([$request['category_id'], $requestId]);
 $sbSimilar = $sbSimilar->fetchAll();
 
@@ -129,7 +150,57 @@ $sbSimilar = $sbSimilar->fetchAll();
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Request details — <?php echo APP_NAME; ?></title>
+    <?php
+    $rdIsPublic = in_array($request['status'], ['open', 'partially_staffed'], true);
+    echo seo_meta([
+        'title'       => sanitize($request['title']) . ' — ' . sanitize($request['category_name']) . ' Job in ' . sanitize($request['location']) . ' | ' . APP_NAME,
+        'description' => mb_substr(strip_tags($request['description']), 0, 300) ?: ('A ' . $request['category_name'] . ' job posted on ' . APP_NAME . '.'),
+        'url'         => rtrim(BASE_URL, '/') . '/request_detail.php?id=' . (int)$request['id'],
+        'noindex'     => !$rdIsPublic,
+    ]);
+    ?>
+    <?php if ($rdIsPublic): ?>
+    <script type="application/ld+json">
+    <?php
+    $rdValidThrough = $request['deadline_date'] ?: date('Y-m-d\TH:i:sP', strtotime('+30 days'));
+    $rdJobLd = [
+        '@context'          => 'https://schema.org/',
+        '@type'             => 'JobPosting',
+        'title'             => $request['title'],
+        'description'       => '<p>' . htmlspecialchars(strip_tags($request['description'])) . '</p>',
+        'datePosted'        => date('Y-m-d', strtotime($request['created_at'])),
+        'validThrough'      => date('Y-m-d\TH:i:sP', strtotime($rdValidThrough)),
+        'employmentType'    => 'CONTRACTOR',
+        'hiringOrganization' => [
+            '@type' => 'Organization',
+            'name'  => APP_NAME,
+            'sameAs' => rtrim(BASE_URL, '/') . '/',
+        ],
+        'jobLocation' => [
+            '@type'   => 'Place',
+            'address' => [
+                '@type'           => 'PostalAddress',
+                'addressLocality' => $request['location'],
+                'addressRegion'   => 'Eastern Region',
+                'addressCountry'  => 'GH',
+            ],
+        ],
+    ];
+    if (!empty($request['budget_amount'])) {
+        $rdJobLd['baseSalary'] = [
+            '@type'    => 'MonetaryAmount',
+            'currency' => 'GHS',
+            'value'    => [
+                '@type'    => 'QuantitativeValue',
+                'value'    => (float)$request['budget_amount'],
+                'unitText' => 'TOTAL',
+            ],
+        ];
+    }
+    echo json_encode($rdJobLd, JSON_UNESCAPED_SLASHES);
+    ?>
+    </script>
+    <?php endif; ?>
     <link rel="stylesheet" href="assets/css/style.css" />
     <style>
         .rd-outer   { max-width:1200px; margin:0 auto; padding:0 16px; }
@@ -259,14 +330,22 @@ $sbSimilar = $sbSimilar->fetchAll();
                 <span class="status status-<?php echo sanitize($request['status']); ?>" style="flex-shrink: 0;"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
             </div>
 
-            <?php if ($request['status'] === 'rejected' && !empty($request['rejection_reason']) && $request['customer_id'] === $user['id']): ?>
-            <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:10px;padding:12px 14px;margin:12px 0 0;display:flex;gap:10px;align-items:flex-start;">
-                <span style="font-size:1.2rem;flex-shrink:0;">❌</span>
-                <div>
-                    <strong style="display:block;font-size:.88rem;color:#c0392b;margin-bottom:3px;">Request Not Approved</strong>
-                    <p style="margin:0;font-size:.86rem;color:#374151;line-height:1.6;"><strong>Reason:</strong> <?php echo sanitize($request['rejection_reason']); ?></p>
-                    <p style="margin:6px 0 0;font-size:.8rem;color:#6b7280;">You can <a href="request.php?edit=<?php echo $requestId; ?>" style="color:var(--primary,#0f766e);font-weight:700;">edit and resubmit</a> your request.</p>
+            <?php if ($request['status'] === 'rejected' && $request['customer_id'] === $user['id']): ?>
+            <div style="background:#fff5f5;border:2px solid #fca5a5;border-radius:12px;padding:14px 16px;margin:14px 0 0;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span style="font-size:1.1rem;">❌</span>
+                    <strong style="font-size:.9rem;color:#c0392b;">Job Listing Rejected — Action Required</strong>
                 </div>
+                <?php if (!empty($request['rejection_reason'])): ?>
+                <div style="background:#fee2e2;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:.84rem;color:#7f1d1d;line-height:1.6;">
+                    <strong>Reason:</strong> <?php echo nl2br(sanitize($request['rejection_reason'])); ?>
+                </div>
+                <?php else: ?>
+                <p style="font-size:.82rem;color:#991b1b;margin:0 0 10px;font-style:italic;">No reason given — contact admin for details.</p>
+                <?php endif; ?>
+                <a href="request.php?edit=<?php echo $requestId; ?>" class="button button-primary" style="background:#ef4444;border-color:#ef4444;display:inline-block;">
+                    ✏️ Fix &amp; Resubmit
+                </a>
             </div>
             <?php endif; ?>
 
@@ -357,6 +436,17 @@ $sbSimilar = $sbSimilar->fetchAll();
                 <?php endif; ?>
             </div>
 
+            <?php if ($isAssignedWorker): ?>
+                <hr style="border: none; border-top: 1px solid var(--border); margin: 18px 0;">
+                <p class="detail-label">Job owner contact</p>
+                <p style="margin: 0;">
+                    <?php echo sanitize($request['customer_name']); ?>
+                    <?php if (!empty($request['customer_phone'])): ?>
+                        · <a href="tel:<?php echo sanitize($request['customer_phone']); ?>" style="color: var(--primary); font-weight: 600; text-decoration: none;"><?php echo sanitize($request['customer_phone']); ?></a>
+                    <?php endif; ?>
+                </p>
+            <?php endif; ?>
+
             <?php if ($request['assigned_worker_id'] || !empty($request['completion_notes']) || !empty($completionPhotos)): ?>
                 <hr style="border: none; border-top: 1px solid var(--border); margin: 18px 0;">
 
@@ -425,7 +515,7 @@ $sbSimilar = $sbSimilar->fetchAll();
         // In-app chat: customer → assigned worker, worker → customer
         if (is_customer() && $request['customer_id'] === $user['id'] && $request['assigned_worker_id']) {
             $secondaryActions[] = ['link', 'chat_start.php?user_id=' . $request['assigned_worker_id'] . '&job_id=' . $request['id'], '💬 Message Worker'];
-        } elseif (is_worker() && ($request['assigned_worker_id'] === $user['id'] || $myApplicationStatus === 'pending' || $myApplicationStatus === 'accepted')) {
+        } elseif (is_worker() && ($isAssignedWorker || $myApplicationStatus === 'pending')) {
             $secondaryActions[] = ['link', 'chat_start.php?user_id=' . $request['customer_id'] . '&job_id=' . $request['id'], '💬 Message Customer'];
         } elseif ($user) {
             $secondaryActions[] = ['link', 'chat.php', '💬 Messages'];
@@ -437,7 +527,7 @@ $sbSimilar = $sbSimilar->fetchAll();
             }
             $secondaryActions[] = ['link', 'cancel_request.php?request_id=' . $request['id'], 'Cancel request'];
             $secondaryActions[] = ['link', 'file_dispute.php?request_id=' . $request['id'], 'File dispute'];
-        } elseif (is_worker() && $request['assigned_worker_id'] === $user['id'] && $request['status'] !== 'cancelled') {
+        } elseif ($isAssignedWorker && $request['status'] !== 'cancelled') {
             $secondaryActions[] = ['link', 'file_dispute.php?request_id=' . $request['id'], 'File dispute'];
         }
         $secondaryActions[] = ['link_external', whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/request_detail.php?id=' . $request['id']), '🔗 Share'];

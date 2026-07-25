@@ -24,6 +24,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $prodRow->execute([$pid]);
         $prod = $prodRow->fetch();
         if ($prod) {
+            if (in_array($postAction, ['approve_product','reject_product'], true) && check_mod_coi('product', $pid, $adminUser['id'])) {
+                log_coi_violation($adminUser['id'], 'product', $pid, $postAction);
+                flash('Conflict of interest: you cannot moderate your own product.', 'error');
+                header('Location: marketplace.php?tab=products'); exit;
+            }
             if ($postAction === 'approve_product') {
                 $pdo->prepare("UPDATE mp_products SET status='approved', updated_at=NOW() WHERE id=?")->execute([$pid]);
                 notify_user((int)$prod['owner_id'], 'Product Approved ✅', '"' . $prod['name'] . '" is now live on the marketplace!', 'success');
@@ -33,7 +38,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 if (!$reason) { flash('Rejection reason is required.', 'error'); header('Location: marketplace.php?tab=products'); exit; }
                 $pdo->prepare("UPDATE mp_products SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")->execute([$reason, $pid]);
-                notify_user((int)$prod['owner_id'], 'Product Rejected', '"' . $prod['name'] . '" was not approved. Reason: ' . $reason, 'error');
+                notify_user((int)$prod['owner_id'], '❌ Product Rejected — Action Required',
+                    '"' . $prod['name'] . '" was not approved.' . "\n\nReason: " . $reason . "\n\nClick to edit and resubmit.",
+                    'error', 'seller_dashboard.php?tab=products');
                 log_audit_action($adminUser['id'], 'mp_product_reject', 'Rejected product #' . $pid . ': ' . $prod['name'] . '. Reason: ' . $reason);
                 log_mod_activity($adminUser['id'], 'marketplace', 'reject_product', $pid, $prod['name']);
                 flash('Product rejected.', 'info');
@@ -42,8 +49,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: marketplace.php?tab=products'); exit;
     }
 
-    // Shop verify / reject / suspend
-    if (in_array($postAction, ['approve_shop','reject_shop','suspend_shop'], true) && !empty($_POST['shop_id'])) {
+    // Shop verify / reject / suspend / unsuspend
+    if (in_array($postAction, ['approve_shop','reject_shop','suspend_shop','unsuspend_shop'], true) && !empty($_POST['shop_id'])) {
         $sid     = (int)$_POST['shop_id'];
         $reason  = trim($_POST['rejection_reason'] ?? '');
         $shopRow = $pdo->prepare('SELECT ms.*, u.id AS user_id, u.name AS owner_name FROM mp_shops ms JOIN users u ON ms.user_id=u.id WHERE ms.id=?');
@@ -68,6 +75,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 notify_user((int)$shop['user_id'], 'Shop Suspended', $shop['shop_name'] . ' has been suspended. Contact support.', 'warning');
                 log_audit_action($adminUser['id'], 'mp_shop_suspend', 'Suspended shop #' . $sid . ': ' . $shop['shop_name']);
                 flash('Shop suspended.', 'warning');
+            } elseif ($postAction === 'unsuspend_shop') {
+                $pdo->prepare("UPDATE mp_shops SET status='active', updated_at=NOW() WHERE id=?")->execute([$sid]);
+                notify_user((int)$shop['user_id'], 'Shop Reinstated ✅', $shop['shop_name'] . ' has been unsuspended and is active again.', 'success');
+                log_audit_action($adminUser['id'], 'mp_shop_unsuspend', 'Unsuspended shop #' . $sid . ': ' . $shop['shop_name']);
+                flash('Shop unsuspended.', 'success');
             }
         }
         header('Location: marketplace.php?tab=shops'); exit;
@@ -141,7 +153,7 @@ if ($tab === 'products') {
     $pf = $_GET['pf'] ?? 'pending_approval';
     $pw = in_array($pf,['pending_approval','approved','rejected','draft'],true) ? "AND mp.status='$pf'" : '';
     $pendingProducts = $pdo->query(
-        "SELECT mp.*, ms.shop_name, ms.id AS shop_id,
+        "SELECT mp.*, ms.shop_name, ms.id AS shop_id, ms.user_id AS owner_id,
                 (SELECT image_path FROM mp_product_images WHERE product_id=mp.id AND is_primary=1 LIMIT 1) AS primary_image,
                 mc.name AS cat_name
          FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id LEFT JOIN mp_categories mc ON mp.category_id=mc.id
@@ -296,12 +308,17 @@ if ($tab === 'settings') {
         </div>
         <?php if ($p['description']): ?><div style="font-size:.8rem;color:var(--text-muted,#6b7280);margin-bottom:10px;"><?php echo sanitize(mb_substr(strip_tags($p['description']),0,120)); ?>…</div><?php endif; ?>
         <?php if ($p['rejection_reason']): ?><div style="font-size:.78rem;background:#fee2e2;border-radius:6px;padding:5px 9px;margin-bottom:10px;">Rejection: <?php echo sanitize($p['rejection_reason']); ?></div><?php endif; ?>
+        <?php $mpCoi = !is_admin() && (int)($p['owner_id'] ?? 0) === (int)$adminUser['id']; ?>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <?php if ($mpCoi && in_array($p['status'],['pending_approval','draft'],true)): ?>
+            <span style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:4px 10px;border-radius:8px;">&#9888; Your product — cannot moderate</span>
+            <?php else: ?>
             <?php if ($p['status'] !== 'approved'): ?>
             <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="approve_product"><input type="hidden" name="product_id" value="<?php echo $p['id']; ?>"><button type="submit" class="button button-primary button-small">&#10003; Approve</button></form>
             <?php endif; ?>
             <?php if ($p['status'] !== 'rejected'): ?>
             <form method="post" style="margin:0;display:flex;gap:5px;align-items:center;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="reject_product"><input type="hidden" name="product_id" value="<?php echo $p['id']; ?>"><input type="text" name="rejection_reason" placeholder="Rejection reason *" style="font-size:.76rem;padding:4px 9px;width:200px;" required><button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;">&#10007; Reject</button></form>
+            <?php endif; ?>
             <?php endif; ?>
         </div>
     </div>
@@ -359,6 +376,8 @@ if ($tab === 'settings') {
             <?php endif; ?>
             <?php if ($s['status'] === 'active'): ?>
             <form method="post" style="margin:0;" onsubmit="return confirm('Suspend this shop?');"><?php echo csrf_field(); ?><input type="hidden" name="action" value="suspend_shop"><input type="hidden" name="shop_id" value="<?php echo $s['id']; ?>"><button type="submit" class="button button-small" style="background:#f59e0b;color:#fff;border-color:transparent;">&#9888; Suspend</button></form>
+            <?php elseif ($s['status'] === 'suspended'): ?>
+            <form method="post" style="margin:0;" onsubmit="return confirm('Unsuspend this shop?');"><?php echo csrf_field(); ?><input type="hidden" name="action" value="unsuspend_shop"><input type="hidden" name="shop_id" value="<?php echo $s['id']; ?>"><button type="submit" class="button button-small" style="background:#22a06b;color:#fff;border-color:transparent;">&#10003; Unsuspend</button></form>
             <?php endif; ?>
         </div>
     </div>

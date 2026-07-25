@@ -1,9 +1,11 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+$redirectTo = safe_redirect_target($_POST['redirect'] ?? $_GET['redirect'] ?? null);
+
 if (current_user()) {
-    header('Location: community.php');
+    header('Location: ' . ($redirectTo !== '' ? $redirectTo : 'community.php'));
     exit;
 }
 
@@ -11,6 +13,8 @@ $error = '';
 $info  = '';
 if (($_GET['msg'] ?? '') === 'password_changed') {
     $info = 'Your password was changed. Please log in with your new password.';
+} elseif (($_GET['msg'] ?? '') === 'session_expired') {
+    $info = 'Your session has expired due to inactivity. Please log in again — you\'ll be taken right back to where you left off.';
 }
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
@@ -31,10 +35,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$user || $user['banned'] || !password_verify($password, $user['password_hash'])) {
             login_rate_limit_record($ip);
             $error = 'Invalid credentials or account is blocked.';
+        } elseif (requires_verified_email('login') && !$user['email_verified']) {
+            // Don't count as a failed attempt — credentials are correct, just unverified
+            $error = 'Please verify your email address before logging in. <a href="resend_verification.php?email=' . urlencode($user['email']) . '" style="color:var(--primary,#0f766e);font-weight:700;">Resend verification email →</a>';
         } else {
             login_rate_limit_clear($ip);
             login_user($user);
-            header('Location: community.php');
+            if (!empty($_POST['remember_me'])) {
+                create_remember_token((int)$user['id']);
+            }
+            header('Location: ' . ($redirectTo !== '' ? $redirectTo : 'community.php'));
             exit;
         }
     }
@@ -57,16 +67,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <form class="card form-card" method="post" action="login.php">
             <?php echo csrf_field(); ?>
+            <?php if ($redirectTo !== ''): ?><input type="hidden" name="redirect" value="<?php echo sanitize($redirectTo); ?>"><?php endif; ?>
             <?php if ($info): ?>
                 <div class="alert alert-info"><?php echo sanitize($info); ?></div>
             <?php endif; ?>
             <?php if ($error): ?>
-                <div class="alert alert-error"><?php echo sanitize($error); ?></div>
+                <div class="alert alert-error"><?php echo $error; /* may contain a safe resend link */ ?></div>
             <?php endif; ?>
             <label>Email</label>
             <input type="email" name="email" required autocomplete="email" />
             <label>Password</label>
-            <input type="password" name="password" required autocomplete="current-password" />
+            <input type="password" name="password" id="login-password" required autocomplete="current-password" />
+            <label class="pw-show-label">
+              <input type="checkbox" onchange="togglePasswordField('login-password', this.checked)" />
+              Show password
+            </label>
+            <label class="pw-show-label">
+              <input type="checkbox" name="remember_me" value="1" />
+              Stay logged in
+            </label>
             <button type="submit" class="button button-primary">Login</button>
             <p class="small-note">
               <a href="forgot_password.php">Forgot password?</a> &nbsp;·&nbsp;
@@ -74,5 +93,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </p>
         </form>
     </main>
+    <script src="assets/js/password-toggle.js"></script>
 </body>
 </html>

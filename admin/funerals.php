@@ -22,6 +22,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: funerals.php?saved=1'); exit;
     }
 
+    // Featured settings
+    if (isset($_POST['save_featured'])) {
+        set_platform_setting('enable_paid_featured_funerals', isset($_POST['feat_paid']) ? '1' : '0');
+        log_audit_action($user['id'], 'funeral_feat_update', 'Updated funeral featuring settings');
+        header('Location: funerals.php?saved=1'); exit;
+    }
+
+    // Package CRUD
+    if (isset($_POST['pkg_action'])) {
+        $pa = $_POST['pkg_action'];
+        if ($pa === 'add_pkg') {
+            $pName = trim($_POST['pkg_name'] ?? '');
+            $pDays = max(1, (int)($_POST['pkg_days'] ?? 30));
+            $pPrice= max(0, (float)($_POST['pkg_price'] ?? 0));
+            if ($pName) {
+                $pdo->prepare("INSERT INTO featured_funeral_packages (name,duration_days,price,status) VALUES (?,?,?,'active')")
+                    ->execute([$pName, $pDays, $pPrice]);
+                flash('Package added.', 'success');
+            }
+        } elseif ($pa === 'toggle_pkg' && !empty($_POST['pkg_id'])) {
+            $pdo->prepare("UPDATE featured_funeral_packages SET status=IF(status='active','inactive','active') WHERE id=?")->execute([(int)$_POST['pkg_id']]);
+        } elseif ($pa === 'delete_pkg' && !empty($_POST['pkg_id'])) {
+            $pdo->prepare("DELETE FROM featured_funeral_packages WHERE id=?")->execute([(int)$_POST['pkg_id']]);
+            flash('Package deleted.', 'info');
+        }
+        header('Location: funerals.php?saved=1'); exit;
+    }
+
     $tid = (int)($_POST['id'] ?? 0);
     if ($tid) {
         if (isset($_POST['action'])) {
@@ -32,8 +60,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($row) {
                 if ($action === 'approve') {
+                    if (check_mod_coi('funeral', $tid, $user['id'])) {
+                        log_coi_violation($user['id'], 'funeral', $tid, 'approve');
+                        header('Location: funerals.php'); exit;
+                    }
                     $pdo->prepare("UPDATE funeral_announcements SET status='approved', updated_at=NOW() WHERE id=?")->execute([$tid]);
                     log_audit_action($user['id'], 'funeral_approve', "Approved funeral #{$tid}: {$row['deceased_name']}");
+                    log_mod_activity($user['id'], 'funerals', 'approve_funeral', $tid);
                     if ($row['user_id']) {
                         notify_user($row['user_id'], 'Funeral announcement published',
                             'Your announcement for "' . $row['deceased_name'] . '" has been approved and is now live.', 'success');
@@ -43,10 +76,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare("UPDATE funeral_announcements SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")
                         ->execute([$reason ?: null, $tid]);
                     log_audit_action($user['id'], 'funeral_reject', "Rejected funeral #{$tid}: {$row['deceased_name']}");
+                    log_mod_activity($user['id'], 'funerals', 'reject_funeral', $tid);
                     if ($row['user_id']) {
-                        $reasonNote = $reason ? " Reason: {$reason}" : ' Contact admin for details.';
-                        notify_user($row['user_id'], 'Funeral announcement not approved',
-                            'Your announcement for "' . $row['deceased_name'] . '" was not approved.' . $reasonNote . ' You can edit and resubmit it.', 'warning');
+                        $body = 'Your announcement for "' . $row['deceased_name'] . '" was not approved and needs your attention.';
+                        if ($reason) $body .= "\n\nReason: {$reason}";
+                        $body .= "\n\nClick to edit and resubmit.";
+                        notify_user($row['user_id'], '❌ Announcement Rejected — Action Required',
+                            $body, 'error', 'my_funerals.php?edit=' . $tid);
                     }
                 } elseif ($action === 'mark_paid') {
                     $pdo->prepare("UPDATE funeral_announcements SET status='pending', updated_at=NOW() WHERE id=?")->execute([$tid]);
@@ -95,6 +131,18 @@ $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
 $counts = $pdo->query("SELECT status, COUNT(*) as n FROM funeral_announcements GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
+
+// Feature settings
+$featPaid    = get_platform_setting('enable_paid_featured_funerals', '0') === '1';
+$featPkgs    = $pdo->query("SELECT * FROM featured_funeral_packages ORDER BY duration_days ASC")->fetchAll();
+$featRevenue = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type='featured_funeral' AND status='paid'")->fetchColumn();
+$featActive  = (int)$pdo->query("SELECT COUNT(*) FROM funeral_announcements WHERE featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())")->fetchColumn();
+
+// Monetization stats
+$feeRevenue     = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type='funeral_post' AND status='paid'")->fetchColumn();
+$feeThisMonth   = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type='funeral_post' AND status='paid' AND MONTH(paid_at)=MONTH(NOW()) AND YEAR(paid_at)=YEAR(NOW())")->fetchColumn();
+$feePendingCount= (int)$pdo->query("SELECT COUNT(*) FROM platform_payments WHERE payment_type='funeral_post' AND status='pending'")->fetchColumn();
+$feePayingUsers = (int)$pdo->query("SELECT COUNT(DISTINCT user_id) FROM platform_payments WHERE payment_type='funeral_post' AND status='paid'")->fetchColumn();
 $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review','approved'=>'Published','rejected'=>'Rejected'];
 ?>
 <!DOCTYPE html>
@@ -142,21 +190,122 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
     <div class="af-shell">
         <?php if (isset($_GET['saved'])): ?><div class="alert alert-success" style="margin-bottom:14px;">Settings saved.</div><?php endif; ?>
 
-        <!-- Fee settings -->
+        <!-- Monetization panel -->
         <div class="af-fee-box">
-            <h2>Fee Settings</h2>
-            <form method="post" action="funerals.php" class="af-fee-row">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+                <div>
+                    <h2 style="font-size:.9rem;font-weight:800;margin:0 0 2px;">💰 Funeral Announcement Fee</h2>
+                    <p style="font-size:.76rem;color:var(--muted,#6b7280);margin:0;">Charge users to publish funeral announcements.</p>
+                </div>
+                <span style="background:<?php echo $feeEnabled?'#d1fae5':'#f3f4f6'; ?>;color:<?php echo $feeEnabled?'#065f46':'#6b7280'; ?>;font-size:.72rem;font-weight:800;padding:3px 10px;border-radius:20px;">
+                    <?php echo $feeEnabled ? '● ENABLED' : '○ DISABLED'; ?>
+                </span>
+            </div>
+            <!-- Revenue stats -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;margin-bottom:14px;">
+                <div style="background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px;text-align:center;">
+                    <strong style="display:block;font-size:1.1rem;font-weight:900;color:var(--primary,#0f766e);">GH₵ <?php echo number_format($feeRevenue,2); ?></strong>
+                    <span style="font-size:.68rem;color:var(--muted,#6b7280);">Total Revenue</span>
+                </div>
+                <div style="background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px;text-align:center;">
+                    <strong style="display:block;font-size:1.1rem;font-weight:900;color:var(--primary,#0f766e);">GH₵ <?php echo number_format($feeThisMonth,2); ?></strong>
+                    <span style="font-size:.68rem;color:var(--muted,#6b7280);">This Month</span>
+                </div>
+                <div style="background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px;text-align:center;">
+                    <strong style="display:block;font-size:1.1rem;font-weight:900;color:<?php echo $feePendingCount?'#f59e0b':'#6b7280'; ?>;"><?php echo $feePendingCount; ?></strong>
+                    <span style="font-size:.68rem;color:var(--muted,#6b7280);">Pending Payment</span>
+                </div>
+                <div style="background:var(--surface-muted,#f8fafc);border-radius:10px;padding:10px;text-align:center;">
+                    <strong style="display:block;font-size:1.1rem;font-weight:900;"><?php echo $feePayingUsers; ?></strong>
+                    <span style="font-size:.68rem;color:var(--muted,#6b7280);">Paying Users</span>
+                </div>
+            </div>
+            <?php if ($feePendingCount > 0): ?>
+            <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;font-size:.8rem;margin-bottom:12px;">
+                ⏳ <strong><?php echo $feePendingCount; ?> announcement<?php echo $feePendingCount!==1?'s':''; ?></strong> awaiting payment from users.
+                <a href="funerals.php?status=pending_payment" style="color:#92400e;font-weight:700;margin-left:6px;">View →</a>
+            </div>
+            <?php endif; ?>
+            <!-- Settings form -->
+            <form method="post" action="funerals.php" class="af-fee-row" style="padding-top:14px;border-top:1px solid var(--border);">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="save_fee" value="1">
-                <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;font-weight:600;cursor:pointer;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:.86rem;font-weight:600;cursor:pointer;">
                     <input type="checkbox" name="fee_enabled" value="1" <?php echo $feeEnabled ? 'checked' : ''; ?>>
-                    Require payment to publish
+                    Require fee to publish announcements
                 </label>
-                <label style="display:flex;align-items:center;gap:6px;font-size:.88rem;font-weight:600;">
-                    Amount: GH₵
-                    <input type="number" name="fee_amount" value="<?php echo (int)$feeAmount; ?>" min="0" step="0.01" style="width:90px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);">
+                <label style="display:flex;align-items:center;gap:6px;font-size:.86rem;font-weight:600;">
+                    GH₵ <input type="number" name="fee_amount" value="<?php echo number_format($feeAmount,2,'.',''); ?>" min="0" step="0.01" style="width:90px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);">
                 </label>
-                <button class="button button-small button-primary">Save</button>
+                <button class="button button-small button-primary">Save Settings</button>
+            </form>
+        </div>
+
+        <!-- Featuring panel -->
+        <div style="background:var(--surface,#fff);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+                <div>
+                    <h3 style="font-size:.9rem;font-weight:800;margin:0 0 2px;">⭐ Announcement Featuring</h3>
+                    <p style="font-size:.76rem;color:var(--muted,#6b7280);margin:0;">Families can pay to pin announcements at the top with a featured badge.</p>
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <span style="background:var(--primary-soft,#d1fae5);color:var(--primary,#0f766e);font-size:.76rem;font-weight:800;padding:4px 10px;border-radius:10px;">GH₵ <?php echo number_format($featRevenue,2); ?> earned</span>
+                    <span style="background:var(--surface-muted,#f3f4f6);font-size:.76rem;font-weight:800;padding:4px 10px;border-radius:10px;"><?php echo $featActive; ?> active now</span>
+                </div>
+            </div>
+            <form method="post" action="funerals.php" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-bottom:14px;border-bottom:1px solid var(--border);margin-bottom:14px;">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="save_featured" value="1">
+                <label style="display:flex;align-items:center;gap:6px;font-size:.86rem;font-weight:600;cursor:pointer;">
+                    <input type="checkbox" name="feat_paid" value="1" <?php echo $featPaid ? 'checked' : ''; ?>>
+                    Charge families to feature announcements
+                </label>
+                <span style="font-size:.76rem;color:var(--muted,#6b7280);"><?php echo $featPaid ? 'Users must choose a package and pay.' : 'Currently free.'; ?></span>
+                <button type="submit" class="button button-primary button-small">Save</button>
+            </form>
+            <p style="font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#6b7280);margin:0 0 10px;">Packages</p>
+            <?php if ($featPkgs): ?>
+            <table style="width:100%;border-collapse:collapse;font-size:.83rem;margin-bottom:12px;">
+                <thead><tr>
+                    <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);font-size:.7rem;font-weight:800;text-transform:uppercase;color:var(--muted);">Name</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid var(--border);font-size:.7rem;font-weight:800;text-transform:uppercase;color:var(--muted);">Days</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid var(--border);font-size:.7rem;font-weight:800;text-transform:uppercase;color:var(--muted);">Price</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid var(--border);font-size:.7rem;font-weight:800;text-transform:uppercase;color:var(--muted);">Status</th>
+                    <th style="padding:6px 8px;border-bottom:1px solid var(--border);"></th>
+                </tr></thead>
+                <tbody>
+                <?php foreach ($featPkgs as $pkg): ?>
+                <tr style="<?php echo $pkg['status']==='inactive'?'opacity:.5':''; ?>">
+                    <td style="padding:7px 8px;border-bottom:1px solid var(--border);"><?php echo sanitize($pkg['name']); ?></td>
+                    <td style="padding:7px 8px;border-bottom:1px solid var(--border);text-align:center;"><?php echo (int)$pkg['duration_days']; ?></td>
+                    <td style="padding:7px 8px;border-bottom:1px solid var(--border);font-weight:700;color:var(--primary);">GH₵ <?php echo number_format((float)$pkg['price'],2); ?></td>
+                    <td style="padding:7px 8px;border-bottom:1px solid var(--border);">
+                        <span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:<?php echo $pkg['status']==='active'?'#d1fae5':'#f3f4f6'; ?>;color:<?php echo $pkg['status']==='active'?'#065f46':'#6b7280'; ?>;"><?php echo ucfirst($pkg['status']); ?></span>
+                    </td>
+                    <td style="padding:7px 8px;border-bottom:1px solid var(--border);">
+                        <form method="post" action="funerals.php" style="display:inline;">
+                            <?php echo csrf_field(); ?><input type="hidden" name="pkg_action" value="toggle_pkg"><input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>">
+                            <button type="submit" class="button button-small button-secondary" style="font-size:.7rem;padding:2px 8px;"><?php echo $pkg['status']==='active'?'Disable':'Enable'; ?></button>
+                        </form>
+                        <form method="post" action="funerals.php" style="display:inline;" onsubmit="return confirm('Delete?')">
+                            <?php echo csrf_field(); ?><input type="hidden" name="pkg_action" value="delete_pkg"><input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>">
+                            <button type="submit" class="button button-small" style="font-size:.7rem;padding:2px 8px;background:#fee2e2;color:#991b1b;border-color:transparent;">Del</button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            <?php endif; ?>
+            <form method="post" action="funerals.php" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                <?php echo csrf_field(); ?><input type="hidden" name="pkg_action" value="add_pkg">
+                <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Name</label>
+                    <input type="text" name="pkg_name" placeholder="e.g. 14 Days" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:110px;"></div>
+                <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Days</label>
+                    <input type="number" name="pkg_days" min="1" value="14" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:70px;"></div>
+                <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label>
+                    <input type="number" name="pkg_price" min="0" step="0.01" value="0" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:90px;"></div>
+                <button type="submit" class="button button-primary button-small">+ Add Package</button>
             </form>
         </div>
 
@@ -220,17 +369,22 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
                         <td style="text-align:center;"><?php echo number_format((int)$fa['view_count']); ?></td>
                         <td style="text-align:center;"><?php echo $fa['featured'] ? '⭐' : '—'; ?></td>
                         <td>
+                            <?php $faCoi = !is_admin() && (int)($fa['user_id'] ?? 0) === (int)$user['id']; ?>
                             <div class="af-actions">
                                 <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">View</a>
                                 <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small">Edit</a>
                                 <?php if ($fa['status'] === 'pending_payment'): ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="mark_paid"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fffbeb;color:#92400e;border-color:#f59e0b;">Mark Paid</button></form>
                                 <?php endif; ?>
+                                <?php if ($faCoi && in_array($fa['status'],['pending_payment','pending'],true)): ?>
+                                <span style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:8px;">⚠️ Yours</span>
+                                <?php else: ?>
                                 <?php if (in_array($fa['status'],['pending_payment','pending','rejected'])): ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="approve"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Approve</button></form>
                                 <?php endif; ?>
-                                <?php if (in_array($fa['status'], ['pending','rejected'], true)): ?>
+                                <?php if ($fa['status'] !== 'rejected'): ?>
                                 <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="openRejectModal(<?php echo (int)$fa['id']; ?>)">Reject</button>
+                                <?php endif; ?>
                                 <?php endif; ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $fa['featured'] ? 'Unfeature' : 'Feature'; ?></button></form>
                                 <form method="post" action="funerals.php" onsubmit="return confirm('Delete this announcement?')"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>

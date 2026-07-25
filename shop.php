@@ -25,7 +25,7 @@ $orderBy = match($sort) {
     'price_asc'  => 'COALESCE(mp.discount_price,mp.price) ASC',
     'price_desc' => 'COALESCE(mp.discount_price,mp.price) DESC',
     'popular'    => 'mp.view_count DESC',
-    default      => 'mp.is_featured DESC, mp.created_at DESC',
+    default      => '(mp.is_featured=1 AND (mp.featured_end IS NULL OR mp.featured_end>=CURDATE())) DESC, mp.created_at DESC',
 };
 $prodStmt = $pdo->prepare(
     "SELECT mp.*, mc.name AS cat_name, mc.icon AS cat_icon,
@@ -60,7 +60,7 @@ $shopReviews = $revStmt->fetchAll();
         .sp-banner { height:180px; background:linear-gradient(135deg,var(--primary-soft,#d1fae5),#a7f3d0); position:relative; overflow:hidden; }
         .sp-banner img { width:100%; height:100%; object-fit:cover; }
         .sp-header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 16px 14px; }
-        .sp-logo-wrap { margin-top:-40px; display:flex; align-items:flex-end; gap:14px; margin-bottom:10px; }
+        .sp-logo-wrap { margin-top:10px; display:flex; align-items:flex-end; gap:14px; margin-bottom:10px; }
         .sp-logo { width:80px; height:80px; border-radius:14px; border:3px solid var(--surface); background:var(--primary-soft,#d1fae5); display:flex; align-items:center; justify-content:center; font-size:2rem; overflow:hidden; flex-shrink:0; }
         .sp-logo img { width:100%; height:100%; object-fit:cover; }
         .sp-name { font-size:1.2rem; font-weight:900; line-height:1.2; }
@@ -81,15 +81,17 @@ $shopReviews = $revStmt->fetchAll();
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
 
-<header style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;">
+<header style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 64px 10px 16px;display:flex;align-items:center;justify-content:space-between;">
     <a href="marketplace.php" class="button button-secondary button-small">← Marketplace</a>
     <?php if ($user): ?><a href="cart.php" class="button button-secondary button-small">🛒<?php echo $cartCount>0?" ($cartCount)":''; ?></a><?php else: ?><a href="login.php" class="button button-secondary button-small">Sign in</a><?php endif; ?>
 </header>
 
+<?php if ($shop['banner_path']): ?>
 <!-- Banner -->
 <div class="sp-banner">
-    <?php if ($shop['banner_path']): ?><img src="<?php echo sanitize($shop['banner_path']); ?>" alt=""><?php endif; ?>
+    <img src="<?php echo sanitize($shop['banner_path']); ?>" alt="">
 </div>
+<?php endif; ?>
 
 <!-- Shop header -->
 <div class="sp-header">
@@ -101,6 +103,7 @@ $shopReviews = $revStmt->fetchAll();
             <div class="sp-name">
                 <?php echo sanitize($shop['shop_name']); ?>
                 <?php if ($shop['verification_status']==='approved'): ?><span style="background:#10b981;color:#fff;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:10px;margin-left:6px;">✓ VERIFIED</span><?php endif; ?>
+                <?php if (!empty($shop['is_subscribed']) && !empty($shop['subscription_end']) && $shop['subscription_end'] >= date('Y-m-d')): ?><span style="background:#fef3c7;color:#92400e;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:10px;margin-left:4px;">⭐ PRO</span><?php endif; ?>
             </div>
             <div class="sp-meta">
                 <?php if ($shop['rating']>0): ?>⭐ <?php echo number_format((float)$shop['rating'],1); ?><?php endif; ?>
@@ -116,6 +119,7 @@ $shopReviews = $revStmt->fetchAll();
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <?php if ($shop['phone']): ?><a href="tel:<?php echo sanitize($shop['phone']); ?>" class="button button-secondary button-small">📞 Call</a><?php endif; ?>
         <?php if ($shop['email']): ?><a href="mailto:<?php echo sanitize($shop['email']); ?>" class="button button-secondary button-small">✉ Email</a><?php endif; ?>
+        <?php if (!empty($shop['google_maps_link'])): ?><a href="<?php echo sanitize($shop['google_maps_link']); ?>" target="_blank" rel="noopener" class="button button-secondary button-small">📍 Pickup Location</a><?php endif; ?>
     </div>
 </div>
 

@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
@@ -20,6 +20,10 @@ $success = match($_GET['msg'] ?? '') {
     default                 => '',
 };
 $skillCategories = get_skill_categories_with_skills();
+$pendingDeletionRequest = null;
+$dr = $pdo->prepare("SELECT * FROM account_deletion_requests WHERE user_id=? AND status='pending' LIMIT 1");
+$dr->execute([$user['id']]);
+$pendingDeletionRequest = $dr->fetch() ?: null;
 $workerProfile = null;
 if ($user['role'] === 'worker') {
     $wpStmt = $pdo->prepare('SELECT * FROM worker_profiles WHERE user_id = ?');
@@ -28,7 +32,7 @@ if ($user['role'] === 'worker') {
 }
 
 function settings_refresh_user(PDO $pdo, $userId) {
-    $stmt = $pdo->prepare('SELECT id, name, username, email, email_verified, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT id, name, username, email, email_verified, role, phone, town_id, custom_town, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
     $stmt->execute([$userId]);
     $fresh = $stmt->fetch();
     $_SESSION['user'] = $fresh;
@@ -79,13 +83,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'location') {
-    $townId    = intval($_POST['town_id'] ?? 0) ?: null;
+    $townIdRaw   = $_POST['town_id'] ?? '';
+    $customTown  = null;
+    if ($townIdRaw === '__other__') {
+        $customTown = trim($_POST['custom_town'] ?? '');
+        $townId = $customTown !== '' ? get_other_town_id() : null;
+    } else {
+        $townId = intval($townIdRaw) ?: null;
+    }
     $latitude  = ($_POST['latitude']  ?? '') !== '' ? (float)$_POST['latitude']  : ($user['latitude']  ?? null);
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : ($user['longitude'] ?? null);
     if (!$townId) {
-        $error = 'Please select your town.';
+        $error = ($townIdRaw === '__other__') ? 'Please specify your location.' : 'Please select your town.';
     } else {
-        $pdo->prepare('UPDATE users SET town_id=?,latitude=?,longitude=? WHERE id=?')->execute([$townId,$latitude,$longitude,$user['id']]);
+        $pdo->prepare('UPDATE users SET town_id=?,custom_town=?,latitude=?,longitude=? WHERE id=?')->execute([$townId,$customTown,$latitude,$longitude,$user['id']]);
         $user = settings_refresh_user($pdo, $user['id']);
         header("Location: settings.php?section={$section}&msg=location_updated"); exit;
     }
@@ -477,8 +488,9 @@ if (!$isAjax): ?>
 <form class="card form-card" method="post" action="settings.php?section=profile">
     <?php echo csrf_field(); ?>
     <input type="hidden" name="form" value="location" />
+    <?php $isOtherTown = !empty($user['custom_town']); ?>
     <label>Town</label>
-    <select name="town_id" required>
+    <select name="town_id" required onchange="document.getElementById('custom-town-row').style.display=this.value==='__other__'?'block':'none';">
         <option value="">Select your town</option>
         <?php $currentDistrict = null; ?>
         <?php foreach ($towns as $town): ?>
@@ -487,10 +499,14 @@ if (!$isAjax): ?>
                 <optgroup label="<?php echo sanitize($town['district']); ?>">
                 <?php $currentDistrict = $town['district']; ?>
             <?php endif; ?>
-            <option value="<?php echo $town['id']; ?>" <?php echo ((int)($user['town_id'] ?? 0) === (int)$town['id']) ? 'selected' : ''; ?>><?php echo sanitize($town['name']); ?></option>
+            <option value="<?php echo $town['id']; ?>" <?php echo (!$isOtherTown && (int)($user['town_id'] ?? 0) === (int)$town['id']) ? 'selected' : ''; ?>><?php echo sanitize($town['name']); ?></option>
         <?php endforeach; ?>
         <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
+        <option value="__other__" <?php echo $isOtherTown ? 'selected' : ''; ?>>Other (outside Akuapem — specify)</option>
     </select>
+    <div id="custom-town-row" style="display:<?php echo $isOtherTown ? 'block' : 'none'; ?>;margin-top:8px;">
+        <input type="text" name="custom_town" placeholder="Enter your town/city" value="<?php echo sanitize($user['custom_town'] ?? ''); ?>" />
+    </div>
     <input type="hidden" name="latitude"  id="latitude"  value="<?php echo $user['latitude']  !== null ? sanitize($user['latitude'])  : ''; ?>" />
     <input type="hidden" name="longitude" id="longitude" value="<?php echo $user['longitude'] !== null ? sanitize($user['longitude']) : ''; ?>" />
     <button type="button" id="use-my-location" class="button button-secondary button-small">Update my GPS location</button>
@@ -769,13 +785,23 @@ if (!$isAjax): ?>
 <?php elseif ($activeSection === 'privacy'): ?>
 <h2 class="sn-panel-title">🔒 Privacy &amp; Security</h2>
 <section class="card form-card">
-    <p class="meta">Your account details are only shared with the customers and workers you transact with. Closing your account deactivates it and signs you out immediately.</p>
-    <form method="post" action="delete_account.php" onsubmit="return confirm('Are you sure you want to close your account? You will be signed out immediately.');">
-        <?php echo csrf_field(); ?>
-        <label>Confirm your password</label>
-        <input type="password" name="current_password" required placeholder="Enter your password to confirm" />
-        <button type="submit" class="button button-secondary" style="color:#c0392b;border-color:#c0392b;">Close my account</button>
-    </form>
+    <?php if ($pendingDeletionRequest): ?>
+        <p class="meta">Your account details are only shared with the customers and workers you transact with.</p>
+        <div class="alert alert-info">
+            <strong>Account closure request pending review.</strong><br>
+            Submitted <?php echo sanitize(date('d M Y', strtotime($pendingDeletionRequest['created_at']))); ?>. An admin will review your request and reason — you'll be notified once it's processed.
+        </div>
+    <?php else: ?>
+        <p class="meta">Your account details are only shared with the customers and workers you transact with. Closing your account submits a request for admin review — your account stays active until it's approved.</p>
+        <form method="post" action="delete_account.php" onsubmit="return confirm('Submit a request to close your account? An admin will review it before anything happens to your account.');">
+            <?php echo csrf_field(); ?>
+            <label>Why do you want to close your account?</label>
+            <textarea name="reason" required rows="3" placeholder="Let us know your reason — this helps admin review your request."></textarea>
+            <label>Confirm your password</label>
+            <input type="password" name="current_password" required placeholder="Enter your password to confirm" />
+            <button type="submit" class="button button-secondary" style="color:#c0392b;border-color:#c0392b;">Request account closure</button>
+        </form>
+    <?php endif; ?>
 </section>
 
 <?php elseif ($activeSection === 'privacypolicy'): ?>

@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../marketplace_functions.php';
+require_once __DIR__ . '/../paystack.php';
 
 require_login();
 if (!is_admin()) { header('Location: index.php'); exit; }
@@ -8,41 +10,92 @@ if (!is_admin()) { header('Location: index.php'); exit; }
 $adminUser = current_user();
 $tab       = $_GET['tab'] ?? 'pending';
 $flash     = get_flash();
+$period    = $_GET['period'] ?? 'month';
+$reqStatus = $_GET['req_status'] ?? 'all';
+$q         = trim($_GET['q'] ?? '');
 
 // ── POST: payout review actions ────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $postAction = $_POST['action'] ?? '';
 
-    if ($postAction === 'approve_payout' && !empty($_POST['payout_id'])) {
+    // Approve & Pay / Retry both fire the same real Paystack transfer —
+    // process_marketplace_payout() is also what auto-mode calls immediately
+    // on request creation, so behavior is identical either way, only the
+    // timing/human-checkpoint differs.
+    if (($postAction === 'approve_and_pay_payout' || $postAction === 'retry_payout') && !empty($_POST['payout_id'])) {
+        $pid    = (int)$_POST['payout_id'];
+        $result = process_marketplace_payout($pid, $adminUser['id']);
+        if ($result['success']) {
+            flash($result['status'] === 'paid' ? 'Payout approved and paid.' : 'Payout sent — processing via Paystack.', 'success');
+        } else {
+            flash('Payout could not be processed: ' . $result['error'], 'error');
+        }
+    }
+
+    // Escape hatch for when Paystack transfer isn't viable for a request
+    // (no Paystack account, unsupported corridor, etc.) — the admin pays the
+    // seller some other way themselves and records it here, same as the
+    // original fully-manual flow this feature is layered on top of.
+    if ($postAction === 'mark_paid_manually_payout' && !empty($_POST['payout_id'])) {
         $pid = (int)$_POST['payout_id'];
-        $req = $pdo->prepare("SELECT * FROM mp_payout_requests WHERE id=? AND status='pending'");
+        $req = $pdo->prepare("SELECT * FROM mp_payout_requests WHERE id=? AND status IN ('pending','failed')");
         $req->execute([$pid]);
         $req = $req->fetch();
         if ($req) {
-            // Atomic — only deduct if the shop still has enough available balance
             $upd = $pdo->prepare("UPDATE mp_shops SET available_balance = available_balance - ? WHERE id=? AND available_balance >= ?");
             $upd->execute([$req['amount'], $req['shop_id'], $req['amount']]);
             if ($upd->rowCount() > 0) {
-                $pdo->prepare("UPDATE mp_payout_requests SET status='approved', reviewed_by=?, reviewed_at=NOW() WHERE id=?")
+                $pdo->prepare("UPDATE mp_payout_requests SET status='paid', failure_reason=NULL, reviewed_by=?, reviewed_at=NOW(), paid_at=NOW() WHERE id=?")
                     ->execute([$adminUser['id'], $pid]);
                 $pdo->prepare("INSERT INTO mp_wallet_transactions (shop_id, payout_id, type, amount, created_at) VALUES (?,?,?,?,NOW())")
                     ->execute([$req['shop_id'], $pid, 'withdrawal', $req['amount']]);
                 $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
                 $shopOwner->execute([$req['shop_id']]);
                 if ($uid = $shopOwner->fetchColumn()) {
-                    notify_user((int)$uid, 'Withdrawal Approved ✅',
-                        'Your withdrawal request of GH₵ ' . number_format($req['amount'], 2) . ' has been approved and will be paid out shortly.',
+                    notify_user((int)$uid, 'Withdrawal Paid 💵',
+                        'Your withdrawal request of GH₵ ' . number_format($req['amount'], 2) . ' has been paid.',
                         'success', 'seller_dashboard.php?tab=wallet');
                 }
-                log_audit_action($adminUser['id'], 'mp_payout_approve', "Approved payout #$pid (GHS " . number_format($req['amount'],2) . ")");
-                flash('Payout approved.', 'success');
+                log_audit_action($adminUser['id'], 'mp_payout_mark_paid_manual', "Manually marked payout #$pid paid (GHS " . number_format($req['amount'],2) . ")");
+                flash('Payout marked as paid.', 'success');
             } else {
                 flash('Shop no longer has enough available balance for this payout.', 'error');
             }
         }
     }
 
+    if ($postAction === 'check_transfer_status' && !empty($_POST['payout_id'])) {
+        $pid = (int)$_POST['payout_id'];
+        $req = $pdo->prepare("SELECT * FROM mp_payout_requests WHERE id=? AND status='processing'");
+        $req->execute([$pid]);
+        $req = $req->fetch();
+        if ($req && $req['paystack_transfer_code']) {
+            $check = paystack_check_transfer_status($req['paystack_transfer_code']);
+            if ($check['success'] && $check['status'] === 'success') {
+                finalize_marketplace_payout_transfer($req['paystack_transfer_reference'], 'transfer.success');
+                flash('Transfer confirmed — payout marked paid.', 'success');
+            } elseif ($check['success'] && in_array($check['status'], ['failed', 'reversed'], true)) {
+                finalize_marketplace_payout_transfer($req['paystack_transfer_reference'], 'transfer.' . $check['status']);
+                flash('Transfer ' . $check['status'] . ' — balance restored.', 'error');
+            } else {
+                flash('Still processing on Paystack\'s side — check again shortly.', 'info');
+            }
+        }
+    }
+
+    if ($postAction === 'sync_banks') {
+        $sync = paystack_sync_banks();
+        if ($sync['success']) {
+            log_audit_action($adminUser['id'], 'mp_banks_synced', "Synced {$sync['count']} banks/networks from Paystack");
+            flash("Synced {$sync['count']} banks/networks from Paystack.", 'success');
+        } else {
+            flash('Could not sync banks: ' . $sync['error'], 'error');
+        }
+    }
+
+    // Legacy: finalizes any request already sitting in 'approved' from before
+    // the two steps were merged above.
     if ($postAction === 'mark_paid_payout' && !empty($_POST['payout_id'])) {
         $pid = (int)$_POST['payout_id'];
         $pdo->prepare("UPDATE mp_payout_requests SET status='paid', paid_at=NOW() WHERE id=? AND status='approved'")
@@ -78,25 +131,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (isset($_POST['mp_payout_confirmation_days'])) {
             set_platform_setting('mp_payout_confirmation_days', max(0, (int)$_POST['mp_payout_confirmation_days']));
         }
+        if (in_array($_POST['mp_payout_mode'] ?? '', ['manual', 'auto'], true)) {
+            set_platform_setting('mp_payout_mode', $_POST['mp_payout_mode']);
+        }
         log_audit_action($adminUser['id'], 'mp_payout_settings_save', 'Updated marketplace commission/payout settings');
         flash('Settings saved.', 'success');
     }
 
-    header('Location: mp_payouts.php?tab=' . $tab);
+    $redirectQs = http_build_query(array_filter([
+        'tab' => $tab, 'period' => $period !== 'month' ? $period : null,
+        'req_status' => $reqStatus !== 'all' ? $reqStatus : null, 'q' => $q ?: null,
+    ]));
+    header('Location: mp_payouts.php?' . $redirectQs);
     exit;
 }
 
 // ── Load data ───────────────────────────────────────────────────────────────
-$payoutRequests = $pdo->query(
+// Status/search filters on the requests list (real pagination isn't needed yet
+// at this volume, but flat unfiltered lists get unwieldy fast once sellers churn
+// through withdrawals regularly).
+$reqWhere  = [];
+$reqParams = [];
+if (in_array($reqStatus, ['pending','approved','processing','paid','rejected','failed'], true)) {
+    $reqWhere[] = 'pr.status = ?';
+    $reqParams[] = $reqStatus;
+}
+if ($q !== '') {
+    $reqWhere[] = '(ms.shop_name LIKE ? OR u.name LIKE ? OR u.email LIKE ?)';
+    $like = '%' . $q . '%';
+    array_push($reqParams, $like, $like, $like);
+}
+$reqWhereSql = $reqWhere ? 'WHERE ' . implode(' AND ', $reqWhere) : '';
+
+$payoutStmt = $pdo->prepare(
     "SELECT pr.*, ms.shop_name, u.name AS owner_name, u.email AS owner_email
      FROM mp_payout_requests pr
      JOIN mp_shops ms ON pr.shop_id = ms.id
      JOIN users u ON ms.user_id = u.id
+     $reqWhereSql
      ORDER BY pr.created_at DESC LIMIT 100"
-)->fetchAll();
+);
+$payoutStmt->execute($reqParams);
+$payoutRequests = $payoutStmt->fetchAll();
 
-$pendingCount  = count(array_filter($payoutRequests, fn($r) => $r['status'] === 'pending'));
-$approvedCount = count(array_filter($payoutRequests, fn($r) => $r['status'] === 'approved'));
+$pendingCount  = (int)$pdo->query("SELECT COUNT(*) FROM mp_payout_requests WHERE status='pending'")->fetchColumn();
 
 $totalPending   = (float)$pdo->query("SELECT COALESCE(SUM(pending_balance),0) FROM mp_shops")->fetchColumn();
 $totalAvailable = (float)$pdo->query("SELECT COALESCE(SUM(available_balance),0) FROM mp_shops")->fetchColumn();
@@ -104,6 +182,63 @@ $totalPaidOut   = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM mp_pay
 
 $commissionPct  = get_platform_setting('mp_commission_percent', '10');
 $confirmDays    = get_platform_setting('mp_payout_confirmation_days', '3');
+$payoutMode     = get_platform_setting('mp_payout_mode', 'manual');
+
+// ── Analytics (period-filtered) ────────────────────────────────────────────
+if ($tab === 'analytics') {
+    $dateFilter = match($period) {
+        'today' => 'AND DATE(created_at) = CURDATE()',
+        'week'  => 'AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+        'month' => 'AND MONTH(created_at)=MONTH(NOW()) AND YEAR(created_at)=YEAR(NOW())',
+        'year'  => 'AND YEAR(created_at)=YEAR(NOW())',
+        default => '',
+    };
+
+    $paidOutDateFilter = match($period) {
+        'today' => 'AND DATE(paid_at) = CURDATE()',
+        'week'  => 'AND paid_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)',
+        'month' => 'AND MONTH(paid_at)=MONTH(NOW()) AND YEAR(paid_at)=YEAR(NOW())',
+        'year'  => 'AND YEAR(paid_at)=YEAR(NOW())',
+        default => '',
+    };
+
+    $anCommission = (float)$pdo->query("SELECT COALESCE(SUM(commission_amount),0) FROM mp_orders WHERE payment_status IN ('paid','refunded') $dateFilter")->fetchColumn();
+    $anGmv        = (float)$pdo->query("SELECT COALESCE(SUM(total_amount),0) FROM mp_orders WHERE payment_status IN ('paid','refunded') $dateFilter")->fetchColumn();
+    $anOrderCount = (int)$pdo->query("SELECT COUNT(*) FROM mp_orders WHERE payment_status IN ('paid','refunded') $dateFilter")->fetchColumn();
+    $anRefunded   = (float)$pdo->query("SELECT COALESCE(SUM(total_amount),0) FROM mp_orders WHERE payment_status='refunded' $dateFilter")->fetchColumn();
+    $anPaidOut    = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM mp_payout_requests WHERE status='paid' $paidOutDateFilter")->fetchColumn();
+
+    $anStatusCounts = ['pending'=>0,'approved'=>0,'processing'=>0,'paid'=>0,'rejected'=>0,'failed'=>0];
+    foreach ($pdo->query("SELECT status, COUNT(*) AS cnt FROM mp_payout_requests GROUP BY status")->fetchAll() as $row) {
+        $anStatusCounts[$row['status']] = (int)$row['cnt'];
+    }
+
+    // Daily commission — fixed 30-day window regardless of period pill, same
+    // convention as the other admin analytics charts in this app.
+    $anDaily = $pdo->query(
+        "SELECT DATE(created_at) AS d, SUM(commission_amount) AS rev
+         FROM mp_orders
+         WHERE payment_status IN ('paid','refunded') AND created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+         GROUP BY DATE(created_at)"
+    )->fetchAll();
+    $anDailyMap = array_column($anDaily, 'rev', 'd');
+    $anDailyLabels = $anDailyRevenue = [];
+    for ($i = 29; $i >= 0; $i--) {
+        $d = date('Y-m-d', strtotime("-{$i} days"));
+        $anDailyLabels[] = date('d M', strtotime($d));
+        $anDailyRevenue[] = (float)($anDailyMap[$d] ?? 0);
+    }
+
+    // mp_shops also has a created_at column, so the bare $dateFilter would be an
+    // ambiguous-column error here now that this query joins both tables — qualify it.
+    $topShopsDateFilter = str_replace('created_at', 'mo.created_at', $dateFilter);
+    $anTopShops = $pdo->query(
+        "SELECT ms.shop_name, SUM(mo.commission_amount) AS commission, COUNT(*) AS orders
+         FROM mp_orders mo JOIN mp_shops ms ON mo.shop_id = ms.id
+         WHERE mo.payment_status='paid' $topShopsDateFilter
+         GROUP BY mo.shop_id ORDER BY commission DESC LIMIT 5"
+    )->fetchAll();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -158,38 +293,57 @@ $confirmDays    = get_platform_setting('mp_payout_confirmation_days', '3');
         <a href="?tab=pending" class="mp-tab <?php echo $tab==='pending'?'active':''; ?>">
             💰 Requests <?php if ($pendingCount): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $pendingCount; ?></span><?php endif; ?>
         </a>
+        <a href="?tab=analytics" class="mp-tab <?php echo $tab==='analytics'?'active':''; ?>">📊 Analytics</a>
         <a href="?tab=settings" class="mp-tab <?php echo $tab==='settings'?'active':''; ?>">⚙️ Settings</a>
     </div>
 
     <!-- ═══ PAYOUT REQUESTS ═══ -->
     <?php if ($tab === 'pending'): ?>
+    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <input type="hidden" name="tab" value="pending">
+        <select name="req_status" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+            <?php foreach (['all'=>'All Statuses','pending'=>'Pending','processing'=>'Processing','paid'=>'Paid','failed'=>'Failed','rejected'=>'Rejected'] as $v=>$l): ?>
+            <option value="<?php echo $v; ?>" <?php echo $reqStatus===$v?'selected':''; ?>><?php echo $l; ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="text" name="q" value="<?php echo sanitize($q); ?>" placeholder="Search shop, owner, email…" style="flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <button type="submit" class="button button-secondary button-small">Filter</button>
+        <?php if ($reqStatus !== 'all' || $q !== ''): ?><a href="?tab=pending" class="button button-secondary button-small">Clear</a><?php endif; ?>
+    </form>
     <?php if ($payoutRequests): ?>
     <div style="overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:14px;">
     <table class="mp-table">
-        <thead><tr><th>Shop</th><th>Amount</th><th>MoMo</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Shop</th><th>Amount</th><th>Pay To</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead>
         <tbody>
         <?php foreach ($payoutRequests as $r): ?>
         <tr>
             <td><strong><?php echo sanitize($r['shop_name']); ?></strong><br><span style="font-size:.74rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($r['owner_name']); ?> — <?php echo sanitize($r['owner_email']); ?></span></td>
             <td><strong>GH&#8373; <?php echo number_format((float)$r['amount'],2); ?></strong></td>
-            <td style="font-size:.8rem;"><?php echo sanitize($r['momo_number']); ?></td>
+            <td style="font-size:.8rem;"><?php echo sanitize($r['bank_name'] ?: 'Mobile Money'); ?><br>•••• <?php echo sanitize(substr((string)$r['account_number'], -4)); ?></td>
             <td>
-                <?php $sc=['pending'=>['#fef3c7','#b45309'],'approved'=>['#dbeafe','#1d4ed8'],'paid'=>['#d1fae5','#065f46'],'rejected'=>['#fee2e2','#c0392b']]; [$bg,$col]=$sc[$r['status']]??['#f3f4f6','#6b7280']; ?>
+                <?php $sc=['pending'=>['#fef3c7','#b45309'],'approved'=>['#dbeafe','#1d4ed8'],'processing'=>['#dbeafe','#1d4ed8'],'paid'=>['#d1fae5','#065f46'],'rejected'=>['#fee2e2','#c0392b'],'failed'=>['#fee2e2','#c0392b']]; [$bg,$col]=$sc[$r['status']]??['#f3f4f6','#6b7280']; ?>
                 <span style="background:<?php echo $bg; ?>;color:<?php echo $col; ?>;font-size:.7rem;font-weight:800;padding:2px 8px;border-radius:10px;"><?php echo ucfirst($r['status']); ?></span>
                 <?php if ($r['status']==='rejected' && $r['admin_notes']): ?><div style="font-size:.72rem;color:#c0392b;margin-top:3px;"><?php echo sanitize($r['admin_notes']); ?></div><?php endif; ?>
+                <?php if ($r['status']==='failed' && $r['failure_reason']): ?><div style="font-size:.72rem;color:#c0392b;margin-top:3px;max-width:220px;"><?php echo sanitize($r['failure_reason']); ?></div><?php endif; ?>
             </td>
             <td style="font-size:.78rem;color:var(--text-muted,#6b7280);"><?php echo date('d M Y', strtotime($r['created_at'])); ?></td>
             <td>
                 <div style="display:flex;gap:5px;flex-wrap:wrap;">
                 <?php if ($r['status']==='pending'): ?>
-                <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="approve_payout"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-primary button-small" onclick="return confirm('Approve this withdrawal? GH₵ <?php echo number_format((float)$r['amount'],2); ?> will be deducted from the shop\'s available balance.');">Approve</button></form>
+                <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="approve_and_pay_payout"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-primary button-small" onclick="return confirm('Send GH₵ <?php echo number_format((float)$r['amount'],2); ?> via Paystack now?');">✅ Approve &amp; Pay</button></form>
                 <form method="post" style="margin:0;display:flex;gap:4px;">
                     <?php echo csrf_field(); ?><input type="hidden" name="action" value="reject_payout"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>">
                     <input type="text" name="admin_notes" placeholder="Reason (optional)" style="width:120px;padding:5px 8px;font-size:.76rem;border:1px solid var(--border);border-radius:6px;">
                     <button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;" onclick="return confirm('Reject this request?');">Reject</button>
                 </form>
+                <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="mark_paid_manually_payout"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-small" onclick="return confirm('Only confirm once you have ALREADY paid this seller yourself outside the system.');">Mark Paid Manually</button></form>
                 <?php elseif ($r['status']==='approved'): ?>
                 <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="mark_paid_payout"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-primary button-small">Mark Paid</button></form>
+                <?php elseif ($r['status']==='processing'): ?>
+                <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="check_transfer_status"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-secondary button-small">🔄 Check Status</button></form>
+                <?php elseif ($r['status']==='failed'): ?>
+                <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="retry_payout"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-primary button-small">🔁 Retry via Paystack</button></form>
+                <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="mark_paid_manually_payout"><input type="hidden" name="payout_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-small" onclick="return confirm('Only confirm once you have ALREADY paid this seller yourself outside the system.');">Mark Paid Manually</button></form>
                 <?php endif; ?>
                 </div>
             </td>
@@ -198,7 +352,86 @@ $confirmDays    = get_platform_setting('mp_payout_confirmation_days', '3');
         </tbody>
     </table>
     </div>
-    <?php else: ?><div class="empty-state">No withdrawal requests yet.</div><?php endif; ?>
+    <?php else: ?><div class="empty-state">No withdrawal requests match this filter.</div><?php endif; ?>
+    <?php endif; ?>
+
+    <!-- ═══ ANALYTICS ═══ -->
+    <?php if ($tab === 'analytics'): ?>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+        <?php foreach (['today'=>'Today','week'=>'7 Days','month'=>'This Month','year'=>'This Year','all'=>'All Time'] as $v=>$l): ?>
+        <a href="?tab=analytics&period=<?php echo $v; ?>" class="button <?php echo $period===$v?'button-primary':'button-secondary'; ?> button-small"><?php echo $l; ?></a>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="mp-stats" style="margin-bottom:16px;">
+        <div class="mp-stat"><strong>GH&#8373; <?php echo number_format($anCommission,2); ?></strong><span>Commission Earned</span></div>
+        <div class="mp-stat"><strong>GH&#8373; <?php echo number_format($anGmv,2); ?></strong><span>Gross Sales (GMV)</span></div>
+        <div class="mp-stat"><strong><?php echo number_format($anOrderCount); ?></strong><span>Paid Orders</span></div>
+        <div class="mp-stat"><strong style="color:#ef4444;">GH&#8373; <?php echo number_format($anRefunded,2); ?></strong><span>Refunded</span></div>
+        <div class="mp-stat"><strong style="color:#10b981;">GH&#8373; <?php echo number_format($anPaidOut,2); ?></strong><span>Paid Out to Sellers</span></div>
+    </div>
+
+    <div class="mp-set-section">
+        <p class="mp-set-title">Commission Revenue — Last 30 Days</p>
+        <div style="position:relative;height:220px;"><canvas id="mp-commission-chart"></canvas></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="mp-set-section" style="margin-bottom:0;">
+            <p class="mp-set-title">Withdrawal Requests by Status</p>
+            <?php foreach (['pending'=>'#f59e0b','processing'=>'#3b82f6','paid'=>'#10b981','rejected'=>'#ef4444','failed'=>'#ef4444'] as $st=>$color): ?>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:.86rem;">
+                <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:<?php echo $color; ?>;margin-right:6px;"></span><?php echo ucfirst($st); ?></span>
+                <strong><?php echo $anStatusCounts[$st]; ?></strong>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <div class="mp-set-section" style="margin-bottom:0;">
+            <p class="mp-set-title">Top Shops by Commission (this period)</p>
+            <?php if (!$anTopShops): ?>
+            <p class="meta">No sales in this period.</p>
+            <?php else: ?>
+            <?php foreach ($anTopShops as $ts): ?>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:.86rem;">
+                <span><?php echo sanitize($ts['shop_name']); ?> <span style="color:var(--text-muted,#6b7280);">(<?php echo (int)$ts['orders']; ?> orders)</span></span>
+                <strong>GH&#8373; <?php echo number_format((float)$ts['commission'],2); ?></strong>
+            </div>
+            <?php endforeach; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+    (function () {
+        var ctx = document.getElementById('mp-commission-chart');
+        if (!ctx) return;
+        var style = getComputedStyle(document.documentElement);
+        var primary = style.getPropertyValue('--primary').trim() || '#0f766e';
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: <?php echo json_encode($anDailyLabels); ?>,
+                datasets: [{
+                    label: 'Commission (GHS)',
+                    data: <?php echo json_encode($anDailyRevenue); ?>,
+                    backgroundColor: primary,
+                    borderRadius: 4,
+                    maxBarThickness: 18
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+                    y: { beginAtZero: true, grid: { color: 'rgba(128,128,128,.15)' } }
+                }
+            }
+        });
+    })();
+    </script>
     <?php endif; ?>
 
     <!-- ═══ SETTINGS ═══ -->
@@ -221,8 +454,22 @@ $confirmDays    = get_platform_setting('mp_payout_confirmation_days', '3');
                 </div>
             </div>
         </div>
+        <div class="mp-set-section">
+            <p class="mp-set-title">Payout Method</p>
+            <div style="display:flex;gap:16px;margin-bottom:10px;">
+                <label><input type="radio" name="mp_payout_mode" value="manual" <?php echo $payoutMode !== 'auto' ? 'checked' : ''; ?>> Manual — admin approves each withdrawal</label>
+                <label><input type="radio" name="mp_payout_mode" value="auto" <?php echo $payoutMode === 'auto' ? 'checked' : ''; ?>> Automatic — Paystack pays instantly</label>
+            </div>
+            <p style="font-size:.74rem;color:var(--text-muted,#6b7280);">Either way, Paystack does the actual transfer — this only decides whether a human approves first. For true "zero-touch" automatic payouts, "Finalize Transfers with OTP" must be disabled on your Paystack account (Settings → Preferences) — otherwise Paystack will hold each transfer for manual OTP finalization in their dashboard.</p>
+        </div>
         <button type="submit" class="button button-primary">Save Settings</button>
     </form>
+
+    <div class="mp-set-section">
+        <p class="mp-set-title">Bank &amp; Mobile Money List</p>
+        <p style="font-size:.74rem;color:var(--text-muted,#6b7280);margin-bottom:10px;">Refresh the list of banks/MoMo networks sellers can choose from when setting up their payout account.</p>
+        <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="sync_banks"><button type="submit" class="button button-secondary">Sync Banks from Paystack</button></form>
+    </div>
     <?php endif; ?>
 
 </main>

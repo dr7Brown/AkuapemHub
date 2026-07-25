@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/modules/referrals/service.php';
@@ -28,7 +28,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $password = $_POST['password'] ?? '';
     $role = $_POST['role'] === 'worker' ? 'worker' : 'customer';
     $phone = trim($_POST['phone'] ?? '');
-    $townId = intval($_POST['town_id'] ?? 0) ?: null;
+    $townIdRaw = $_POST['town_id'] ?? '';
+    $customTown = null;
+    if ($townIdRaw === '__other__') {
+        $customTown = trim($_POST['custom_town'] ?? '');
+        $townId = $customTown !== '' ? get_other_town_id() : null;
+    } else {
+        $townId = intval($townIdRaw) ?: null;
+    }
     $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
     $idType = $_POST['id_type'] ?? '';
@@ -83,7 +90,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if ($name === '' || $username === '' || $email === '' || $password === '' || $phone === '' || !$townId) {
-        $error = 'All fields are required, including username, phone number and town.';
+        $error = ($townIdRaw === '__other__')
+            ? 'Please specify your location.'
+            : 'All fields are required, including username, phone number and town.';
     } elseif (!preg_match('/^[a-zA-Z0-9_]{3,30}$/', $username)) {
         $error = 'Username must be 3–30 characters and can only contain letters, numbers, and underscores.';
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -107,8 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'This phone number is already registered to another account.';
         } else {
             $passwordHash = password_hash($password, PASSWORD_BCRYPT);
-            $stmt = $pdo->prepare('INSERT INTO users (name, username, email, password_hash, role, phone, town_id, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([$name, $username, $email, $passwordHash, $role, $phone, $townId, $latitude, $longitude]);
+            $stmt = $pdo->prepare('INSERT INTO users (name, username, email, password_hash, role, phone, town_id, custom_town, latitude, longitude, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+            $stmt->execute([$name, $username, $email, $passwordHash, $role, $phone, $townId, $customTown, $latitude, $longitude]);
             $userId = $pdo->lastInsertId();
 
             if (!empty($_FILES['profile_photo']['name'])) {
@@ -118,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $townName = get_town_name($townId) ?: '';
+            $townName = $customTown ?: (get_town_name($townId) ?: '');
             $workerNeedsServiceFee = false;
             if ($role === 'worker') {
                 $workerNeedsServiceFee = is_feature_paid('enable_paid_worker_service');
@@ -142,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             require_once __DIR__ . '/services/EmailService.php';
             EmailService::sendVerificationEmail($email, $name, $verifyToken);
 
-            $stmt = $pdo->prepare('SELECT id, name, username, email, email_verified, role, phone, town_id, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
+            $stmt = $pdo->prepare('SELECT id, name, username, email, email_verified, role, phone, town_id, custom_town, latitude, longitude, profile_photo, email_notifications_enabled, banned FROM users WHERE id = ?');
             $stmt->execute([$userId]);
             $user = $stmt->fetch();
             login_user($user);
@@ -202,12 +211,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <label>Email</label>
                 <input type="email" name="email" required value="<?php echo sanitize($_POST['email'] ?? ''); ?>" />
                 <label>Password</label>
-                <input type="password" name="password" required minlength="6" />
+                <input type="password" name="password" id="register-password" required minlength="6" />
+                <label class="pw-show-label">
+                    <input type="checkbox" onchange="togglePasswordField('register-password', this.checked)" />
+                    Show password
+                </label>
                 <label>Phone number</label>
                 <input type="text" name="phone" required placeholder="e.g. 0244000000" value="<?php echo sanitize($_POST['phone'] ?? ''); ?>" />
                 <p class="small-note" style="text-align: left; margin-top: 4px;">We'll use this number for WhatsApp/SMS updates and as your contact info across the app — no need to retype it later.</p>
                 <label>Town</label>
-                <select name="town_id" required>
+                <select name="town_id" id="town-select" required onchange="document.getElementById('custom-town-row').style.display=this.value==='__other__'?'block':'none';">
                     <option value="">Select your town</option>
                     <?php $currentDistrict = null; ?>
                     <?php foreach ($towns as $town): ?>
@@ -219,7 +232,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <option value="<?php echo $town['id']; ?>" <?php echo (isset($_POST['town_id']) && $_POST['town_id'] == $town['id']) ? 'selected' : ''; ?>><?php echo sanitize($town['name']); ?></option>
                     <?php endforeach; ?>
                     <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
+                    <option value="__other__" <?php echo (($_POST['town_id'] ?? '') === '__other__') ? 'selected' : ''; ?>>Other (outside Akuapem — specify)</option>
                 </select>
+                <div id="custom-town-row" style="display:<?php echo (($_POST['town_id'] ?? '') === '__other__') ? 'block' : 'none'; ?>;margin-top:8px;">
+                    <input type="text" name="custom_town" placeholder="Enter your town/city" value="<?php echo sanitize($_POST['custom_town'] ?? ''); ?>" />
+                </div>
                 <label>Profile picture <span class="meta">(optional)</span></label>
                 <input type="file" name="profile_photo" accept="image/jpeg,image/png,image/webp" />
                 <p class="small-note" style="text-align: left; margin-top: 4px;">Shown on your dashboard. JPEG, PNG, or WEBP, up to 5MB.</p>
@@ -534,6 +551,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
     <script src="assets/js/image-compress.js"></script>
     <script src="assets/js/ghana-card-input.js"></script>
+    <script src="assets/js/password-toggle.js"></script>
     <script>
         setupImageInput(document.querySelector('input[name="profile_photo"]'), 800, 800, 0.82);
 
