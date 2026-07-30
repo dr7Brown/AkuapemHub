@@ -827,6 +827,13 @@ next:
 commission through the app. admin to set number of day they can owe and 
 still have access to the system.
 
+next:
+1. create a text file in root folder, name it steps.txt 
+outline steps to perform any of the activities on this app 
+starting from user registration to the least. 
+i want to create video tutorials and post on social media handles
+so users could follow and use the app, especially when facing 
+difficulties. 
 
 
 

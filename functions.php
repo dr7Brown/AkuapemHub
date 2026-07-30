@@ -681,19 +681,25 @@ function notify_workers_of_matching_job(array $request) {
     }
 }
 
-function score_worker_for_request(array $worker, array $request) {
+/**
+ * Shared additive scorer behind both "workers for this job" (score_worker_for_request)
+ * and "workers for this search" (score_worker_for_search) — same weight table,
+ * generalized to a free-text match target and an origin coordinate pair instead
+ * of a specific $request row.
+ */
+function score_worker_core(array $worker, ?string $matchText, ?float $originLat, ?float $originLng): array {
     $score = 0;
     $reasons = [];
 
-    $skillMatches = count_relevant_skill_matches($worker['skills'] ?? '', $request['category_name'] ?? '', $request['title'] ?? '', $request['description'] ?? '');
+    $skillMatches = count_relevant_skill_matches($worker['skills'] ?? '', $matchText ?? '', '', '');
     if ($skillMatches > 0) {
         $score += min(40, 21 + $skillMatches * 9);
         $reasons[] = $skillMatches > 1 ? 'Multiple matching skills' : 'Matching skill';
     }
 
-    $distanceKm = distance_km($worker['latitude'] ?? null, $worker['longitude'] ?? null, $request['latitude'] ?? null, $request['longitude'] ?? null);
+    $distanceKm = distance_km($worker['latitude'] ?? null, $worker['longitude'] ?? null, $originLat, $originLng);
     if ($distanceKm !== null) {
-        if ($distanceKm <= 5) { $score += 25; $reasons[] = 'Very close to the job'; }
+        if ($distanceKm <= 5) { $score += 25; $reasons[] = 'Very close'; }
         elseif ($distanceKm <= 15) { $score += 18; $reasons[] = 'Nearby'; }
         elseif ($distanceKm <= 40) { $score += 10; }
         else { $score += 3; }
@@ -732,6 +738,18 @@ function score_worker_for_request(array $worker, array $request) {
         'reasons' => $reasons,
         'distance_km' => $distanceKm,
     ];
+}
+
+function score_worker_for_request(array $worker, array $request) {
+    $matchText = trim(($request['category_name'] ?? '') . ' ' . ($request['title'] ?? '') . ' ' . ($request['description'] ?? ''));
+    return score_worker_core($worker, $matchText, $request['latitude'] ?? null, $request['longitude'] ?? null);
+}
+
+/** Scores a worker against a browse/search context (find_workers.php) rather
+ *  than a specific job — $skillFilter is the page's existing free-text ?skill=
+ *  filter, $lat/$lng come from the "Find workers near me" geolocation button. */
+function score_worker_for_search(array $worker, ?string $skillFilter, ?float $lat, ?float $lng): array {
+    return score_worker_core($worker, $skillFilter, $lat, $lng);
 }
 
 function get_recommended_workers_for_request($request, $limit = 5) {

@@ -6,9 +6,21 @@ sweep_expired_featured();
 $searchQuery = trim($_GET['q'] ?? '');
 $locationFilter = trim($_GET['location'] ?? '');
 $skillFilter = trim($_GET['skill'] ?? '');
-$sortBy = $_GET['sort'] ?? 'rating';
+$categoryId = (int)($_GET['category'] ?? 0);
+$sortBy = $_GET['sort'] ?? 'smart';
 $userLat = ($_GET['lat'] ?? '') !== '' ? (float)$_GET['lat'] : null;
 $userLng = ($_GET['lng'] ?? '') !== '' ? (float)$_GET['lng'] : null;
+
+// jobs.php's "Popular categories" chips link here as ?category=<id> — this was
+// previously silently ignored (no handling existed), showing every worker
+// unfiltered instead of ones in that category. worker_skills already carries
+// category_id, so it's filterable the same way the skill/location filters are.
+$categoryName = null;
+if ($categoryId) {
+    $catStmt = $pdo->prepare('SELECT name FROM service_categories WHERE id = ?');
+    $catStmt->execute([$categoryId]);
+    $categoryName = $catStmt->fetchColumn() ?: null;
+}
 
 $where = [
     "u.role = 'worker'",
@@ -38,6 +50,11 @@ if ($skillFilter) {
     $params[] = '%' . $skillFilter . '%';
 }
 
+if ($categoryId) {
+    $where[] = "EXISTS (SELECT 1 FROM worker_skills wsc WHERE wsc.worker_profile_id = w.id AND wsc.category_id = ?)";
+    $params[] = $categoryId;
+}
+
 $orderBy = 'u.created_at DESC';
 if ($sortBy === 'rating') {
     $orderBy = 'avg_rating DESC, completed_jobs DESC';
@@ -51,7 +68,23 @@ $sql = "SELECT u.id, u.name, u.username, u.created_at, w.location, w.latitude, w
         w.is_featured, w.featured_end_date, w.is_verified,
         COALESCE(COUNT(DISTINCT sr.id), 0) AS completed_jobs,
         COALESCE(AVG(r.score), 0) AS avg_rating,
-        GROUP_CONCAT(DISTINCT ws.skill_name ORDER BY ws.skill_name SEPARATOR ', ') AS skills
+        GROUP_CONCAT(DISTINCT ws.skill_name ORDER BY ws.skill_name SEPARATOR ', ') AS skills,
+        (
+            (COALESCE((SELECT SUM(CAST(p2.amount AS DECIMAL(10,2)))
+                       FROM payments p2 JOIN service_requests sr2 ON p2.request_id = sr2.id
+                       WHERE sr2.assigned_worker_id = u.id AND p2.status = 'paid'
+                         AND p2.amount REGEXP '^[0-9]+(\\\\.[0-9]{1,2})?$'), 0)
+             + COALESCE((SELECT SUM(ep.gross_amount) FROM escrow_payments ep
+                         WHERE ep.worker_id = u.id AND ep.status = 'released'), 0))
+            /
+            NULLIF(
+                (SELECT COUNT(*) FROM payments p3 JOIN service_requests sr3 ON p3.request_id = sr3.id
+                 WHERE sr3.assigned_worker_id = u.id AND p3.status = 'paid'
+                   AND p3.amount REGEXP '^[0-9]+(\\\\.[0-9]{1,2})?$')
+                + (SELECT COUNT(*) FROM escrow_payments ep2 WHERE ep2.worker_id = u.id AND ep2.status = 'released'),
+                0
+            )
+        ) AS avg_price
         FROM users u
         LEFT JOIN worker_profiles w ON u.id = w.user_id
         LEFT JOIN worker_skills ws ON w.id = ws.worker_profile_id
@@ -74,10 +107,18 @@ foreach ($workers as &$worker) {
     $worker['distance_km'] = ($userLat !== null && $userLng !== null)
         ? distance_km($userLat, $userLng, $worker['latitude'], $worker['longitude'])
         : null;
+    $matchText = trim($skillFilter . ' ' . ($categoryName ?? ''));
+    $match = score_worker_for_search($worker, $matchText ?: null, $userLat, $userLng);
+    $worker['match_score']   = $match['score'];
+    $worker['match_reasons'] = $match['reasons'];
 }
 unset($worker);
 
-if ($sortBy === 'distance' && $userLat !== null && $userLng !== null) {
+if ($sortBy === 'smart') {
+    usort($workers, function ($a, $b) {
+        return $b['match_score'] <=> $a['match_score'];
+    });
+} elseif ($sortBy === 'distance' && $userLat !== null && $userLng !== null) {
     usort($workers, function ($a, $b) {
         if ($a['distance_km'] === null && $b['distance_km'] === null) return 0;
         if ($a['distance_km'] === null) return 1;
@@ -103,21 +144,34 @@ if (!empty($_GET['ajax'])) {
             $featBadge = ($worker['is_featured'] && (!$worker['featured_end_date'] || $worker['featured_end_date'] >= date('Y-m-d')))
                 ? '<span class="badge" style="background:var(--primary);color:#fff;font-size:0.75rem;padding:2px 7px;">Featured</span>'
                 : '';
+            $isSmartSort = $sortBy === 'smart';
+            $matchPill = $isSmartSort ? '<span class="match-score-pill">' . (int)($worker['match_score'] ?? 0) . '% match</span>' : '';
+            $reasonsHtml = ($isSmartSort && !empty($worker['match_reasons']))
+                ? '<p class="match-meta">Why this match: ' . htmlspecialchars(implode(' • ', $worker['match_reasons']), ENT_QUOTES, 'UTF-8') . '</p>'
+                : '';
+            $priceHtml = $worker['avg_price'] !== null
+                ? '<span>Typically GH&#8373;' . number_format((float)$worker['avg_price'], 2) . '/job</span>'
+                : '';
             echo '<article class="request-card">';
             echo '<div class="request-head"><div>';
             echo '<h2>' . htmlspecialchars(display_name($worker), ENT_QUOTES, 'UTF-8') . $verBadge . $featBadge . '</h2>';
             echo '<p class="meta">' . htmlspecialchars($worker['location'] ?: 'Location not set', ENT_QUOTES, 'UTF-8') . $distHtml . '</p>';
             echo '</div>';
+            echo '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">';
             echo '<span class="status status-' . htmlspecialchars($worker['availability'], ENT_QUOTES, 'UTF-8') . '">' . strtoupper(htmlspecialchars($worker['availability'], ENT_QUOTES, 'UTF-8')) . '</span>';
+            echo $matchPill;
+            echo '</div>';
             echo '</div>';
             echo '<div class="request-footer" style="flex-direction:column;gap:8px;align-items:flex-start;">';
             echo '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
             echo '<span>' . (int)$worker['completed_jobs'] . ' jobs completed</span>';
             echo '<span>' . number_format($worker['avg_rating'], 1) . '/5 rating</span>';
+            echo $priceHtml;
             echo '</div>';
             if (!empty($worker['skills'])) {
                 echo '<p style="margin:0;font-size:0.95rem;color:#333;">Skills: ' . htmlspecialchars($worker['skills'], ENT_QUOTES, 'UTF-8') . '</p>';
             }
+            echo $reasonsHtml;
             echo '<a href="worker_profile_public.php?id=' . (int)$worker['id'] . '" class="button button-primary button-small">View profile</a>';
             echo '</div></article>';
         }
@@ -192,6 +246,18 @@ if (!empty($_GET['ajax'])) {
             <form method="get" id="worker-filter-form">
                 <input type="hidden" name="lat" id="lat" value="<?php echo $userLat !== null ? sanitize($userLat) : ''; ?>" />
                 <input type="hidden" name="lng" id="lng" value="<?php echo $userLng !== null ? sanitize($userLng) : ''; ?>" />
+                <?php if ($categoryId): ?>
+                <input type="hidden" name="category" value="<?php echo $categoryId; ?>" />
+                <?php endif; ?>
+
+                <?php if ($categoryId && $categoryName): ?>
+                <div style="margin-bottom:10px;">
+                    <span style="display:inline-flex;align-items:center;gap:6px;background:var(--primary-soft,#d1fae5);color:var(--primary,#0f766e);border-radius:20px;padding:5px 12px;font-size:.82rem;font-weight:700;">
+                        Category: <?php echo sanitize($categoryName); ?>
+                        <a href="?<?php echo http_build_query(array_diff_key($_GET, ['category' => 1])); ?>" style="color:inherit;text-decoration:none;font-weight:900;" title="Clear category filter">×</a>
+                    </span>
+                </div>
+                <?php endif; ?>
 
                 <div id="wf-bar">
                     <div class="wf-field" style="flex:2;min-width:0;">
@@ -212,6 +278,7 @@ if (!empty($_GET['ajax'])) {
                     </div>
                     <div class="wf-field" style="flex:0 0 auto;min-width:0;padding:0 10px;">
                         <select name="sort">
+                            <option value="smart" <?php echo $sortBy === 'smart' ? 'selected' : ''; ?>>Best match</option>
                             <option value="rating" <?php echo $sortBy === 'rating' ? 'selected' : ''; ?>>By rating</option>
                             <option value="completed" <?php echo $sortBy === 'completed' ? 'selected' : ''; ?>>Most jobs done</option>
                             <option value="newest" <?php echo $sortBy === 'newest' ? 'selected' : ''; ?>>Newest</option>
@@ -255,15 +322,26 @@ if (!empty($_GET['ajax'])) {
                                     <?php endif; ?>
                                 </p>
                             </div>
-                            <span class="status status-<?php echo $worker['availability']; ?>"><?php echo strtoupper($worker['availability']); ?></span>
+                            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
+                                <span class="status status-<?php echo $worker['availability']; ?>"><?php echo strtoupper($worker['availability']); ?></span>
+                                <?php if ($sortBy === 'smart'): ?>
+                                <span class="match-score-pill"><?php echo (int)$worker['match_score']; ?>% match</span>
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <div class="request-footer" style="flex-direction: column; gap: 8px; align-items: flex-start;">
                             <div style="display: flex; flex-wrap: wrap; gap: 8px;">
                                 <span><?php echo $worker['completed_jobs']; ?> jobs completed</span>
                                 <span><?php echo number_format($worker['avg_rating'], 1); ?>/5 rating</span>
+                                <?php if ($worker['avg_price'] !== null): ?>
+                                    <span>Typically GH&#8373;<?php echo number_format((float)$worker['avg_price'], 2); ?>/job</span>
+                                <?php endif; ?>
                             </div>
                             <?php if (!empty($worker['skills'])): ?>
                                 <p style="margin: 0; font-size: 0.95rem; color: #333;">Skills: <?php echo sanitize($worker['skills']); ?></p>
+                            <?php endif; ?>
+                            <?php if ($sortBy === 'smart' && !empty($worker['match_reasons'])): ?>
+                                <p class="match-meta">Why this match: <?php echo sanitize(implode(' • ', $worker['match_reasons'])); ?></p>
                             <?php endif; ?>
                             <a href="worker_profile_public.php?id=<?php echo $worker['id']; ?>" class="button button-primary button-small">View profile</a>
                         </div>
@@ -310,7 +388,11 @@ if (!empty($_GET['ajax'])) {
             navigator.geolocation.getCurrentPosition(function (position) {
                 document.getElementById('lat').value = position.coords.latitude;
                 document.getElementById('lng').value = position.coords.longitude;
-                document.querySelector('select[name="sort"]').value = 'distance';
+                // Deliberately NOT forcing sort to "distance" anymore — "Best match"
+                // (the default) already factors distance into its blended score once
+                // lat/lng is known, so forcing single-axis distance here would actually
+                // be a downgrade (loses rating/availability/skill signals, hides the
+                // match pill). Whatever sort the user already has selected is kept.
                 status.textContent = '📍 Showing distances from your location.';
                 fetchWorkers(new URLSearchParams(new FormData(filterForm)));
             }, function () {
