@@ -15,6 +15,13 @@ csrf_check();
 $user   = current_user();
 $action = $_POST['action'] ?? '';
 
+// Admin/manager actions in this file (approve_product, reject_product, etc.)
+// must keep working even while the module is switched off — only block the
+// customer-facing actions (add_to_cart and friends).
+if (!is_admin_or_manager()) {
+    require_module_enabled('mp', 'Marketplace');
+}
+
 function mp_error(string $msg, string $back = 'marketplace.php'): never {
     flash($msg, 'error');
     header('Location: ' . $back);

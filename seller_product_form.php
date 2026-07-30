@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
 
+require_module_enabled('mp', 'Marketplace');
 require_login();
 $user = current_user();
 $shop = get_shop_by_user((int)$user['id']);
@@ -27,6 +28,7 @@ if ($editId) {
 }
 
 $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name')->fetchAll();
+$maxImagesForShop = mp_shop_max_images((int)$shop['id']);
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -52,6 +54,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($discountPrice !== null && $discountPrice >= $price) $error = 'Discount price must be less than the regular price.';
     elseif (!$editId && requires_verified_email('product_post') && !is_email_verified()) {
         $error = 'Please verify your email address before listing a product.';
+    } elseif ($status === 'pending_approval' && (!$editId || $product['status'] === 'rejected')) {
+        // A brand-new listing, or a rejected one being resubmitted, is about to
+        // newly occupy a slot — re-check the limit. An already-approved/pending
+        // product being edited in place never needs a new slot.
+        $listCheck = mp_shop_can_list_product((int)$shop['id']);
+        if (!$listCheck['allowed']) {
+            if ($listCheck['no_subscription']) {
+                // Send them straight to checkout with the reason, rather than
+                // just showing the message on a form they can't submit anyway.
+                flash('You need an active marketplace subscription before you can list products. Subscribe to a package to continue.', 'error');
+                header('Location: pay_mp_subscription.php');
+                exit;
+            }
+            $error = 'You have reached your monthly product limit. Upgrade your subscription or remove existing listings.';
+        }
     }
 
     if (!$error) {
@@ -79,13 +96,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $editId = (int)$pdo->lastInsertId();
         }
 
-        // Handle image uploads (up to 5)
+        // Handle image uploads (up to the shop's plan-based max, or unlimited)
         if (!empty($_FILES['product_images']['name'][0])) {
-            $existingCount = (int)$pdo->prepare('SELECT COUNT(*) FROM mp_product_images WHERE product_id=?')->execute([$editId]) ? 0 : 0;
             $existCheck = $pdo->prepare('SELECT COUNT(*) FROM mp_product_images WHERE product_id=?');
             $existCheck->execute([$editId]);
             $existingCount = (int)$existCheck->fetchColumn();
-            $maxNew = max(0, 5 - $existingCount);
+            $maxImages = mp_shop_max_images((int)$shop['id']);
+            $maxNew = $maxImages === -1 ? count($_FILES['product_images']['name']) : max(0, $maxImages - $existingCount);
 
             $files = $_FILES['product_images'];
             for ($i = 0; $i < min($maxNew, count($files['name'])); $i++) {
@@ -238,7 +255,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <?php endif; ?>
             <input type="file" name="product_images[]" multiple accept="image/jpeg,image/png,image/webp">
-            <p class="form-hint">Select up to <?php echo max(1,5-count($images)); ?> more images. JPEG/PNG/WEBP, max 5MB each. First image becomes the primary.</p>
+            <p class="form-hint">
+                <?php if ($maxImagesForShop === -1): ?>
+                    Select as many images as you like. JPEG/PNG/WEBP, max 5MB each. First image becomes the primary.
+                <?php else: ?>
+                    Select up to <?php echo max(0, $maxImagesForShop - count($images)); ?> more image<?php echo (max(0,$maxImagesForShop-count($images))===1)?'':'s'; ?> (plan limit: <?php echo $maxImagesForShop; ?>). JPEG/PNG/WEBP, max 5MB each. First image becomes the primary.
+                <?php endif; ?>
+            </p>
         </div>
 
         <!-- Delivery -->

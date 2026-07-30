@@ -2,6 +2,9 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('jobs', 'Jobs & Services');
+
+$flash = get_flash();
 $user = current_user();
 $requestId = intval($_GET['id'] ?? 0);
 if ($requestId <= 0) {
@@ -211,7 +214,16 @@ $sbSimilar = $sbSimilar->fetchAll();
             .rd-layout  { display:grid; grid-template-columns:1fr 280px; gap:28px; align-items:start; }
             .rd-main    { padding:24px 0 60px; }
             .rd-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; padding-top:24px; }
+            .rd-similar-mobile { display:none; } /* sidebar's "Similar Jobs" widget takes over here */
         }
+        .rd-similar-mobile   { margin-top:20px; }
+        .rd-similar-title    { font-size:.76rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 10px; }
+        .rd-similar-row      { display:flex; gap:12px; overflow-x:auto; padding-bottom:6px; -webkit-overflow-scrolling:touch; }
+        .rd-similar-row::-webkit-scrollbar { display:none; }
+        .rd-similar-card       { flex:0 0 200px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:12px 14px; text-decoration:none; color:inherit; }
+        .rd-similar-card-title { font-size:.85rem; font-weight:700; line-height:1.35; margin-bottom:6px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .rd-similar-card-meta  { font-size:.76rem; color:var(--text-muted,#6b7280); }
+        .rd-similar-card-budget{ font-size:.82rem; font-weight:800; color:var(--primary,#0f766e); margin-top:4px; }
         .sb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
         .sb-head   { padding:11px 16px; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--primary,#0f766e); border-bottom:1px solid var(--border,#e5e7eb); background:#f0fdf4; }
         .sb-job    { display:block; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); text-decoration:none; color:inherit; transition:background .1s; }
@@ -248,6 +260,9 @@ $sbSimilar = $sbSimilar->fetchAll();
     </header>
     <?php endif; ?>
     <div class="rd-outer"><div class="rd-layout"><main class="rd-main">
+        <?php if ($flash): ?>
+            <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin-bottom:12px;"><?php echo sanitize($flash['message']); ?></div>
+        <?php endif; ?>
         <?php $feeStatus = $request['posting_fee_status'] ?? 'free'; ?>
         <?php if ($user && $request['status'] === 'pending_payment' && $request['customer_id'] === $user['id']): ?>
             <div class="alert alert-warning" style="margin-bottom:12px;">
@@ -609,6 +624,24 @@ $sbSimilar = $sbSimilar->fetchAll();
                     </div>
                 <?php endforeach; ?>
             </section>
+        <?php endif; ?>
+
+        <!-- Jobs you may also like — same widget the sidebar shows on wide
+             screens, but the sidebar is hidden below 900px, so this mirrors
+             it into the always-visible main column for mobile. -->
+        <?php if ($sbSimilar): ?>
+        <section class="rd-similar-mobile">
+            <p class="rd-similar-title">💼 Jobs you may also like</p>
+            <div class="rd-similar-row">
+                <?php foreach ($sbSimilar as $sj): ?>
+                <a href="request_detail.php?id=<?php echo (int)$sj['id']; ?>" class="rd-similar-card">
+                    <div class="rd-similar-card-title"><?php echo sanitize($sj['title']); ?></div>
+                    <div class="rd-similar-card-meta"><?php if ($sj['location']): ?>📍 <?php echo sanitize(mb_substr($sj['location'],0,24)); ?><?php endif; ?></div>
+                    <?php if ($sj['budget']): ?><div class="rd-similar-card-budget">GH₵ <?php echo sanitize($sj['budget']); ?></div><?php endif; ?>
+                </a>
+                <?php endforeach; ?>
+            </div>
+        </section>
         <?php endif; ?>
     </main><!-- /.rd-main -->
 

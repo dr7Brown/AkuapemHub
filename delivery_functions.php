@@ -121,7 +121,6 @@ function item_category_icon(string $cat): string {
 /** Returns next status options an agent can move a delivery to. */
 function delivery_agent_next_statuses(string $current): array {
     return [
-        'assigned'   => ['accepted'],
         'accepted'   => ['picked_up'],
         'picked_up'  => ['in_transit'],
         'in_transit' => ['delivered', 'failed'],
@@ -179,6 +178,28 @@ function agent_is_premium(array $agent): bool {
 /** True when agent has the Verified Rider badge. */
 function agent_is_verified(array $agent): bool {
     return !empty($agent['is_verified']);
+}
+
+/**
+ * True when the agent should be blocked from accepting new delivery jobs
+ * because of unpaid commission — either the amount threshold or the
+ * day-based grace period has been exceeded, whichever trips first.
+ * $agent must include commission_owed and commission_owed_since.
+ */
+function agent_commission_blocked(array $agent): bool {
+    $owed = (float)($agent['commission_owed'] ?? 0);
+    if ($owed <= 0) return false;
+
+    $amountThreshold = (float)get_platform_setting('delivery_commission_block_threshold', '50');
+    if ($amountThreshold > 0 && $owed >= $amountThreshold) return true;
+
+    $graceDays = (int)get_platform_setting('delivery_commission_grace_days', '0');
+    if ($graceDays > 0 && !empty($agent['commission_owed_since'])
+        && (time() - strtotime($agent['commission_owed_since'])) > $graceDays * 86400) {
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -242,7 +263,10 @@ function assign_delivery_application(int $deliveryId, array $app, ?float $reques
     global $pdo;
     $usedFee = $app['offered_fee'] ?? $requestFee;
 
-    $upd = $pdo->prepare("UPDATE delivery_requests SET agent_id=?, status='assigned', delivery_fee=?, updated_at=NOW() WHERE id=? AND status='approved'");
+    // Goes straight to 'accepted' — the customer choosing this rider already
+    // IS the acceptance. No separate manual "Accept Job" click/notification
+    // needed; the agent's next action is simply marking it picked up.
+    $upd = $pdo->prepare("UPDATE delivery_requests SET agent_id=?, status='accepted', delivery_fee=?, updated_at=NOW() WHERE id=? AND status='approved'");
     $upd->execute([$app['agent_id'], $usedFee, $deliveryId]);
     if ($upd->rowCount() === 0) return false;
 
@@ -259,6 +283,18 @@ function assign_delivery_application(int $deliveryId, array $app, ?float $reques
             "You have been selected for delivery request #$deliveryId. Check your active deliveries.",
             'success');
     }
+
+    // Single customer confirmation here — replaces the old separate "Delivery
+    // Accepted" notification that used to fire later when the agent manually
+    // clicked Accept.
+    $custRow = $pdo->prepare('SELECT customer_id FROM delivery_requests WHERE id=?');
+    $custRow->execute([$deliveryId]);
+    if ($custId = $custRow->fetchColumn()) {
+        notify_user((int)$custId, 'Rider Confirmed 🚚',
+            'Your delivery agent has been confirmed and will pick up your item soon.',
+            'success', 'delivery_detail.php?id=' . $deliveryId);
+    }
+
     return true;
 }
 

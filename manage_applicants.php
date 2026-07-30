@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/chat_functions.php';
 
+require_module_enabled('jobs', 'Jobs & Services');
 require_login();
 $user = current_user();
 

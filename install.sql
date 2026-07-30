@@ -632,9 +632,13 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token   VARCHAR(64
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_sent_at DATETIME NULL                       AFTER email_verification_token;
 ALTER TABLE users ADD INDEX IF NOT EXISTS  idx_evt (email_verification_token);
 
--- Mark all pre-existing accounts as already verified so they are not locked out.
--- (Safe to re-run — only touches rows where email_verified is still 0.)
-UPDATE users SET email_verified = 1 WHERE email_verified = 0;
+-- Mark accounts that existed BEFORE this migration as already verified, so they
+-- are not locked out (they registered before email verification existed and
+-- never received a token). Scoped to a fixed cutoff so re-running install.sql
+-- never re-verifies genuinely-unverified accounts created after this date —
+-- an unscoped "WHERE email_verified = 0" would silently undo verification for
+-- every new signup each time this file is re-run.
+UPDATE users SET email_verified = 1 WHERE email_verified = 0 AND created_at < '2026-06-17 00:00:00';
 
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2205,3 +2209,111 @@ CREATE TABLE IF NOT EXISTS remember_tokens (
 
 INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
     ('remember_me_days', '30', 'How many days a "Stay logged in" session lasts before requiring a fresh login');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v040  Real module enable/disable enforcement.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- mp_enabled and delivery_enabled already existed but were never actually
+-- checked anywhere — toggling them off did nothing. Adding the missing
+-- per-module settings for Jobs/Events/News/Funerals here; enforcement itself
+-- lives in code (module_enabled()/require_module_enabled() in
+-- functions.php/auth.php), gating each module's entry points and hiding
+-- disabled modules from index.php's navigation.
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('jobs_enabled',     '1', 'Whether the Jobs & Services module is active (1=yes, 0=no)'),
+    ('events_enabled',   '1', 'Whether the Events module is active (1=yes, 0=no)'),
+    ('news_enabled',     '1', 'Whether the News module is active (1=yes, 0=no)'),
+    ('funerals_enabled', '1', 'Whether the Funeral Announcements module is active (1=yes, 0=no)');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v041  Marketplace Subscription Package Module — full package system.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Extends the existing (previously inert) mp_seller_subscription_plans /
+-- mp_seller_subscriptions tables into a real, enforced package system: richer
+-- package fields (badge, yearly price, feature flags), renewal/cancellation
+-- tracking, a shop-facing subscription history log, and a per-milestone
+-- reminder dedup table. Reuses platform_payments (payment_type='mp_subscription')
+-- as the payment ledger rather than adding a parallel one.
+
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS yearly_price DECIMAL(10,2) DEFAULT NULL;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS max_images INT NOT NULL DEFAULT 5;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS unlimited_images TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS featured_shop_included TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS featured_products_included INT NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS priority_ranking INT NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS ad_credits INT NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS analytics_access TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS support_level VARCHAR(30) NOT NULL DEFAULT 'standard';
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS verification_included TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS badge_name VARCHAR(40) DEFAULT NULL;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS badge_color VARCHAR(20) DEFAULT NULL;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS display_order INT NOT NULL DEFAULT 0;
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS updated_at DATETIME NULL;
+
+ALTER TABLE mp_seller_subscriptions ADD COLUMN IF NOT EXISTS renewal_date DATE DEFAULT NULL;
+ALTER TABLE mp_seller_subscriptions ADD COLUMN IF NOT EXISTS cancelled_at DATETIME DEFAULT NULL;
+ALTER TABLE mp_seller_subscriptions MODIFY COLUMN status
+    ENUM('pending','active','expired','cancelled','suspended','pending_renewal') NOT NULL DEFAULT 'pending';
+
+CREATE TABLE IF NOT EXISTS mp_subscription_history (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    subscription_id INT UNSIGNED NOT NULL,
+    shop_id INT UNSIGNED NOT NULL,
+    event ENUM('purchased','upgraded','downgraded','renewed','cancelled','expired') NOT NULL,
+    from_plan_id INT UNSIGNED DEFAULT NULL,
+    to_plan_id INT UNSIGNED DEFAULT NULL,
+    notes VARCHAR(255) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_msh_shop (shop_id),
+    FOREIGN KEY (subscription_id) REFERENCES mp_seller_subscriptions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS mp_subscription_notifications (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    subscription_id INT UNSIGNED NOT NULL,
+    milestone ENUM('14d','7d','3d','24h','on_expiry','7d_after') NOT NULL,
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_sub_milestone (subscription_id, milestone),
+    FOREIGN KEY (subscription_id) REFERENCES mp_seller_subscriptions(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('mp_subscription_upgrade_proration', '0', 'Prorate upgrade charges (1) vs charge full package price (0)');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v042  Complimentary Memberships — platform-wide free access to paid features.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Admin can flag a user so every paid gate on the platform (job posting fees,
+-- worker service fees, featured job/worker/event/news/funeral, verification,
+-- marketplace subscriptions/boosts, delivery premium/sponsored/verification)
+-- treats them as already-paid. Escrow commission is deliberately untouched —
+-- a per-transaction revenue cut, not a feature-access toggle.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_complimentary TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_granted_at DATETIME NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS complimentary_granted_by INT UNSIGNED NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v043  Delivery commission: in-app payment + day-based grace period.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Riders can now pay off their commission_owed balance through the app via
+-- Paystack (pay_delivery_commission.php), instead of only admin manually
+-- marking it settled. Admin can also set a grace period in days — a rider
+-- may owe commission and keep accepting jobs for up to that many days before
+-- being blocked, independent of (and in addition to) the existing amount
+-- threshold. commission_owed_since tracks when the CURRENT debt started,
+-- since commission_owed itself is just a running total with no per-debit aging.
+
+ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS commission_owed_since DATETIME NULL;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('delivery_commission_grace_days', '0', 'Days a rider may owe commission before being blocked from new jobs (0 = no day-based limit, amount threshold still applies)');
+
+ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
+    'featured_job','featured_worker','verification','job_post','worker_service',
+    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
+    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
+    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
+    'delivery_commission'
+) NOT NULL;

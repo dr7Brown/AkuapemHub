@@ -83,6 +83,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $success = 'Verification requirements saved.';
         $tab = 'settings';
 
+    } elseif ($action === 'save_module_toggles') {
+        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery'] as $modKey) {
+            set_platform_setting("{$modKey}_enabled", isset($_POST["{$modKey}_enabled"]) ? '1' : '0');
+        }
+        log_audit_action($user['id'], 'module_toggles_updated', 'Updated platform module availability');
+        $success = 'Module availability saved.';
+        $tab = 'settings';
+
     } elseif ($action === 'save_job_listing_settings') {
         set_platform_setting('jobs_list_staffed_completed', ($_POST['jobs_list_staffed_completed'] ?? '0') === '1' ? '1' : '0');
         log_audit_action($user['id'], 'job_listing_settings_updated', 'Updated job listing visibility settings');
@@ -535,6 +543,19 @@ $verifyReqs = [
     'delivery_agent'    => get_platform_setting('require_verified_email_delivery_agent', '0') === '1',
 ];
 
+$moduleToggles = [
+    'mp'       => ['label' => 'Marketplace',           'desc' => 'Buy & sell products locally'],
+    'jobs'     => ['label' => 'Jobs & Services',       'desc' => 'Post and browse job requests'],
+    'events'   => ['label' => 'Events',                'desc' => 'Community events & programs'],
+    'news'     => ['label' => 'News & Updates',        'desc' => 'Articles & platform news'],
+    'funerals' => ['label' => 'Funeral Announcements', 'desc' => 'Memorial notices'],
+    'delivery' => ['label' => 'Delivery Services',      'desc' => 'Send & receive parcels'],
+];
+foreach ($moduleToggles as $modKey => &$modInfo) {
+    $modInfo['enabled'] = module_enabled($modKey);
+}
+unset($modInfo);
+
 $jobsListStaffedCompleted = get_platform_setting('jobs_list_staffed_completed', '0') === '1';
 
 $showMarketplaceDeliveriesOnHome = get_platform_setting('homepage_show_marketplace_deliveries', '1') === '1';
@@ -788,6 +809,26 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
 
         <!-- SETTINGS TAB -->
         <div class="tab-panel <?php echo $tab === 'settings' ? 'active' : ''; ?>" id="tab-settings">
+            <section class="panel">
+                <h2>Module Availability</h2>
+                <p class="meta">Switch a module off to take it offline for everyone — its pages redirect to the community home, and it disappears from navigation there.</p>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_module_toggles" />
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:10px;">
+                        <?php foreach ($moduleToggles as $modKey => $modInfo): ?>
+                        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+                            <input type="checkbox" name="<?php echo $modKey; ?>_enabled" value="1" <?php echo $modInfo['enabled'] ? 'checked' : ''; ?> style="margin-top:3px;" />
+                            <span>
+                                <strong style="display:block;font-size:.88rem;"><?php echo sanitize($modInfo['label']); ?></strong>
+                                <span class="meta" style="font-size:.76rem;"><?php echo sanitize($modInfo['desc']); ?></span>
+                            </span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <button type="submit" class="button button-primary" style="margin-top:14px;">Save Module Availability</button>
+                </form>
+            </section>
+
             <section class="panel">
                 <h2>Global monetization mode</h2>
                 <form method="post" action="monetization.php">

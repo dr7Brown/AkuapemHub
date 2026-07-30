@@ -38,17 +38,18 @@ try {
     $navUnreadNotifs = 0;
 }
 
-$navItems = [
-    'home'      => ['href' => 'jobs.php',            'icon' => '💼', 'label' => 'Jobs'],
-    'myapps'    => ['href' => 'my_applications.php', 'icon' => '📋', 'label' => 'My Apps'],
-    'community' => ['href' => 'index.php',           'icon' => '🌍', 'label' => 'Community'],
-    'messages'  => ['href' => 'chat.php',            'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages],
-    'settings'  => ['href' => 'settings.php',        'icon' => '⚙️', 'label' => 'Settings'],
-];
+$navItems = [];
+if (module_enabled('jobs')) {
+    $navItems['home']   = ['href' => 'jobs.php',            'icon' => '💼', 'label' => 'Jobs'];
+    $navItems['myapps'] = ['href' => 'my_applications.php', 'icon' => '📋', 'label' => 'My Apps'];
+}
+$navItems['community'] = ['href' => 'index.php',    'icon' => '🌍', 'label' => 'Community'];
+$navItems['messages']  = ['href' => 'chat.php',     'icon' => '💬', 'label' => 'Messages', 'count' => $navUnreadMessages];
+$navItems['settings']  = ['href' => 'settings.php', 'icon' => '⚙️', 'label' => 'Settings'];
 
 if (!isset($activeNav)) {
     $currentScript = basename($_SERVER['SCRIPT_NAME']);
-    $activeNav = 'home';
+    $activeNav = module_enabled('jobs') ? 'home' : 'community';
     foreach ($navItems as $key => $item) {
         if (basename(parse_url($item['href'], PHP_URL_PATH)) === $currentScript) {
             $activeNav = $key;

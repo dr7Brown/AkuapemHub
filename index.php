@@ -4,6 +4,7 @@ require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/delivery_functions.php';
 
 $user  = current_user();
+$flash = get_flash();
 $today = date('Y-m-d');
 
 $upcomingEvents = $pdo->query(
@@ -346,17 +347,21 @@ try {
 </head>
 <body <?php echo $user ? 'class="has-bottom-nav"' : ''; ?>>
 
+<?php if ($flash): ?>
+<div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin:10px 16px 0;"><?php echo sanitize($flash['message']); ?></div>
+<?php endif; ?>
+
 <?php if (!$user): ?>
 <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
     <a href="index.php" style="text-decoration:none;display:flex;align-items:center;">
         <img src="assets/images/ac%20logo.png" alt="<?php echo APP_NAME; ?>" style="height:38px;width:auto;display:block;">
     </a>
     <nav style="display:flex;gap:12px;align-items:center;">
-        <a href="browse_jobs.php"  style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Jobs</a>
-        <a href="marketplace.php"  style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Marketplace</a>
+        <?php if (module_enabled('jobs')): ?><a href="browse_jobs.php"  style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Jobs</a><?php endif; ?>
+        <?php if (module_enabled('mp')): ?><a href="marketplace.php"  style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Marketplace</a><?php endif; ?>
         <a href="find_workers.php" style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Workers</a>
-        <a href="events.php"       style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Events</a>
-        <a href="news.php"         style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">News</a>
+        <?php if (module_enabled('events')): ?><a href="events.php"       style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Events</a><?php endif; ?>
+        <?php if (module_enabled('news')): ?><a href="news.php"         style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">News</a><?php endif; ?>
         <a href="about.php"        style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">About</a>
         <a href="login.php"    class="button button-secondary button-small">Sign in</a>
     </nav>
@@ -380,19 +385,19 @@ try {
 
 <!-- Module cards -->
 <div class="cm-modules">
-    <a href="<?php echo $user ? 'jobs.php' : 'browse_jobs.php'; ?>" class="cm-mod"><div class="cm-mod-icon">💼</div><div class="cm-mod-title">Jobs &amp; Services</div><div class="cm-mod-desc">Browse open jobs &amp; post requests</div></a>
-    <a href="news.php"         class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a>
-    <a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a>
-    <a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a>
+    <?php if (module_enabled('jobs')): ?><a href="<?php echo $user ? 'jobs.php' : 'browse_jobs.php'; ?>" class="cm-mod"><div class="cm-mod-icon">💼</div><div class="cm-mod-title">Jobs &amp; Services</div><div class="cm-mod-desc">Browse open jobs &amp; post requests</div></a><?php endif; ?>
+    <?php if (module_enabled('news')): ?><a href="news.php"         class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a><?php endif; ?>
+    <?php if (module_enabled('events')): ?><a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a><?php endif; ?>
+    <?php if (module_enabled('funerals')): ?><a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a><?php endif; ?>
     <a href="find_workers.php" class="cm-mod"><div class="cm-mod-icon">🔧</div><div class="cm-mod-title">Find Workers</div><div class="cm-mod-desc">Skilled professionals near you</div></a>
-    <a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a>
-    <a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a>
+    <?php if (module_enabled('delivery')): ?><a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a><?php endif; ?>
+    <?php if (module_enabled('mp')): ?><a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a><?php endif; ?>
 </div>
 
 <div class="cm-shell">
 
     <!-- Marketplace Featured Products -->
-    <?php if ($featuredProducts): ?>
+    <?php if ($featuredProducts && module_enabled('mp')): ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>🛍️ Marketplace</h2>
@@ -429,7 +434,7 @@ try {
     <?php endif; ?>
 
     <!-- Open Delivery Requests -->
-    <?php if ($openDeliveries): ?>
+    <?php if ($openDeliveries && module_enabled('delivery')): ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Open Delivery Requests</h2>
@@ -473,6 +478,7 @@ try {
     <?php endif; ?>
 
     <!-- Open Jobs & Services -->
+    <?php if (module_enabled('jobs')): ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Open Jobs &amp; Services</h2>
@@ -546,8 +552,10 @@ try {
         </div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <!-- Upcoming Events -->
+    <?php if (module_enabled('events')): ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Upcoming Events</h2>
@@ -577,8 +585,10 @@ try {
         <div class="cm-empty">No upcoming events at the moment.</div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <!-- Recent Funeral Announcements -->
+    <?php if (module_enabled('funerals')): ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Funeral Announcements</h2>
@@ -607,9 +617,10 @@ try {
         <div class="cm-empty">No funeral announcements yet.</div>
         <?php endif; ?>
     </div>
+    <?php endif; ?>
 
     <!-- Latest News -->
-    <?php if ($latestNews): ?>
+    <?php if ($latestNews && module_enabled('news')): ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Latest News</h2>

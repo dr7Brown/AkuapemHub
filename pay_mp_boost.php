@@ -9,6 +9,7 @@ require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
 require_once __DIR__ . '/paystack.php';
 
+require_module_enabled('mp', 'Marketplace');
 require_login();
 $user = current_user();
 
@@ -31,8 +32,11 @@ if (!$boost) {
     exit;
 }
 
-// If payment is free (admin set price to 0), activate immediately
-if ((float)$boost['price_paid'] <= 0) {
+// If payment is free (admin set price to 0), or the order's owner has since
+// been granted a complimentary membership, activate immediately — a
+// complimentary member should never be asked to pay for an order that was
+// created before the membership was granted.
+if ((float)$boost['price_paid'] <= 0 || user_has_complimentary_access((int)$boost['shop_owner_id'])) {
     activateBoostOrder($boostId, $boost, 0, $pdo);
     flash('Boost activated!', 'success');
     header('Location: seller_dashboard.php?tab=products');

@@ -4,6 +4,8 @@ require_once __DIR__ . '/functions.php';
 
 header('Content-Type: application/json');
 
+if (!module_enabled('news')) { echo json_encode(['error' => 'module_disabled']); exit; }
+
 $user   = current_user();
 $action = $_POST['action'] ?? '';
 $newsId = (int)($_POST['news_id'] ?? 0);

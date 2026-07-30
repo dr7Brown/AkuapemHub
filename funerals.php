@@ -2,6 +2,8 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('funerals', 'Funeral Announcements');
+
 $user    = current_user();
 $search  = trim($_GET['q']       ?? '');
 $month   = trim($_GET['month']   ?? '');   // YYYY-MM

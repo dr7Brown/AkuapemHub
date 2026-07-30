@@ -63,17 +63,42 @@ $rows = [];
 // Platform Payments — generic one-off fees (escrow & marketplace orders have their
 // own dedicated sources below, so they're excluded here to avoid double-counting).
 if ($service === 'all' || $service === 'platform') {
+    $paymentTypeLabels = [
+        'featured_job'          => 'Featured Job Listing',
+        'featured_worker'       => 'Featured Worker Profile',
+        'verification'          => 'Rider Verification Badge',
+        'job_post'              => 'Job Posting Fee',
+        'worker_service'        => 'Worker Service Listing Fee',
+        'news_post'             => 'News Article Posting Fee',
+        'event_post'            => 'Event Posting Fee',
+        'funeral_post'          => 'Funeral Announcement Posting Fee',
+        'mp_boost'              => 'Marketplace Product Boost',
+        'delivery_subscription' => 'Delivery Premium Subscription',
+        'delivery_sponsored'    => 'Delivery Sponsored Listing',
+        'delivery_verification' => 'Delivery Rider Verification',
+        'featured_event'        => 'Featured Event Listing',
+        'featured_funeral'      => 'Featured Funeral Announcement',
+        'featured_news'         => 'Featured News Article',
+        'mp_subscription'       => 'Marketplace Seller Subscription',
+    ];
+    // Whitelist (not blacklist) the types that belong in this catch-all bucket —
+    // escrow & mp_order have their own dedicated sources below. A whitelist means
+    // any stray/corrupted payment_type value can never slip through and duplicate
+    // another section's row, which a NOT-IN blacklist would silently allow.
+    $allowedTypes = array_keys($paymentTypeLabels);
+    $placeholders = implode(',', array_fill(0, count($allowedTypes), '?'));
     $stmt = $pdo->prepare(
         "SELECT * FROM platform_payments
-         WHERE user_id=? AND status='paid' AND payment_type NOT IN ('escrow_payment','escrow_with_posting','mp_order')
+         WHERE user_id=? AND status='paid' AND payment_type IN ($placeholders)
            AND paid_at BETWEEN ? AND ?
          ORDER BY paid_at DESC"
     );
-    $stmt->execute([$targetId, $fromSql, $toSql]);
+    $stmt->execute([$targetId, ...$allowedTypes, $fromSql, $toSql]);
     foreach ($stmt->fetchAll() as $p) {
+        $label = $paymentTypeLabels[$p['payment_type']] ?? ucwords(str_replace('_', ' ', $p['payment_type']));
         $rows[] = [
             'date' => $p['paid_at'], 'service' => 'Platform',
-            'description' => ucwords(str_replace('_', ' ', $p['payment_type'])) . ' — Ref ' . strtoupper($p['reference_code']),
+            'description' => $label . ' — Ref ' . strtoupper($p['reference_code']),
             'direction' => 'out', 'amount' => (float)$p['amount'], 'status' => 'Paid',
         ];
     }

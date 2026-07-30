@@ -832,6 +832,7 @@ function rank_jobs_for_worker(array $jobs, array $worker) {
 
 function sweep_expired_featured() {
     global $pdo;
+    require_once __DIR__ . '/marketplace_functions.php';
 
     // ── Jobs & workers ────────────────────────────────────────────────────
     $pdo->exec("UPDATE service_requests SET featured = 0 WHERE featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
@@ -941,11 +942,63 @@ function sweep_expired_featured() {
 
     // ── Marketplace seller subscriptions ──────────────────────────────────
     try {
+        // Deferred downgrades: a 'pending_renewal' row whose scheduled start date
+        // has arrived takes over now — mp_activate_subscription() supersedes the
+        // still-active old row and mirrors mp_shops, since start_date <= today
+        // makes it non-deferred at this point.
+        $dueDowngrades = $pdo->query("SELECT id FROM mp_seller_subscriptions WHERE status='pending_renewal' AND start_date <= CURDATE()")->fetchAll();
+        foreach ($dueDowngrades as $d) {
+            mp_activate_subscription((int)$d['id']);
+        }
+
+        // Advance reminders — 14/7/3/1 day(s) before expiry, each fires exactly
+        // once per subscription (mp_subscription_notifications dedup, since there
+        // are multiple milestones here unlike the single-flag pattern elsewhere).
+        foreach (['14d' => 14, '7d' => 7, '3d' => 3, '24h' => 1] as $milestone => $daysBefore) {
+            $due = $pdo->prepare(
+                "SELECT mss.id, mss.shop_id, ms.user_id, ms.phone, u.email, u.name AS user_name, msp.name AS plan_name, mss.end_date
+                 FROM mp_seller_subscriptions mss
+                 JOIN mp_shops ms ON mss.shop_id = ms.id
+                 JOIN users u ON ms.user_id = u.id
+                 JOIN mp_seller_subscription_plans msp ON mss.plan_id = msp.id
+                 WHERE mss.status = 'active' AND mss.end_date = DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                   AND NOT EXISTS (SELECT 1 FROM mp_subscription_notifications msn WHERE msn.subscription_id = mss.id AND msn.milestone = ?)"
+            );
+            $due->execute([$daysBefore, $milestone]);
+            foreach ($due->fetchAll() as $s) {
+                $body = 'Your ' . $s['plan_name'] . ' marketplace subscription expires on ' . date('d M Y', strtotime($s['end_date'])) . '. Renew to keep your listings live.';
+                notify_user((int)$s['user_id'], 'Subscription Expiring Soon', $body, 'warning', 'pay_mp_subscription.php');
+                if (function_exists('send_business_message') && !empty($s['phone'])) {
+                    send_business_message((int)$s['user_id'], $s['phone'], $body, 'sms');
+                }
+                if (!empty($s['email'])) {
+                    require_once __DIR__ . '/services/EmailService.php';
+                    EmailService::send($s['email'], 'Subscription Expiring Soon — ' . APP_NAME, '<p>Hi ' . htmlspecialchars($s['user_name']) . ',</p><p>' . htmlspecialchars($body) . '</p>', (int)$s['user_id']);
+                }
+                $pdo->prepare("INSERT IGNORE INTO mp_subscription_notifications (subscription_id, milestone) VALUES (?,?)")->execute([$s['id'], $milestone]);
+            }
+        }
+
+        // On expiry
         $expired = $pdo->query("SELECT mss.id, mss.shop_id, ms.user_id FROM mp_seller_subscriptions mss JOIN mp_shops ms ON mss.shop_id=ms.id WHERE mss.status='active' AND mss.end_date < CURDATE()")->fetchAll();
         foreach ($expired as $sub) {
             $pdo->prepare("UPDATE mp_seller_subscriptions SET status='expired' WHERE id=?")->execute([$sub['id']]);
             $pdo->prepare("UPDATE mp_shops SET is_subscribed=0, subscription_plan_id=NULL, subscription_end=NULL WHERE id=?")->execute([$sub['shop_id']]);
-            notify_user((int)$sub['user_id'], 'Seller Subscription Expired', 'Your seller subscription has expired. Renew to keep your benefits.', 'warning');
+            $pdo->prepare("INSERT INTO mp_subscription_history (subscription_id, shop_id, event) VALUES (?,?,'expired')")->execute([$sub['id'], $sub['shop_id']]);
+            notify_user((int)$sub['user_id'], 'Seller Subscription Expired', 'Your seller subscription has expired. Products remain saved but are hidden from customers until you renew.', 'warning', 'pay_mp_subscription.php');
+            $pdo->prepare("INSERT IGNORE INTO mp_subscription_notifications (subscription_id, milestone) VALUES (?,'on_expiry')")->execute([$sub['id']]);
+        }
+
+        // 7 days after expiry — one last nudge if still not renewed
+        $stillExpired = $pdo->query(
+            "SELECT mss.id, mss.shop_id, ms.user_id FROM mp_seller_subscriptions mss
+             JOIN mp_shops ms ON mss.shop_id = ms.id
+             WHERE mss.status = 'expired' AND mss.end_date = DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+               AND NOT EXISTS (SELECT 1 FROM mp_subscription_notifications msn WHERE msn.subscription_id = mss.id AND msn.milestone = '7d_after')"
+        )->fetchAll();
+        foreach ($stillExpired as $sub) {
+            notify_user((int)$sub['user_id'], 'Still Want to Sell? Renew Your Subscription', 'Your marketplace subscription expired a week ago — your products are still saved. Renew any time to make them visible again.', 'info', 'pay_mp_subscription.php');
+            $pdo->prepare("INSERT IGNORE INTO mp_subscription_notifications (subscription_id, milestone) VALUES (?,'7d_after')")->execute([$sub['id']]);
         }
     } catch (Exception $e) {}
 
@@ -1650,6 +1703,14 @@ function get_platform_setting($key, $default = null) {
     }
 }
 
+/** Whether a platform module is switched on. $key is the settings prefix —
+ *  e.g. module_enabled('mp') reads 'mp_enabled', module_enabled('jobs') reads
+ *  'jobs_enabled'. Defaults to enabled so a missing row never silently
+ *  disables something. */
+function module_enabled(string $key): bool {
+    return get_platform_setting("{$key}_enabled", '1') === '1';
+}
+
 function set_platform_setting($key, $value) {
     global $pdo;
     $pdo->prepare('INSERT INTO platform_settings (setting_key, setting_value, updated_at) VALUES (?, ?, NOW())
@@ -1673,7 +1734,23 @@ function public_job_statuses_sql() {
     return "'" . implode("','", $statuses) . "'";
 }
 
+/**
+ * Whether $userId (default: the logged-in user) has been granted a
+ * complimentary membership by an admin — free access to every paid feature
+ * on the platform. Always queries fresh (no session caching) so a revoke
+ * takes effect on the member's very next action, not just their next login.
+ */
+function user_has_complimentary_access(?int $userId = null): bool {
+    global $pdo;
+    $userId = $userId ?? (current_user()['id'] ?? null);
+    if (!$userId) return false;
+    $stmt = $pdo->prepare('SELECT is_complimentary FROM users WHERE id=?');
+    $stmt->execute([$userId]);
+    return (bool)$stmt->fetchColumn();
+}
+
 function is_feature_paid($featureKey) {
+    if (user_has_complimentary_access()) return false;
     $mode = get_platform_setting('monetization_mode', 'free');
     if ($mode === 'free') return false;
     if ($mode === 'paid') return true;

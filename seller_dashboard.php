@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
 
+require_module_enabled('mp', 'Marketplace');
 require_login();
 $user  = current_user();
 $flash = get_flash();
@@ -217,11 +218,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'product
             $pdo->prepare("UPDATE mp_products SET status='archived' WHERE id=?")->execute([$productId]);
             flash('Product archived.', 'info');
         } elseif ($action === 'reactivate' && $prod['status'] === 'archived') {
-            $pdo->prepare("UPDATE mp_products SET status='pending_approval' WHERE id=?")->execute([$productId]);
-            flash('Product resubmitted for approval.', 'success');
+            $listCheck = mp_shop_can_list_product((int)$shop['id']);
+            if (!$listCheck['allowed']) {
+                if ($listCheck['no_subscription']) {
+                    // Send them straight to checkout with the reason, rather than
+                    // just showing the message on the products tab they can't act on.
+                    flash('You need an active marketplace subscription before you can list products. Subscribe to a package to continue.', 'error');
+                    header('Location: pay_mp_subscription.php');
+                    exit;
+                }
+                flash('You have reached your monthly product limit. Upgrade your subscription or remove existing listings.', 'error');
+            } else {
+                $pdo->prepare("UPDATE mp_products SET status='pending_approval' WHERE id=?")->execute([$productId]);
+                flash('Product resubmitted for approval.', 'success');
+            }
         }
     }
     header('Location: seller_dashboard.php?tab=products');
+    exit;
+}
+
+// ── Cancel own subscription ─────────────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'cancel_subscription') {
+    csrf_check();
+    if ($shop) {
+        $subId = (int)($_POST['subscription_id'] ?? 0);
+        $chk = $pdo->prepare("SELECT id FROM mp_seller_subscriptions WHERE id=? AND shop_id=?");
+        $chk->execute([$subId, $shop['id']]);
+        if ($chk->fetch() && mp_cancel_subscription($subId)) {
+            flash('Subscription cancelled.', 'success');
+        } else {
+            flash('Could not cancel — subscription not found.', 'error');
+        }
+    }
+    header('Location: seller_dashboard.php?tab=subscription');
     exit;
 }
 
@@ -229,29 +259,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'product
 $products = $orders = [];
 $stats = ['products'=>0,'active'=>0,'pending_orders'=>0,'total_revenue'=>0];
 
+$productStatusFilter = $_GET['pstatus'] ?? 'all';
+$productQ            = trim($_GET['pq'] ?? '');
+$validProductStatuses = ['draft','pending_approval','approved','rejected','out_of_stock','archived'];
+
+$orderStatusFilter = $_GET['ostatus'] ?? 'all';
+$orderQ            = trim($_GET['oq'] ?? '');
+$validOrderStatuses = ['pending','confirmed','processing','ready_for_delivery','in_transit','delivered','cancelled','refunded'];
+
 if ($shop) {
+    $pWhere  = ['mp.shop_id = ?'];
+    $pParams = [$shop['id']];
+    if (in_array($productStatusFilter, $validProductStatuses, true)) {
+        $pWhere[] = 'mp.status = ?';
+        $pParams[] = $productStatusFilter;
+    }
+    if ($productQ !== '') {
+        $pWhere[] = 'mp.name LIKE ?';
+        $pParams[] = '%' . $productQ . '%';
+    }
     $products = $pdo->prepare(
         'SELECT mp.*, mc.name AS cat_name,
                 (SELECT image_path FROM mp_product_images WHERE product_id=mp.id AND is_primary=1 LIMIT 1) AS primary_image
          FROM mp_products mp
          LEFT JOIN mp_categories mc ON mp.category_id=mc.id
-         WHERE mp.shop_id=? ORDER BY mp.created_at DESC LIMIT 60'
+         WHERE ' . implode(' AND ', $pWhere) . '
+         ORDER BY mp.created_at DESC LIMIT 60'
     );
-    $products->execute([$shop['id']]);
+    $products->execute($pParams);
     $products = $products->fetchAll();
 
+    $oWhere  = ['mo.shop_id = ?'];
+    $oParams = [$shop['id']];
+    if (in_array($orderStatusFilter, $validOrderStatuses, true)) {
+        $oWhere[] = 'mo.status = ?';
+        $oParams[] = $orderStatusFilter;
+    }
+    if ($orderQ !== '') {
+        $oWhere[] = '(u.name LIKE ? OR mo.id = ?)';
+        $oParams[] = '%' . $orderQ . '%';
+        $oParams[] = (int)$orderQ;
+    }
+    $orderSort = $_GET['osort'] ?? 'newest';
+    $orderOrderBy = match($orderSort) {
+        'oldest'  => 'mo.created_at ASC',
+        'amt_high'=> 'mo.total_amount DESC',
+        'amt_low' => 'mo.total_amount ASC',
+        default   => 'mo.created_at DESC',
+    };
     $orders = $pdo->prepare(
         'SELECT mo.*, u.name AS customer_name
          FROM mp_orders mo JOIN users u ON mo.customer_id=u.id
-         WHERE mo.shop_id=? ORDER BY mo.created_at DESC LIMIT 40'
+         WHERE ' . implode(' AND ', $oWhere) . "
+         ORDER BY $orderOrderBy LIMIT 40"
     );
-    $orders->execute([$shop['id']]);
+    $orders->execute($oParams);
     $orders = $orders->fetchAll();
 
-    $stats['products']      = count($products);
-    $stats['active']        = count(array_filter($products, fn($p) => $p['status']==='approved'));
-    $stats['pending_orders']= count(array_filter($orders, fn($o) => $o['status']==='pending'));
-    $stats['total_revenue'] = array_sum(array_column(array_filter($orders, fn($o) => $o['status']==='delivered'), 'total_amount'));
+    // Dedicated unfiltered queries — the product/order filters above must not
+    // skew these dashboard-wide stat cards.
+    $productsCountSt = $pdo->prepare('SELECT COUNT(*), SUM(status="approved") FROM mp_products WHERE shop_id=?');
+    $productsCountSt->execute([$shop['id']]);
+    [$stats['products'], $stats['active']] = $productsCountSt->fetch(PDO::FETCH_NUM);
+    $stats['products'] = (int)$stats['products'];
+    $stats['active']   = (int)$stats['active'];
+
+    $ordersStatsSt = $pdo->prepare('SELECT SUM(status="pending"), SUM(IF(status="delivered", total_amount, 0)) FROM mp_orders WHERE shop_id=?');
+    $ordersStatsSt->execute([$shop['id']]);
+    [$stats['pending_orders'], $stats['total_revenue']] = $ordersStatsSt->fetch(PDO::FETCH_NUM);
+    $stats['pending_orders'] = (int)$stats['pending_orders'];
+    $stats['total_revenue']  = (float)$stats['total_revenue'];
 }
 
 // ── Analytics (own queries — the $orders array above is capped at 40 rows) ──
@@ -399,12 +476,13 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <header class="app-topbar">
     <a href="marketplace.php" class="button button-secondary button-small">← Marketplace</a>
     <span class="brand">🏪 <?php echo $shop ? sanitize(mb_substr($shop['shop_name'],0,20)) : 'My Shop'; ?>
-        <?php if (!empty($shop['is_subscribed']) && !empty($shop['subscription_end']) && $shop['subscription_end'] >= date('Y-m-d')): ?>
-        <span style="font-size:.62rem;font-weight:800;background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:20px;margin-left:4px;">⭐ PRO</span>
+        <?php if ($shop && !empty($shop['is_subscribed']) && !empty($shop['subscription_end']) && $shop['subscription_end'] >= date('Y-m-d')):
+            $__navSub = get_shop_active_subscription((int)$shop['id']); ?>
+        <span style="font-size:.62rem;font-weight:800;background:<?php echo sanitize($__navSub['badge_color'] ?? '#fef3c7'); ?>;color:#92400e;padding:1px 7px;border-radius:20px;margin-left:4px;">⭐ <?php echo sanitize($__navSub['badge_name'] ?? 'PRO'); ?></span>
         <?php endif; ?>
     </span>
-    <?php if (get_platform_setting('mp_subscription_enabled','0')==='1'): ?>
-    <a href="pay_mp_subscription.php" class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#f59e0b;font-size:.76rem;">⭐ Subscribe</a>
+    <?php if ($shop && get_platform_setting('mp_subscription_enabled','0')==='1'): ?>
+    <a href="?tab=subscription" class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#f59e0b;font-size:.76rem;">⭐ Subscription</a>
     <?php endif; ?>
 </header>
 
@@ -432,6 +510,9 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     </a>
     <a href="?tab=analytics" class="sd-tab <?php echo $tab==='analytics'?'active':''; ?>">Analytics</a>
     <a href="?tab=wallet"    class="sd-tab <?php echo $tab==='wallet'?'active':''; ?>">Wallet</a>
+    <?php if (get_platform_setting('mp_subscription_enabled','0')==='1'): ?>
+    <a href="?tab=subscription" class="sd-tab <?php echo $tab==='subscription'?'active':''; ?>">Subscription</a>
+    <?php endif; ?>
     <?php endif; ?>
     <a href="?tab=setup" class="sd-tab <?php echo $tab==='setup'?'active':''; ?>"><?php echo $shop ? 'Shop Settings' : 'Create Shop'; ?></a>
     <?php if ($shop): ?>
@@ -456,6 +537,18 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     <a href="seller_boost.php" class="button button-secondary button-small">⚡ Boost</a>
     <a href="seller_product_form.php" class="button button-primary button-small">+ Add Product</a>
 </div>
+<form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+    <input type="hidden" name="tab" value="products">
+    <select name="pstatus" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <option value="all" <?php echo $productStatusFilter==='all'?'selected':''; ?>>All Statuses</option>
+        <?php foreach ($validProductStatuses as $vs): ?>
+        <option value="<?php echo $vs; ?>" <?php echo $productStatusFilter===$vs?'selected':''; ?>><?php echo mp_product_status_label($vs); ?></option>
+        <?php endforeach; ?>
+    </select>
+    <input type="text" name="pq" value="<?php echo sanitize($productQ); ?>" placeholder="Search product name…" style="flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+    <button type="submit" class="button button-secondary button-small">Filter</button>
+    <?php if ($productStatusFilter !== 'all' || $productQ !== ''): ?><a href="?tab=products" class="button button-secondary button-small">Clear</a><?php endif; ?>
+</form>
 <?php if ($products): foreach ($products as $p): ?>
 <div class="sd-prod-card">
     <div class="sd-prod-img">
@@ -490,11 +583,29 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     </div>
 </div>
 <?php endforeach; else: ?>
-<div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);"><p>No products yet. <a href="seller_product_form.php" style="color:var(--primary,#0f766e);">Add your first product →</a></p></div>
+<div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);"><p><?php echo ($productStatusFilter !== 'all' || $productQ !== '') ? 'No products match this filter.' : 'No products yet. <a href="seller_product_form.php" style="color:var(--primary,#0f766e);">Add your first product →</a>'; ?></p></div>
 <?php endif; ?>
 
 <?php elseif ($tab === 'orders' && $shop): ?>
 <?php $orderStatusMap = ['pending'=>['processing','cancelled'],'confirmed'=>['processing','cancelled'],'processing'=>['ready_for_delivery','cancelled']]; ?>
+<form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+    <input type="hidden" name="tab" value="orders">
+    <select name="ostatus" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <option value="all" <?php echo $orderStatusFilter==='all'?'selected':''; ?>>All Statuses</option>
+        <?php foreach ($validOrderStatuses as $vs): ?>
+        <option value="<?php echo $vs; ?>" <?php echo $orderStatusFilter===$vs?'selected':''; ?>><?php echo mp_order_status_label($vs); ?></option>
+        <?php endforeach; ?>
+    </select>
+    <input type="text" name="oq" value="<?php echo sanitize($orderQ); ?>" placeholder="Search customer name or order #…" style="flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+    <select name="osort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <option value="newest" <?php echo $orderSort==='newest'?'selected':''; ?>>Newest First</option>
+        <option value="oldest" <?php echo $orderSort==='oldest'?'selected':''; ?>>Oldest First</option>
+        <option value="amt_high" <?php echo $orderSort==='amt_high'?'selected':''; ?>>Highest Amount</option>
+        <option value="amt_low" <?php echo $orderSort==='amt_low'?'selected':''; ?>>Lowest Amount</option>
+    </select>
+    <button type="submit" class="button button-secondary button-small">Filter</button>
+    <?php if ($orderStatusFilter !== 'all' || $orderQ !== '' || $orderSort !== 'newest'): ?><a href="?tab=orders" class="button button-secondary button-small">Clear</a><?php endif; ?>
+</form>
 <?php if ($orders): foreach ($orders as $order):
     $oItems = $pdo->prepare('SELECT product_name, quantity, subtotal FROM mp_order_items WHERE order_id=?');
     $oItems->execute([$order['id']]);
@@ -509,7 +620,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
         $oDispute = $oDisputeStmt->fetch();
     }
 ?>
-<div class="sd-ord-card">
+<div class="sd-ord-card" style="border-left:4px solid <?php echo mp_order_status_color($order['status']); ?>;">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
         <div>
             <div style="font-weight:800;">Order #<?php echo $order['id']; ?></div>
@@ -564,7 +675,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     </div>
 </div>
 <?php endforeach; else: ?>
-<div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);">No orders yet.</div>
+<div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);"><?php echo ($orderStatusFilter !== 'all' || $orderQ !== '') ? 'No orders match this filter.' : 'No orders yet.'; ?></div>
 <?php endif; ?>
 
 <?php elseif ($tab === 'analytics' && $shop): ?>
@@ -891,6 +1002,113 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 
 @media(max-width:420px){ .sdw-card-amount { font-size:1.8rem; } }
 </style>
+
+<?php elseif ($tab === 'subscription' && $shop):
+    $curSub    = get_shop_active_subscription((int)$shop['id']);
+    $listCheck = mp_shop_can_list_product((int)$shop['id']);
+    $subHistory = $pdo->prepare(
+        "SELECT h.*, fp.name AS from_plan_name, tp.name AS to_plan_name
+         FROM mp_subscription_history h
+         LEFT JOIN mp_seller_subscription_plans fp ON h.from_plan_id = fp.id
+         LEFT JOIN mp_seller_subscription_plans tp ON h.to_plan_id = tp.id
+         WHERE h.shop_id = ? ORDER BY h.created_at DESC LIMIT 20"
+    );
+    $subHistory->execute([$shop['id']]);
+    $subHistory = $subHistory->fetchAll();
+    $subPayments = $pdo->prepare(
+        "SELECT amount, status, paid_at, reference_code FROM platform_payments
+         WHERE user_id = ? AND payment_type = 'mp_subscription' ORDER BY created_at DESC LIMIT 20"
+    );
+    $subPayments->execute([$user['id']]);
+    $subPayments = $subPayments->fetchAll();
+    $historyEventLabels = ['purchased'=>'Purchased','upgraded'=>'Upgraded','downgraded'=>'Downgrade scheduled','renewed'=>'Renewed','cancelled'=>'Cancelled','expired'=>'Expired'];
+?>
+
+    <?php if (!$curSub): ?>
+    <div class="mpp-card" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">
+        <strong>No active subscription.</strong>
+        <p style="font-size:.86rem;color:var(--text-muted,#6b7280);margin:6px 0 12px;">
+            <?php echo get_platform_setting('mp_subscription_enabled','0')==='1' ? 'You need an active subscription to list products.' : 'Subscriptions aren\'t required to list products right now, but you can subscribe for extra benefits.'; ?>
+        </p>
+        <a href="pay_mp_subscription.php" class="button button-primary">View Plans →</a>
+    </div>
+    <?php else: ?>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+            <div>
+                <strong style="font-size:1.1rem;">⭐ <?php echo sanitize($curSub['plan_name']); ?></strong>
+                <?php if ($curSub['badge_name']): ?><span style="font-size:.62rem;font-weight:800;background:<?php echo sanitize($curSub['badge_color'] ?: '#fef3c7'); ?>;color:#92400e;padding:2px 8px;border-radius:20px;margin-left:6px;"><?php echo sanitize($curSub['badge_name']); ?></span><?php endif; ?>
+                <p style="font-size:.84rem;color:var(--text-muted,#6b7280);margin:4px 0 0;">
+                    Active until <?php echo date('d M Y', strtotime($curSub['end_date'])); ?>
+                    (<?php $daysLeft = max(0, (int)ceil((strtotime($curSub['end_date']) - strtotime(date('Y-m-d'))) / 86400)); echo $daysLeft; ?> day<?php echo $daysLeft===1?'':'s'; ?> remaining)
+                </p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="pay_mp_subscription.php" class="button button-primary button-small">Renew / Change Plan</a>
+                <form method="post" action="seller_dashboard.php?tab=subscription" onsubmit="return confirm('Cancel your subscription now? Your products stay saved but become hidden from customers immediately.');">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="form" value="cancel_subscription">
+                    <input type="hidden" name="subscription_id" value="<?php echo (int)$curSub['id']; ?>">
+                    <button type="submit" class="button button-secondary button-small" style="color:#c0392b;">Cancel</button>
+                </form>
+            </div>
+        </div>
+
+        <div style="margin-top:16px;">
+            <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--text-muted,#6b7280);margin-bottom:4px;">
+                <span>Active listings used</span>
+                <span><?php echo $listCheck['unlimited'] ? 'Unlimited' : $listCheck['used'] . ' / ' . $listCheck['limit']; ?></span>
+            </div>
+            <?php if (!$listCheck['unlimited']): $pct = $listCheck['limit'] > 0 ? min(100, round($listCheck['used'] / $listCheck['limit'] * 100)) : 100; ?>
+            <div style="background:var(--surface-muted,#f1f5f9);border-radius:20px;height:8px;overflow:hidden;">
+                <div style="background:<?php echo $pct>=100?'#c0392b':'var(--primary,#2f8f5b)'; ?>;height:100%;width:<?php echo $pct; ?>%;"></div>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:16px;font-size:.78rem;color:var(--text-muted,#6b7280);">
+            <span>Max images: <?php echo $curSub['unlimited_images'] ? 'Unlimited' : (int)$curSub['max_images']; ?></span>
+            <?php if ($curSub['featured_shop_included']): ?><span>✓ Featured shop</span><?php endif; ?>
+            <?php if ((int)$curSub['featured_products_included'] > 0): ?><span>✓ <?php echo (int)$curSub['featured_products_included']; ?> featured products</span><?php endif; ?>
+            <?php if ($curSub['analytics_access']): ?><span>✓ Analytics access</span><?php endif; ?>
+            <?php if ($curSub['verification_included']): ?><span>✓ Verification included</span><?php endif; ?>
+            <span>Support: <?php echo sanitize(ucfirst($curSub['support_level'])); ?></span>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">
+        <p class="sd-set-title" style="font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 12px;">Subscription History</p>
+        <?php if (!$subHistory): ?>
+        <p style="font-size:.84rem;color:var(--text-muted,#6b7280);">No subscription activity yet.</p>
+        <?php else: ?>
+        <?php foreach ($subHistory as $h): ?>
+        <div class="sdw-row">
+            <div class="sdw-row-body">
+                <div class="sdw-row-title"><?php echo sanitize($historyEventLabels[$h['event']] ?? ucfirst($h['event'])); ?><?php if ($h['to_plan_name']): ?> — <?php echo sanitize($h['to_plan_name']); ?><?php endif; ?></div>
+                <div class="sdw-row-meta"><?php echo date('d M Y, H:i', strtotime($h['created_at'])); ?><?php if ($h['notes']): ?> · <?php echo sanitize($h['notes']); ?><?php endif; ?></div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;">
+        <p class="sd-set-title" style="font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 12px;">Payment History</p>
+        <?php if (!$subPayments): ?>
+        <p style="font-size:.84rem;color:var(--text-muted,#6b7280);">No payments yet.</p>
+        <?php else: ?>
+        <?php foreach ($subPayments as $p): ?>
+        <div class="sdw-row">
+            <div class="sdw-row-body">
+                <div class="sdw-row-title">GH&#8373; <?php echo number_format((float)$p['amount'],2); ?></div>
+                <div class="sdw-row-meta">Ref <?php echo sanitize(strtoupper($p['reference_code'])); ?> · <?php echo $p['paid_at'] ? date('d M Y, H:i', strtotime($p['paid_at'])) : 'Not yet paid'; ?></div>
+            </div>
+            <span class="sdw-badge" style="background:<?php echo $p['status']==='paid'?'#d1fae5':'#fee2e2'; ?>;color:<?php echo $p['status']==='paid'?'#065f46':'#991b1b'; ?>;"><?php echo ucfirst($p['status']); ?></span>
+        </div>
+        <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
 
 <?php elseif ($tab === 'setup'): ?>
 <?php if ($shopError): ?><div class="alert alert-error"><?php echo sanitize($shopError); ?></div><?php endif; ?>

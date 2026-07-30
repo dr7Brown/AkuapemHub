@@ -3,6 +3,8 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/modules/referrals/service.php';
 
+require_module_enabled('jobs', 'Jobs & Services');
+
 $user = current_user();
 if (!$user) { header('Location: browse_jobs.php'); exit; }
 $flash = get_flash();
@@ -447,83 +449,6 @@ if ($user) {
                 <?php endif; ?>
             </a>
         </div>
-        <?php endif; ?>
-
-        <?php if ($dashLatestNews): ?>
-        <section style="margin:0 0 20px;" aria-label="Latest News">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                <h2 style="margin:0;font-size:1rem;font-weight:700;">📰 Latest News</h2>
-                <a href="news.php" style="font-size:.82rem;color:var(--primary);font-weight:600;text-decoration:none;">View all →</a>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
-            <?php foreach ($dashLatestNews as $dn):
-                $dnThumb = $dn['featured_image'] ? sanitize($dn['featured_image']) : '';
-                $dnDate  = $dn['published_at'] ? date('M j, Y', strtotime($dn['published_at'])) : '';
-            ?>
-            <a href="news_article.php?slug=<?php echo urlencode($dn['slug']); ?>" style="display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;text-decoration:none;color:inherit;transition:box-shadow .15s,transform .15s;" onmouseover="this.style.boxShadow='0 4px 14px rgba(0,0,0,.09)';this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='';this.style.transform=''">
-                <?php if ($dnThumb): ?>
-                    <img src="<?php echo $dnThumb; ?>" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;">
-                <?php else: ?>
-                    <div style="width:100%;aspect-ratio:16/9;background:linear-gradient(135deg,var(--primary) 0%,#0d5e57 100%);display:flex;align-items:center;justify-content:center;font-size:1.4rem;">📰</div>
-                <?php endif; ?>
-                <div style="padding:9px 11px 11px;">
-                    <p style="margin:0 0 3px;font-weight:700;font-size:.85rem;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"><?php echo sanitize($dn['title']); ?></p>
-                    <?php if ($dnDate): ?><p style="margin:0;font-size:.73rem;color:var(--muted,#6b7280);">📅 <?php echo $dnDate; ?></p><?php endif; ?>
-                </div>
-            </a>
-            <?php endforeach; ?>
-            </div>
-        </section>
-        <?php endif; ?>
-
-        <?php if ($dashEvents): ?>
-        <section style="margin:0 0 20px;" aria-label="Upcoming Events">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                <h2 style="margin:0;font-size:1rem;font-weight:700;">📅 Upcoming Events</h2>
-                <a href="events.php" style="font-size:.82rem;color:#2563eb;font-weight:700;text-decoration:none;">View all →</a>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
-            <?php foreach ($dashEvents as $ev): ?>
-            <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" style="display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit;">
-                <?php if ($ev['featured_image']): ?>
-                    <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="" style="width:100%;aspect-ratio:16/9;object-fit:cover;">
-                <?php else: ?>
-                    <div style="aspect-ratio:16/9;background:linear-gradient(135deg,#1e3a5f,#0f2040);display:flex;align-items:center;justify-content:center;font-size:1.8rem;">📅</div>
-                <?php endif; ?>
-                <div style="padding:10px 12px 12px;">
-                    <p style="margin:0 0 3px;font-weight:700;font-size:.88rem;"><?php echo sanitize($ev['title']); ?></p>
-                    <p style="margin:0;font-size:.75rem;color:var(--muted,#6b7280);">📅 <?php echo date('d M Y', strtotime($ev['start_date'])); ?><?php if ($ev['venue']): ?> · <?php echo sanitize(mb_substr($ev['venue'],0,30)); ?><?php endif; ?></p>
-                </div>
-            </a>
-            <?php endforeach; ?>
-            </div>
-        </section>
-        <?php endif; ?>
-
-        <?php if ($dashFunerals): ?>
-        <section style="margin:0 0 20px;" aria-label="Funeral Announcements">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-                <h2 style="margin:0;font-size:1rem;font-weight:700;">🕊️ Funeral Announcements</h2>
-                <a href="funerals.php" style="font-size:.82rem;color:var(--muted,#6b7280);font-weight:700;text-decoration:none;">View all →</a>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
-            <?php foreach ($dashFunerals as $fa): ?>
-            <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" style="display:flex;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit;padding:12px;align-items:center;">
-                <div style="width:44px;height:44px;border-radius:10px;background:#f3f4f6;flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden;">
-                    <?php if ($fa['photograph']): ?>
-                        <img src="<?php echo sanitize($fa['photograph']); ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
-                    <?php else: ?>
-                        <span style="font-size:1rem;font-weight:900;color:#d1d5db;"><?php echo sanitize(mb_strtoupper(mb_substr($fa['deceased_name'],0,2))); ?></span>
-                    <?php endif; ?>
-                </div>
-                <div>
-                    <p style="margin:0 0 3px;font-weight:700;font-size:.88rem;"><?php echo sanitize($fa['deceased_name']); ?></p>
-                    <?php if ($fa['burial_date']): ?><p style="margin:0;font-size:.75rem;color:var(--muted,#6b7280);">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></p><?php endif; ?>
-                </div>
-            </a>
-            <?php endforeach; ?>
-            </div>
-        </section>
         <?php endif; ?>
 
         <?php if (is_worker()): ?>

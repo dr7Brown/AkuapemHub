@@ -2,6 +2,8 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('events', 'Events');
+
 $user    = current_user();
 $search  = trim($_GET['q'] ?? '');
 $filter  = in_array($_GET['filter'] ?? '', ['upcoming','past','featured']) ? $_GET['filter'] : 'upcoming';

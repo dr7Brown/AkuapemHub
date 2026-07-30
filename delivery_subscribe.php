@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/delivery_functions.php';
 
+require_module_enabled('delivery', 'Delivery Services');
 require_login();
 $user         = current_user();
 $agentProfile = get_delivery_agent_for_user((int)$user['id']);
@@ -23,7 +24,7 @@ $prices = [
     'yearly'    => (float)get_platform_setting('delivery_premium_yearly_price',    '180.00'),
 ];
 $durations = ['monthly' => 30, 'quarterly' => 90, 'yearly' => 365];
-$requiresPayment = get_platform_setting('delivery_premium_requires_payment', '0') === '1';
+$requiresPayment = get_platform_setting('delivery_premium_requires_payment', '0') === '1' && !user_has_complimentary_access();
 $enabled = get_platform_setting('delivery_enable_premium', '0') === '1';
 
 // Current active subscription

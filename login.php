@@ -32,9 +32,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$email]);
         $user = $stmt->fetch();
 
-        if (!$user || $user['banned'] || !password_verify($password, $user['password_hash'])) {
+        if (!$user || !password_verify($password, $user['password_hash'])) {
             login_rate_limit_record($ip);
-            $error = 'Invalid credentials or account is blocked.';
+            $error = 'Invalid email or password.';
+        } elseif ($user['banned']) {
+            login_rate_limit_record($ip);
+            $error = 'Your account has been blocked. Please contact support for assistance.';
         } elseif (requires_verified_email('login') && !$user['email_verified']) {
             // Don't count as a failed attempt — credentials are correct, just unverified
             $error = 'Please verify your email address before logging in. <a href="resend_verification.php?email=' . urlencode($user['email']) . '" style="color:var(--primary,#0f766e);font-weight:700;">Resend verification email →</a>';

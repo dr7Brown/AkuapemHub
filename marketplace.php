@@ -3,6 +3,8 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
 
+require_module_enabled('mp', 'Marketplace');
+
 $user     = current_user();
 $flash    = get_flash();
 $cartCount= $user ? mp_get_cart_count((int)$user['id']) : 0;

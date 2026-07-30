@@ -87,6 +87,16 @@ function require_role($role) {
     }
 }
 
+/** Blocks access to a module's pages when an admin has switched it off.
+ *  $key matches module_enabled()'s prefix (e.g. 'mp', 'jobs', 'events'). */
+function require_module_enabled(string $key, string $label): void {
+    if (!module_enabled($key)) {
+        flash("{$label} is currently unavailable.", 'error');
+        header('Location: ' . (defined('BASE_URL') ? BASE_URL : '') . '/index.php');
+        exit;
+    }
+}
+
 function login_user($user) {
     // Regenerate session ID on login to prevent session fixation attacks
     session_regenerate_id(true);

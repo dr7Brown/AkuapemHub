@@ -74,10 +74,34 @@ if (!defined('AKC_THEME_INJECTED')) {
         // No theme rows or DB not ready — favicon links still get injected
     }
 
-    ob_start(function (string $buf) use ($__headExtra): string {
+    // Admin impersonation banner — injected the same way, into <body> instead
+    // of <head>, so no per-page changes are needed for "Log In As This User"
+    // (admin/user_edit.php) to show a persistent, unmissable "Exit" link.
+    $__bodyExtra = '';
+    if (!empty($_SESSION['impersonator_admin_id'])) {
+        $__viewingAs = htmlspecialchars($_SESSION['user']['name'] ?? 'user', ENT_QUOTES, 'UTF-8');
+        $__bodyExtra =
+            '<div style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#f59e0b;color:#1a1a1a;' .
+            'padding:8px 14px;font-size:.82rem;font-weight:700;text-align:center;">' .
+            '👁️ Viewing as ' . $__viewingAs . ' &mdash; ' .
+            '<a href="' . rtrim(BASE_URL, '/') . '/exit_impersonation.php" style="color:#1a1a1a;text-decoration:underline;">Exit to Admin</a>' .
+            '</div><div style="height:38px;"></div>';
+    }
+
+    ob_start(function (string $buf) use ($__headExtra, $__bodyExtra): string {
         $pos = stripos($buf, '</head>');
-        if ($pos === false) return $buf;
-        return substr($buf, 0, $pos) . $__headExtra . substr($buf, $pos);
+        if ($pos !== false) $buf = substr($buf, 0, $pos) . $__headExtra . substr($buf, $pos);
+
+        if ($__bodyExtra !== '') {
+            $bodyPos = stripos($buf, '<body');
+            if ($bodyPos !== false) {
+                $tagEnd = strpos($buf, '>', $bodyPos);
+                if ($tagEnd !== false) {
+                    $buf = substr($buf, 0, $tagEnd + 1) . $__bodyExtra . substr($buf, $tagEnd + 1);
+                }
+            }
+        }
+        return $buf;
     });
-    unset($__headExtra);
+    unset($__headExtra, $__bodyExtra);
 }

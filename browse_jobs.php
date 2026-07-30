@@ -2,6 +2,8 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('jobs', 'Jobs & Services');
+
 // Logged-in users go to their dashboard
 if (current_user()) {
     header('Location: jobs.php');

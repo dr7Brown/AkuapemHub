@@ -737,12 +737,95 @@ the purchaser must approve before delivery guy should proceed.
 many delivery guys can apply at the same time, but only one approvals required
 onces item is delivered, system auto decline all other applications to that delivery job
 
+next:
+0. customer not seeing delivery order applications
+1. "seller_dashboard.php" should have filters for products and orders
+
+next: 
+delivery guy applied for delivery job with price and message
+but application not showing on customer 
+
+next:
+1. "Enable Marketplace module" admin unchecked this module but
+it is still enabled in the system. 
+i want admin to be able to enable or disable any of the services/modules on platform
+
+next:
+working great
+1. Open Delivery Requests on the dashboard, should only be visible to 
+delivery agents. i hope it makes sense that way?
+
+
+next:
+admin is unable to approve jobs from workers. 
+
+admin has these checkboxes but does not seem to work:
+Email Verification Requirements
+Choose which actions require a user to have verified their email address first. Unchecked = allowed even if unverified.
+Login to the platform
+Blocks unverified accounts from logging in at all	
+Post a Job
+Customer must verify email before posting a job	
+Apply for a Job
+Worker must verify email before applying to a job	
+Submit News Article
+Author must verify email before submitting an article	
+Submit Event
+Organiser must verify email before submitting an event	
+Submit Funeral Announcement
+Family/organiser must verify email before submitting an announcement	
+Create Marketplace Shop
+Seller must verify email before creating a shop	
+List Marketplace Product
+Seller must verify email before listing a new product	
+Create Delivery Request
+Customer must verify email before requesting a delivery	
+Register as Delivery Agent
+Rider must verify email before registering
+
+
+next:
+working fine, but:
+1. when email is verification is enabled for job application, 
+no notification is given when user try to apply job.
+check for the others too
+
+next:
+0. the description for some of transactions on the statement not clear.
+1. admin/index.php#user_statement.php?id=10 shows 2 separate transaction 
+for the same transaction. on the production server. 
+
+next
+1. "You need an active marketplace subscription before you can list products. Subscribe to a package to continue."
+this message shows up when shop owner tries to post
+product when she has not subscribed, and its good, 
+just that, the person should be redirected to the subscription
+page with the message too, so he does the subscription. 
+
+1. jobs.php showing just 5 categories under "Popular categories"
+this is fine for mobile screens. but on wide screens, show all by default. should be scrollable
+2. request_detail.php should also contain list of recommended job or Jobs you
+may also like
 
 
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+next:
+1. i want us to add a means to let delivery guys pay their
+commission through the app. admin to set number of day they can owe and 
+still have access to the system.
 
 
 

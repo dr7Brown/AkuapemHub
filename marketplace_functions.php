@@ -42,6 +42,197 @@ function get_shop(int $id): ?array {
     return $st->fetch() ?: null;
 }
 
+// ── Seller subscription / listing-limit enforcement ─────────────────────────
+
+function get_shop_active_subscription(int $shopId): ?array {
+    global $pdo;
+    $st = $pdo->prepare(
+        "SELECT mss.*, msp.name AS plan_name, msp.product_limit, msp.badge_name, msp.badge_color,
+                msp.max_images, msp.unlimited_images, msp.featured_shop_included,
+                msp.featured_products_included, msp.priority_ranking, msp.analytics_access,
+                msp.support_level, msp.verification_included, msp.duration_days
+         FROM mp_seller_subscriptions mss
+         JOIN mp_seller_subscription_plans msp ON mss.plan_id = msp.id
+         WHERE mss.shop_id = ? AND mss.status = 'active' AND mss.end_date >= CURDATE()
+         ORDER BY mss.end_date DESC LIMIT 1"
+    );
+    $st->execute([$shopId]);
+    return $st->fetch() ?: null;
+}
+
+// Whether the shop's owner has a complimentary membership — bypasses every
+// subscription-based marketplace limit below.
+function mp_shop_owner_is_complimentary(int $shopId): bool {
+    global $pdo;
+    $st = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id = ?');
+    $st->execute([$shopId]);
+    $ownerId = $st->fetchColumn();
+    return $ownerId ? user_has_complimentary_access((int)$ownerId) : false;
+}
+
+// Max images a shop's products may carry: -1 = unlimited, otherwise a count.
+// Falls back to 5 (the app's long-standing hardcoded default) when the
+// subscription module is off or the shop has no active plan, so behavior is
+// unchanged for everyone until the admin opts in.
+function mp_shop_max_images(int $shopId): int {
+    if (mp_shop_owner_is_complimentary($shopId)) return -1;
+    if (get_platform_setting('mp_subscription_enabled', '0') !== '1') {
+        return 5;
+    }
+    $sub = get_shop_active_subscription($shopId);
+    if (!$sub) return 5;
+    return $sub['unlimited_images'] ? -1 : (int)$sub['max_images'];
+}
+
+// Active listing = a product that has been submitted for publishing (or is
+// already live): pending_approval/approved/out_of_stock. A draft doesn't
+// occupy a slot yet (it's not public), and archiving or selling through a
+// listing frees its slot back up — per-design, the limit is on concurrently
+// active listings, not a lifetime/monthly count.
+function mp_shop_active_listing_count(int $shopId): int {
+    global $pdo;
+    $st = $pdo->prepare(
+        "SELECT COUNT(*) FROM mp_products WHERE shop_id = ? AND status IN ('pending_approval','approved','out_of_stock')"
+    );
+    $st->execute([$shopId]);
+    return (int)$st->fetchColumn();
+}
+
+/**
+ * Whether a shop may list (or reactivate) one more product right now.
+ * Returns ['allowed'=>bool, 'limit'=>int (-1=unlimited), 'used'=>int, 'unlimited'=>bool, 'no_subscription'=>bool].
+ * When the module itself is off (mp_subscription_enabled='0'), this is
+ * intentionally permissive — enforcement is entirely opt-in via that switch so
+ * existing shops are unaffected until the admin turns it on. Once on, a shop
+ * with no active subscription at all is blocked (the core business rule: every
+ * shop must subscribe before publishing), distinct from a shop that has a plan
+ * but has hit its limit.
+ */
+function mp_shop_can_list_product(int $shopId): array {
+    if (mp_shop_owner_is_complimentary($shopId)) {
+        return ['allowed' => true, 'limit' => -1, 'used' => 0, 'unlimited' => true, 'no_subscription' => false];
+    }
+    if (get_platform_setting('mp_subscription_enabled', '0') !== '1') {
+        return ['allowed' => true, 'limit' => -1, 'used' => 0, 'unlimited' => true, 'no_subscription' => false];
+    }
+    $sub = get_shop_active_subscription($shopId);
+    if (!$sub) {
+        return ['allowed' => false, 'limit' => 0, 'used' => 0, 'unlimited' => false, 'no_subscription' => true];
+    }
+    $limit = (int)$sub['product_limit'];
+    if ($limit === -1) {
+        return ['allowed' => true, 'limit' => -1, 'used' => 0, 'unlimited' => true, 'no_subscription' => false];
+    }
+    $used = mp_shop_active_listing_count($shopId);
+    return ['allowed' => $used < $limit, 'limit' => $limit, 'used' => $used, 'unlimited' => false, 'no_subscription' => false];
+}
+
+/**
+ * Makes a (paid-for or free) mp_seller_subscriptions row take effect — the one
+ * shared "activation" path for a first-time purchase, an upgrade, a renewal,
+ * and a deferred downgrade reaching its scheduled start date.
+ *
+ * If the row's start_date is still in the future (a downgrade recorded ahead of
+ * the current plan's expiry), it's marked 'pending_renewal' instead — paid for,
+ * but not yet live — and mp_shops / the sibling subscription are left untouched
+ * until sweep_expired_featured() calls this again once that date arrives.
+ */
+function mp_activate_subscription(int $subscriptionId, ?int $paymentId = null): void {
+    global $pdo;
+
+    $subSt = $pdo->prepare(
+        "SELECT mss.*, msp.name AS plan_name, msp.price AS plan_price, ms.user_id, ms.shop_name
+         FROM mp_seller_subscriptions mss
+         JOIN mp_seller_subscription_plans msp ON mss.plan_id = msp.id
+         JOIN mp_shops ms ON mss.shop_id = ms.id
+         WHERE mss.id = ?"
+    );
+    $subSt->execute([$subscriptionId]);
+    $sub = $subSt->fetch();
+    if (!$sub) return;
+
+    // The most recent other subscription for this shop — used to tell whether
+    // this is a first purchase, a renewal of the same plan, an upgrade, or a
+    // downgrade, and (for non-deferred cases) which row to supersede.
+    $priorSt = $pdo->prepare(
+        "SELECT mss.*, msp.price AS plan_price FROM mp_seller_subscriptions mss
+         JOIN mp_seller_subscription_plans msp ON mss.plan_id = msp.id
+         WHERE mss.shop_id = ? AND mss.id != ? AND mss.status IN ('active','pending_renewal')
+         ORDER BY mss.end_date DESC LIMIT 1"
+    );
+    $priorSt->execute([$sub['shop_id'], $subscriptionId]);
+    $prior = $priorSt->fetch();
+
+    if (!$prior) {
+        $event = 'purchased';
+    } elseif ((int)$prior['plan_id'] === (int)$sub['plan_id']) {
+        $event = 'renewed';
+    } elseif ((float)$sub['plan_price'] > (float)$prior['plan_price']) {
+        $event = 'upgraded';
+    } else {
+        $event = 'downgraded';
+    }
+
+    $deferred = $sub['start_date'] > date('Y-m-d');
+
+    if ($deferred) {
+        $pdo->prepare("UPDATE mp_seller_subscriptions SET status='pending_renewal', payment_id=?, activated_at=NOW() WHERE id=?")
+            ->execute([$paymentId, $subscriptionId]);
+    } else {
+        $pdo->prepare("UPDATE mp_seller_subscriptions SET status='active', payment_id=?, activated_at=NOW() WHERE id=?")
+            ->execute([$paymentId, $subscriptionId]);
+        $pdo->prepare("UPDATE mp_shops SET is_subscribed=1, subscription_plan_id=?, subscription_end=?, updated_at=NOW() WHERE id=?")
+            ->execute([$sub['plan_id'], $sub['end_date'], $sub['shop_id']]);
+        if ($prior && $prior['status'] === 'active') {
+            $pdo->prepare("UPDATE mp_seller_subscriptions SET status='cancelled', cancelled_at=NOW() WHERE id=?")->execute([$prior['id']]);
+        }
+        notify_user((int)$sub['user_id'], '⭐ Subscription Activated!',
+            $sub['plan_name'] . ' subscription for ' . $sub['shop_name'] . ' is active until ' . date('d M Y', strtotime($sub['end_date'])) . '.', 'success');
+    }
+
+    // A deferred downgrade is logged once when scheduled (status pending_renewal)
+    // and reaches this function again once its start date arrives (status
+    // active) — only log history the first time, so a single downgrade doesn't
+    // appear twice in the seller's history list.
+    $countSt = $pdo->prepare("SELECT COUNT(*) FROM mp_subscription_history WHERE subscription_id=?");
+    $countSt->execute([$subscriptionId]);
+    if ((int)$countSt->fetchColumn() === 0) {
+        $pdo->prepare("INSERT INTO mp_subscription_history (subscription_id, shop_id, event, from_plan_id, to_plan_id, notes) VALUES (?,?,?,?,?,?)")
+            ->execute([$subscriptionId, $sub['shop_id'], $event, $prior['plan_id'] ?? null, $sub['plan_id'],
+                $deferred ? 'Takes effect ' . date('d M Y', strtotime($sub['start_date'])) : null]);
+    }
+}
+
+/**
+ * Voluntary (seller- or admin-initiated) cancellation. Terminates immediately —
+ * there's no auto-renew to "stop" in this build, so cancelling an active plan
+ * simply ends it now rather than waiting out the paid-for period. A scheduled
+ * (pending_renewal) downgrade can also be cancelled before it ever takes effect.
+ */
+function mp_cancel_subscription(int $subscriptionId): bool {
+    global $pdo;
+    $subSt = $pdo->prepare(
+        "SELECT mss.*, ms.user_id, ms.shop_name FROM mp_seller_subscriptions mss
+         JOIN mp_shops ms ON mss.shop_id = ms.id
+         WHERE mss.id = ? AND mss.status IN ('active','pending_renewal')"
+    );
+    $subSt->execute([$subscriptionId]);
+    $sub = $subSt->fetch();
+    if (!$sub) return false;
+
+    $pdo->prepare("UPDATE mp_seller_subscriptions SET status='cancelled', cancelled_at=NOW() WHERE id=?")->execute([$subscriptionId]);
+
+    if ($sub['status'] === 'active') {
+        $pdo->prepare("UPDATE mp_shops SET is_subscribed=0, subscription_plan_id=NULL, subscription_end=NULL WHERE id=?")->execute([$sub['shop_id']]);
+        notify_user((int)$sub['user_id'], 'Subscription Cancelled', $sub['shop_name'] . '\'s marketplace subscription has been cancelled. Existing products remain saved but are hidden from customers until you resubscribe.', 'warning', 'pay_mp_subscription.php');
+    }
+
+    $pdo->prepare("INSERT INTO mp_subscription_history (subscription_id, shop_id, event, from_plan_id) VALUES (?,?,'cancelled',?)")
+        ->execute([$subscriptionId, $sub['shop_id'], $sub['plan_id']]);
+
+    return true;
+}
+
 function get_product(int $id): ?array {
     global $pdo;
     $st = $pdo->prepare(
@@ -330,7 +521,8 @@ function mp_create_delivery_for_order(array $order, array $shop): ?int {
         }
 
         notify_user((int)$order['customer_id'], 'Order Out for Delivery Matching 🚚',
-            'Your order #' . $order['id'] . ' is ready and now visible to delivery riders nearby.', 'info');
+            'Your order #' . $order['id'] . ' is ready and now visible to delivery riders nearby.', 'info',
+            'delivery_detail.php?id=' . $deliveryId);
         $pdo->prepare('UPDATE mp_orders SET delivery_request_id = ? WHERE id = ?')
             ->execute([$deliveryId, $order['id']]);
         return $deliveryId;

@@ -2,10 +2,11 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('funerals', 'Funeral Announcements');
 require_login();
 $user = current_user();
 
-$feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0');
+$feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0') && !user_has_complimentary_access();
 $feeAmount  = (float)get_platform_setting('funeral_fee_amount', '20');
 
 $errors  = [];

@@ -171,6 +171,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         header('Location: user_edit.php?id=' . $targetId); exit;
     }
+
+    // Log in as this user — silent, audit-logged impersonation for support/moderation
+    if ($action === 'login_as_user' && is_admin()) {
+        if ($target['role'] === 'admin') {
+            flash('Cannot impersonate another admin.', 'error');
+            header('Location: user_edit.php?id=' . $targetId); exit;
+        }
+        log_audit_action($adminUser['id'], 'user_impersonation_start', "Logged in as {$target['name']} (#{$targetId})");
+        session_regenerate_id(true);
+        $_SESSION['impersonator_admin_id']   = $adminUser['id'];
+        $_SESSION['impersonator_admin_name'] = $adminUser['name'];
+        $_SESSION['impersonator_return_id']  = $targetId; // so "Exit to Admin" lands back on this user's page
+        unset($target['password_hash']);
+        $_SESSION['user'] = $target;
+        $_SESSION['session_started_at'] = time();
+        unset($_SESSION['_pw_check_at']);
+        header('Location: ../index.php'); exit;
+    }
+
+    // Complimentary membership — grant/revoke
+    if ($action === 'grant_complimentary' && is_admin()) {
+        $pdo->prepare('UPDATE users SET is_complimentary=1, complimentary_granted_at=NOW(), complimentary_granted_by=? WHERE id=?')
+            ->execute([$adminUser['id'], $targetId]);
+        log_audit_action($adminUser['id'], 'complimentary_granted', "Granted complimentary membership to {$target['name']} (#{$targetId})");
+        notify_user($targetId, '⭐ Complimentary Membership Granted', 'You now have free access to every paid feature on the platform.', 'success');
+        flash('Complimentary membership granted.', 'success');
+        header('Location: user_edit.php?id=' . $targetId); exit;
+    }
+    if ($action === 'revoke_complimentary' && is_admin()) {
+        $pdo->prepare('UPDATE users SET is_complimentary=0, complimentary_granted_at=NULL, complimentary_granted_by=NULL WHERE id=?')
+            ->execute([$targetId]);
+        log_audit_action($adminUser['id'], 'complimentary_revoked', "Revoked complimentary membership from {$target['name']} (#{$targetId})");
+        notify_user($targetId, 'Complimentary Membership Ended', 'Your complimentary membership has ended. Paid features now require payment as normal.', 'info');
+        flash('Complimentary membership revoked.', 'success');
+        header('Location: user_edit.php?id=' . $targetId); exit;
+    }
 }
 
 // Reload fresh data after any POST
@@ -521,6 +557,52 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
                     <span style="font-size:.72rem;color:var(--text-muted,#6b7280);white-space:nowrap;"><?php echo time_ago($log['created_at']); ?></span>
                 </div>
                 <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+
+            <!-- Complimentary Membership -->
+            <?php if (is_admin()): ?>
+            <div class="ue-section">
+                <p class="ue-section-title">Complimentary Membership</p>
+                <?php if (!empty($target['is_complimentary'])): ?>
+                <p style="font-size:.85rem;color:var(--text-muted,#6b7280);margin:0 0 12px;">
+                    ⭐ This user has free access to every paid feature on the platform<?php if (!empty($target['complimentary_granted_at'])): ?> since <?php echo date('d M Y', strtotime($target['complimentary_granted_at'])); ?><?php endif; ?>.
+                </p>
+                <form method="post" action="user_edit.php?id=<?php echo $targetId; ?>">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="revoke_complimentary">
+                    <button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;"
+                            onclick="return confirm('Revoke <?php echo sanitize(addslashes($target['name'])); ?>\'s complimentary membership? Paid features will require payment again.');">
+                        Revoke Complimentary Membership
+                    </button>
+                </form>
+                <?php else: ?>
+                <p style="font-size:.85rem;color:var(--text-muted,#6b7280);margin:0 0 12px;">Grant free access to every currently-paid feature (job posting, featured listings, verification, marketplace subscriptions, delivery premium, etc.) until revoked.</p>
+                <form method="post" action="user_edit.php?id=<?php echo $targetId; ?>">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="grant_complimentary">
+                    <button type="submit" class="button button-small" style="background:#f59e0b;color:#fff;border-color:transparent;"
+                            onclick="return confirm('Grant <?php echo sanitize(addslashes($target['name'])); ?> a complimentary membership?');">
+                        ⭐ Grant Complimentary Membership
+                    </button>
+                </form>
+                <?php endif; ?>
+            </div>
+            <?php endif; ?>
+
+            <!-- Log in as this user -->
+            <?php if (is_admin() && $target['role'] !== 'admin'): ?>
+            <div class="ue-section">
+                <p class="ue-section-title">Support Access</p>
+                <p style="font-size:.85rem;color:var(--text-muted,#6b7280);margin:0 0 12px;">See the app exactly as this user does — useful for reproducing a reported issue. Logged in the audit trail; the user is not notified.</p>
+                <form method="post" action="user_edit.php?id=<?php echo $targetId; ?>">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="login_as_user">
+                    <button type="submit" class="button button-small" style="background:#8b5cf6;color:#fff;border-color:transparent;"
+                            onclick="return confirm('Log in as <?php echo sanitize(addslashes($target['name'])); ?>? You will see the app exactly as they do until you exit.');">
+                        🔑 Log In As This User
+                    </button>
+                </form>
             </div>
             <?php endif; ?>
 

@@ -2,6 +2,8 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('events', 'Events');
+
 $user = current_user();
 $slug = trim($_GET['slug'] ?? '');
 

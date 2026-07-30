@@ -22,6 +22,13 @@ csrf_check();
 $user   = current_user();
 $action = $_POST['action'] ?? '';
 
+// Admin actions in this file (approve_request, reject_request) must keep
+// working even while the module is switched off — only block the
+// customer/agent-facing actions.
+if (!is_admin_or_manager()) {
+    require_module_enabled('delivery', 'Delivery Services');
+}
+
 function delivery_error(string $msg, string $back = 'delivery.php'): never {
     flash($msg, 'error');
     header('Location: ' . $back);
@@ -39,11 +46,10 @@ if ($action === 'apply_delivery') {
         delivery_error('You must be an approved delivery agent to apply.', 'delivery_agent_jobs.php');
     }
 
-    // Commission owed too high — settle up before taking new jobs
-    $blockThreshold = (float)get_platform_setting('delivery_commission_block_threshold', '50');
-    if ($blockThreshold > 0 && (float)$agentProfile['commission_owed'] >= $blockThreshold) {
+    // Commission owed too high (amount) or owed too long (days) — settle up before taking new jobs
+    if (agent_commission_blocked($agentProfile)) {
         delivery_error(
-            'You owe GH₵ ' . number_format((float)$agentProfile['commission_owed'], 2) . ' in commission — settle up with admin before accepting new jobs.',
+            'You owe GH₵ ' . number_format((float)$agentProfile['commission_owed'], 2) . ' in commission — pay it or settle up with admin before accepting new jobs.',
             'delivery_agent_jobs.php?tab=earnings'
         );
     }
@@ -59,40 +65,18 @@ if ($action === 'apply_delivery') {
     $pdo->prepare(
         'INSERT INTO delivery_applications (delivery_request_id, agent_id, offer_note, offered_fee) VALUES (?,?,?,?)'
     )->execute([$deliveryId, $agentProfile['id'], $offerNote ?: null, $offeredFee]);
-    $appId = (int)$pdo->lastInsertId();
 
-    // Marketplace-sourced deliveries: auto-assign the first applicant instead of
-    // making the buyer manually pick a rider for an order they never consciously
-    // requested delivery for — the product/shop were already vetted at checkout.
-    $mpOrderStmt = $pdo->prepare('SELECT id, shop_id FROM mp_orders WHERE delivery_request_id=?');
-    $mpOrderStmt->execute([$deliveryId]);
-    $mpOrder = $mpOrderStmt->fetch();
-
-    if ($mpOrder) {
-        $app = ['id' => $appId, 'agent_id' => $agentProfile['id'], 'offered_fee' => $offeredFee];
-        if (assign_delivery_application($deliveryId, $app, (float)($delivery['delivery_fee'] ?? 0))) {
-            notify_user((int)$delivery['customer_id'], 'Rider Assigned 🚚',
-                'A delivery agent has been assigned to your order #' . $mpOrder['id'] . '.', 'info');
-            $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
-            $shopOwner->execute([$mpOrder['shop_id']]);
-            if ($ownerUid = $shopOwner->fetchColumn()) {
-                notify_user((int)$ownerUid, 'Rider Assigned 🚚',
-                    'A delivery agent has been assigned to order #' . $mpOrder['id'] . '.', 'info');
-            }
-            flash('You have been assigned to this delivery!', 'success');
-        } else {
-            flash('This delivery was just taken by another rider.', 'info');
-        }
-        header('Location: delivery_agent_jobs.php?tab=applications');
-        exit;
-    }
-
-    // General delivery requests: notify the customer to review and pick a rider
+    // Every delivery — marketplace-sourced or a direct request — requires the
+    // customer to review and select a rider before that rider can proceed.
+    // (Marketplace orders previously auto-assigned the first applicant here,
+    // skipping buyer approval entirely — removed, since that let a rider start
+    // a delivery without ever being chosen.)
     notify_user(
         (int)$delivery['customer_id'],
         'New Application for Your Delivery',
         display_name($user) . ' has applied to handle your delivery request #' . $deliveryId . '. View applications →',
-        'info'
+        'info',
+        'delivery_detail.php?id=' . $deliveryId
     );
 
     flash('Application submitted! The customer will review and select a rider.', 'success');
@@ -290,7 +274,12 @@ if ($action === 'update_status') {
             $commissionPct = (float)get_platform_setting('delivery_commission_percent', '10');
             $commissionAmt = round($deliveryFee * $commissionPct / 100, 2);
             if ($commissionAmt > 0) {
-                $pdo->prepare('UPDATE delivery_agents SET commission_owed = commission_owed + ? WHERE id=?')
+                // Only stamp commission_owed_since the moment this delivery takes the
+                // agent from clear into debt — it tracks the start of the CURRENT debt,
+                // not each individual delivery's commission.
+                $wasZero = (float)$agentProfile['commission_owed'] <= 0;
+                $pdo->prepare('UPDATE delivery_agents SET commission_owed = commission_owed + ?'
+                    . ($wasZero ? ', commission_owed_since = NOW()' : '') . ' WHERE id=?')
                     ->execute([$commissionAmt, $agentProfile['id']]);
                 $pdo->prepare('INSERT INTO delivery_commission_ledger (agent_id, delivery_request_id, type, amount) VALUES (?,?,\'commission_owed\',?)')
                     ->execute([$agentProfile['id'], $deliveryId, $commissionAmt]);

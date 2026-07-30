@@ -2,6 +2,8 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('news', 'News');
+
 $user    = current_user();
 $isAjax  = !empty($_GET['ajax']);
 $page    = max(1, (int)($_GET['page'] ?? 1));

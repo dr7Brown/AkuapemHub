@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/delivery_functions.php';
 
+require_module_enabled('delivery', 'Delivery Services');
 require_login();
 $user  = current_user();
 $flash = get_flash();
@@ -15,7 +16,7 @@ $reqStmt = $pdo->prepare(
      FROM delivery_requests dr
      LEFT JOIN delivery_applications da ON da.delivery_request_id = dr.id
                                          AND da.status NOT IN ('withdrawn','rejected')
-     WHERE dr.customer_id = ? AND dr.status IN ('approved','assigned')
+     WHERE dr.customer_id = ? AND dr.status IN ('approved','assigned','accepted')
      GROUP BY dr.id
      ORDER BY dr.created_at DESC"
 );

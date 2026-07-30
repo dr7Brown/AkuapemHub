@@ -6,6 +6,12 @@ require_once __DIR__ . '/delivery_functions.php';
 require_login();
 $user = current_user();
 
+// Admins/managers need to keep reviewing deliveries even while the module is
+// switched off for everyone else.
+if (!is_admin_or_manager()) {
+    require_module_enabled('delivery', 'Delivery Services');
+}
+
 $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: delivery.php'); exit; }
 

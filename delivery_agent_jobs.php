@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/delivery_functions.php';
 
+require_module_enabled('delivery', 'Delivery Services');
 require_login();
 $user = current_user();
 
@@ -114,9 +115,8 @@ $earnings = $earningsStmt->fetch();
 $pendingAppCount = count(array_filter($myApplications, fn($a) => $a['da_status'] ?? $a['status'] === 'applied'));
 $activeCount     = count($activeDeliveries);
 
-$commissionOwed     = (float)($agentProfile['commission_owed'] ?? 0);
-$commissionThreshold = (float)get_platform_setting('delivery_commission_block_threshold', '50');
-$commissionBlocked   = $commissionThreshold > 0 && $commissionOwed >= $commissionThreshold;
+$commissionOwed    = (float)($agentProfile['commission_owed'] ?? 0);
+$commissionBlocked = agent_commission_blocked($agentProfile);
 
 // ── Earnings tab: period-filtered breakdown, 30-day chart, commission ledger ──
 $earningsAnalytics = null;
@@ -271,8 +271,9 @@ if ($tab === 'earnings') {
 <?php endif; ?>
 
 <?php if ($commissionBlocked): ?>
-<div class="alert alert-error" style="margin-bottom:10px;">
-    ⚠️ You owe GH&#8373; <?php echo number_format($commissionOwed,2); ?> in commission — you can't accept new jobs until an admin marks it settled. Contact admin to pay up.
+<div class="alert alert-error" style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <span>⚠️ You owe GH&#8373; <?php echo number_format($commissionOwed,2); ?> in commission — you can't accept new jobs until it's paid or settled by admin.</span>
+    <a href="pay_delivery_commission.php" class="button button-primary button-small">💳 Pay Now</a>
 </div>
 <?php endif; ?>
 
@@ -433,9 +434,13 @@ if ($tab === 'earnings') {
 <?php endif; ?>
 
 <?php if ($tab === 'applications'): ?>
+    <?php
+    $appStatusColors = ['applied'=>'#f59e0b','shortlisted'=>'#3b82f6','accepted'=>'#3b82f6','assigned'=>'#10b981','completed'=>'#10b981','rejected'=>'#ef4444','withdrawn'=>'#9ca3af'];
+    $appStatusBg     = ['applied'=>'#fef3c7','shortlisted'=>'#dbeafe','accepted'=>'#dbeafe','assigned'=>'#d1fae5','completed'=>'#d1fae5','rejected'=>'#fee2e2','withdrawn'=>'#f3f4f6'];
+    ?>
     <?php if ($myApplications): ?>
         <?php foreach ($myApplications as $a): ?>
-        <a href="delivery_detail.php?id=<?php echo $a['delivery_request_id']; ?>" class="ag-card" style="display:block;text-decoration:none;color:inherit;">
+        <a href="delivery_detail.php?id=<?php echo $a['delivery_request_id']; ?>" class="ag-card" style="display:block;text-decoration:none;color:inherit;border-left:4px solid <?php echo $appStatusColors[$a['status']]??'#6b7280'; ?>;">
             <div class="ag-card-head">
                 <div>
                     <div class="ag-card-desc" style="font-size:.87rem;">
@@ -446,7 +451,7 @@ if ($tab === 'earnings') {
                         Request #<?php echo $a['delivery_request_id']; ?> · Applied <?php echo time_ago($a['created_at']); ?>
                     </div>
                 </div>
-                <span class="ag-badge" style="background:<?php echo delivery_status_bg($a['status']); ?>;color:<?php echo delivery_status_color($a['status']); ?>;">
+                <span class="ag-badge" style="background:<?php echo $appStatusBg[$a['status']]??'#f3f4f6'; ?>;color:<?php echo $appStatusColors[$a['status']]??'#6b7280'; ?>;">
                     <?php echo ucfirst($a['status']); ?>
                 </span>
             </div>
@@ -471,7 +476,7 @@ if ($tab === 'earnings') {
 <?php if ($tab === 'active'): ?>
     <?php if ($activeDeliveries): ?>
         <?php foreach ($activeDeliveries as $d): ?>
-        <div class="ag-card">
+        <div class="ag-card" style="border-left:4px solid <?php echo delivery_status_color($d['status']); ?>;">
             <div class="ag-card-head">
                 <div>
                     <div class="ag-card-desc">
@@ -525,7 +530,7 @@ if ($tab === 'earnings') {
 <?php if ($tab === 'history'): ?>
     <?php if ($history): ?>
         <?php foreach ($history as $d): ?>
-        <a href="delivery_detail.php?id=<?php echo $d['id']; ?>" class="ag-card" style="display:block;text-decoration:none;color:inherit;">
+        <a href="delivery_detail.php?id=<?php echo $d['id']; ?>" class="ag-card" style="display:block;text-decoration:none;color:inherit;border-left:4px solid <?php echo delivery_status_color($d['status']); ?>;">
             <div class="ag-card-head">
                 <div>
                     <div class="ag-card-desc" style="font-size:.85rem;">
@@ -574,8 +579,18 @@ if ($tab === 'earnings') {
     <div class="ag-earn-tile"><strong style="color:#10b981;">GH&#8373; <?php echo number_format($earningsAnalytics['periodNet'],2); ?></strong><span>Net (after commission)</span></div>
     <div class="ag-earn-tile"><strong><?php echo number_format($earningsAnalytics['periodCount']); ?></strong><span>Deliveries</span></div>
 </div>
-<?php if ($commissionBlocked): ?>
-<div class="alert alert-error" style="margin-bottom:14px;">⚠️ You owe GH&#8373; <?php echo number_format($commissionOwed,2); ?> in commission and can't accept new jobs until it's settled with admin.</div>
+<?php if ($commissionOwed > 0): ?>
+<div class="alert alert-<?php echo $commissionBlocked ? 'error' : 'warning'; ?>" style="margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <span>
+        <?php if ($commissionBlocked): ?>⚠️ You owe GH&#8373; <?php echo number_format($commissionOwed,2); ?> in commission and can't accept new jobs until it's paid or settled with admin.
+        <?php else: ?>💰 You owe GH&#8373; <?php echo number_format($commissionOwed,2); ?> in commission.<?php endif; ?>
+        <?php $agGraceDays = (int)get_platform_setting('delivery_commission_grace_days', '0'); ?>
+        <?php if (!$commissionBlocked && $agGraceDays > 0 && !empty($agentProfile['commission_owed_since'])): $agDaysOwing = (int)floor((time() - strtotime($agentProfile['commission_owed_since'])) / 86400); ?>
+        <br><span style="font-size:.78rem;">You've owed this for <?php echo $agDaysOwing; ?> of <?php echo $agGraceDays; ?> day<?php echo $agGraceDays===1?'':'s'; ?> before you're blocked from new jobs.</span>
+        <?php endif; ?>
+    </span>
+    <a href="pay_delivery_commission.php" class="button button-primary button-small">💳 Pay Now</a>
+</div>
 <?php endif; ?>
 
 <div class="ag-earn-card">
@@ -609,7 +624,7 @@ if ($tab === 'earnings') {
     <?php if (!$commissionLedger): ?>
     <p class="meta">No commission activity yet.</p>
     <?php else: ?>
-    <?php $clMeta = ['commission_owed'=>['icon'=>'📉','label'=>'Commission accrued','color'=>'#c0392b','sign'=>-1],'settlement'=>['icon'=>'✅','label'=>'Settled with admin','color'=>'#065f46','sign'=>0],'reversal'=>['icon'=>'↩️','label'=>'Reversed (complaint upheld)','color'=>'#065f46','sign'=>0]]; ?>
+    <?php $clMeta = ['commission_owed'=>['icon'=>'📉','label'=>'Commission accrued','color'=>'#c0392b','sign'=>-1],'settlement'=>['icon'=>'✅','label'=>'Commission paid / settled','color'=>'#065f46','sign'=>0],'reversal'=>['icon'=>'↩️','label'=>'Reversed (complaint upheld)','color'=>'#065f46','sign'=>0]]; ?>
     <?php foreach ($commissionLedger as $cl): $clm = $clMeta[$cl['type']] ?? ['icon'=>'•','label'=>ucfirst($cl['type']),'color'=>'#6b7280','sign'=>0]; ?>
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:.85rem;">
         <div>

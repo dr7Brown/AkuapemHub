@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/paystack.php';
 
+require_module_enabled('funerals', 'Funeral Announcements');
 require_login();
 $user = current_user();
 $faId = (int)($_GET['id'] ?? $_POST['funeral_id'] ?? 0);

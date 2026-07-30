@@ -354,6 +354,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <?php if (is_admin()): ?>
         <a href="monetization.php" data-page="monetization.php">💰 Monetize</a>
         <a href="mp_payouts.php"   data-page="mp_payouts.php">🏪 Seller Payouts</a>
+        <a href="mp_packages.php"  data-page="mp_packages.php">📦 MP Packages</a>
+        <a href="complimentary_members.php" data-page="complimentary_members.php">⭐ Complimentary</a>
         <?php endif; ?>
     </div>
     <!-- Community dropdown — each item gated -->

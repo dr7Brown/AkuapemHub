@@ -500,15 +500,8 @@ function activatePurchasedFeature(array $payment): void {
             break;
 
         case 'mp_subscription':
-            $subR = $pdo->prepare("SELECT mss.*, msp.name AS plan_name, ms.user_id, ms.shop_name FROM mp_seller_subscriptions mss JOIN mp_seller_subscription_plans msp ON mss.plan_id=msp.id JOIN mp_shops ms ON mss.shop_id=ms.id WHERE mss.id=?");
-            $subR->execute([$payment['reference_id']]);
-            $sub = $subR->fetch();
-            if ($sub) {
-                $pdo->prepare("UPDATE mp_seller_subscriptions SET status='active', payment_id=?, activated_at=NOW() WHERE id=?")->execute([$payment['id'], $sub['id']]);
-                $pdo->prepare("UPDATE mp_shops SET is_subscribed=1, subscription_plan_id=?, subscription_end=?, updated_at=NOW() WHERE id=?")->execute([$sub['plan_id'], $sub['end_date'], $sub['shop_id']]);
-                notify_user((int)$sub['user_id'], '⭐ Subscription Activated!',
-                    $sub['plan_name'].' subscription for '.$sub['shop_name'].' is active until '.date('d M Y',strtotime($sub['end_date'])).'.', 'success');
-            }
+            require_once __DIR__ . '/marketplace_functions.php';
+            mp_activate_subscription((int)$payment['reference_id'], (int)$payment['id']);
             break;
 
         case 'featured_news':

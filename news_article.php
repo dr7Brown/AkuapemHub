@@ -2,6 +2,8 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('news', 'News');
+
 $user = current_user();
 $slug = trim($_GET['slug'] ?? '');
 if (!$slug) { header('Location: news.php'); exit; }

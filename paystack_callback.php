@@ -76,6 +76,22 @@ if ($result['success']) {
         }
     }
 
+    // ── Settle delivery rider commission on payment ────────────────────────
+    if (($payment['payment_type'] ?? '') === 'delivery_commission' && empty($result['already_paid'])) {
+        $agentStmt = $pdo->prepare('SELECT commission_owed, user_id FROM delivery_agents WHERE id=?');
+        $agentStmt->execute([$payment['reference_id']]);
+        $agent = $agentStmt->fetch();
+        if ($agent && (float)$agent['commission_owed'] > 0) {
+            $pdo->prepare('UPDATE delivery_agents SET commission_owed=0, commission_owed_since=NULL WHERE id=?')
+                ->execute([$payment['reference_id']]);
+            $pdo->prepare("INSERT INTO delivery_commission_ledger (agent_id, type, amount) VALUES (?,'settlement',?)")
+                ->execute([$payment['reference_id'], $agent['commission_owed']]);
+            notify_user((int)$agent['user_id'], 'Commission Paid ✅',
+                'Your commission balance of GH₵ ' . number_format((float)$agent['commission_owed'], 2) . ' has been paid. You can accept new jobs again.',
+                'success');
+        }
+    }
+
     if (!empty($result['already_paid'])) {
         // Already confirmed — skip receipt, go straight to relevant page
         $alreadyRedirects = [
@@ -98,6 +114,7 @@ if ($result['success']) {
             'delivery_subscription' => 'delivery_agent_jobs.php',
             'delivery_sponsored'    => 'delivery_agent_jobs.php',
             'delivery_verification' => 'delivery_agent_jobs.php',
+            'delivery_commission'   => 'delivery_agent_jobs.php?tab=earnings',
         ];
         flash('Payment already confirmed.', 'info');
         $redirect = $alreadyRedirects[$payment['payment_type']] ?? 'jobs.php';
@@ -114,6 +131,9 @@ if ($result['success']) {
         } else {
             $redirect = 'platform_receipt.php?ref=' . urlencode($payment['paystack_reference']);
         }
+    } elseif (($payment['payment_type'] ?? '') === 'delivery_commission') {
+        flash('Commission paid! You can accept new jobs again.', 'success');
+        $redirect = 'delivery_agent_jobs.php?tab=earnings';
     } elseif (in_array($payment['payment_type'] ?? '', ['mp_boost','delivery_subscription','delivery_sponsored','delivery_verification'], true)) {
         // New marketing payment types — show universal receipt
         flash('Payment confirmed! Your boost/subscription is now active.', 'success');

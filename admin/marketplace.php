@@ -118,14 +118,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Save settings
     if ($postAction === 'save_settings' && is_admin()) {
-        $keys = ['mp_enabled','mp_require_product_approval','mp_featured_product_7day_price','mp_featured_product_30day_price',
+        // mp_enabled itself is no longer set from here — it now lives solely
+        // in Admin → Monetization → Settings → Module Availability, since a
+        // form that doesn't render that checkbox would otherwise force it
+        // off on every save.
+        $keys = ['mp_require_product_approval','mp_featured_product_7day_price','mp_featured_product_30day_price',
                  'mp_featured_shop_7day_price','mp_featured_shop_30day_price','mp_seller_subscription_price','mp_verified_seller_fee'];
         foreach ($keys as $k) {
             if (isset($_POST[$k])) set_platform_setting($k, trim($_POST[$k]));
         }
-        foreach (['mp_enabled','mp_require_product_approval'] as $ck) {
-            set_platform_setting($ck, isset($_POST[$ck]) ? '1' : '0');
-        }
+        set_platform_setting('mp_require_product_approval', isset($_POST['mp_require_product_approval']) ? '1' : '0');
         log_audit_action($adminUser['id'], 'mp_settings_save', 'Saved marketplace settings');
         flash('Settings saved.', 'success');
         header('Location: marketplace.php?tab=settings'); exit;
@@ -174,12 +176,24 @@ if ($tab === 'shops') {
 }
 if ($tab === 'orders') {
     $of = $_GET['of'] ?? 'all';
-    $ow = $of !== 'all' ? "AND mo.status='$of'" : '';
-    $orders = $pdo->query(
+    $validOf = ['pending','confirmed','processing','ready_for_delivery','in_transit','delivered','cancelled','refunded'];
+    $ow = []; $owParams = [];
+    if ($of !== 'all' && in_array($of, $validOf, true)) { $ow[] = 'mo.status = ?'; $owParams[] = $of; }
+    $ordSort = $_GET['osort'] ?? 'newest';
+    $ordOrderBy = match($ordSort) {
+        'oldest'  => 'mo.created_at ASC',
+        'amt_high'=> 'mo.total_amount DESC',
+        'amt_low' => 'mo.total_amount ASC',
+        default   => 'mo.created_at DESC',
+    };
+    $ordersSt = $pdo->prepare(
         "SELECT mo.*, ms.shop_name, cu.name AS customer_name
          FROM mp_orders mo JOIN mp_shops ms ON mo.shop_id=ms.id JOIN users cu ON mo.customer_id=cu.id
-         WHERE 1=1 $ow ORDER BY mo.created_at DESC LIMIT 60"
-    )->fetchAll();
+         WHERE 1=1 " . ($ow ? 'AND ' . implode(' AND ', $ow) : '') . "
+         ORDER BY $ordOrderBy LIMIT 60"
+    );
+    $ordersSt->execute($owParams);
+    $orders = $ordersSt->fetchAll();
 }
 
 // Boosts
@@ -388,12 +402,21 @@ if ($tab === 'settings') {
     <?php if ($tab === 'orders'): ?>
     <?php $of = $_GET['of'] ?? 'all'; ?>
     <div class="adm-filter">
-        <?php foreach (['all'=>'All','pending'=>'Pending','confirmed'=>'Confirmed','delivered'=>'Delivered','cancelled'=>'Cancelled'] as $v=>$l): ?>
+        <?php foreach (['all'=>'All','pending'=>'Pending','confirmed'=>'Confirmed','processing'=>'Processing','ready_for_delivery'=>'Ready','in_transit'=>'In Transit','delivered'=>'Delivered','cancelled'=>'Cancelled','refunded'=>'Refunded'] as $v=>$l): ?>
         <a href="?tab=orders&of=<?php echo $v; ?>" class="<?php echo $of===$v?'active':''; ?>"><?php echo $l; ?></a>
         <?php endforeach; ?>
     </div>
+    <form method="get" style="margin-bottom:12px;">
+        <input type="hidden" name="tab" value="orders"><input type="hidden" name="of" value="<?php echo sanitize($of); ?>">
+        <select name="osort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+            <option value="newest" <?php echo $ordSort==='newest'?'selected':''; ?>>Newest First</option>
+            <option value="oldest" <?php echo $ordSort==='oldest'?'selected':''; ?>>Oldest First</option>
+            <option value="amt_high" <?php echo $ordSort==='amt_high'?'selected':''; ?>>Highest Amount</option>
+            <option value="amt_low" <?php echo $ordSort==='amt_low'?'selected':''; ?>>Lowest Amount</option>
+        </select>
+    </form>
     <?php if ($orders): foreach ($orders as $o): ?>
-    <div class="adm-row">
+    <div class="adm-row" style="border-left:4px solid <?php echo mp_order_status_color($o['status']); ?>;">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:4px;">
             <div>
                 <div style="font-weight:800;">Order #<?php echo $o['id']; ?></div>
@@ -455,10 +478,7 @@ if ($tab === 'settings') {
 
         <div class="adm-set-section">
             <p class="adm-set-title">Module</p>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-                <input type="checkbox" name="mp_enabled" value="1" <?php echo ($cfg['mp_enabled']??'1')==='1'?'checked':''; ?>>
-                Enable Marketplace module
-            </label>
+            <p class="meta" style="font-size:.78rem;margin-bottom:8px;">Turning the whole module on/off has moved to <a href="monetization.php?tab=settings">Admin → Monetization → Settings</a>.</p>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                 <input type="checkbox" name="mp_require_product_approval" value="1" <?php echo ($cfg['mp_require_product_approval']??'1')==='1'?'checked':''; ?>>
                 Require admin to approve products before listing

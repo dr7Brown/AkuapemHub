@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
 
+require_module_enabled('mp', 'Marketplace');
 require_login();
 $user  = current_user();
 $flash = get_flash();
@@ -121,6 +122,9 @@ if ($orders) {
                 <?php endif; ?>
             </div>
             <a href="payment_receipt.php?type=marketplace_order&id=<?php echo $order['id']; ?>" class="button button-secondary button-small" style="flex-shrink:0;">🧾 Receipt</a>
+            <?php if (!empty($order['delivery_request_id'])): ?>
+            <a href="delivery_detail.php?id=<?php echo $order['delivery_request_id']; ?>" class="button button-secondary button-small" style="flex-shrink:0;">🚚 Track Delivery</a>
+            <?php endif; ?>
             <div style="font-weight:900;color:var(--primary,#0f766e);">Total: GH&#8373; <?php echo number_format((float)$order['total_amount'],2); ?></div>
         </div>
 

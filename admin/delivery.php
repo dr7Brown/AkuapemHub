@@ -173,18 +173,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Save settings
     if ($postAction === 'save_settings' && is_admin()) {
+        // delivery_enabled itself is no longer set from here — it now lives
+        // solely in Admin → Monetization → Settings → Module Availability,
+        // since a form that doesn't render that checkbox would otherwise
+        // force it off on every save.
         $settingsMap = ['delivery_require_approval','delivery_auto_approve_min_deliveries','delivery_auto_approve_min_days',
                         'delivery_enable_premium','delivery_premium_requires_payment','delivery_premium_monthly_price',
                         'delivery_premium_quarterly_price','delivery_premium_yearly_price','delivery_enable_verification_fee',
                         'delivery_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment',
-                        'delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price','delivery_enabled',
-                        'delivery_commission_percent','delivery_commission_block_threshold'];
+                        'delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price',
+                        'delivery_commission_percent','delivery_commission_block_threshold','delivery_commission_grace_days'];
         foreach ($settingsMap as $k) {
             if (isset($_POST[$k])) set_platform_setting($k, trim($_POST[$k]));
         }
         // Checkboxes
         foreach (['delivery_require_approval','delivery_enable_premium','delivery_premium_requires_payment',
-                  'delivery_enable_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment','delivery_enabled'] as $ck) {
+                  'delivery_enable_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment'] as $ck) {
             set_platform_setting($ck, isset($_POST[$ck]) ? '1' : '0');
         }
         log_audit_action($adminUser['id'],'delivery_settings_save','Updated delivery monetization settings');
@@ -200,7 +204,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $agentRow = $agentRow->fetch();
         if ($agentRow && (float)$agentRow['commission_owed'] > 0) {
             $owed = (float)$agentRow['commission_owed'];
-            $pdo->prepare('UPDATE delivery_agents SET commission_owed = 0 WHERE id=?')->execute([$agentId]);
+            $pdo->prepare('UPDATE delivery_agents SET commission_owed = 0, commission_owed_since = NULL WHERE id=?')->execute([$agentId]);
             $pdo->prepare("INSERT INTO delivery_commission_ledger (agent_id, type, amount) VALUES (?,'settlement',?)")
                 ->execute([$agentId, $owed]);
             notify_user((int)$agentRow['user_id'], 'Commission Settled ✅',
@@ -229,7 +233,7 @@ $premiumAgents  = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE i
 $verifiedAgents = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE is_verified=1")->fetchColumn();
 $sponsoredAgents= (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents WHERE is_sponsored=1 AND sponsored_end>=CURDATE()")->fetchColumn();
 $totalRequests  = (int)$pdo->query("SELECT COUNT(*) FROM delivery_requests")->fetchColumn();
-$activeReqs     = (int)$pdo->query("SELECT COUNT(*) FROM delivery_requests WHERE status IN('approved','assigned','in_progress','in_transit')")->fetchColumn();
+$activeReqs     = (int)$pdo->query("SELECT COUNT(*) FROM delivery_requests WHERE status IN('approved','assigned','accepted','picked_up','in_progress','in_transit')")->fetchColumn();
 $delivered      = (int)$pdo->query("SELECT COUNT(*) FROM delivery_requests WHERE status='delivered'")->fetchColumn();
 $revenue        = (float)$pdo->query("SELECT COALESCE(SUM(delivery_fee),0) FROM delivery_requests WHERE status='delivered'")->fetchColumn();
 $subRevenue     = (float)$pdo->query("SELECT COALESCE(SUM(price_paid),0) FROM delivery_subscriptions WHERE status='active'")->fetchColumn();
@@ -249,11 +253,18 @@ if ($tab === 'agents') {
 }
 if ($tab === 'requests') {
     $rf = $_GET['req_status'] ?? 'all'; $rw = '';
-    $validRs = ['pending_approval','approved','assigned','in_progress','delivered','cancelled','failed','rejected'];
+    $validRs = ['pending_approval','approved','assigned','accepted','picked_up','in_progress','in_transit','delivered','cancelled','failed','rejected'];
     if ($rf !== 'all' && in_array($rf,$validRs,true)) $rw = "AND dr.status=".$pdo->quote($rf);
     $qs = trim($_GET['q']??''); $qw=''; $qp=[];
     if ($qs!=='') { $qw="AND (cu.name LIKE ? OR dr.item_description LIKE ?)"; $like='%'.$qs.'%'; $qp=[$like,$like]; }
-    $rs = $pdo->prepare("SELECT dr.*,cu.name AS customer_name,cu.username AS customer_username,au.name AS agent_name,da2.vehicle_type FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id LEFT JOIN delivery_agents da2 ON dr.agent_id=da2.id LEFT JOIN users au ON da2.user_id=au.id WHERE 1=1 $rw $qw ORDER BY dr.created_at DESC LIMIT 80");
+    $reqSort = $_GET['rsort'] ?? 'newest';
+    $reqOrderBy = match($reqSort) {
+        'oldest'    => 'dr.created_at ASC',
+        'fee_high'  => 'dr.delivery_fee DESC',
+        'fee_low'   => 'dr.delivery_fee ASC',
+        default     => 'dr.created_at DESC',
+    };
+    $rs = $pdo->prepare("SELECT dr.*,cu.name AS customer_name,cu.username AS customer_username,au.name AS agent_name,da2.vehicle_type FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id LEFT JOIN delivery_agents da2 ON dr.agent_id=da2.id LEFT JOIN users au ON da2.user_id=au.id WHERE 1=1 $rw $qw ORDER BY $reqOrderBy LIMIT 80");
     $rs->execute($qp); $requests = $rs->fetchAll();
 }
 if ($tab === 'verifications') {
@@ -273,13 +284,14 @@ if ($tab === 'commission') {
         $cParams = [$like, $like];
     }
     $caStmt = $pdo->prepare(
-        "SELECT da.id, da.commission_owed, u.name, u.username, u.email
+        "SELECT da.id, da.commission_owed, da.commission_owed_since, u.name, u.username, u.email
          FROM delivery_agents da JOIN users u ON da.user_id=u.id
          $cWhere ORDER BY da.commission_owed DESC LIMIT 100"
     );
     $caStmt->execute($cParams);
     $commissionAgents = $caStmt->fetchAll();
-    $totalOwed = (float)$pdo->query("SELECT COALESCE(SUM(commission_owed),0) FROM delivery_agents")->fetchColumn();
+    $totalOwed  = (float)$pdo->query("SELECT COALESCE(SUM(commission_owed),0) FROM delivery_agents")->fetchColumn();
+    $cBlockDays = (int)get_platform_setting('delivery_commission_grace_days', '0');
 
     // Period-filtered ledger analytics
     $cPeriod = $_GET['cperiod'] ?? 'month';
@@ -319,10 +331,11 @@ if ($tab === 'commission') {
 // Settings values
 $cfg = [];
 if ($tab === 'settings') {
-    $keys = ['delivery_require_approval','delivery_auto_approve_min_deliveries','delivery_auto_approve_min_days','delivery_enable_premium','delivery_premium_requires_payment','delivery_premium_monthly_price','delivery_premium_quarterly_price','delivery_premium_yearly_price','delivery_enable_verification_fee','delivery_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment','delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price','delivery_enabled','delivery_commission_percent','delivery_commission_block_threshold'];
+    $keys = ['delivery_require_approval','delivery_auto_approve_min_deliveries','delivery_auto_approve_min_days','delivery_enable_premium','delivery_premium_requires_payment','delivery_premium_monthly_price','delivery_premium_quarterly_price','delivery_premium_yearly_price','delivery_enable_verification_fee','delivery_verification_fee','delivery_enable_sponsored','delivery_sponsored_requires_payment','delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price','delivery_enabled','delivery_commission_percent','delivery_commission_block_threshold','delivery_commission_grace_days'];
     foreach ($keys as $k) $cfg[$k] = get_platform_setting($k,'');
     if ($cfg['delivery_commission_percent'] === '') $cfg['delivery_commission_percent'] = '10';
     if ($cfg['delivery_commission_block_threshold'] === '') $cfg['delivery_commission_block_threshold'] = '50';
+    if ($cfg['delivery_commission_grace_days'] === '') $cfg['delivery_commission_grace_days'] = '0';
 }
 ?>
 <!DOCTYPE html>
@@ -516,15 +529,21 @@ if ($tab === 'settings') {
     <?php if ($tab === 'requests'): ?>
     <?php $rf=$_GET['req_status']??'all'; $qs=trim($_GET['q']??''); ?>
     <div class="adm-filter">
-        <?php foreach (['all'=>'All','pending_approval'=>'Pending','approved'=>'Approved','assigned'=>'Assigned','delivered'=>'Delivered','cancelled'=>'Cancelled','rejected'=>'Rejected'] as $v=>$l): ?>
+        <?php foreach (['all'=>'All','pending_approval'=>'Pending','approved'=>'Approved','accepted'=>'Accepted','picked_up'=>'Picked Up','in_transit'=>'In Transit','delivered'=>'Delivered','cancelled'=>'Cancelled','rejected'=>'Rejected'] as $v=>$l): ?>
         <a href="?tab=requests&req_status=<?php echo $v; ?><?php echo $qs?"&q=".urlencode($qs):""; ?>" class="<?php echo $rf===$v?'active':''; ?>"><?php echo $l; ?></a>
         <?php endforeach; ?>
     </div>
-    <form method="get" style="display:flex;gap:8px;margin-bottom:12px;">
+    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
         <input type="hidden" name="tab" value="requests"><input type="hidden" name="req_status" value="<?php echo sanitize($rf); ?>">
         <input type="text" name="q" value="<?php echo sanitize($qs); ?>" placeholder="Search customer, description…" style="flex:1;max-width:340px;">
+        <select name="rsort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+            <option value="newest" <?php echo $reqSort==='newest'?'selected':''; ?>>Newest First</option>
+            <option value="oldest" <?php echo $reqSort==='oldest'?'selected':''; ?>>Oldest First</option>
+            <option value="fee_high" <?php echo $reqSort==='fee_high'?'selected':''; ?>>Highest Fee</option>
+            <option value="fee_low" <?php echo $reqSort==='fee_low'?'selected':''; ?>>Lowest Fee</option>
+        </select>
         <button type="submit" class="button button-primary button-small">Search</button>
-        <?php if ($qs): ?><a href="?tab=requests" class="button button-secondary button-small">Clear</a><?php endif; ?>
+        <?php if ($qs || $reqSort !== 'newest'): ?><a href="?tab=requests&req_status=<?php echo $rf; ?>" class="button button-secondary button-small">Clear</a><?php endif; ?>
     </form>
     <?php if ($requests): foreach ($requests as $r): ?>
     <div class="adm-row">
@@ -678,6 +697,11 @@ if ($tab === 'settings') {
             <div>
                 <div style="font-weight:800;"><?php echo sanitize(display_name(['name'=>$ca['name'],'username'=>$ca['username']])); ?></div>
                 <div style="font-size:.75rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($ca['email']); ?></div>
+                <?php if (!empty($ca['commission_owed_since'])): $daysOwing = (int)floor((time() - strtotime($ca['commission_owed_since'])) / 86400); ?>
+                <div style="font-size:.72rem;color:<?php echo ($cBlockDays > 0 && $daysOwing > $cBlockDays) ? '#ef4444' : 'var(--text-muted,#6b7280)'; ?>;font-weight:<?php echo ($cBlockDays > 0 && $daysOwing > $cBlockDays) ? '700' : '400'; ?>;">
+                    Owed since <?php echo date('d M Y', strtotime($ca['commission_owed_since'])); ?> (<?php echo $daysOwing; ?> day<?php echo $daysOwing===1?'':'s'; ?>)
+                </div>
+                <?php endif; ?>
             </div>
             <div style="display:flex;align-items:center;gap:10px;">
                 <strong style="color:#ef4444;">GHS <?php echo number_format((float)$ca['commission_owed'],2); ?></strong>
@@ -703,13 +727,8 @@ if ($tab === 'settings') {
         <input type="hidden" name="action" value="save_settings">
 
         <div class="adm-set-section">
-            <p class="adm-set-title">Module & Approval</p>
-            <div class="form-group">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                    <input type="checkbox" name="delivery_enabled" value="1" <?php echo ($cfg['delivery_enabled']??'1')==='1'?'checked':''; ?>>
-                    Enable Delivery Services module
-                </label>
-            </div>
+            <p class="adm-set-title">Module &amp; Approval</p>
+            <p class="meta" style="font-size:.78rem;margin-bottom:8px;">Turning the whole module on/off has moved to <a href="monetization.php?tab=settings">Admin → Monetization → Settings</a>.</p>
             <div class="form-group">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="delivery_require_approval" value="1" <?php echo ($cfg['delivery_require_approval']??'1')==='1'?'checked':''; ?>>
@@ -730,7 +749,7 @@ if ($tab === 'settings') {
 
         <div class="adm-set-section">
             <p class="adm-set-title">Rider Commission</p>
-            <p class="meta" style="margin:0 0 10px;">Riders collect delivery fees directly — this just tracks what they owe the platform and blocks new job acceptance past the threshold.</p>
+            <p class="meta" style="margin:0 0 10px;">Riders collect delivery fees directly and can now pay what they owe in-app via Paystack — this tracks the balance and blocks new job acceptance once either limit below is crossed.</p>
             <div class="adm-grid2">
                 <div class="form-group">
                     <label>Commission (% of delivery fee owed)</label>
@@ -739,7 +758,12 @@ if ($tab === 'settings') {
                 <div class="form-group">
                     <label>Block new jobs once owed exceeds (GH₵)</label>
                     <input type="number" name="delivery_commission_block_threshold" min="0" step="1" value="<?php echo sanitize($cfg['delivery_commission_block_threshold']); ?>">
-                    <p class="meta" style="margin-top:4px;">0 = never block.</p>
+                    <p class="meta" style="margin-top:4px;">0 = never block by amount.</p>
+                </div>
+                <div class="form-group">
+                    <label>Block new jobs after owing for (days)</label>
+                    <input type="number" name="delivery_commission_grace_days" min="0" step="1" value="<?php echo sanitize($cfg['delivery_commission_grace_days']); ?>">
+                    <p class="meta" style="margin-top:4px;">0 = never block by days — amount threshold still applies. Whichever limit is hit first blocks the rider.</p>
                 </div>
             </div>
         </div>

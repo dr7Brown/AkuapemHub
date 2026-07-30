@@ -71,6 +71,7 @@ $typeLabel = [
     'delivery_subscription'  => 'Rider Premium Subscription',
     'delivery_sponsored'     => 'Rider Sponsored Listing',
     'delivery_verification'  => 'Rider Verification Badge',
+    'delivery_commission'    => 'Delivery Commission',
 ];
 ?>
 <!DOCTYPE html>

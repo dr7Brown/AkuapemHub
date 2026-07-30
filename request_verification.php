@@ -2,6 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('jobs', 'Jobs & Services');
 require_login();
 $user = current_user();
 require_role('worker');
@@ -89,6 +90,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$isPaid) {
+        // Complimentary members skip payment but still need the same human
+        // document review every request goes through — submit it for review
+        // instead of the generic "contact support" dead end.
+        if (user_has_complimentary_access()) {
+            $pdo->prepare("UPDATE worker_profiles SET verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
+                ->execute([$user['id']]);
+            log_audit_action($user['id'], 'verification_requested', "Complimentary member — verification submitted for review, user ID {$user['id']}");
+            notify_moderators('approve_verifications', 'New Worker Verification Request',
+                display_name($user) . ' (complimentary member) submitted a verification request. Review in Admin → Jobs.');
+            flash('Your verification request has been submitted for admin review.', 'success');
+            header('Location: worker_profile.php');
+            exit;
+        }
         flash('Verification is granted by an admin. Please contact support.', 'info');
         header('Location: worker_profile.php');
         exit;

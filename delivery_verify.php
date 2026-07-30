@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/delivery_functions.php';
 
+require_module_enabled('delivery', 'Delivery Services');
 require_login();
 $user         = current_user();
 $agentProfile = get_delivery_agent_for_user((int)$user['id']);
@@ -22,7 +23,7 @@ $existingStmt->execute([$agentProfile['id']]);
 $existing = $existingStmt->fetch() ?: null;
 
 $verificationFee = (float)get_platform_setting('delivery_verification_fee', '0.00');
-$feeEnabled      = get_platform_setting('delivery_enable_verification_fee', '0') === '1';
+$feeEnabled      = get_platform_setting('delivery_enable_verification_fee', '0') === '1' && !user_has_complimentary_access();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();

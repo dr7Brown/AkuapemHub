@@ -3,6 +3,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/paystack.php';
 
+require_module_enabled('news', 'News');
 require_login();
 $user = current_user();
 
@@ -23,7 +24,7 @@ if ($article['status'] !== 'pending_payment') {
     header('Location: my_news.php'); exit;
 }
 
-$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0');
+$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0') && !user_has_complimentary_access();
 $feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
 
 if (!$feeEnabled) {

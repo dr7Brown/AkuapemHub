@@ -1169,6 +1169,26 @@ body.has-bottom-nav {
   display: none;
 }
 
+/* Wide screens: show every category by default (no "View all" toggle needed)
+   as a single horizontally-scrollable row instead of wrapping to more rows. */
+@media (min-width: 760px) {
+  .category-grid {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .category-grid .chip-pick[hidden] {
+    display: flex;
+  }
+  #toggle-categories {
+    display: none;
+  }
+  .category-grid::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 .chip-row::-webkit-scrollbar {
   display: none;
 }

@@ -2,6 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
+require_module_enabled('jobs', 'Jobs & Services');
 require_login();
 require_role('worker');
 $user = current_user();

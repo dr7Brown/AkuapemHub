@@ -58,26 +58,34 @@ $ageMinutes  = (int)round((time() - strtotime($payment['created_at'])) / 60);
 $urlStillFresh = !empty($payment['authorization_url']) && $ageMinutes < 45;
 
 $typeLabel = [
-    'featured_job'       => 'Featured Job',
-    'featured_worker'    => 'Featured Profile',
-    'verification'       => 'Verification Badge',
-    'job_post'           => 'Job Posting Fee',
-    'worker_service'     => 'Service Listing',
-    'escrow_payment'     => 'Escrow Payment',
-    'escrow_with_posting'=> 'Escrow + Posting Fee',
-    'delivery_fee'       => 'Delivery Fee',
-    'event_post'         => 'Event Posting',
-    'funeral_post'       => 'Funeral Announcement',
-    'news_post'          => 'News Article',
-    'mp_boost'           => 'Marketplace Boost',
-    'mp_order'           => 'Marketplace Order',
+    'featured_job'          => 'Featured Job',
+    'featured_worker'       => 'Featured Profile',
+    'verification'          => 'Verification Badge',
+    'job_post'              => 'Job Posting Fee',
+    'worker_service'        => 'Service Listing',
+    'escrow_payment'        => 'Escrow Payment',
+    'escrow_with_posting'   => 'Escrow + Posting Fee',
+    'delivery_fee'          => 'Delivery Fee',
+    'event_post'            => 'Event Posting',
+    'funeral_post'          => 'Funeral Announcement',
+    'news_post'             => 'News Article',
+    'mp_boost'              => 'Marketplace Boost',
+    'mp_order'              => 'Marketplace Order',
+    'mp_subscription'       => 'Marketplace Subscription',
+    'featured_event'        => 'Featured Event',
+    'featured_funeral'      => 'Featured Funeral Announcement',
+    'featured_news'         => 'Featured News Article',
+    'delivery_subscription' => 'Delivery Premium Subscription',
+    'delivery_sponsored'    => 'Delivery Sponsored Listing',
+    'delivery_verification' => 'Delivery Rider Verification',
+    'delivery_commission'   => 'Delivery Commission',
 ];
 
 // Origin page to return to after cancelling
 $originMap = [
     'featured_job'          => 'feature_job.php',
     'featured_worker'       => 'feature_worker.php',
-    'verification'          => 'verify_worker.php',
+    'verification'          => 'request_verification.php',
     'job_post'              => 'pay_job_post.php',
     'worker_service'        => 'pay_worker_service.php',
     'event_post'            => 'pay_event.php',
@@ -92,8 +100,30 @@ $originMap = [
     'delivery_subscription' => 'delivery_subscribe.php',
     'delivery_sponsored'    => 'delivery_agent_jobs.php',
     'delivery_verification' => 'delivery_agent_jobs.php',
+    'delivery_commission'   => 'pay_delivery_commission.php',
 ];
 $originPage = $originMap[$payment['payment_type']] ?? 'my_payments.php';
+
+// Complimentary members should never be pushed through Paystack for a fee
+// that was created before their membership was granted — void the stale
+// pending payment and send them back to the feature's own entry point, whose
+// fresh page-load already resolves them as free (every one of the ~15 origin
+// pages checks complimentary status live, not from a value frozen at
+// payment-creation time). Excludes delivery_commission — that's money already
+// owed to the platform for services rendered, not a feature-access toggle,
+// same category as escrow commission which complimentary membership never waives.
+if ($payment['status'] === 'pending' && $payment['payment_type'] !== 'delivery_commission' && user_has_complimentary_access()) {
+    $pdo->prepare("UPDATE platform_payments SET status='abandoned' WHERE id=? AND user_id=? AND status='pending'")
+        ->execute([$paymentId, $user['id']]);
+    flash('You have a complimentary membership — this fee no longer applies.', 'success');
+    // mp_boost is order-based, not one-shot: send them back to the specific
+    // pending order (which now auto-activates for free) rather than the
+    // creation page, so a duplicate order doesn't get created.
+    $resumeTarget = $payment['payment_type'] === 'mp_boost'
+        ? 'pay_mp_boost.php?boost_id=' . (int)$payment['reference_id']
+        : $originPage;
+    header('Location: ' . $resumeTarget); exit;
+}
 
 // ── POST handlers ─────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
