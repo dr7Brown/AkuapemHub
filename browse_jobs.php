@@ -221,7 +221,7 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
 
 <!-- ── Top bar ─────────────────────────────────────────────────────────────── -->
 <header class="bj-topbar">
-    <a href="index.php" class="bj-logo">AkuapemConnect</a>
+    <a href="index.php" class="bj-logo">← Back Home</a>
     <nav class="bj-nav">
         <a href="find_workers.php" class="link">Workers</a>
         <a href="community.php"    class="link">Community</a>

@@ -203,7 +203,7 @@ function mp_page_url(int $page): string {
 
 <!-- Header -->
 <header class="mp-topbar">
-    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;"><?php echo APP_NAME; ?></a>
+    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;">← Back Home</a>
     <a href="marketplace.php" class="mp-brand" style="font-size:.88rem;">/ 🛍️ Marketplace</a>
     <div class="mp-nav-actions">
         <a href="shops.php" class="button button-secondary button-small">🏪 Shops</a>

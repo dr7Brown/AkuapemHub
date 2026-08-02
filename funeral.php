@@ -145,7 +145,7 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
 <body>
 <?php if (!$user): ?>
 <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;"><?php echo APP_NAME; ?></a>
+    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← Back Home</a>
     <div style="display:flex;gap:8px;">
         <a href="funerals.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Announcements</a>
         <a href="login.php"    class="button button-secondary button-small">Sign in</a>
@@ -251,11 +251,15 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
         <div class="fd-org">
             <div class="fd-org-name"><?php echo sanitize($fa['organizer_name']); ?></div>
             <div class="fd-org-links">
+                <?php if ($user): ?>
                 <?php if ($fa['organizer_phone']): ?>
                 <a href="tel:<?php echo sanitize($fa['organizer_phone']); ?>">📞 <?php echo sanitize($fa['organizer_phone']); ?></a>
                 <?php endif; ?>
                 <?php if ($fa['organizer_email']): ?>
                 <a href="mailto:<?php echo sanitize($fa['organizer_email']); ?>">✉️ <?php echo sanitize($fa['organizer_email']); ?></a>
+                <?php endif; ?>
+                <?php elseif ($fa['organizer_phone'] || $fa['organizer_email']): ?>
+                <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>">🔒 Sign in to view contact details</a>
                 <?php endif; ?>
             </div>
         </div>

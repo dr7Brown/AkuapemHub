@@ -120,7 +120,7 @@ function shops_page_url(int $page): string {
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
 
 <header class="mp-topbar">
-    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;"><?php echo APP_NAME; ?></a>
+    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;">← Back Home</a>
     <a href="marketplace.php" class="mp-brand" style="font-size:.88rem;">/ 🏪 Shops</a>
     <div class="mp-nav-actions">
         <a href="marketplace.php" class="button button-secondary button-small">🛍️ Products</a>

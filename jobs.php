@@ -799,8 +799,8 @@ if ($user) {
                         <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($job['budget']); ?></p>
                         <div class="card-bottom">
                             <div class="card-mid-actions">
-                                <span class="card-status-badge info">To apply for jobs, switch your profile to Worker.</span>
-                                <a href="become_worker.php" class="button button-secondary" style="font-size:0.85rem;">Become a Worker →</a>
+                                <span class="card-status-badge info">Only Worker accounts can apply for jobs.</span>
+                                <a href="become_worker.php" class="button button-secondary" style="font-size:0.85rem;">Register as Worker to Apply →</a>
                             </div>
                             <div class="card-actions">
                                 <a href="<?php echo whatsapp_share_link($job['title'], $job['location'], $job['budget'], BASE_URL . '/jobs.php'); ?>" target="_blank" class="button">Share WhatsApp</a>

@@ -434,7 +434,13 @@
       "Bash(\"/c/xampp/php/php.exe\" -r \"var_dump\\(function_exists\\('apcu_fetch'\\)\\); var_dump\\(ini_get\\('apc.enabled'\\)\\);\")",
       "Bash(grep -n '^// Count\\\\|^$whereClause\\\\|^// Products' /c/xampp/htdocs/Akuapemconnect/marketplace.php)",
       "Bash(curl -s http://localhost:8080/Akuapemconnect/marketplace.php -o /c/Users/USER/AppData/Local/Temp/claude/c--xampp-htdocs-Akuapemconnect/bdc0476a-4d75-4a6c-b466-bd6ea0ccf9c3/scratchpad/mp_default.html)",
-      "Bash(curl -s http://localhost:8080/Akuapemconnect/marketplace.php?q=mouse -o /c/Users/USER/AppData/Local/Temp/claude/c--xampp-htdocs-Akuapemconnect/bdc0476a-4d75-4a6c-b466-bd6ea0ccf9c3/scratchpad/mp_search.html)"
+      "Bash(curl -s http://localhost:8080/Akuapemconnect/marketplace.php?q=mouse -o /c/Users/USER/AppData/Local/Temp/claude/c--xampp-htdocs-Akuapemconnect/bdc0476a-4d75-4a6c-b466-bd6ea0ccf9c3/scratchpad/mp_search.html)",
+      "Bash(/c/xampp/mysql/bin/mysql -u root akuapemhub -e \"SELECT slug, organizer_phone, organizer_email FROM funeral_announcements WHERE slug='name-abc-2026';\")",
+      "Bash(/c/xampp/mysql/bin/mysql -u root akuapemhub -e \"SELECT id,title,status,customer_id FROM service_requests WHERE id=19;\")",
+      "Bash(/c/xampp/mysql/bin/mysql -u root akuapemhub -e \"SELECT id,title,status,customer_id FROM service_requests WHERE status IN \\('open','partially_staffed'\\) AND customer_id != 3 LIMIT 5;\")",
+      "Bash(/c/xampp/php/php.exe -l 'c:\\\\xampp\\\\htdocs\\\\Akuapemconnect\\\\request_detail.php')",
+      "Bash(/c/xampp/mysql/bin/mysql -u root akuapemhub -e \"SELECT id,name,role FROM users WHERE role='worker' LIMIT 1;\")",
+      "Bash(/c/xampp/mysql/bin/mysql -u root akuapemhub -e \"SELECT id,customer_id,status FROM service_requests WHERE status='partially_staffed' LIMIT 3;\")"
     ],
     "additionalDirectories": [
       "\\tmp",

@@ -138,7 +138,7 @@ $activeNav = 'community';
 <!-- ── Header ── -->
 <?php if (!$user): ?>
 <header style="background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
-    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;">AkuapemConnect</a>
+    <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;">← Back Home</a>
     <a href="login.php" class="button button-secondary button-small">Sign in</a>
 </header>
 <?php else: ?>

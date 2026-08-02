@@ -194,7 +194,7 @@ if (!empty($_GET['ajax'])) {
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
     <header class="app-topbar">
-        <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;"><?php echo APP_NAME; ?></a>
+        <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;">← Back Home</a>
         <span class="brand" style="font-size:.88rem;color:var(--muted,#6b7280);">/ Find Workers</span>
         <div style="display: flex; align-items: center; gap: 8px;">
             <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>

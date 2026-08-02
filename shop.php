@@ -122,8 +122,12 @@ $shopReviews = $revStmt->fetchAll();
     <p style="margin:0;font-size:.85rem;color:var(--text-muted,#6b7280);max-width:600px;"><?php echo sanitize(mb_substr($shop['description'],0,200)); ?></p>
     <?php endif; ?>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+        <?php if ($user): ?>
         <?php if ($shop['phone']): ?><a href="tel:<?php echo sanitize($shop['phone']); ?>" class="button button-secondary button-small">📞 Call</a><?php endif; ?>
         <?php if ($shop['email']): ?><a href="mailto:<?php echo sanitize($shop['email']); ?>" class="button button-secondary button-small">✉ Email</a><?php endif; ?>
+        <?php elseif ($shop['phone'] || $shop['email']): ?>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">🔒 Sign in to contact</a>
+        <?php endif; ?>
         <?php if (!empty($shop['google_maps_link'])): ?><a href="<?php echo sanitize($shop['google_maps_link']); ?>" target="_blank" rel="noopener" class="button button-secondary button-small">📍 Pickup Location</a><?php endif; ?>
         <?php if ((!$user || (int)$user['id'] !== (int)$shop['user_id']) && mp_shop_can_receive_quotes($shop)): ?><a href="request_quote.php?shop_id=<?php echo $id; ?>" class="button button-primary button-small">📝 Request a Custom Order</a><?php endif; ?>
     </div>

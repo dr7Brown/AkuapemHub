@@ -81,7 +81,15 @@ function require_login() {
 
 function require_role($role) {
     $user = current_user();
-    if (!$user || $user['role'] !== $role) {
+    if (!$user) {
+        header('Location: ' . (defined('BASE_URL') ? BASE_URL : '') . '/login.php?redirect=' . urlencode(current_request_path()));
+        exit;
+    }
+    if ($user['role'] !== $role) {
+        // Previously a silent redirect with no explanation — e.g. a customer
+        // clicking "Apply" on a job just saw the page reload with nothing
+        // said about why the application never happened.
+        flash("This action is only available to {$role} accounts.", 'error');
         header('Location: ' . (defined('BASE_URL') ? BASE_URL : '') . '/jobs.php');
         exit;
     }

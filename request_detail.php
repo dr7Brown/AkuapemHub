@@ -37,9 +37,10 @@ if (is_worker()) {
     $myApplicationStatus = $myApplication['status'] ?? null;
 }
 
+$isPubliclyViewable = in_array($request['status'], ['open','partially_staffed'], true);
 if (!$user) {
     // Guests may view open/partially_staffed public jobs only
-    if (!in_array($request['status'], ['open','partially_staffed'], true)) {
+    if (!$isPubliclyViewable) {
         header('Location: jobs.php');
         exit;
     }
@@ -50,12 +51,17 @@ if (!$user) {
     // worker's own assigned_worker_id is never set — see manage_applicants.php).
     $canView = is_admin()
         || $request['customer_id'] === $user['id']
+        // Any other logged-in user (e.g. a customer browsing jobs.php) should
+        // see at least as much as a guest can — previously this fell through
+        // to a silent redirect with no explanation.
+        || (!is_worker() && $isPubliclyViewable)
         || (is_worker() && (
             $request['status'] === 'open'
             || $request['assigned_worker_id'] === $user['id']
             || $myApplicationStatus !== null
         ));
     if (!$canView) {
+        flash("You don't have permission to view this job.", 'error');
         header('Location: jobs.php');
         exit;
     }
@@ -247,7 +253,7 @@ $sbSimilar = $sbSimilar->fetchAll();
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
     <?php if (!$user): ?>
     <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-        <a href="browse_jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← <?php echo APP_NAME; ?></a>
+        <a href="browse_jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← Back Home</a>
         <nav style="display:flex;gap:8px;align-items:center;">
             <a href="login.php"    class="button button-secondary button-small">Sign in</a>
         </nav>
