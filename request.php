@@ -12,6 +12,8 @@ if (requires_verified_email('job_post') && !is_email_verified()) {
     exit;
 }
 
+require_not_banned_from('jobs');
+
 $categories = get_categories();
 $error = '';
 

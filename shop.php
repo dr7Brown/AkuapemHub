@@ -9,7 +9,7 @@ $id = (int)($_GET['id'] ?? 0);
 if (!$id) { header('Location: marketplace.php'); exit; }
 
 $shop = get_shop($id);
-if (!$shop || $shop['status'] !== 'active') { header('Location: marketplace.php'); exit; }
+if (!$shop || $shop['status'] !== 'active' || $shop['owner_banned']) { header('Location: marketplace.php'); exit; }
 
 $user      = current_user();
 $cartCount = $user ? mp_get_cart_count((int)$user['id']) : 0;
@@ -83,8 +83,11 @@ $shopReviews = $revStmt->fetchAll();
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
 
-<header style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 64px 10px 16px;display:flex;align-items:center;justify-content:space-between;">
-    <a href="marketplace.php" class="button button-secondary button-small">← Marketplace</a>
+<header style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 64px 10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+    <div style="display:flex;gap:8px;">
+        <a href="marketplace.php" class="button button-secondary button-small">← Marketplace</a>
+        <a href="shops.php" class="button button-secondary button-small">🏪 All Shops</a>
+    </div>
     <?php if ($user): ?><a href="cart.php" class="button button-secondary button-small">🛒<?php echo $cartCount>0?" ($cartCount)":''; ?></a><?php else: ?><a href="login.php" class="button button-secondary button-small">Sign in</a><?php endif; ?>
 </header>
 
@@ -122,6 +125,7 @@ $shopReviews = $revStmt->fetchAll();
         <?php if ($shop['phone']): ?><a href="tel:<?php echo sanitize($shop['phone']); ?>" class="button button-secondary button-small">📞 Call</a><?php endif; ?>
         <?php if ($shop['email']): ?><a href="mailto:<?php echo sanitize($shop['email']); ?>" class="button button-secondary button-small">✉ Email</a><?php endif; ?>
         <?php if (!empty($shop['google_maps_link'])): ?><a href="<?php echo sanitize($shop['google_maps_link']); ?>" target="_blank" rel="noopener" class="button button-secondary button-small">📍 Pickup Location</a><?php endif; ?>
+        <?php if ((!$user || (int)$user['id'] !== (int)$shop['user_id']) && mp_shop_can_receive_quotes($shop)): ?><a href="request_quote.php?shop_id=<?php echo $id; ?>" class="button button-primary button-small">📝 Request a Custom Order</a><?php endif; ?>
     </div>
 </div>
 

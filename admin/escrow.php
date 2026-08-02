@@ -23,6 +23,17 @@ $filter = in_array($_GET['filter'] ?? '', ['awaiting_payment','held','released',
     ? $_GET['filter'] : '';
 
 $where = $filter ? "WHERE ep.status = :status" : '';
+
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 30;
+$offset  = ($page - 1) * $perPage;
+
+$countStmt = $pdo->prepare("SELECT COUNT(*) FROM escrow_payments ep {$where}");
+if ($filter) $countStmt->bindValue(':status', $filter);
+$countStmt->execute();
+$totalEscrows = (int)$countStmt->fetchColumn();
+$totalPages   = max(1, (int)ceil($totalEscrows / $perPage));
+
 $sql = "SELECT ep.*, sr.title AS job_title, sr.status AS job_status,
         c.name AS client_name, c.email AS client_email,
         w.name AS worker_name
@@ -32,11 +43,20 @@ $sql = "SELECT ep.*, sr.title AS job_title, sr.status AS job_status,
     LEFT JOIN users w ON w.id = ep.worker_id
     {$where}
     ORDER BY ep.created_at DESC
-    LIMIT 200";
+    LIMIT {$perPage} OFFSET {$offset}";
 $stmt = $pdo->prepare($sql);
 if ($filter) $stmt->bindValue(':status', $filter);
 $stmt->execute();
 $escrows = $stmt->fetchAll();
+
+function esc_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['filter', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'escrow.php?' . http_build_query($merged);
+}
 
 $statusColors = [
     'awaiting_payment' => '#f59e0b',
@@ -60,6 +80,12 @@ $statusLabels = [
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Escrow Management — AkuapemConnect Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css" />
+    <style>
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
+    </style>
 </head>
 <body>
     <header class="app-topbar">
@@ -94,9 +120,9 @@ $statusLabels = [
 
         <!-- Filter tabs -->
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;">
-            <a href="escrow.php" class="button button-small <?php echo $filter === '' ? 'button-primary' : 'button-secondary'; ?>">All</a>
+            <a href="<?php echo esc_qstr(['filter' => null, 'page' => null]); ?>" class="button button-small <?php echo $filter === '' ? 'button-primary' : 'button-secondary'; ?>">All</a>
             <?php foreach ($statusLabels as $key => $label): ?>
-                <a href="escrow.php?filter=<?php echo $key; ?>" class="button button-small <?php echo $filter === $key ? 'button-primary' : 'button-secondary'; ?>">
+                <a href="<?php echo esc_qstr(['filter' => $key, 'page' => null]); ?>" class="button button-small <?php echo $filter === $key ? 'button-primary' : 'button-secondary'; ?>">
                     <?php echo $label; ?>
                     <?php if ($key === 'held' && ($stats['held'] ?? 0) > 0): ?>
                         <span style="background:#fff;color:#2563eb;border-radius:10px;padding:0 5px;margin-left:4px;font-size:0.75rem;"><?php echo $stats['held']; ?></span>
@@ -174,6 +200,24 @@ $statusLabels = [
                     </tbody>
                 </table>
             </div>
+        <?php endif; ?>
+
+        <?php if ($totalPages > 1): ?>
+        <div class="pagination">
+            <?php if ($page > 1): ?><a href="<?php echo esc_qstr(['page' => $page - 1]); ?>">‹ Prev</a><?php endif; ?>
+            <?php
+            $pStart = max(1, $page - 3);
+            $pEnd   = min($totalPages, $page + 3);
+            if ($pStart > 1) echo '<span>…</span>';
+            for ($p = $pStart; $p <= $pEnd; $p++): ?>
+                <?php if ($p === $page): ?><span class="current"><?php echo $p; ?></span>
+                <?php else: ?><a href="<?php echo esc_qstr(['page' => $p]); ?>"><?php echo $p; ?></a><?php endif; ?>
+            <?php endfor;
+            if ($pEnd < $totalPages) echo '<span>…</span>';
+            ?>
+            <?php if ($page < $totalPages): ?><a href="<?php echo esc_qstr(['page' => $page + 1]); ?>">Next ›</a><?php endif; ?>
+            <span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page <?php echo $page; ?> of <?php echo $totalPages; ?> (<?php echo $totalEscrows; ?> total)</span>
+        </div>
         <?php endif; ?>
     </main>
 </body>

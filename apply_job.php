@@ -19,6 +19,8 @@ if (requires_verified_email('job_apply') && !is_email_verified()) {
     exit;
 }
 
+require_not_banned_from('jobs');
+
 $requestId = intval($_POST['request_id']);
 $stmt = $pdo->prepare("SELECT * FROM service_requests WHERE id = ? AND status IN ('open','partially_staffed')");
 $stmt->execute([$requestId]);

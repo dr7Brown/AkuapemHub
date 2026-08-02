@@ -61,6 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     if (!$postEditId && requires_verified_email('funeral_post') && !is_email_verified()) {
         $errors[] = 'Please verify your email address before submitting an announcement.';
     }
+    if (!$postEditId && is_banned_from_feature((int)$user['id'], 'funerals')) {
+        $errors[] = 'You have been restricted from Funeral Announcements. Contact support if you believe this is an error.';
+    }
     if ($data['organizer_phone'] && !preg_match('/^[\d\s\+\-\(\)]{7,20}$/', $data['organizer_phone'])) {
         $errors[] = 'Invalid phone number.';
     }

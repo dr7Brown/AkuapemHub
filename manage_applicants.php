@@ -5,6 +5,7 @@ require_once __DIR__ . '/chat_functions.php';
 
 require_module_enabled('jobs', 'Jobs & Services');
 require_login();
+require_not_banned_from('jobs');
 $user = current_user();
 
 if ($user['role'] === 'worker') {

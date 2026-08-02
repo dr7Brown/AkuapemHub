@@ -33,7 +33,7 @@ function validate_new_password(string $password, string $confirm): string
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
-    $ip        = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $ip        = client_ip();
     $userAgent = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500);
     $password  = $_POST['password']         ?? '';
     $confirm   = $_POST['password_confirm'] ?? '';

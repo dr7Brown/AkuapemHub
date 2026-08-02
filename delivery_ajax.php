@@ -46,6 +46,10 @@ if ($action === 'apply_delivery') {
         delivery_error('You must be an approved delivery agent to apply.', 'delivery_agent_jobs.php');
     }
 
+    if (is_banned_from_feature((int)$user['id'], 'delivery')) {
+        delivery_error('You have been restricted from Delivery Services. Contact support if you believe this is an error.', 'delivery_agent_jobs.php');
+    }
+
     // Commission owed too high (amount) or owed too long (days) — settle up before taking new jobs
     if (agent_commission_blocked($agentProfile)) {
         delivery_error(

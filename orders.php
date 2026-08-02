@@ -6,7 +6,30 @@ require_once __DIR__ . '/marketplace_functions.php';
 require_module_enabled('mp', 'Marketplace');
 require_login();
 $user  = current_user();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'quote_cancel') {
+    csrf_check();
+    $quoteId = (int)$_POST['quote_id'];
+    $qrRow = $pdo->prepare("SELECT * FROM mp_quote_requests WHERE id=? AND customer_id=? AND status='pending'");
+    $qrRow->execute([$quoteId, $user['id']]);
+    $qr = $qrRow->fetch();
+    if ($qr) {
+        $pdo->prepare("UPDATE mp_quote_requests SET status='cancelled' WHERE id=?")->execute([$quoteId]);
+        $shopOwner = $pdo->prepare('SELECT user_id, shop_name FROM mp_shops WHERE id=?');
+        $shopOwner->execute([$qr['shop_id']]);
+        $shopOwner = $shopOwner->fetch();
+        if ($shopOwner) {
+            notify_user((int)$shopOwner['user_id'], 'Quote Request Cancelled',
+                $user['name'] . ' cancelled their shopping list request #' . $quoteId . '.', 'info');
+        }
+        flash('Request cancelled.', 'info');
+    }
+    header('Location: orders.php?view=quotes');
+    exit;
+}
+
 $flash = get_flash();
+$view  = $_GET['view'] ?? 'orders';
 
 $statusFilter = $_GET['status'] ?? 'all';
 $validStatuses = ['pending','confirmed','processing','ready_for_delivery','in_transit','delivered','cancelled','refunded'];
@@ -35,6 +58,38 @@ if ($orders) {
     $itemStmt = $pdo->query("SELECT moi.*, mpi.image_path AS img FROM mp_order_items moi LEFT JOIN mp_product_images mpi ON mpi.product_id = moi.product_id AND mpi.is_primary = 1 WHERE moi.order_id IN ($ids)");
     foreach ($itemStmt->fetchAll() as $item) {
         $orderItems[$item['order_id']][] = $item;
+    }
+}
+
+$quoteRequests = [];
+$quoteRequestItems = [];
+
+// Lazy-expire requests the seller never responded to — no cron needed.
+$qrResponseHours = max(1, (int)get_platform_setting('mp_quote_response_days', '2')) * 24;
+$pdo->prepare("UPDATE mp_quote_requests SET status='expired' WHERE customer_id=? AND status='pending' AND created_at < NOW() - INTERVAL $qrResponseHours HOUR")
+    ->execute([$user['id']]);
+
+$pendingCountSt = $pdo->prepare("SELECT COUNT(*) FROM mp_quote_requests WHERE customer_id=? AND status IN ('pending','quoted')");
+$pendingCountSt->execute([$user['id']]);
+$pendingQuoteCount = (int)$pendingCountSt->fetchColumn();
+
+if ($view === 'quotes') {
+    $qrStmt = $pdo->prepare(
+        "SELECT mqr.*, ms.shop_name, ms.id AS shop_id
+         FROM mp_quote_requests mqr JOIN mp_shops ms ON mqr.shop_id = ms.id
+         WHERE mqr.customer_id = ?
+         ORDER BY FIELD(mqr.status,'quoted','pending','declined','cancelled','expired','paid'), mqr.created_at DESC
+         LIMIT 40"
+    );
+    $qrStmt->execute([$user['id']]);
+    $quoteRequests = $qrStmt->fetchAll();
+
+    if ($quoteRequests) {
+        $qrIds = implode(',', array_column($quoteRequests, 'id'));
+        $qriStmt = $pdo->query("SELECT * FROM mp_quote_request_items WHERE quote_request_id IN ($qrIds) ORDER BY sort_order ASC");
+        foreach ($qriStmt->fetchAll() as $qri) {
+            $quoteRequestItems[$qri['quote_request_id']][] = $qri;
+        }
     }
 }
 ?>
@@ -73,6 +128,86 @@ if ($orders) {
 <?php endif; ?>
 
 <main class="ord-shell">
+
+    <!-- View switcher -->
+    <div class="ord-tabs">
+        <a href="orders.php" class="ord-tab <?php echo $view==='orders'?'active':''; ?>">Orders</a>
+        <a href="orders.php?view=quotes" class="ord-tab <?php echo $view==='quotes'?'active':''; ?>">
+            Quote Requests<?php if ($pendingQuoteCount): ?> <span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 5px;font-size:.62rem;"><?php echo $pendingQuoteCount; ?></span><?php endif; ?>
+        </a>
+    </div>
+
+    <?php if ($view === 'quotes'): ?>
+    <?php if (!$quoteRequests): ?>
+    <div style="text-align:center;padding:60px 20px;color:var(--text-muted,#6b7280);">
+        <div style="font-size:3rem;opacity:.4;margin-bottom:14px;">📝</div>
+        <p style="margin:0 0 14px;">No quote requests yet.</p>
+        <a href="marketplace.php" class="button button-primary">Browse Shops →</a>
+    </div>
+    <?php else: foreach ($quoteRequests as $qr):
+        $qrItemsList = $quoteRequestItems[$qr['id']] ?? [];
+        $qrStatusColors = ['pending'=>'#f59e0b','quoted'=>'#3b82f6','declined'=>'#ef4444','cancelled'=>'#6b7280','expired'=>'#6b7280','paid'=>'#10b981'];
+        $qrColor = $qrStatusColors[$qr['status']] ?? '#6b7280';
+    ?>
+    <div class="ord-card">
+        <div class="ord-head">
+            <div>
+                <div style="font-weight:800;font-size:.9rem;">Quote Request #<?php echo $qr['id']; ?></div>
+                <div style="font-size:.75rem;color:var(--text-muted,#6b7280);">
+                    🏪 <a href="shop.php?id=<?php echo $qr['shop_id']; ?>" style="color:var(--primary,#0f766e);text-decoration:none;"><?php echo sanitize($qr['shop_name']); ?></a>
+                    &nbsp;·&nbsp; <?php echo time_ago($qr['created_at']); ?>
+                </div>
+            </div>
+            <span class="ord-badge" style="background:<?php echo $qrColor; ?>1a;color:<?php echo $qrColor; ?>;"><?php echo ucfirst($qr['status']); ?></span>
+        </div>
+
+        <?php if ($qr['buyer_notes']): ?>
+        <div style="font-size:.8rem;background:var(--surface-muted,#f8fafc);border-radius:8px;padding:6px 9px;margin:0 14px 8px;">📝 <?php echo sanitize($qr['buyer_notes']); ?></div>
+        <?php endif; ?>
+
+        <?php foreach ($qrItemsList as $qi): ?>
+        <div class="ord-item">
+            <div style="flex:1;">
+                <div style="font-weight:700;font-size:.86rem;<?php echo !$qi['is_available'] ? 'opacity:.5;text-decoration:line-through;' : ''; ?>">
+                    <?php echo sanitize($qi['item_name']); ?><?php if ($qi['quantity_note']): ?> <span style="color:var(--text-muted,#6b7280);font-weight:400;">(<?php echo sanitize($qi['quantity_note']); ?>)</span><?php endif; ?>
+                </div>
+                <?php if ($qi['buyer_note']): ?><div style="font-size:.76rem;color:var(--text-muted,#6b7280);">Note: <?php echo sanitize($qi['buyer_note']); ?></div><?php endif; ?>
+                <?php if (!$qi['is_available']): ?><div style="font-size:.76rem;color:#b91c1c;">Unavailable</div><?php endif; ?>
+            </div>
+            <?php if ($qi['is_available'] && $qi['price'] !== null): ?>
+            <div style="font-weight:800;font-size:.86rem;">GH&#8373; <?php echo number_format((float)$qi['price'],2); ?></div>
+            <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
+
+        <?php if ($qr['decline_reason']): ?>
+        <div style="font-size:.8rem;padding:8px 14px;background:#fee2e2;color:#c0392b;">Reason: <?php echo sanitize($qr['decline_reason']); ?></div>
+        <?php endif; ?>
+
+        <div class="ord-foot">
+            <?php if ($qr['total_amount'] !== null): ?>
+            <div style="font-weight:900;color:var(--primary,#0f766e);">Total: GH&#8373; <?php echo number_format((float)$qr['total_amount'],2); ?></div>
+            <?php else: ?>
+            <div style="font-size:.82rem;color:var(--text-muted,#6b7280);">Waiting for the shop to price this list.</div>
+            <?php endif; ?>
+
+            <?php if ($qr['status'] === 'pending'): ?>
+            <form method="post" style="margin:0;" onsubmit="return confirm('Cancel this request?');">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="form" value="quote_cancel">
+                <input type="hidden" name="quote_id" value="<?php echo $qr['id']; ?>">
+                <button type="submit" class="button button-secondary button-small">Cancel Request</button>
+            </form>
+            <?php elseif ($qr['status'] === 'quoted'): ?>
+            <a href="pay_quote.php?id=<?php echo $qr['id']; ?>" class="button button-primary button-small">Pay Now →</a>
+            <?php elseif ($qr['status'] === 'paid' && $qr['order_id']): ?>
+            <a href="orders.php" class="button button-secondary button-small">View Order →</a>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endforeach; endif; ?>
+
+    <?php else: ?>
 
     <!-- Status filter tabs -->
     <div class="ord-tabs">
@@ -142,6 +277,8 @@ if ($orders) {
         <p style="margin:0 0 14px;">No orders<?php echo $statusFilter!=='all'?' with this status':''; ?> yet.</p>
         <a href="marketplace.php" class="button button-primary">Start Shopping →</a>
     </div>
+    <?php endif; ?>
+
     <?php endif; ?>
 
 </main>

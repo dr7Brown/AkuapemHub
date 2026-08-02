@@ -147,9 +147,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── Load data ───────────────────────────────────────────────────────────────
-// Status/search filters on the requests list (real pagination isn't needed yet
-// at this volume, but flat unfiltered lists get unwieldy fast once sellers churn
-// through withdrawals regularly).
 $reqWhere  = [];
 $reqParams = [];
 if (in_array($reqStatus, ['pending','approved','processing','paid','rejected','failed'], true)) {
@@ -163,15 +160,35 @@ if ($q !== '') {
 }
 $reqWhereSql = $reqWhere ? 'WHERE ' . implode(' AND ', $reqWhere) : '';
 
+$payoutPage    = max(1, (int)($_GET['page'] ?? 1));
+$payoutPerPage = 30;
+$payoutOffset  = ($payoutPage - 1) * $payoutPerPage;
+
+$reqCountStmt = $pdo->prepare(
+    "SELECT COUNT(*) FROM mp_payout_requests pr JOIN mp_shops ms ON pr.shop_id = ms.id JOIN users u ON ms.user_id = u.id $reqWhereSql"
+);
+$reqCountStmt->execute($reqParams);
+$payoutTotal      = (int)$reqCountStmt->fetchColumn();
+$payoutTotalPages = max(1, (int)ceil($payoutTotal / $payoutPerPage));
+
 $payoutStmt = $pdo->prepare(
     "SELECT pr.*, ms.shop_name, u.name AS owner_name, u.email AS owner_email
      FROM mp_payout_requests pr
      JOIN mp_shops ms ON pr.shop_id = ms.id
      JOIN users u ON ms.user_id = u.id
      $reqWhereSql
-     ORDER BY pr.created_at DESC LIMIT 100"
+     ORDER BY pr.created_at DESC LIMIT $payoutPerPage OFFSET $payoutOffset"
 );
 $payoutStmt->execute($reqParams);
+
+function mpp_payout_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['tab', 'period', 'req_status', 'q', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'mp_payouts.php?' . http_build_query($merged);
+}
 $payoutRequests = $payoutStmt->fetchAll();
 
 $pendingCount  = (int)$pdo->query("SELECT COUNT(*) FROM mp_payout_requests WHERE status='pending'")->fetchColumn();
@@ -266,6 +283,10 @@ if ($tab === 'analytics') {
         .mp-set-title { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 14px; }
         .mp-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
         @media(max-width:520px){ .mp-stats { grid-template-columns:repeat(2,1fr); } .mp-grid2 { grid-template-columns:1fr; } }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -299,7 +320,7 @@ if ($tab === 'analytics') {
 
     <!-- ═══ PAYOUT REQUESTS ═══ -->
     <?php if ($tab === 'pending'): ?>
-    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+    <form method="get" action="mp_payouts.php" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
         <input type="hidden" name="tab" value="pending">
         <select name="req_status" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
             <?php foreach (['all'=>'All Statuses','pending'=>'Pending','processing'=>'Processing','paid'=>'Paid','failed'=>'Failed','rejected'=>'Rejected'] as $v=>$l): ?>
@@ -352,6 +373,23 @@ if ($tab === 'analytics') {
         </tbody>
     </table>
     </div>
+    <?php if ($payoutTotalPages > 1): ?>
+    <div class="pagination">
+        <?php if ($payoutPage > 1): ?><a href="<?php echo mpp_payout_qstr(['page' => $payoutPage - 1]); ?>">‹ Prev</a><?php endif; ?>
+        <?php
+        $ppStart = max(1, $payoutPage - 3);
+        $ppEnd   = min($payoutTotalPages, $payoutPage + 3);
+        if ($ppStart > 1) echo '<span>…</span>';
+        for ($pp = $ppStart; $pp <= $ppEnd; $pp++): ?>
+            <?php if ($pp === $payoutPage): ?><span class="current"><?php echo $pp; ?></span>
+            <?php else: ?><a href="<?php echo mpp_payout_qstr(['page' => $pp]); ?>"><?php echo $pp; ?></a><?php endif; ?>
+        <?php endfor;
+        if ($ppEnd < $payoutTotalPages) echo '<span>…</span>';
+        ?>
+        <?php if ($payoutPage < $payoutTotalPages): ?><a href="<?php echo mpp_payout_qstr(['page' => $payoutPage + 1]); ?>">Next ›</a><?php endif; ?>
+        <span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page <?php echo $payoutPage; ?> of <?php echo $payoutTotalPages; ?> (<?php echo $payoutTotal; ?> total)</span>
+    </div>
+    <?php endif; ?>
     <?php else: ?><div class="empty-state">No withdrawal requests match this filter.</div><?php endif; ?>
     <?php endif; ?>
 

@@ -52,7 +52,7 @@ if ($searchQuery) {
 }
 
 if (is_worker()) {
-    $workerWhere = array_merge(["sr.status IN (" . public_job_statuses_sql() . ")", "sr.posting_fee_status != 'pending'"], $where);
+    $workerWhere = array_merge(["sr.status IN (" . public_job_statuses_sql() . ")", "sr.posting_fee_status != 'pending'", "u.banned = 0"], $where);
     $sql = 'SELECT sr.*, u.name AS customer_name, wc.name AS category_name, w.user_id AS worker_user_id
             FROM service_requests sr
             JOIN users u ON sr.customer_id = u.id

@@ -9,7 +9,7 @@ $slug = trim($_GET['slug'] ?? '');
 
 if (!$slug) { header('Location: funerals.php'); exit; }
 
-$stmt = $pdo->prepare("SELECT * FROM funeral_announcements WHERE slug=? AND status='approved' LIMIT 1");
+$stmt = $pdo->prepare("SELECT * FROM funeral_announcements WHERE slug=? AND status='approved' AND (user_id IS NULL OR user_id NOT IN (SELECT id FROM users WHERE banned=1)) LIMIT 1");
 $stmt->execute([$slug]);
 $fa = $stmt->fetch();
 if (!$fa) { header('Location: funerals.php'); exit; }

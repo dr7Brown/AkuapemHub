@@ -16,7 +16,7 @@ function event_cards($pdo, $search, $filter, $page, $perPage) {
     $offset = ($page - 1) * $perPage;
     $like   = '%' . $search . '%';
     $params = [];
-    $where  = "WHERE e.status='published'";
+    $where  = "WHERE e.status='published' AND (e.user_id IS NULL OR e.user_id NOT IN (SELECT id FROM users WHERE banned=1))";
     if ($search) {
         $where .= " AND (e.title LIKE ? OR e.venue LIKE ? OR e.organizer_name LIKE ?)";
         $params = [$like, $like, $like];
@@ -42,6 +42,9 @@ function event_cards($pdo, $search, $filter, $page, $perPage) {
 $events = event_cards($pdo, $search, $filter, $page, $perPage);
 
 // Sidebar data
+$sidebarFeatured = $pdo->prepare("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE()) AND start_date >= ? ORDER BY start_date ASC LIMIT 5");
+$sidebarFeatured->execute([$today]);
+$sidebarFeatured = $sidebarFeatured->fetchAll();
 $sidebarNews     = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 5")->fetchAll();
 $sidebarFunerals = $pdo->query("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' ORDER BY created_at DESC LIMIT 4")->fetchAll();
 $sidebarAd       = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
@@ -52,16 +55,23 @@ if ($isAjax) {
         <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="ev-card-inner">
             <div class="ev-card-img">
                 <?php if ($ev['featured_image']): ?>
-                    <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="<?php echo sanitize($ev['title']); ?>">
+                    <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="<?php echo sanitize($ev['title']); ?>" loading="lazy">
                 <?php else: ?>
                     <span class="ev-no-img">📅</span>
                 <?php endif; ?>
-                <?php if ($ev['featured']): ?><span class="ev-badge-featured">Featured</span><?php endif; ?>
-                <span class="ev-badge-<?php echo $ev['ticket_type']; ?>"><?php echo $ev['ticket_type'] === 'paid' ? '🎟️ Paid' : ($ev['ticket_type'] === 'registration' ? '📝 Register' : 'Free'); ?></span>
+                <div class="ev-img-gradient"></div>
+                <div class="ev-badges-top">
+                    <?php if ($ev['featured']): ?><span class="ev-badge-featured">⭐ Featured</span><?php else: ?><span></span><?php endif; ?>
+                    <span class="ev-badge-<?php echo $ev['ticket_type']; ?>"><?php echo $ev['ticket_type'] === 'paid' ? '🎟️ Paid' : ($ev['ticket_type'] === 'registration' ? '📝 Register' : 'Free'); ?></span>
+                </div>
+                <div class="ev-date-chip">
+                    <span class="ev-day"><?php echo date('d', strtotime($ev['start_date'])); ?></span>
+                    <span class="ev-mon"><?php echo date('M', strtotime($ev['start_date'])); ?></span>
+                </div>
             </div>
             <div class="ev-card-body">
                 <h3 class="ev-card-title"><?php echo sanitize($ev['title']); ?></h3>
-                <p class="ev-card-date">📅 <?php echo date('D, d M Y', strtotime($ev['start_date'])); ?><?php if ($ev['start_time']): ?> · <?php echo date('g:i A', strtotime($ev['start_time'])); ?><?php endif; ?></p>
+                <p class="ev-card-date"><?php echo date('l', strtotime($ev['start_date'])); ?><?php if ($ev['start_time']): ?> · <?php echo date('g:i A', strtotime($ev['start_time'])); ?><?php endif; ?></p>
                 <?php if ($ev['venue']): ?><p class="ev-card-venue">📍 <?php echo sanitize(mb_substr($ev['venue'],0,60)); ?></p><?php endif; ?>
                 <span class="ev-card-btn">View Event →</span>
             </div>
@@ -86,37 +96,68 @@ if ($isAjax) {
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .ev-shell { max-width:1060px; margin:0 auto; padding:20px 16px 60px; }
-        .ev-hero  { background:linear-gradient(135deg,#1e3a5f 0%,#0f2040 100%); color:#fff; padding:36px 20px 32px; text-align:center; margin-bottom:0; }
-        .ev-hero h1 { font-size:clamp(1.4rem,4vw,2rem); font-weight:900; margin:0 0 8px; }
-        .ev-hero p  { font-size:.95rem; color:#93c5fd; margin:0 0 20px; }
-        .ev-search-wrap { display:flex; gap:8px; max-width:440px; margin:0 auto; }
-        .ev-search-wrap input  { flex:1; padding:10px 14px; border-radius:10px; border:1px solid #1e3a5f; background:#0f2040; color:#fff; font-size:.9rem; }
-        .ev-search-wrap input::placeholder { color:#64748b; }
-        .ev-search-wrap button { padding:10px 18px; border-radius:10px; background:#2563eb; color:#fff; border:none; font-weight:700; cursor:pointer; }
+        .ev-hero  {
+            position:relative; overflow:hidden;
+            background:linear-gradient(135deg,#1e3a5f 0%,#0f2040 100%);
+            color:#fff; padding:44px 20px 36px; text-align:center; margin-bottom:0;
+        }
+        .ev-hero::before {
+            content:''; position:absolute; inset:0; pointer-events:none;
+            background:radial-gradient(circle at 15% 20%, rgba(37,99,235,.35), transparent 45%),
+                       radial-gradient(circle at 85% 80%, rgba(56,189,248,.22), transparent 50%);
+        }
+        .ev-hero > * { position:relative; z-index:1; }
+        .ev-hero h1 { font-size:clamp(1.5rem,4vw,2.15rem); font-weight:900; margin:0 0 8px; letter-spacing:-.01em; }
+        .ev-hero p  { font-size:.95rem; color:#93c5fd; margin:0 0 22px; }
+        .ev-search-wrap { display:flex; gap:8px; max-width:460px; margin:0 auto; }
+        .ev-search-wrap input  { flex:1; padding:12px 16px; border-radius:12px; border:1px solid rgba(255,255,255,.12); background:rgba(15,32,64,.6); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); color:#fff; font-size:.9rem; }
+        .ev-search-wrap input::placeholder { color:#7f9cc4; }
+        .ev-search-wrap button { padding:12px 22px; border-radius:12px; background:#2563eb; color:#fff; border:none; font-weight:700; cursor:pointer; box-shadow:0 6px 18px rgba(37,99,235,.35); transition:transform .15s ease, box-shadow .15s ease; }
+        .ev-search-wrap button:hover { transform:translateY(-1px); box-shadow:0 8px 22px rgba(37,99,235,.45); }
 
         /* Filter tabs */
-        .ev-filters { background:var(--surface,#fff); border-bottom:1px solid var(--border,#e5e7eb); padding:0 16px; display:flex; gap:0; overflow-x:auto; }
-        .ev-filter-btn { padding:12px 18px; border:none; background:none; font-size:.85rem; font-weight:700; color:var(--text-muted,#6b7280); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; }
+        .ev-filters { background:var(--surface,#fff); border-bottom:1px solid var(--border,#e5e7eb); padding:0 16px; display:flex; gap:4px; overflow-x:auto; }
+        .ev-filter-btn { padding:13px 18px; border:none; background:none; font-size:.85rem; font-weight:700; color:var(--text-muted,#6b7280); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; transition:color .15s ease; }
         .ev-filter-btn.active { color:var(--primary,#0f766e); border-bottom-color:var(--primary,#0f766e); }
         .ev-filter-btn:hover  { color:var(--text,#111); }
 
-        .ev-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:16px; }
-        .ev-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; transition:box-shadow .15s,transform .15s; }
-        .ev-card.ev-featured { border-color:#2563eb; }
-        .ev-card:hover { box-shadow:0 6px 24px rgba(0,0,0,.1); transform:translateY(-2px); }
+        .ev-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:22px; }
+        .ev-card {
+            background:var(--surface,#fff); border:1px solid var(--border,#eef0f2); border-radius:18px; overflow:hidden;
+            box-shadow:0 1px 2px rgba(15,23,42,.04);
+            transition:box-shadow .25s ease, transform .25s ease, border-color .25s ease;
+        }
+        .ev-card.ev-featured { border-color:#93c5fd; box-shadow:0 1px 2px rgba(37,99,235,.08), 0 0 0 1px rgba(37,99,235,.06); }
+        .ev-card:hover { box-shadow:0 18px 40px -12px rgba(15,23,42,.18); transform:translateY(-4px); border-color:transparent; }
         .ev-card-inner { display:flex; flex-direction:column; text-decoration:none; color:inherit; height:100%; }
-        .ev-card-img  { aspect-ratio:16/9; background:#f3f4f6; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; }
-        .ev-card-img img { width:100%; height:100%; object-fit:cover; }
-        .ev-no-img    { font-size:2.5rem; }
-        .ev-badge-featured { position:absolute; top:8px; left:8px; background:#2563eb; color:#fff; font-size:.65rem; font-weight:800; padding:3px 8px; border-radius:20px; }
-        .ev-badge-free  { position:absolute; top:8px; right:8px; background:#d1fae5; color:#065f46; font-size:.65rem; font-weight:800; padding:3px 8px; border-radius:20px; }
-        .ev-badge-paid  { position:absolute; top:8px; right:8px; background:#fef3c7; color:#92400e; font-size:.65rem; font-weight:800; padding:3px 8px; border-radius:20px; }
-        .ev-badge-registration { position:absolute; top:8px; right:8px; background:#e0e7ff; color:#3730a3; font-size:.65rem; font-weight:800; padding:3px 8px; border-radius:20px; }
-        .ev-card-body  { padding:12px 14px 14px; display:flex; flex-direction:column; gap:4px; flex:1; }
-        .ev-card-title { font-weight:800; font-size:.95rem; margin:0; }
-        .ev-card-date  { font-size:.8rem; color:var(--text,#111); margin:0; }
-        .ev-card-venue { font-size:.76rem; color:var(--text-muted,#6b7280); margin:0; }
-        .ev-card-btn   { display:inline-block; margin-top:auto; padding-top:8px; font-size:.78rem; color:var(--primary,#0f766e); font-weight:700; }
+        .ev-card-img  { aspect-ratio:16/10; background:linear-gradient(135deg,#e2e8f0,#f8fafc); position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+        .ev-card-img img { width:100%; height:100%; object-fit:cover; transition:transform .5s ease; }
+        .ev-card:hover .ev-card-img img { transform:scale(1.06); }
+        .ev-no-img    { font-size:2.5rem; opacity:.35; }
+        .ev-img-gradient { position:absolute; inset:0; background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.55) 100%); pointer-events:none; }
+        .ev-date-chip {
+            position:absolute; left:12px; bottom:12px; z-index:2;
+            background:rgba(255,255,255,.95); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+            border-radius:10px; padding:5px 10px; text-align:center; line-height:1.05;
+            box-shadow:0 4px 14px rgba(0,0,0,.15);
+        }
+        .ev-date-chip .ev-day { display:block; font-size:1.05rem; font-weight:900; color:#0f172a; }
+        .ev-date-chip .ev-mon { display:block; font-size:.6rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#2563eb; }
+        .ev-badges-top { position:absolute; top:10px; left:0; right:0; display:flex; justify-content:space-between; padding:0 10px; z-index:2; }
+        .ev-badge-featured { background:#2563eb; color:#fff; font-size:.63rem; font-weight:800; padding:4px 10px; border-radius:20px; box-shadow:0 3px 10px rgba(37,99,235,.35); letter-spacing:.02em; }
+        .ev-badge-free, .ev-badge-paid, .ev-badge-registration {
+            font-size:.63rem; font-weight:800; padding:4px 10px; border-radius:20px; -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
+            margin-left:auto;
+        }
+        .ev-badge-free  { background:rgba(209,250,229,.92); color:#065f46; }
+        .ev-badge-paid  { background:rgba(254,243,199,.92); color:#92400e; }
+        .ev-badge-registration { background:rgba(224,231,255,.92); color:#3730a3; }
+        .ev-card-body  { padding:16px 16px 17px; display:flex; flex-direction:column; gap:6px; flex:1; }
+        .ev-card-title { font-weight:800; font-size:1rem; line-height:1.35; margin:0; letter-spacing:-.01em; }
+        .ev-card-date  { font-size:.8rem; color:var(--text-muted,#6b7280); margin:0; font-weight:600; }
+        .ev-card-venue { font-size:.78rem; color:var(--text-muted,#6b7280); margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ev-card-btn   { display:inline-flex; align-items:center; gap:4px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border,#f1f5f9); font-size:.79rem; color:var(--primary,#0f766e); font-weight:800; transition:gap .2s ease; }
+        .ev-card:hover .ev-card-btn { gap:8px; }
 
         .ev-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin:16px 0; }
         .ev-empty  { text-align:center; padding:48px 20px; color:var(--text-muted,#6b7280); grid-column:1/-1; }
@@ -144,6 +185,14 @@ if ($isAjax) {
         .nsb-text a { font-size:.82rem; font-weight:700; color:var(--text,#111); text-decoration:none; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
         .nsb-text a:hover { color:var(--primary,#0f766e); }
         .nsb-meta   { font-size:.72rem; color:var(--muted,#6b7280); margin-top:3px; }
+        .nsb-event  { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
+        .nsb-event:last-child { border-bottom:none; }
+        .nsb-event-date { background:var(--primary,#0f766e); color:#fff; border-radius:8px; text-align:center; padding:4px 8px; min-width:42px; flex-shrink:0; }
+        .nsb-event-date .nsb-day { font-size:1rem; font-weight:900; line-height:1; }
+        .nsb-event-date .nsb-mon { font-size:.6rem; font-weight:700; text-transform:uppercase; }
+        .nsb-event-info a { font-size:.83rem; font-weight:700; color:var(--text,#111); text-decoration:none; display:block; line-height:1.35; }
+        .nsb-event-info a:hover { color:var(--primary,#0f766e); }
+        .nsb-event-info .nsb-meta { margin-top:2px; }
         .nsb-funeral { padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); }
         .nsb-funeral:last-child { border-bottom:none; }
         .nsb-funeral-name { font-size:.82rem; font-weight:700; }
@@ -207,16 +256,23 @@ if ($isAjax) {
             <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="ev-card-inner">
                 <div class="ev-card-img">
                     <?php if ($ev['featured_image']): ?>
-                        <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="<?php echo sanitize($ev['title']); ?>">
+                        <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="<?php echo sanitize($ev['title']); ?>" loading="lazy">
                     <?php else: ?>
                         <span class="ev-no-img">📅</span>
                     <?php endif; ?>
-                    <?php if ($ev['featured']): ?><span class="ev-badge-featured">Featured</span><?php endif; ?>
-                    <span class="ev-badge-<?php echo $ev['ticket_type']; ?>"><?php echo $ev['ticket_type'] === 'paid' ? '🎟️ Paid' : ($ev['ticket_type'] === 'registration' ? '📝 Register' : 'Free'); ?></span>
+                    <div class="ev-img-gradient"></div>
+                    <div class="ev-badges-top">
+                        <?php if ($ev['featured']): ?><span class="ev-badge-featured">⭐ Featured</span><?php else: ?><span></span><?php endif; ?>
+                        <span class="ev-badge-<?php echo $ev['ticket_type']; ?>"><?php echo $ev['ticket_type'] === 'paid' ? '🎟️ Paid' : ($ev['ticket_type'] === 'registration' ? '📝 Register' : 'Free'); ?></span>
+                    </div>
+                    <div class="ev-date-chip">
+                        <span class="ev-day"><?php echo date('d', strtotime($ev['start_date'])); ?></span>
+                        <span class="ev-mon"><?php echo date('M', strtotime($ev['start_date'])); ?></span>
+                    </div>
                 </div>
                 <div class="ev-card-body">
                     <h3 class="ev-card-title"><?php echo sanitize($ev['title']); ?></h3>
-                    <p class="ev-card-date">📅 <?php echo date('D, d M Y', strtotime($ev['start_date'])); ?><?php if ($ev['start_time']): ?> · <?php echo date('g:i A', strtotime($ev['start_time'])); ?><?php endif; ?></p>
+                    <p class="ev-card-date"><?php echo date('l', strtotime($ev['start_date'])); ?><?php if ($ev['start_time']): ?> · <?php echo date('g:i A', strtotime($ev['start_time'])); ?><?php endif; ?></p>
                     <?php if ($ev['venue']): ?><p class="ev-card-venue">📍 <?php echo sanitize(mb_substr($ev['venue'],0,60)); ?></p><?php endif; ?>
                     <span class="ev-card-btn">View Event →</span>
                 </div>
@@ -233,6 +289,30 @@ if ($isAjax) {
 
 <!-- ── Sidebar ── -->
 <aside class="ev-sidebar">
+
+    <!-- Featured Events -->
+    <?php if ($sidebarFeatured): ?>
+    <div class="nsb-widget">
+        <div class="nsb-head">⭐ Featured Events</div>
+        <ul class="nsb-list" style="list-style:none;margin:0;padding:0;">
+            <?php foreach ($sidebarFeatured as $se): ?>
+            <li class="nsb-event">
+                <div class="nsb-event-date">
+                    <div class="nsb-day"><?php echo date('d', strtotime($se['start_date'])); ?></div>
+                    <div class="nsb-mon"><?php echo date('M', strtotime($se['start_date'])); ?></div>
+                </div>
+                <div class="nsb-event-info">
+                    <a href="event.php?slug=<?php echo urlencode($se['slug']); ?>"><?php echo sanitize($se['title']); ?></a>
+                    <?php if ($se['start_time']): ?><div class="nsb-meta"><?php echo date('g:i A', strtotime($se['start_time'])); ?></div><?php endif; ?>
+                </div>
+            </li>
+            <?php endforeach; ?>
+        </ul>
+        <div style="padding:10px 14px;">
+            <a href="events.php?filter=featured" style="font-size:.8rem;color:var(--primary,#0f766e);font-weight:700;text-decoration:none;">All featured events →</a>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php if ($user): ?>
     <div class="nsb-widget">

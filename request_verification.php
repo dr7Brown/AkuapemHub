@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: request_verification.php');
                 exit;
             }
-            $newDocPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
+            $newDocPath = save_uploaded_id_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
         }
         $customVal = ($idType === 'other') ? $idTypeCustom : null;
         if ($newDocPath) {

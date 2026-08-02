@@ -496,6 +496,9 @@ function activatePurchasedFeature(array $payment): void {
                         );
                     }
                 }
+
+                $pdo->prepare("UPDATE mp_quote_requests SET status='paid', updated_at=NOW() WHERE order_id=? AND status='quoted'")
+                    ->execute([$mo['id']]);
             }
             break;
 

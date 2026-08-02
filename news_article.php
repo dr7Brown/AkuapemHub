@@ -8,7 +8,7 @@ $user = current_user();
 $slug = trim($_GET['slug'] ?? '');
 if (!$slug) { header('Location: news.php'); exit; }
 
-$stmt = $pdo->prepare("SELECT * FROM news WHERE slug=? AND status='published' LIMIT 1");
+$stmt = $pdo->prepare("SELECT * FROM news WHERE slug=? AND status='published' AND (user_id IS NULL OR user_id NOT IN (SELECT id FROM users WHERE banned=1)) LIMIT 1");
 $stmt->execute([$slug]);
 $article = $stmt->fetch();
 if (!$article) {
@@ -448,6 +448,7 @@ $csrfField = csrf_field();
     <?php if ($user): ?>
         <?php $activeNav = 'news'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <?php else: ?>
+        <?php require __DIR__ . '/partials/social_tiles.php'; ?>
         <footer style="text-align:center;padding:20px 16px 32px;font-size:.8rem;color:#6b7280;border-top:1px solid #e5e7eb;margin-top:40px;">
             &copy; <?php echo date('Y'); ?> <?php echo sanitize(APP_NAME); ?>
         </footer>

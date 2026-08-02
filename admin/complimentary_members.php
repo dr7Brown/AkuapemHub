@@ -113,7 +113,7 @@ if ($q !== '') {
 
     <div class="cm-card">
         <h2 style="margin-top:0;font-size:1rem;">Grant to a User</h2>
-        <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <form method="get" action="complimentary_members.php" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
             <input type="text" name="q" value="<?php echo sanitize($q); ?>" placeholder="Search name, email, or username…" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
             <button type="submit" class="button button-secondary button-small">Search</button>
         </form>

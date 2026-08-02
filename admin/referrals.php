@@ -58,10 +58,21 @@ if ($tab === 'transactions') {
         $txWhere = "WHERE u.name LIKE :q OR u.email LIKE :q OR pt.event LIKE :q";
         $txParams[':q'] = '%' . $txSearch . '%';
     }
+
+    $txPage    = max(1, (int)($_GET['page'] ?? 1));
+    $txPerPage = 30;
+    $txOffset  = ($txPage - 1) * $txPerPage;
+
+    $txCountStmt = $pdo->prepare("SELECT COUNT(*) FROM points_transactions pt JOIN users u ON u.id=pt.user_id {$txWhere}");
+    foreach ($txParams as $k => $v) $txCountStmt->bindValue($k, $v);
+    $txCountStmt->execute();
+    $txTotal      = (int)$txCountStmt->fetchColumn();
+    $txTotalPages = max(1, (int)ceil($txTotal / $txPerPage));
+
     $txSQL = "SELECT pt.*, u.name AS user_name, u.email AS user_email
               FROM points_transactions pt JOIN users u ON u.id=pt.user_id
               {$txWhere}
-              ORDER BY pt.created_at DESC LIMIT 100";
+              ORDER BY pt.created_at DESC LIMIT {$txPerPage} OFFSET {$txOffset}";
     $txStmt = $pdo->prepare($txSQL);
     foreach ($txParams as $k => $v) $txStmt->bindValue($k, $v);
     $txStmt->execute();
@@ -70,6 +81,13 @@ if ($tab === 'transactions') {
 
 // ── Referral relationships (for Referrals tab) ────────────────────────────────
 if ($tab === 'referrals') {
+    $refPage    = max(1, (int)($_GET['page'] ?? 1));
+    $refPerPage = 30;
+    $refOffset  = ($refPage - 1) * $refPerPage;
+
+    $refTotal      = (int)$pdo->query('SELECT COUNT(*) FROM referrals')->fetchColumn();
+    $refTotalPages = max(1, (int)ceil($refTotal / $refPerPage));
+
     $refRows = $pdo->query("SELECT r.*, rc.clicks,
         ref.name AS referrer_name, ref.email AS referrer_email,
         u.name AS referred_name, u.email AS referred_email
@@ -77,7 +95,16 @@ if ($tab === 'referrals') {
         JOIN referral_codes rc ON rc.user_id = r.referrer_id
         JOIN users ref ON ref.id = r.referrer_id
         JOIN users u   ON u.id  = r.referred_id
-        ORDER BY r.created_at DESC LIMIT 200")->fetchAll(PDO::FETCH_ASSOC);
+        ORDER BY r.created_at DESC LIMIT {$refPerPage} OFFSET {$refOffset}")->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function refadm_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['tab', 'q', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'referrals.php?' . http_build_query($merged);
 }
 
 // ── Top earners ───────────────────────────────────────────────────────────────
@@ -138,6 +165,10 @@ $groups = [
         table.data-table th { text-align:left; padding:8px 8px; border-bottom:2px solid var(--border); font-size:0.78rem; color:var(--muted); text-transform:uppercase; }
         table.data-table td { padding:8px 8px; border-bottom:1px solid var(--border); }
         .pts-chip { background:var(--primary); color:#fff; border-radius:12px; padding:2px 8px; font-size:0.78rem; font-weight:600; white-space:nowrap; }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -219,7 +250,7 @@ $groups = [
 
         <?php elseif ($tab === 'transactions'): ?>
         <!-- ── Transactions tab ─────────────────────────────────────────────── -->
-        <form method="get" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+        <form method="get" action="referrals.php" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
             <input type="hidden" name="tab" value="transactions" />
             <input type="text" name="q" value="<?php echo sanitize($_GET['q'] ?? ''); ?>"
                    placeholder="Search by name, email, or event…" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);" />
@@ -249,6 +280,23 @@ $groups = [
                 </tbody>
             </table>
         </div>
+        <?php if ($txTotalPages > 1): ?>
+        <div class="pagination">
+            <?php if ($txPage > 1): ?><a href="<?php echo refadm_qstr(['page' => $txPage - 1]); ?>">‹ Prev</a><?php endif; ?>
+            <?php
+            $tpStart = max(1, $txPage - 3);
+            $tpEnd   = min($txTotalPages, $txPage + 3);
+            if ($tpStart > 1) echo '<span>…</span>';
+            for ($tp = $tpStart; $tp <= $tpEnd; $tp++): ?>
+                <?php if ($tp === $txPage): ?><span class="current"><?php echo $tp; ?></span>
+                <?php else: ?><a href="<?php echo refadm_qstr(['page' => $tp]); ?>"><?php echo $tp; ?></a><?php endif; ?>
+            <?php endfor;
+            if ($tpEnd < $txTotalPages) echo '<span>…</span>';
+            ?>
+            <?php if ($txPage < $txTotalPages): ?><a href="<?php echo refadm_qstr(['page' => $txPage + 1]); ?>">Next ›</a><?php endif; ?>
+            <span style="color:var(--muted);border:none;padding-left:4px;">Page <?php echo $txPage; ?> of <?php echo $txTotalPages; ?> (<?php echo $txTotal; ?> total)</span>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
 
         <?php elseif ($tab === 'referrals'): ?>
@@ -278,6 +326,23 @@ $groups = [
                 </tbody>
             </table>
         </div>
+        <?php if ($refTotalPages > 1): ?>
+        <div class="pagination">
+            <?php if ($refPage > 1): ?><a href="<?php echo refadm_qstr(['page' => $refPage - 1]); ?>">‹ Prev</a><?php endif; ?>
+            <?php
+            $rpStart = max(1, $refPage - 3);
+            $rpEnd   = min($refTotalPages, $refPage + 3);
+            if ($rpStart > 1) echo '<span>…</span>';
+            for ($rp = $rpStart; $rp <= $rpEnd; $rp++): ?>
+                <?php if ($rp === $refPage): ?><span class="current"><?php echo $rp; ?></span>
+                <?php else: ?><a href="<?php echo refadm_qstr(['page' => $rp]); ?>"><?php echo $rp; ?></a><?php endif; ?>
+            <?php endfor;
+            if ($rpEnd < $refTotalPages) echo '<span>…</span>';
+            ?>
+            <?php if ($refPage < $refTotalPages): ?><a href="<?php echo refadm_qstr(['page' => $refPage + 1]); ?>">Next ›</a><?php endif; ?>
+            <span style="color:var(--muted);border:none;padding-left:4px;">Page <?php echo $refPage; ?> of <?php echo $refTotalPages; ?> (<?php echo $refTotal; ?> total)</span>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
 
         <?php elseif ($tab === 'leaderboard'): ?>

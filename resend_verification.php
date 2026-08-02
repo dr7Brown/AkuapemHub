@@ -42,7 +42,7 @@ $pdo->prepare(
 )->execute([$token, $sentAt, $user['id']]);
 
 EmailService::sendVerificationEmail($user['email'], $user['name'], $token);
-log_security_event($user['id'], 'email_verification_resent', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0', '');
+log_security_event($user['id'], 'email_verification_resent', client_ip(), '');
 
 flash('Verification email sent to ' . $user['email'] . '. Please check your inbox.', 'success');
 header('Location: jobs.php');

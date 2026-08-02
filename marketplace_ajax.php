@@ -150,9 +150,9 @@ if ($action === 'submit_shop_verification') {
     if (empty($gcFile['name'])) mp_error('Ghana Card photo is required.', 'seller_dashboard.php?tab=verify');
     if (!is_valid_image_upload($gcFile)) mp_error('Ghana Card must be a valid image file.', 'seller_dashboard.php?tab=verify');
 
-    $gcPath  = save_uploaded_image($gcFile, 'uploads/marketplace/verify/' . $shop['id'] . '/ghana_card');
+    $gcPath  = save_uploaded_id_image($gcFile, 'uploads/marketplace/verify/' . $shop['id'] . '/ghana_card');
     $bizPath = ($bizFile && $bizFile['name'] && is_valid_image_upload($bizFile))
-        ? save_uploaded_image($bizFile, 'uploads/marketplace/verify/' . $shop['id'] . '/business_reg')
+        ? save_uploaded_id_image($bizFile, 'uploads/marketplace/verify/' . $shop['id'] . '/business_reg')
         : null;
 
     $existing = $pdo->prepare('SELECT id FROM mp_shop_verifications WHERE shop_id=?');

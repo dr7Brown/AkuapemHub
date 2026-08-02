@@ -21,7 +21,7 @@ $paymentFilter   = $_GET['payment']     ?? '';   // escrow_paid | escrow | paid 
 $sortFilter      = $_GET['sort']        ?? 'newest'; // newest | budget_high | budget_low | featured
 
 // Build job query
-$where  = ["sr.status IN (" . public_job_statuses_sql() . ")", "sr.posting_fee_status != 'pending'"];
+$where  = ["sr.status IN (" . public_job_statuses_sql() . ")", "sr.posting_fee_status != 'pending'", "u.banned = 0"];
 $params = [];
 
 if ($categoryFilter) {
@@ -61,6 +61,7 @@ $jobs = $pdo->prepare(
             sc.name AS category_name
      FROM service_requests sr
      JOIN service_categories sc ON sr.category_id = sc.id
+     JOIN users u ON sr.customer_id = u.id
      WHERE ' . implode(' AND ', $where) . "
      ORDER BY $orderBy LIMIT 80"
 );

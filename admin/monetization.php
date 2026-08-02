@@ -655,16 +655,38 @@ $revStmt->execute($revSumParams);
 $revenueSummary = $revStmt->fetch();
 
 // Full payment history (paid + failed, with filters)
+$histPage    = max(1, (int)($_GET['hpage'] ?? 1));
+$histPerPage = 30;
+$histOffset  = ($histPage - 1) * $histPerPage;
+
+$histCountStmt = $pdo->prepare("
+    SELECT COUNT(*) FROM platform_payments pp
+    JOIN users u ON pp.user_id = u.id
+    WHERE pp.status IN ('paid', 'failed') {$revWhereSQL}
+");
+$histCountStmt->execute($revParams);
+$histTotal      = (int)$histCountStmt->fetchColumn();
+$histTotalPages = max(1, (int)ceil($histTotal / $histPerPage));
+
 $histStmt = $pdo->prepare("
     SELECT pp.*, u.name AS user_name, u.username, sr.title AS job_title
     FROM platform_payments pp
     JOIN users u ON pp.user_id = u.id
     LEFT JOIN service_requests sr ON pp.payment_type IN ('featured_job','job_post') AND sr.id = pp.reference_id
     WHERE pp.status IN ('paid', 'failed') {$revWhereSQL}
-    ORDER BY pp.created_at DESC LIMIT 200
+    ORDER BY pp.created_at DESC LIMIT {$histPerPage} OFFSET {$histOffset}
 ");
 $histStmt->execute($revParams);
 $paymentHistory = $histStmt->fetchAll();
+
+function mono_hist_qstr(array $overrides = []): string {
+    $base = ['tab' => 'payments'];
+    foreach (['filter_from', 'filter_to', 'filter_type', 'filter_search', 'hpage'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'monetization.php?' . http_build_query($merged);
+}
 
 // Currently active featured jobs
 $activeFeaturedJobs = $pdo->query("
@@ -778,6 +800,10 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
         .mode-card p { margin: 0; font-size: 0.85rem; color: var(--text-muted); }
         .inline-form { display: inline; }
         @media (max-width: 600px) { .mode-cards { grid-template-columns: 1fr; } }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -1957,7 +1983,7 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
 
             <!-- Payment history -->
             <section class="panel">
-                <h2 style="margin-top:0;">Payment History <span class="meta">(<?php echo $filtersActive ? count($paymentHistory) . ' results' : 'last 200'; ?>)</span></h2>
+                <h2 style="margin-top:0;">Payment History <span class="meta">(<?php echo $histTotal; ?> <?php echo $filtersActive ? 'matching' : 'total'; ?>)</span></h2>
                 <?php if (empty($paymentHistory)): ?>
                     <div class="empty-state">No completed or failed payments yet.</div>
                 <?php else: ?>
@@ -1986,6 +2012,23 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                             <?php endforeach; ?>
                         </tbody>
                     </table>
+                    <?php if ($histTotalPages > 1): ?>
+                    <div class="pagination">
+                        <?php if ($histPage > 1): ?><a href="<?php echo mono_hist_qstr(['hpage' => $histPage - 1]); ?>">‹ Prev</a><?php endif; ?>
+                        <?php
+                        $hpStart = max(1, $histPage - 3);
+                        $hpEnd   = min($histTotalPages, $histPage + 3);
+                        if ($hpStart > 1) echo '<span>…</span>';
+                        for ($hp = $hpStart; $hp <= $hpEnd; $hp++): ?>
+                            <?php if ($hp === $histPage): ?><span class="current"><?php echo $hp; ?></span>
+                            <?php else: ?><a href="<?php echo mono_hist_qstr(['hpage' => $hp]); ?>"><?php echo $hp; ?></a><?php endif; ?>
+                        <?php endfor;
+                        if ($hpEnd < $histTotalPages) echo '<span>…</span>';
+                        ?>
+                        <?php if ($histPage < $histTotalPages): ?><a href="<?php echo mono_hist_qstr(['hpage' => $histPage + 1]); ?>">Next ›</a><?php endif; ?>
+                        <span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page <?php echo $histPage; ?> of <?php echo $histTotalPages; ?></span>
+                    </div>
+                    <?php endif; ?>
                 <?php endif; ?>
             </section>
         </div>

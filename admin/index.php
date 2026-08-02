@@ -365,13 +365,16 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <?php if (is_admin() || has_mod_permission('approve_funerals')): ?><a href="funerals.php" data-page="funerals.php">🕊️ Funerals</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_events')): ?><a href="events.php"   data-page="events.php">📅 Events</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents') || has_mod_permission('approve_verifications') || has_mod_permission('approve_boosts')): ?><a href="delivery.php"    data-page="delivery.php">🚚 Delivery</a><?php endif; ?>
-        <?php if (is_admin() || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_boosts')): ?><a href="marketplace.php" data-page="marketplace.php">🛍️ Marketplace</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_boosts') || has_mod_permission('manage_quote_requests')): ?><a href="marketplace.php" data-page="marketplace.php">🛍️ Marketplace</a><?php endif; ?>
     </div>
     <!-- Platform dropdown — mostly admin-only, plus a few permitted -->
     <div class="adm-drop" data-cat="platform">
         <?php if (is_admin() || has_mod_permission('view_reports')): ?><a href="analytics.php"         data-page="analytics.php">📊 Analytics</a><?php endif; ?>
         <?php if (is_admin()): ?><a href="business_messages.php" data-page="business_messages.php">💬 Messages</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('manage_communication')): ?><a href="communication.php" data-page="communication.php">📣 Broadcast</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_media_settings')): ?><a href="media_settings.php" data-page="media_settings.php">🖼️ Image Optimization</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_towns')): ?><a href="towns.php" data-page="towns.php">📍 Towns</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_master_catalog')): ?><a href="master_catalog.php" data-page="master_catalog.php">🗂️ Master Catalog</a><?php endif; ?>
         <?php if (is_admin()): ?>
         <a href="email_settings.php"   data-page="email_settings.php">📧 Email / SMTP</a>
         <a href="contact_settings.php" data-page="contact_settings.php">📞 Contact</a>
@@ -773,7 +776,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             ['funerals.php',         '🕊️', 'Funerals',     'Funeral announcements',       'approve_funerals'],
             ['events.php',           '📅', 'Events',       'Community events',            'approve_events'],
             ['delivery.php',         '🚚', 'Delivery',     'Agents, requests & tracking', 'approve_delivery_agents'],
-            ['marketplace.php',      '🛍️', 'Marketplace',  'Shops, products & orders',    'approve_products'],
+            ['marketplace.php',      '🛍️', 'Marketplace',  'Shops, products, orders & quote requests', ['approve_products','approve_shops','approve_boosts','manage_quote_requests']],
             ['moderators.php',       '🛡️', 'Moderators',   'Roles & access control',      null],
             ['mod_performance.php',  '🏆', 'Performance',  'Points, leaderboard & rewards',null],
             ['analytics.php',        '📊', 'Analytics',    'Stats & growth trends',       'view_reports'],
@@ -781,14 +784,19 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             ['communication.php',    '📣', 'Broadcast',    'Push notifications',          'manage_communication'],
             ['email_settings.php',   '📧', 'Email / SMTP', 'SMTP config & test',          null],
             ['contact_settings.php', '📞', 'Contact',      'Contact page information',    null],
+            ['media_settings.php',   '🖼️', 'Image Optimization', 'Upload resize & quality', 'manage_media_settings'],
+            ['towns.php',            '📍', 'Towns',        'Manage Akuapem towns list',   'manage_towns'],
+            ['master_catalog.php',   '🗂️', 'Master Catalog', 'Shared product catalog for shops', 'manage_master_catalog'],
             ['theme.php',            '🎨', 'Theme',        'Colours & branding',          null],
             ['audit_logs.php',       '📜', 'Audit Logs',   'Admin action history',        'view_reports'],
         ];
         foreach ($cards as [$href, $icon, $title, $desc, $requiredPerm]):
-            // Admin sees everything. Null-permission cards: admin-only. String: manager needs that permission.
+            // Admin sees everything. Null-permission cards: admin-only. String: manager needs that
+            // permission. Array: manager needs ANY one of those permissions.
             if (!is_admin()) {
                 if ($requiredPerm === null) continue;          // admin-only card
-                if (!has_mod_permission($requiredPerm)) continue; // not granted
+                $requiredPerms = is_array($requiredPerm) ? $requiredPerm : [$requiredPerm];
+                if (!array_filter($requiredPerms, fn($p) => has_mod_permission($p))) continue; // not granted
             }
         ?>
             <a class="adm-card" href="<?php echo $href; ?>" data-page="<?php echo $href; ?>">

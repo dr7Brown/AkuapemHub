@@ -188,6 +188,42 @@ if ($subQ !== '')               { $subWhere[] = 'ms.shop_name LIKE ?'; $subParam
 if (($_GET['expiring'] ?? '') === '1') { $subWhere[] = "mss.status='active' AND mss.end_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 14 DAY)"; }
 $subWhereSql = $subWhere ? ('WHERE ' . implode(' AND ', $subWhere)) : '';
 
+// CSV export always covers every matching row, independent of the display page below
+if ($tab === 'subscribers' && ($_GET['export'] ?? '') === 'csv') {
+    $exportStmt = $pdo->prepare(
+        "SELECT mss.*, ms.shop_name, msp.name AS plan_name
+         FROM mp_seller_subscriptions mss
+         JOIN mp_shops ms ON mss.shop_id = ms.id
+         JOIN mp_seller_subscription_plans msp ON mss.plan_id = msp.id
+         $subWhereSql
+         ORDER BY mss.created_at DESC"
+    );
+    $exportStmt->execute($subParams);
+    header('Content-Type: application/octet-stream');
+    header('Content-Disposition: attachment; filename="mp_subscribers_' . date('Y-m-d') . '.csv"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Shop', 'Package', 'Status', 'Start Date', 'End Date', 'Price Paid (GHS)', 'Created At']);
+    foreach ($exportStmt as $s) {
+        fputcsv($out, [csv_safe($s['shop_name']), csv_safe($s['plan_name']), $s['status'], $s['start_date'], $s['end_date'], number_format((float)$s['price_paid'], 2, '.', ''), $s['created_at']]);
+    }
+    fclose($out);
+    exit;
+}
+
+$subPage    = max(1, (int)($_GET['spage'] ?? 1));
+$subPerPage = 30;
+$subOffset  = ($subPage - 1) * $subPerPage;
+
+$subCountStmt = $pdo->prepare(
+    "SELECT COUNT(*) FROM mp_seller_subscriptions mss
+     JOIN mp_shops ms ON mss.shop_id = ms.id
+     JOIN mp_seller_subscription_plans msp ON mss.plan_id = msp.id
+     $subWhereSql"
+);
+$subCountStmt->execute($subParams);
+$subTotal      = (int)$subCountStmt->fetchColumn();
+$subTotalPages = max(1, (int)ceil($subTotal / $subPerPage));
+
 $subscribersStmt = $pdo->prepare(
     "SELECT mss.*, ms.shop_name, msp.name AS plan_name
      FROM mp_seller_subscriptions mss
@@ -195,21 +231,17 @@ $subscribersStmt = $pdo->prepare(
      JOIN mp_seller_subscription_plans msp ON mss.plan_id = msp.id
      $subWhereSql
      ORDER BY mss.created_at DESC
-     LIMIT 300"
+     LIMIT $subPerPage OFFSET $subOffset"
 );
 $subscribersStmt->execute($subParams);
 $subscribers = $subscribersStmt->fetchAll();
 
-if ($tab === 'subscribers' && ($_GET['export'] ?? '') === 'csv') {
-    header('Content-Type: application/octet-stream');
-    header('Content-Disposition: attachment; filename="mp_subscribers_' . date('Y-m-d') . '.csv"');
-    $out = fopen('php://output', 'w');
-    fputcsv($out, ['Shop', 'Package', 'Status', 'Start Date', 'End Date', 'Price Paid (GHS)', 'Created At']);
-    foreach ($subscribers as $s) {
-        fputcsv($out, [csv_safe($s['shop_name']), csv_safe($s['plan_name']), $s['status'], $s['start_date'], $s['end_date'], number_format((float)$s['price_paid'], 2, '.', ''), $s['created_at']]);
+function mpp_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['tab', 'sstatus', 'sq', 'expiring', 'spage'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
     }
-    fclose($out);
-    exit;
+    return '?' . http_build_query(array_merge($base, $overrides));
 }
 ?>
 <!DOCTYPE html>
@@ -226,6 +258,10 @@ if ($tab === 'subscribers' && ($_GET['export'] ?? '') === 'csv') {
         .mpp-table td { padding:10px 12px; border-bottom:1px solid var(--border,#f1f5f9); vertical-align:middle; }
         .mpp-table tr:last-child td { border-bottom:none; }
         .mpp-badge { display:inline-block; padding:2px 9px; border-radius:20px; font-size:.68rem; font-weight:700; }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
         .mpp-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:16px; overflow-x:auto; }
         .mpp-form-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
         .mpp-form-grid label { font-weight:600; font-size:.82rem; display:block; margin-bottom:4px; }
@@ -309,6 +345,23 @@ if ($tab === 'subscribers' && ($_GET['export'] ?? '') === 'csv') {
             <?php endforeach; ?>
             </tbody>
         </table>
+        <?php if ($subTotalPages > 1): ?>
+        <div class="pagination">
+            <?php if ($subPage > 1): ?><a href="<?php echo mpp_qstr(['spage' => $subPage - 1]); ?>">‹ Prev</a><?php endif; ?>
+            <?php
+            $spStart = max(1, $subPage - 3);
+            $spEnd   = min($subTotalPages, $subPage + 3);
+            if ($spStart > 1) echo '<span>…</span>';
+            for ($sp = $spStart; $sp <= $spEnd; $sp++): ?>
+                <?php if ($sp === $subPage): ?><span class="current"><?php echo $sp; ?></span>
+                <?php else: ?><a href="<?php echo mpp_qstr(['spage' => $sp]); ?>"><?php echo $sp; ?></a><?php endif; ?>
+            <?php endfor;
+            if ($spEnd < $subTotalPages) echo '<span>…</span>';
+            ?>
+            <?php if ($subPage < $subTotalPages): ?><a href="<?php echo mpp_qstr(['spage' => $subPage + 1]); ?>">Next ›</a><?php endif; ?>
+            <span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page <?php echo $subPage; ?> of <?php echo $subTotalPages; ?> (<?php echo $subTotal; ?> total)</span>
+        </div>
+        <?php endif; ?>
     </div>
     <?php elseif ($tab === 'analytics'): ?>
     <div class="mpp-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px;">

@@ -57,6 +57,7 @@ if (!isset($activeNav)) {
     }
 }
 ?>
+<?php require __DIR__ . '/social_tiles.php'; ?>
 <nav class="bottom-nav">
     <?php foreach ($navItems as $key => $item): ?>
         <a href="<?php echo sanitize($item['href']); ?>" class="bottom-nav-item <?php echo $activeNav === $key ? 'active' : ''; ?>">

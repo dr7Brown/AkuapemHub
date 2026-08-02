@@ -25,6 +25,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'shop_se
     elseif (!$shop && strlen($shopName) < 3) $shopError = 'Shop name must be at least 3 characters.';
     elseif (!$shop && requires_verified_email('shop_create') && !is_email_verified()) {
         $shopError = 'Please verify your email address before creating a shop.';
+    } elseif (!$shop && is_banned_from_feature((int)$user['id'], 'mp')) {
+        $shopError = 'You have been restricted from the Marketplace. Contact support if you believe this is an error.';
     } elseif ($mapsLink !== '' && !filter_var($mapsLink, FILTER_VALIDATE_URL)) {
         $shopError = 'Enter a valid Google Maps link (or leave it blank).';
     }
@@ -44,14 +46,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'shop_se
         // Handle logo upload
         if (!empty($_FILES['logo']['name']) && is_valid_image_upload($_FILES['logo'])) {
             $shopId = $shop ? $shop['id'] : (int)$pdo->lastInsertId();
-            $logoPath = save_uploaded_image($_FILES['logo'], 'uploads/marketplace/shops/' . $shopId . '/logo');
+            $logoPath = save_uploaded_image($_FILES['logo'], 'uploads/marketplace/shops/' . $shopId . '/logo',
+                (int)get_platform_setting('img_mp_logo_maxwidth', '500'),
+                (int)get_platform_setting('img_mp_logo_quality', '85'));
             if ($logoPath) $pdo->prepare('UPDATE mp_shops SET logo_path=? WHERE id=?')->execute([$logoPath, $shopId]);
         }
 
         // Handle banner upload
         if (!empty($_FILES['banner']['name']) && is_valid_image_upload($_FILES['banner'])) {
             $shopId = $shop ? $shop['id'] : (int)$pdo->lastInsertId();
-            $bannerPath = save_uploaded_image($_FILES['banner'], 'uploads/marketplace/shops/' . $shopId . '/banner');
+            $bannerPath = save_uploaded_image($_FILES['banner'], 'uploads/marketplace/shops/' . $shopId . '/banner',
+                (int)get_platform_setting('img_mp_banner_maxwidth', '1200'),
+                (int)get_platform_setting('img_mp_banner_quality', '85'));
             if ($bannerPath) $pdo->prepare('UPDATE mp_shops SET banner_path=? WHERE id=?')->execute([$bannerPath, $shopId]);
         }
 
@@ -144,6 +150,77 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'retry_d
         }
     }
     header('Location: seller_dashboard.php?tab=orders');
+    exit;
+}
+
+// ── Handle quote request response (price it or decline) ──────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'quote_respond') {
+    csrf_check();
+    if (!$shop) { flash('Create your shop first.', 'warning'); header('Location: seller_dashboard.php'); exit; }
+
+    $quoteId = (int)$_POST['quote_id'];
+    $qrRow = $pdo->prepare("SELECT * FROM mp_quote_requests WHERE id=? AND shop_id=? AND status='pending'");
+    $qrRow->execute([$quoteId, $shop['id']]);
+    $qr = $qrRow->fetch();
+
+    if ($qr) {
+        $itemsStmt = $pdo->prepare('SELECT * FROM mp_quote_request_items WHERE quote_request_id=?');
+        $itemsStmt->execute([$quoteId]);
+        $qrItems = $itemsStmt->fetchAll();
+
+        $prices      = $_POST['price'] ?? [];
+        $unavailable = array_map('intval', $_POST['unavailable'] ?? []);
+        $total       = 0;
+        $anyPriced   = false;
+
+        $updStmt = $pdo->prepare('UPDATE mp_quote_request_items SET price=?, is_available=? WHERE id=? AND quote_request_id=?');
+        foreach ($qrItems as $item) {
+            $isAvailable = !in_array((int)$item['id'], $unavailable, true);
+            $price = isset($prices[$item['id']]) ? (float)$prices[$item['id']] : null;
+            if ($isAvailable && $price > 0) {
+                $anyPriced = true;
+                $total += $price;
+            } elseif (!$isAvailable) {
+                $price = null;
+            }
+            $updStmt->execute([$price, $isAvailable ? 1 : 0, $item['id'], $quoteId]);
+        }
+
+        if (!$anyPriced) {
+            flash('Enter a price for at least one available item.', 'error');
+        } else {
+            $pdo->prepare("UPDATE mp_quote_requests SET status='quoted', total_amount=?, quoted_at=NOW() WHERE id=?")
+                ->execute([$total, $quoteId]);
+            notify_user((int)$qr['customer_id'], 'Your Quote is Ready 💰',
+                $shop['shop_name'] . ' priced your shopping list — total GH₵ ' . number_format($total, 2) . '. Review and pay to confirm your order.',
+                'success', 'orders.php?view=quotes');
+            flash('Quote sent to the customer.', 'success');
+        }
+    }
+    header('Location: seller_dashboard.php?tab=quotes');
+    exit;
+}
+
+// ── Handle quote request decline ──────────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'quote_decline') {
+    csrf_check();
+    if (!$shop) { flash('Create your shop first.', 'warning'); header('Location: seller_dashboard.php'); exit; }
+
+    $quoteId = (int)$_POST['quote_id'];
+    $reason  = trim($_POST['decline_reason'] ?? '');
+    $qrRow = $pdo->prepare("SELECT * FROM mp_quote_requests WHERE id=? AND shop_id=? AND status='pending'");
+    $qrRow->execute([$quoteId, $shop['id']]);
+    $qr = $qrRow->fetch();
+
+    if ($qr) {
+        $pdo->prepare("UPDATE mp_quote_requests SET status='declined', decline_reason=? WHERE id=?")
+            ->execute([$reason ?: null, $quoteId]);
+        notify_user((int)$qr['customer_id'], 'Quote Request Declined',
+            $shop['shop_name'] . ' could not fulfil your shopping list.' . ($reason ? ' Reason: ' . $reason : ''),
+            'info', 'orders.php?view=quotes');
+        flash('Request declined.', 'info');
+    }
+    header('Location: seller_dashboard.php?tab=quotes');
     exit;
 }
 
@@ -316,6 +393,36 @@ if ($shop) {
     $orders->execute($oParams);
     $orders = $orders->fetchAll();
 
+    // Lazy-expire quote requests the seller never responded to — no cron needed.
+    $qrResponseHours = max(1, (int)get_platform_setting('mp_quote_response_days', '2')) * 24;
+    $pdo->prepare("UPDATE mp_quote_requests SET status='expired' WHERE shop_id=? AND status='pending' AND created_at < NOW() - INTERVAL $qrResponseHours HOUR")
+        ->execute([$shop['id']]);
+
+    $quoteRequests = $pdo->prepare(
+        "SELECT mqr.*, u.name AS customer_name
+         FROM mp_quote_requests mqr JOIN users u ON mqr.customer_id=u.id
+         WHERE mqr.shop_id=?
+         ORDER BY FIELD(mqr.status,'pending','quoted','declined','cancelled','expired','paid'), mqr.created_at DESC
+         LIMIT 40"
+    );
+    $quoteRequests->execute([$shop['id']]);
+    $quoteRequests = $quoteRequests->fetchAll();
+
+    $quoteRequestItems = [];
+    if ($quoteRequests) {
+        $qrIds = implode(',', array_column($quoteRequests, 'id'));
+        $qriStmt = $pdo->query("SELECT * FROM mp_quote_request_items WHERE quote_request_id IN ($qrIds) ORDER BY sort_order ASC");
+        foreach ($qriStmt->fetchAll() as $qri) {
+            $quoteRequestItems[$qri['quote_request_id']][] = $qri;
+        }
+    }
+
+    // Dedicated unfiltered count — $quoteRequests above is capped at 40 and
+    // must not skew this badge, same reasoning as the stats below.
+    $pendingQuoteCountSt = $pdo->prepare("SELECT COUNT(*) FROM mp_quote_requests WHERE shop_id=? AND status='pending'");
+    $pendingQuoteCountSt->execute([$shop['id']]);
+    $pendingQuoteCount = (int)$pendingQuoteCountSt->fetchColumn();
+
     // Dedicated unfiltered queries — the product/order filters above must not
     // skew these dashboard-wide stat cards.
     $productsCountSt = $pdo->prepare('SELECT COUNT(*), SUM(status="approved") FROM mp_products WHERE shop_id=?');
@@ -451,22 +558,46 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     <title>Seller Dashboard — AkuapemConnect</title>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .sd-stats { display:flex; gap:10px; padding:14px 16px; background:var(--surface); border-bottom:1px solid var(--border); flex-wrap:wrap; }
-        .sd-stat  { flex:1; min-width:80px; text-align:center; }
-        .sd-stat strong { display:block; font-size:1.4rem; font-weight:900; color:var(--primary,#0f766e); line-height:1.1; }
-        .sd-stat span   { font-size:.72rem; color:var(--text-muted,#6b7280); }
-        .sd-tabs  { display:flex; background:var(--surface); border-bottom:1px solid var(--border); overflow-x:auto; scrollbar-width:none; }
+        /* ── Hero + stats ── */
+        .sd-hero { background:linear-gradient(135deg, #189586 0%, var(--primary-dark,#0b5c56) 100%); padding:16px 16px 18px; position:relative; overflow:hidden; }
+        .sd-hero::after { content:''; position:absolute; top:-70px; right:-50px; width:220px; height:220px; border-radius:50%; background:radial-gradient(circle, rgba(255,255,255,.2), transparent 70%); pointer-events:none; }
+        .sd-stats { position:relative; display:flex; gap:9px; overflow-x:auto; scrollbar-width:none; }
+        .sd-stats::-webkit-scrollbar { display:none; }
+        .sd-stat  { flex:1; min-width:90px; background:rgba(255,255,255,.18); backdrop-filter:blur(6px); border-radius:14px; padding:11px 8px; text-align:center; }
+        .sd-stat strong { display:block; font-size:1.22rem; font-weight:900; color:#fff; line-height:1.15; }
+        .sd-stat span   { font-size:.64rem; font-weight:700; color:rgba(255,255,255,.88); text-transform:uppercase; letter-spacing:.03em; }
+
+        /* ── Tabs ── */
+        .sd-tabs-wrap { background:var(--surface); border-bottom:1px solid var(--border); }
+        .sd-tabs  { display:flex; gap:5px; padding:9px 12px; overflow-x:auto; scrollbar-width:none; max-width:980px; margin:0 auto; }
         .sd-tabs::-webkit-scrollbar { display:none; }
-        .sd-tab   { flex-shrink:0; padding:12px 16px; font-size:.82rem; font-weight:700; text-decoration:none; color:var(--text-muted,#6b7280); border-bottom:3px solid transparent; }
-        .sd-tab.active { color:var(--primary,#0f766e); border-bottom-color:var(--primary,#0f766e); }
-        .sd-shell { max-width:900px; margin:0 auto; padding:16px 16px 80px; }
-        .sd-prod-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:8px; display:flex; align-items:center; gap:12px; }
-        .sd-prod-img  { width:50px; height:50px; border-radius:8px; background:#f8fafc; overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .sd-tab   { flex-shrink:0; display:inline-flex; align-items:center; gap:5px; padding:8px 14px; font-size:.82rem; font-weight:700; text-decoration:none; color:var(--text-muted,#6b7280); border-radius:20px; transition:background .15s, color .15s; white-space:nowrap; }
+        .sd-tab:hover { background:var(--surface-muted,#f8fafc); }
+        .sd-tab.active { color:var(--primary,#0f766e); background:var(--primary-soft,#d1fae5); }
+
+        .sd-shell { max-width:980px; margin:0 auto; padding:18px 16px 80px; }
+
+        /* ── Shared elevated cards ── */
+        .sd-card, .sd-set-section { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
+        .sd-card-title, .sd-set-title { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 14px; }
+
+        .sd-prod-card, .sd-ord-card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:14px 16px; margin-bottom:10px; box-shadow:0 1px 3px rgba(0,0,0,.04); transition:box-shadow .15s, transform .15s; }
+        .sd-prod-card { display:flex; align-items:center; gap:12px; }
+        .sd-prod-card:hover, .sd-ord-card:hover { box-shadow:0 10px 24px -12px rgba(0,0,0,.16); transform:translateY(-1px); }
+        .sd-prod-img  { width:52px; height:52px; border-radius:10px; background:var(--surface-muted,#f8fafc); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .sd-prod-img img { width:100%; height:100%; object-fit:cover; }
-        .sd-ord-card  { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; margin-bottom:10px; }
-        .sd-badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:.7rem; font-weight:800; }
-        .sd-set-section { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:14px; }
-        .sd-set-title { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 14px; }
+
+        .sd-badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:.68rem; font-weight:800; }
+
+        /* ── Status banners (verify tab) ── */
+        .sd-status-banner { display:flex; align-items:center; gap:12px; border-radius:14px; padding:14px 16px; margin-bottom:16px; font-size:.86rem; }
+        .sd-status-icon { flex-shrink:0; width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:1.1rem; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+
+        /* ── Filter bar ── */
+        .sd-filters { display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:10px; margin-bottom:14px; }
+        .sd-filters select, .sd-filters input[type=text] { padding:8px 11px; border:1px solid var(--border); border-radius:9px; font-size:.82rem; background:var(--surface-muted,#f8fafc); }
+        .sd-filters input[type=text] { flex:1; min-width:160px; }
+
         label { font-weight:600; font-size:.86rem; display:block; margin-bottom:4px; }
         .form-group { margin-bottom:14px; }
     </style>
@@ -491,35 +622,42 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <?php endif; ?>
 
 <?php if ($shop): ?>
-<!-- Stats -->
-<div class="sd-stats">
-    <div class="sd-stat"><strong><?php echo $stats['products']; ?></strong><span>Products</span></div>
-    <div class="sd-stat"><strong><?php echo $stats['active']; ?></strong><span>Active</span></div>
-    <div class="sd-stat"><strong style="color:<?php echo $stats['pending_orders']>0?'#f59e0b':'inherit'; ?>"><?php echo $stats['pending_orders']; ?></strong><span>New Orders</span></div>
-    <div class="sd-stat"><strong>GH&#8373; <?php echo number_format($stats['total_revenue'],2); ?></strong><span>Revenue</span></div>
-    <div class="sd-stat"><strong><?php echo number_format($shop['view_count']); ?></strong><span>Shop Views</span></div>
+<!-- Hero + stats -->
+<div class="sd-hero">
+    <div class="sd-stats">
+        <div class="sd-stat"><strong><?php echo $stats['products']; ?></strong><span>Products</span></div>
+        <div class="sd-stat"><strong><?php echo $stats['active']; ?></strong><span>Active</span></div>
+        <div class="sd-stat"><strong style="<?php echo $stats['pending_orders']>0?'color:#fbbf24;':''; ?>"><?php echo $stats['pending_orders']; ?></strong><span>New Orders</span></div>
+        <div class="sd-stat"><strong>GH&#8373; <?php echo number_format($stats['total_revenue'],2); ?></strong><span>Revenue</span></div>
+        <div class="sd-stat"><strong><?php echo number_format($shop['view_count']); ?></strong><span>Shop Views</span></div>
+    </div>
 </div>
 <?php endif; ?>
 
 <!-- Tabs -->
+<div class="sd-tabs-wrap">
 <div class="sd-tabs">
     <?php if ($shop): ?>
-    <a href="?tab=products" class="sd-tab <?php echo $tab==='products'?'active':''; ?>">Products</a>
+    <a href="?tab=products" class="sd-tab <?php echo $tab==='products'?'active':''; ?>">📦 Products</a>
     <a href="?tab=orders"   class="sd-tab <?php echo $tab==='orders'?'active':''; ?>">
-        Orders <?php if ($stats['pending_orders']): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 5px;font-size:.62rem;margin-left:3px;"><?php echo $stats['pending_orders']; ?></span><?php endif; ?>
+        📋 Orders <?php if ($stats['pending_orders']): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 5px;font-size:.62rem;margin-left:3px;"><?php echo $stats['pending_orders']; ?></span><?php endif; ?>
     </a>
-    <a href="?tab=analytics" class="sd-tab <?php echo $tab==='analytics'?'active':''; ?>">Analytics</a>
-    <a href="?tab=wallet"    class="sd-tab <?php echo $tab==='wallet'?'active':''; ?>">Wallet</a>
+    <a href="?tab=quotes" class="sd-tab <?php echo $tab==='quotes'?'active':''; ?>">
+        📝 Quote Requests <?php if ($pendingQuoteCount): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 5px;font-size:.62rem;margin-left:3px;"><?php echo $pendingQuoteCount; ?></span><?php endif; ?>
+    </a>
+    <a href="?tab=analytics" class="sd-tab <?php echo $tab==='analytics'?'active':''; ?>">📊 Analytics</a>
+    <a href="?tab=wallet"    class="sd-tab <?php echo $tab==='wallet'?'active':''; ?>">💳 Wallet</a>
     <?php if (get_platform_setting('mp_subscription_enabled','0')==='1'): ?>
-    <a href="?tab=subscription" class="sd-tab <?php echo $tab==='subscription'?'active':''; ?>">Subscription</a>
+    <a href="?tab=subscription" class="sd-tab <?php echo $tab==='subscription'?'active':''; ?>">⭐ Subscription</a>
     <?php endif; ?>
     <?php endif; ?>
-    <a href="?tab=setup" class="sd-tab <?php echo $tab==='setup'?'active':''; ?>"><?php echo $shop ? 'Shop Settings' : 'Create Shop'; ?></a>
+    <a href="?tab=setup" class="sd-tab <?php echo $tab==='setup'?'active':''; ?>">🏪 <?php echo $shop ? 'Shop Settings' : 'Create Shop'; ?></a>
     <?php if ($shop): ?>
     <a href="?tab=verify" class="sd-tab <?php echo $tab==='verify'?'active':''; ?>">
-        Verification <?php if ($shop['verification_status']==='approved'): ?><span style="color:#10b981;">✓</span><?php endif; ?>
+        ✅ Verification <?php if ($shop['verification_status']==='approved'): ?><span style="color:#10b981;">✓</span><?php endif; ?>
     </a>
     <?php endif; ?>
+</div>
 </div>
 
 <div class="sd-shell">
@@ -535,17 +673,18 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
     <p style="margin:0;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);"><?php echo count($products); ?> Products</p>
     <a href="seller_boost.php" class="button button-secondary button-small">⚡ Boost</a>
+    <a href="browse_master_catalog.php" class="button button-secondary button-small">📚 Add from Catalog</a>
     <a href="seller_product_form.php" class="button button-primary button-small">+ Add Product</a>
 </div>
-<form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+<form method="get" class="sd-filters">
     <input type="hidden" name="tab" value="products">
-    <select name="pstatus" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+    <select name="pstatus" onchange="this.form.submit()">
         <option value="all" <?php echo $productStatusFilter==='all'?'selected':''; ?>>All Statuses</option>
         <?php foreach ($validProductStatuses as $vs): ?>
         <option value="<?php echo $vs; ?>" <?php echo $productStatusFilter===$vs?'selected':''; ?>><?php echo mp_product_status_label($vs); ?></option>
         <?php endforeach; ?>
     </select>
-    <input type="text" name="pq" value="<?php echo sanitize($productQ); ?>" placeholder="Search product name…" style="flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+    <input type="text" name="pq" value="<?php echo sanitize($productQ); ?>" placeholder="Search product name…">
     <button type="submit" class="button button-secondary button-small">Filter</button>
     <?php if ($productStatusFilter !== 'all' || $productQ !== ''): ?><a href="?tab=products" class="button button-secondary button-small">Clear</a><?php endif; ?>
 </form>
@@ -583,21 +722,21 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     </div>
 </div>
 <?php endforeach; else: ?>
-<div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);"><p><?php echo ($productStatusFilter !== 'all' || $productQ !== '') ? 'No products match this filter.' : 'No products yet. <a href="seller_product_form.php" style="color:var(--primary,#0f766e);">Add your first product →</a>'; ?></p></div>
+<div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);"><p><?php echo ($productStatusFilter !== 'all' || $productQ !== '') ? 'No products match this filter.' : 'No products yet. <a href="seller_product_form.php" style="color:var(--primary,#0f766e);">Add your first product →</a> or <a href="browse_master_catalog.php" style="color:var(--primary,#0f766e);">browse the catalog →</a>'; ?></p></div>
 <?php endif; ?>
 
 <?php elseif ($tab === 'orders' && $shop): ?>
 <?php $orderStatusMap = ['pending'=>['processing','cancelled'],'confirmed'=>['processing','cancelled'],'processing'=>['ready_for_delivery','cancelled']]; ?>
-<form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+<form method="get" class="sd-filters">
     <input type="hidden" name="tab" value="orders">
-    <select name="ostatus" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+    <select name="ostatus" onchange="this.form.submit()">
         <option value="all" <?php echo $orderStatusFilter==='all'?'selected':''; ?>>All Statuses</option>
         <?php foreach ($validOrderStatuses as $vs): ?>
         <option value="<?php echo $vs; ?>" <?php echo $orderStatusFilter===$vs?'selected':''; ?>><?php echo mp_order_status_label($vs); ?></option>
         <?php endforeach; ?>
     </select>
-    <input type="text" name="oq" value="<?php echo sanitize($orderQ); ?>" placeholder="Search customer name or order #…" style="flex:1;min-width:160px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
-    <select name="osort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+    <input type="text" name="oq" value="<?php echo sanitize($orderQ); ?>" placeholder="Search customer name or order #…">
+    <select name="osort" onchange="this.form.submit()">
         <option value="newest" <?php echo $orderSort==='newest'?'selected':''; ?>>Newest First</option>
         <option value="oldest" <?php echo $orderSort==='oldest'?'selected':''; ?>>Oldest First</option>
         <option value="amt_high" <?php echo $orderSort==='amt_high'?'selected':''; ?>>Highest Amount</option>
@@ -678,11 +817,70 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);"><?php echo ($orderStatusFilter !== 'all' || $orderQ !== '') ? 'No orders match this filter.' : 'No orders yet.'; ?></div>
 <?php endif; ?>
 
+<?php elseif ($tab === 'quotes' && $shop): ?>
+<p style="margin:0 0 12px;font-size:.78rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);"><?php echo count($quoteRequests); ?> Quote Requests</p>
+<?php if (!$quoteRequests): ?>
+<div style="text-align:center;padding:40px;color:var(--text-muted,#6b7280);">No quote requests yet. Buyers can send you a shopping list from your shop page.</div>
+<?php else: foreach ($quoteRequests as $qr):
+    $qrItemsList = $quoteRequestItems[$qr['id']] ?? [];
+    $qrStatusColors = ['pending'=>'#f59e0b','quoted'=>'#3b82f6','declined'=>'#ef4444','cancelled'=>'#6b7280','expired'=>'#6b7280','paid'=>'#10b981'];
+    $qrColor = $qrStatusColors[$qr['status']] ?? '#6b7280';
+?>
+<div class="sd-ord-card" style="border-left:4px solid <?php echo $qrColor; ?>;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+        <div>
+            <div style="font-weight:800;">Quote Request #<?php echo $qr['id']; ?></div>
+            <div style="font-size:.76rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($qr['customer_name']); ?> &nbsp;·&nbsp; <?php echo time_ago($qr['created_at']); ?></div>
+        </div>
+        <span class="sd-badge" style="background:<?php echo $qrColor; ?>1a;color:<?php echo $qrColor; ?>;"><?php echo ucfirst($qr['status']); ?></span>
+    </div>
+    <?php if ($qr['buyer_notes']): ?><div style="font-size:.8rem;background:var(--surface-muted,#f8fafc);border-radius:8px;padding:6px 9px;margin-bottom:8px;">📝 <?php echo sanitize($qr['buyer_notes']); ?></div><?php endif; ?>
+
+    <?php if ($qr['status'] === 'pending'): ?>
+    <form method="post">
+        <?php echo csrf_field(); ?>
+        <input type="hidden" name="form" value="quote_respond">
+        <input type="hidden" name="quote_id" value="<?php echo $qr['id']; ?>">
+        <?php foreach ($qrItemsList as $qi): ?>
+        <div style="display:grid;grid-template-columns:2fr 1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);">
+            <div>
+                <strong style="font-size:.85rem;"><?php echo sanitize($qi['item_name']); ?></strong>
+                <?php if ($qi['quantity_note']): ?><span style="color:var(--text-muted,#6b7280);font-size:.78rem;"> — <?php echo sanitize($qi['quantity_note']); ?></span><?php endif; ?>
+                <?php if ($qi['buyer_note']): ?><div style="font-size:.74rem;color:var(--text-muted,#6b7280);">Note: <?php echo sanitize($qi['buyer_note']); ?></div><?php endif; ?>
+            </div>
+            <input type="number" step="0.01" min="0" name="price[<?php echo $qi['id']; ?>]" placeholder="GH₵ price" style="padding:6px 9px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+            <label style="font-size:.74rem;display:flex;align-items:center;gap:4px;white-space:nowrap;"><input type="checkbox" name="unavailable[]" value="<?php echo $qi['id']; ?>"> Unavailable</label>
+        </div>
+        <?php endforeach; ?>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+            <button type="submit" class="button button-primary button-small">Send Quote</button>
+        </div>
+    </form>
+    <form method="post" style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <?php echo csrf_field(); ?>
+        <input type="hidden" name="form" value="quote_decline">
+        <input type="hidden" name="quote_id" value="<?php echo $qr['id']; ?>">
+        <input type="text" name="decline_reason" placeholder="Reason (optional)" style="flex:1;min-width:160px;padding:6px 9px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <button type="submit" class="button button-secondary button-small" style="color:#b91c1c;">Decline Request</button>
+    </form>
+    <?php else: ?>
+    <?php foreach ($qrItemsList as $qi): ?>
+    <div style="font-size:.82rem;padding:2px 0;<?php echo !$qi['is_available'] ? 'opacity:.5;text-decoration:line-through;' : ''; ?>">
+        • <?php echo sanitize($qi['item_name']); ?><?php if ($qi['quantity_note']): ?> — <?php echo sanitize($qi['quantity_note']); ?><?php endif; ?>
+        <?php if ($qi['is_available'] && $qi['price'] !== null): ?> — GH&#8373; <?php echo number_format((float)$qi['price'],2); ?><?php elseif (!$qi['is_available']): ?> (unavailable)<?php endif; ?>
+    </div>
+    <?php endforeach; ?>
+    <?php if ($qr['decline_reason']): ?><div style="font-size:.78rem;padding:6px 8px;margin-top:6px;background:#fee2e2;border-radius:6px;color:#c0392b;">Reason: <?php echo sanitize($qr['decline_reason']); ?></div><?php endif; ?>
+    <?php if ($qr['total_amount'] !== null): ?><div style="font-weight:900;color:var(--primary,#0f766e);margin-top:8px;">Total: GH&#8373; <?php echo number_format((float)$qr['total_amount'],2); ?></div><?php endif; ?>
+    <?php endif; ?>
+</div>
+<?php endforeach; endif; ?>
+
 <?php elseif ($tab === 'analytics' && $shop): ?>
 <?php $periodLabels = ['today'=>'Today','week'=>'7 Days','month'=>'This Month','year'=>'This Year','all'=>'All Time']; ?>
-<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+<div class="sd-an-seg">
     <?php foreach ($periodLabels as $pv=>$pl): ?>
-    <a href="?tab=analytics&period=<?php echo $pv; ?>" class="button <?php echo $period===$pv?'button-primary':'button-secondary'; ?> button-small"><?php echo $pl; ?></a>
+    <a href="?tab=analytics&period=<?php echo $pv; ?>" class="<?php echo $period===$pv?'active':''; ?>"><?php echo $pl; ?></a>
     <?php endforeach; ?>
 </div>
 <div class="sd-an-stats">
@@ -716,11 +914,15 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 </div>
 
 <style>
+.sd-an-seg { display:inline-flex; flex-wrap:wrap; gap:2px; background:var(--surface-muted,#f1f5f9); border-radius:10px; padding:3px; margin-bottom:16px; }
+.sd-an-seg a { padding:7px 14px; border-radius:8px; font-size:.8rem; font-weight:700; text-decoration:none; color:var(--text-muted,#6b7280); transition:background .15s, color .15s; white-space:nowrap; }
+.sd-an-seg a.active { background:var(--surface,#fff); color:var(--primary,#0f766e); box-shadow:0 1px 4px rgba(0,0,0,.1); }
 .sd-an-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:16px; }
-.sd-an-tile  { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px; text-align:center; }
+.sd-an-tile  { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px; text-align:center; box-shadow:0 1px 3px rgba(0,0,0,.04); transition:box-shadow .15s, transform .15s; }
+.sd-an-tile:hover { box-shadow:0 10px 22px -12px rgba(0,0,0,.16); transform:translateY(-1px); }
 .sd-an-tile strong { display:block; font-size:1.15rem; font-weight:900; color:var(--primary,#0f766e); }
 .sd-an-tile span   { font-size:.72rem; color:var(--text-muted,#6b7280); }
-.sd-an-card  { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:14px; }
+.sd-an-card  { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
 .sd-an-title { font-size:.75rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 12px; }
 .sd-an-prod-row { margin-bottom:12px; }
 .sd-an-prod-row:last-child { margin-bottom:0; }
@@ -1025,7 +1227,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 ?>
 
     <?php if (!$curSub): ?>
-    <div class="mpp-card" style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">
+    <div class="sd-card">
         <strong>No active subscription.</strong>
         <p style="font-size:.86rem;color:var(--text-muted,#6b7280);margin:6px 0 12px;">
             <?php echo get_platform_setting('mp_subscription_enabled','0')==='1' ? 'You need an active subscription to list products.' : 'Subscriptions aren\'t required to list products right now, but you can subscribe for extra benefits.'; ?>
@@ -1033,7 +1235,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
         <a href="pay_mp_subscription.php" class="button button-primary">View Plans →</a>
     </div>
     <?php else: ?>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">
+    <div class="sd-card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
             <div>
                 <strong style="font-size:1.1rem;">⭐ <?php echo sanitize($curSub['plan_name']); ?></strong>
@@ -1077,8 +1279,8 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     </div>
     <?php endif; ?>
 
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">
-        <p class="sd-set-title" style="font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 12px;">Subscription History</p>
+    <div class="sd-card">
+        <p class="sd-card-title">Subscription History</p>
         <?php if (!$subHistory): ?>
         <p style="font-size:.84rem;color:var(--text-muted,#6b7280);">No subscription activity yet.</p>
         <?php else: ?>
@@ -1093,8 +1295,8 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
         <?php endif; ?>
     </div>
 
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;">
-        <p class="sd-set-title" style="font-size:.74rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 12px;">Payment History</p>
+    <div class="sd-card">
+        <p class="sd-card-title">Payment History</p>
         <?php if (!$subPayments): ?>
         <p style="font-size:.84rem;color:var(--text-muted,#6b7280);">No payments yet.</p>
         <?php else: ?>
@@ -1166,16 +1368,19 @@ $verStmt->execute([$shop['id']]);
 $verification = $verStmt->fetch() ?: null;
 ?>
 <?php if ($shop['verification_status'] === 'approved'): ?>
-<div style="background:#d1fae5;border:1px solid #6ee7b7;border-radius:12px;padding:16px;margin-bottom:16px;">
-    ✅ <strong>Verified Seller!</strong> Your shop has the Verified badge.
+<div class="sd-status-banner" style="background:#d1fae5;border:1px solid #6ee7b7;">
+    <span class="sd-status-icon" style="background:#fff;">✅</span>
+    <div><strong>Verified Seller!</strong><br>Your shop has the Verified badge.</div>
 </div>
 <?php elseif ($verification && $verification['status'] === 'pending'): ?>
-<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:16px;">
-    ⏳ <strong>Verification under review.</strong> Admin will notify you once processed.
+<div class="sd-status-banner" style="background:#fef3c7;border:1px solid #f59e0b;">
+    <span class="sd-status-icon" style="background:#fff;">⏳</span>
+    <div><strong>Verification under review.</strong><br>Admin will notify you once processed.</div>
 </div>
 <?php elseif ($verification && $verification['status'] === 'rejected'): ?>
-<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:12px;padding:16px;margin-bottom:16px;">
-    ❌ <strong>Rejected.</strong> <?php echo sanitize($verification['rejection_reason']??''); ?> — You can resubmit below.
+<div class="sd-status-banner" style="background:#fee2e2;border:1px solid #fca5a5;">
+    <span class="sd-status-icon" style="background:#fff;">❌</span>
+    <div><strong>Rejected.</strong> <?php echo sanitize($verification['rejection_reason']??''); ?> — You can resubmit below.</div>
 </div>
 <?php endif; ?>
 <?php if ($shop['verification_status'] !== 'approved' && (!$verification || $verification['status'] !== 'pending')): ?>

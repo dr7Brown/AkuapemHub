@@ -31,6 +31,28 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 $maxImagesForShop = mp_shop_max_images((int)$shop['id']);
 $error = '';
 
+// Pre-fill from the Master Product Catalog, if the seller arrived via "Add from Catalog"
+$catalogId      = (int)($_GET['catalog_id'] ?? 0);
+$catalogProduct = null;
+if ($catalogId && !$editId) {
+    $cStmt = $pdo->prepare("SELECT * FROM master_products WHERE id=? AND status='active'");
+    $cStmt->execute([$catalogId]);
+    $catalogProduct = $cStmt->fetch();
+}
+
+// Best-effort match of the catalog item's own category text (e.g. "Rice")
+// against this shop's broader mp_categories list (e.g. "Food") — only used
+// to pre-select the dropdown; the seller can still change it freely.
+$catalogSuggestedCategoryId = null;
+if ($catalogProduct && $catalogProduct['category']) {
+    foreach ($categories as $c) {
+        if (strcasecmp($c['name'], $catalogProduct['category']) === 0) {
+            $catalogSuggestedCategoryId = $c['id'];
+            break;
+        }
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
@@ -44,6 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $condition     = $_POST['condition_type']      ?? 'new';
     $delivAvail    = isset($_POST['delivery_available']) ? 1 : 0;
     $submitType    = $_POST['submit_type']         ?? 'draft';
+    $masterProductId = (int)($_POST['master_product_id'] ?? 0) ?: null;
+    $wasNewProduct    = !$editId;
 
     if (!in_array($condition, ['new','used','refurbished'], true)) $condition = 'new';
     $status = $submitType === 'publish' ? 'pending_approval' : 'draft';
@@ -54,6 +78,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($discountPrice !== null && $discountPrice >= $price) $error = 'Discount price must be less than the regular price.';
     elseif (!$editId && requires_verified_email('product_post') && !is_email_verified()) {
         $error = 'Please verify your email address before listing a product.';
+    } elseif (!$editId && is_banned_from_feature((int)$user['id'], 'mp')) {
+        $error = 'You have been restricted from the Marketplace. Contact support if you believe this is an error.';
     } elseif ($status === 'pending_approval' && (!$editId || $product['status'] === 'rejected')) {
         // A brand-new listing, or a rejected one being resubmitted, is about to
         // newly occupy a slot — re-check the limit. An already-approved/pending
@@ -91,8 +117,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $slug = mp_unique_slug($name, 'mp_products', 'slug', $pdo);
             $pdo->prepare(
-                'INSERT INTO mp_products (shop_id, category_id, name, slug, description, price, discount_price, stock_quantity, sku, condition_type, delivery_available, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-            )->execute([$shop['id'], $categoryId, $name, $slug, $description ?: null, $price, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, $status]);
+                'INSERT INTO mp_products (shop_id, category_id, master_product_id, name, slug, description, price, discount_price, stock_quantity, sku, condition_type, delivery_available, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+            )->execute([$shop['id'], $categoryId, $masterProductId, $name, $slug, $description ?: null, $price, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, $status]);
             $editId = (int)$pdo->lastInsertId();
         }
 
@@ -109,12 +135,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($files['error'][$i] !== UPLOAD_ERR_OK || !$files['name'][$i]) continue;
                 $file = ['name'=>$files['name'][$i],'type'=>$files['type'][$i],'tmp_name'=>$files['tmp_name'][$i],'error'=>$files['error'][$i],'size'=>$files['size'][$i]];
                 if (!is_valid_image_upload($file)) continue;
-                $path = save_uploaded_image($file, 'uploads/marketplace/products/' . $editId);
+                $path = save_uploaded_image($file, 'uploads/marketplace/products/' . $editId,
+                    (int)get_platform_setting('img_mp_product_maxwidth', '1200'),
+                    (int)get_platform_setting('img_mp_product_quality', '85'));
                 if ($path) {
                     $isPrimary = ($existingCount === 0 && $i === 0) ? 1 : 0;
                     $pdo->prepare('INSERT INTO mp_product_images (product_id, image_path, is_primary, sort_order) VALUES (?,?,?,?)')
                         ->execute([$editId, $path, $isPrimary, $existingCount + $i]);
                 }
+            }
+        } elseif ($wasNewProduct && $masterProductId) {
+            // No photo of their own uploaded — reuse the catalog's default image as-is (same path, no file copy)
+            $mStmt = $pdo->prepare('SELECT default_image FROM master_products WHERE id=?');
+            $mStmt->execute([$masterProductId]);
+            $masterDefaultImage = $mStmt->fetchColumn();
+            if ($masterDefaultImage) {
+                $pdo->prepare('INSERT INTO mp_product_images (product_id, image_path, is_primary, sort_order) VALUES (?,?,1,0)')
+                    ->execute([$editId, $masterDefaultImage]);
             }
         }
 
@@ -172,25 +209,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <?php if ($error): ?><div class="alert alert-error"><?php echo sanitize($error); ?></div><?php endif; ?>
 
-    <form method="post" action="seller_product_form.php<?php echo $editId ? '?id='.$editId : ''; ?>" enctype="multipart/form-data">
+    <?php if ($catalogProduct): ?>
+    <div class="alert alert-success" style="display:flex;align-items:center;gap:10px;">
+        <?php if ($catalogProduct['default_image']): ?><img src="<?php echo sanitize($catalogProduct['default_image']); ?>" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;flex-shrink:0;"><?php endif; ?>
+        <span>📚 From the catalog: <strong><?php echo sanitize($catalogProduct['name']); ?></strong> — just set your price, stock, and condition below. Its catalog photo will be used automatically unless you upload your own.</span>
+    </div>
+    <?php endif; ?>
+
+    <form method="post" action="seller_product_form.php<?php echo $editId ? '?id='.$editId : ($catalogId ? '?catalog_id='.$catalogId : ''); ?>" enctype="multipart/form-data">
         <?php echo csrf_field(); ?>
+        <?php if ($catalogProduct): ?><input type="hidden" name="master_product_id" value="<?php echo (int)$catalogProduct['id']; ?>"><?php endif; ?>
 
         <!-- Basic Info -->
         <div class="pf-section">
             <p class="pf-section-title">Product Information</p>
             <div class="form-group">
                 <label for="name">Product Name *</label>
-                <input type="text" id="name" name="name" required value="<?php echo sanitize($_POST['name'] ?? ($product['name']??'')); ?>" placeholder="e.g. Samsung Galaxy A14">
+                <input type="text" id="name" name="name" required value="<?php echo sanitize($_POST['name'] ?? ($product['name'] ?? ($catalogProduct['name'] ?? ''))); ?>" placeholder="e.g. Samsung Galaxy A14">
             </div>
             <div class="form-group">
                 <label for="description">Description</label>
-                <textarea id="description" name="description" class="rich-editor" rows="4" placeholder="Describe the product — condition, features, what's included…"><?php echo sanitize($_POST['description'] ?? ($product['description']??'')); ?></textarea>
+                <textarea id="description" name="description" class="rich-editor" rows="4" placeholder="Describe the product — condition, features, what's included…"><?php echo sanitize($_POST['description'] ?? ($product['description'] ?? ($catalogProduct['description'] ?? ''))); ?></textarea>
             </div>
             <div class="form-group">
                 <label for="category_id">Category</label>
                 <select id="category_id" name="category_id">
                     <option value="">— Select category —</option>
-                    <?php $selCat = $_POST['category_id'] ?? ($product['category_id']??''); ?>
+                    <?php $selCat = $_POST['category_id'] ?? ($product['category_id'] ?? ($catalogSuggestedCategoryId ?? '')); ?>
                     <?php foreach ($categories as $c): ?>
                     <option value="<?php echo $c['id']; ?>" <?php echo $selCat==$c['id']?'selected':''; ?>><?php echo $c['icon'].' '; ?><?php echo sanitize($c['name']); ?></option>
                     <?php endforeach; ?>
@@ -212,11 +257,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
                 <div class="form-group">
                     <label for="stock_quantity">Stock Quantity *</label>
-                    <input type="number" id="stock_quantity" name="stock_quantity" required min="0" value="<?php echo sanitize($_POST['stock_quantity'] ?? ($product['stock_quantity']??'1')); ?>">
+                    <input type="number" id="stock_quantity" name="stock_quantity" required min="0" value="<?php echo sanitize($_POST['stock_quantity'] ?? ($product['stock_quantity']??'1000')); ?>">
                 </div>
                 <div class="form-group">
                     <label for="sku">SKU / Reference</label>
-                    <input type="text" id="sku" name="sku" placeholder="Optional" value="<?php echo sanitize($_POST['sku'] ?? ($product['sku']??'')); ?>">
+                    <input type="text" id="sku" name="sku" placeholder="Optional" value="<?php echo sanitize($_POST['sku'] ?? ($product['sku'] ?? ($catalogProduct['sku'] ?? ''))); ?>">
                 </div>
             </div>
         </div>

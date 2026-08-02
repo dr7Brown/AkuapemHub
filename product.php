@@ -17,7 +17,7 @@ $isShopOwner   = $user && (int)$product['shop_owner_id'] === (int)$user['id'];
 $isAdminViewer = is_admin_or_manager();
 $publicStatuses = ['approved', 'out_of_stock'];
 
-if (!$product || (!in_array($product['status'], $publicStatuses, true) && !$isAdminViewer && !$isShopOwner)) {
+if (!$product || ((!in_array($product['status'], $publicStatuses, true) || $product['shop_owner_banned']) && !$isAdminViewer && !$isShopOwner)) {
     header('Location: marketplace.php');
     exit;
 }

@@ -104,6 +104,15 @@ $originMap = [
 ];
 $originPage = $originMap[$payment['payment_type']] ?? 'my_payments.php';
 
+// A cart checkout and a paid quote request both create 'mp_order' payments,
+// but a quote-derived order has no cart to go back to — send it back to the
+// quote list instead.
+if ($payment['payment_type'] === 'mp_order') {
+    $qrOriginCheck = $pdo->prepare("SELECT id FROM mp_quote_requests WHERE order_id=? LIMIT 1");
+    $qrOriginCheck->execute([$payment['reference_id']]);
+    if ($qrOriginCheck->fetchColumn()) $originPage = 'orders.php?view=quotes';
+}
+
 // Complimentary members should never be pushed through Paystack for a fee
 // that was created before their membership was granted — void the stale
 // pending payment and send them back to the feature's own entry point, whose

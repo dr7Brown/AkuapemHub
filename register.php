@@ -13,7 +13,7 @@ if (!isset($_SESSION['ref_code']) && !empty($_GET['ref'])) {
     $rc = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $_GET['ref']));
     if (strlen($rc) >= 6 && strlen($rc) <= 16) {
         $_SESSION['ref_code'] = $rc;
-        record_referral_visit($rc, $_SERVER['REMOTE_ADDR'] ?? '');
+        record_referral_visit($rc, client_ip());
     }
 }
 
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($role === 'worker') {
                 $workerNeedsServiceFee = is_feature_paid('enable_paid_worker_service');
                 $serviceFeeStatus = $workerNeedsServiceFee ? 'pending' : 'free';
-                $idDocumentPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $userId);
+                $idDocumentPath = save_uploaded_id_image($_FILES['id_document'], 'uploads/worker_ids/' . $userId);
                 $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_type_custom, id_number, id_document_path, availability, service_fee_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
                 $stmt->execute([$userId, '', $townName, $latitude, $longitude, $phone, $idType, ($idType === 'other' ? $idTypeCustom : null), $idNumber, $idDocumentPath, 'available', $serviceFeeStatus]);
                 $profileId = $pdo->lastInsertId();

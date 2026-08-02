@@ -114,7 +114,7 @@ $logs = $logStmt->fetchAll();
 
         <!-- Filters -->
         <div class="panel" style="margin-bottom:14px;">
-            <form method="get" class="filter-form">
+            <form method="get" action="audit_logs.php" class="filter-form">
                 <input type="text" name="q" value="<?php echo sanitize($search); ?>" placeholder="Search action or description" />
                 <input type="date" name="from" value="<?php echo sanitize($dateFrom); ?>" />
                 <input type="date" name="to" value="<?php echo sanitize($dateTo); ?>" />

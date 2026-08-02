@@ -15,6 +15,10 @@ $fields = [
     'contact_address'  => ['label' => 'Physical address', 'type' => 'text',     'placeholder' => 'Akuapem Area, Eastern Region, Ghana', 'desc' => 'Address or area displayed on the Contact page'],
     'contact_hours'    => ['label' => 'Support hours',    'type' => 'text',     'placeholder' => 'Mon–Sat, 8:00 AM – 6:00 PM GMT', 'desc' => 'Business hours text shown on the Contact page'],
     'contact_tagline'  => ['label' => 'Contact page intro', 'type' => 'textarea', 'placeholder' => "We're here to help. Reach out through any of the channels below…", 'desc' => 'Intro line shown at the top of the Contact page'],
+    'social_facebook'         => ['label' => 'Facebook page URL',        'type' => 'url', 'placeholder' => 'https://facebook.com/akuapemconnect', 'desc' => 'Leave blank to hide the Facebook tile everywhere'],
+    'social_instagram'        => ['label' => 'Instagram profile URL',    'type' => 'url', 'placeholder' => 'https://instagram.com/akuapemconnect', 'desc' => 'Leave blank to hide the Instagram tile everywhere'],
+    'social_tiktok'           => ['label' => 'TikTok profile URL',       'type' => 'url', 'placeholder' => 'https://tiktok.com/@akuapemconnect', 'desc' => 'Leave blank to hide the TikTok tile everywhere'],
+    'social_whatsapp_channel' => ['label' => 'WhatsApp Channel URL',     'type' => 'url', 'placeholder' => 'https://whatsapp.com/channel/xxxxxxxx', 'desc' => 'Leave blank to hide the WhatsApp Channel tile everywhere. This is separate from the WhatsApp support number above.'],
 ];
 
 $saved = false;
@@ -26,6 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $val = trim($_POST[$key] ?? '');
         if ($key === 'contact_email' && $val !== '' && !filter_var($val, FILTER_VALIDATE_EMAIL)) {
             $errors[] = 'Support email must be a valid email address.';
+            continue;
+        }
+        if ($meta['type'] === 'url' && $val !== '' && !filter_var($val, FILTER_VALIDATE_URL)) {
+            $errors[] = $meta['label'] . ' must be a valid URL.';
             continue;
         }
         // Sanitize WhatsApp: strip non-digits for link use, store as entered
@@ -99,6 +107,18 @@ foreach (array_keys($fields) as $key) {
             <?php if ($pvWa): ?><div class="cs-preview-item"><span class="cs-preview-icon">💬</span><span>WhatsApp: <strong><?php echo $pvWa; ?></strong></span></div><?php endif; ?>
             <div class="cs-preview-item"><span class="cs-preview-icon">📍</span><span>Address: <strong><?php echo $pvAddr; ?></strong></span></div>
             <div class="cs-preview-item"><span class="cs-preview-icon">🕐</span><span>Hours: <strong><?php echo $pvHours; ?></strong></span></div>
+            <?php
+            $socialPreview = [
+                'social_facebook'         => ['📘', 'Facebook'],
+                'social_instagram'        => ['📸', 'Instagram'],
+                'social_tiktok'           => ['🎵', 'TikTok'],
+                'social_whatsapp_channel' => ['📢', 'WhatsApp Channel'],
+            ];
+            foreach ($socialPreview as $sk => [$sIcon, $sLabel]):
+                if (empty($current[$sk])) continue;
+            ?>
+            <div class="cs-preview-item"><span class="cs-preview-icon"><?php echo $sIcon; ?></span><span><?php echo $sLabel; ?>: <strong><?php echo htmlspecialchars($current[$sk], ENT_QUOTES); ?></strong></span></div>
+            <?php endforeach; ?>
         </div>
 
         <form method="post" action="contact_settings.php">

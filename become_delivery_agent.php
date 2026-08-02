@@ -15,6 +15,8 @@ if ($existing) {
     exit;
 }
 
+require_not_banned_from('delivery');
+
 $error = '';
 $vehicleTypes = ['motorbike','bicycle','car','van','truck','public_transport','other'];
 $idTypes      = ['ghana_card'=>'Ghana Card','passport'=>'Passport','other'=>'Other'];
@@ -43,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$error) {
-        $idDocPath = save_uploaded_image($_FILES['id_document'], 'uploads/delivery_agents/' . $user['id']);
+        $idDocPath = save_uploaded_id_image($_FILES['id_document'], 'uploads/delivery_agents/' . $user['id']);
 
         $pdo->prepare(
             'INSERT INTO delivery_agents

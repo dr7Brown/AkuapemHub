@@ -66,6 +66,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     if (!$editId && requires_verified_email('event_post') && !is_email_verified()) {
         $errors[] = 'Please verify your email address before submitting an event.';
     }
+    if (!$editId && is_banned_from_feature((int)$user['id'], 'events')) {
+        $errors[] = 'You have been restricted from Events. Contact support if you believe this is an error.';
+    }
     if ($regLink && !filter_var($regLink, FILTER_VALIDATE_URL)) $errors[] = 'Invalid registration/ticket link URL.';
 
     // Verify ownership if editing

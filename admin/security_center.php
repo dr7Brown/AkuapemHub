@@ -41,18 +41,32 @@ $suspStmt->execute([$suspiciousHour]);
 $suspiciousIps = $suspStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Recent security events
+$evPage    = max(1, (int)($_GET['epage'] ?? 1));
+$evPerPage = 30;
+$evOffset  = ($evPage - 1) * $evPerPage;
+$evTotal      = (int)$pdo->query('SELECT COUNT(*) FROM security_logs')->fetchColumn();
+$evTotalPages = max(1, (int)ceil($evTotal / $evPerPage));
+
 $recentStmt = $pdo->prepare(
     "SELECT sl.id, sl.action, sl.ip_address, sl.user_agent, sl.created_at,
             u.name AS user_name, u.email AS user_email
      FROM security_logs sl
      LEFT JOIN users u ON sl.user_id = u.id
      ORDER BY sl.created_at DESC
-     LIMIT 100"
+     LIMIT $evPerPage OFFSET $evOffset"
 );
 $recentStmt->execute();
 $recentEvents = $recentStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Locked OTP detail
+$lkPage    = max(1, (int)($_GET['lpage'] ?? 1));
+$lkPerPage = 30;
+$lkOffset  = ($lkPage - 1) * $lkPerPage;
+$lkCountStmt = $pdo->prepare("SELECT COUNT(*) FROM password_reset_otps WHERE status = 'expired' AND attempts >= ?");
+$lkCountStmt->execute([OtpService::MAX_ATTEMPTS]);
+$lkTotal      = (int)$lkCountStmt->fetchColumn();
+$lkTotalPages = max(1, (int)ceil($lkTotal / $lkPerPage));
+
 $lockedStmt = $pdo->prepare(
     "SELECT pro.id, pro.created_at, pro.attempts, pro.expires_at,
             u.name AS user_name, u.email AS user_email
@@ -60,10 +74,37 @@ $lockedStmt = $pdo->prepare(
      LEFT JOIN users u ON pro.user_id = u.id
      WHERE pro.status = 'expired' AND pro.attempts >= ?
      ORDER BY pro.created_at DESC
-     LIMIT 50"
+     LIMIT $lkPerPage OFFSET $lkOffset"
 );
 $lockedStmt->execute([OtpService::MAX_ATTEMPTS]);
 $lockedDetails = $lockedStmt->fetchAll(PDO::FETCH_ASSOC);
+
+function sec_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['epage', 'lpage'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'security_center.php?' . http_build_query($merged);
+}
+
+function sec_render_pagination(int $page, int $totalPages, int $total, string $param): void {
+    if ($totalPages <= 1) return;
+    echo '<div class="pagination">';
+    if ($page > 1) echo '<a href="' . sanitize(sec_qstr([$param => $page - 1])) . '">‹ Prev</a>';
+    $pStart = max(1, $page - 3);
+    $pEnd   = min($totalPages, $page + 3);
+    if ($pStart > 1) echo '<span>…</span>';
+    for ($p = $pStart; $p <= $pEnd; $p++) {
+        echo $p === $page
+            ? '<span class="current">' . $p . '</span>'
+            : '<a href="' . sanitize(sec_qstr([$param => $p])) . '">' . $p . '</a>';
+    }
+    if ($pEnd < $totalPages) echo '<span>…</span>';
+    if ($page < $totalPages) echo '<a href="' . sanitize(sec_qstr([$param => $page + 1])) . '">Next ›</a>';
+    echo '<span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page ' . $page . ' of ' . $totalPages . ' (' . $total . ' total)</span>';
+    echo '</div>';
+}
 
 $actionLabels = [
     'otp_requested'          => 'OTP Requested',
@@ -89,6 +130,12 @@ $actionColors = [
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Security Center — AkuapemConnect Admin</title>
   <link rel="stylesheet" href="../assets/css/style.css"/>
+  <style>
+    .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+    .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+    .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+    .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -190,6 +237,7 @@ $actionColors = [
             </tbody>
           </table>
         </div>
+        <?php sec_render_pagination($lkPage, $lkTotalPages, $lkTotal, 'lpage'); ?>
       </div>
     <?php endif; ?>
 
@@ -197,7 +245,7 @@ $actionColors = [
     <div class="panel">
       <div class="panel-header">
         <h2 style="margin:0;font-size:1rem;">Recent Security Events</h2>
-        <span class="meta" style="font-size:0.8rem;">Last 100 events</span>
+        <span class="meta" style="font-size:0.8rem;"><?php echo $evTotal; ?> total</span>
       </div>
       <?php if (!$recentEvents): ?>
         <div class="empty-state">No security events recorded yet.</div>
@@ -243,6 +291,7 @@ $actionColors = [
             </tbody>
           </table>
         </div>
+        <?php sec_render_pagination($evPage, $evTotalPages, $evTotal, 'epage'); ?>
       <?php endif; ?>
     </div>
 

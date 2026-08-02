@@ -6,9 +6,23 @@ require_once __DIR__ . '/../marketplace_functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: ../jobs.php'); exit; }
 
-require_mod_permission('approve_products');
+// This file also hosts Quote Requests oversight (folded in from its own former
+// page) alongside the original Products/Shops/Orders/Boosts/Settings tabs —
+// entry is allowed via EITHER permission, but which tabs are visible/reachable
+// is still gated per-permission below, so a moderator granted only
+// manage_quote_requests never sees product/shop/order data, and vice versa.
+$hasProductsPerm = is_admin() || has_mod_permission('approve_products');
+$hasQuotesPerm   = is_admin() || has_mod_permission('manage_quote_requests');
+if (!$hasProductsPerm && !$hasQuotesPerm) {
+    require_mod_permission('approve_products'); // neither permission held — standard 403
+}
+
 $adminUser = current_user();
-$tab       = $_GET['tab'] ?? 'products';
+$tab       = $_GET['tab'] ?? ($hasProductsPerm ? 'products' : 'quotes');
+if (($tab === 'quotes' && !$hasQuotesPerm) || ($tab !== 'quotes' && !$hasProductsPerm)) {
+    header('Location: marketplace.php?tab=' . ($hasQuotesPerm ? 'quotes' : 'products'));
+    exit;
+}
 
 // ── POST actions ──────────────────────────────────────────────────────────────
 $flash = null;
@@ -122,12 +136,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // in Admin → Monetization → Settings → Module Availability, since a
         // form that doesn't render that checkbox would otherwise force it
         // off on every save.
-        $keys = ['mp_require_product_approval','mp_featured_product_7day_price','mp_featured_product_30day_price',
+        $keys = ['mp_featured_product_7day_price','mp_featured_product_30day_price',
                  'mp_featured_shop_7day_price','mp_featured_shop_30day_price','mp_seller_subscription_price','mp_verified_seller_fee'];
         foreach ($keys as $k) {
             if (isset($_POST[$k])) set_platform_setting($k, trim($_POST[$k]));
         }
         set_platform_setting('mp_require_product_approval', isset($_POST['mp_require_product_approval']) ? '1' : '0');
+        set_platform_setting('mp_quotes_enabled', isset($_POST['mp_quotes_enabled']) ? '1' : '0');
+        set_platform_setting('mp_quote_response_days', (string)max(1, (int)($_POST['mp_quote_response_days'] ?? 2)));
+        $eligibleShops = in_array($_POST['mp_quote_eligible_shops'] ?? '', ['all','featured','verified'], true) ? $_POST['mp_quote_eligible_shops'] : 'all';
+        set_platform_setting('mp_quote_eligible_shops', $eligibleShops);
+        $validSorts = ['default','featured','newest','price_asc','price_desc','popular'];
+        $defaultSort = in_array($_POST['mp_default_sort'] ?? '', $validSorts, true) ? $_POST['mp_default_sort'] : 'default';
+        set_platform_setting('mp_default_sort', $defaultSort);
         log_audit_action($adminUser['id'], 'mp_settings_save', 'Saved marketplace settings');
         flash('Settings saved.', 'success');
         header('Location: marketplace.php?tab=settings'); exit;
@@ -151,15 +172,23 @@ $pendingBoosts  = (int)$pdo->query("SELECT COUNT(*) FROM mp_boost_orders WHERE s
 // ── Tab data ──────────────────────────────────────────────────────────────────
 $pendingProducts = $shops = $orders = [];
 
+$mktPage    = max(1, (int)($_GET['page'] ?? 1));
+$mktPerPage = 30;
+$mktOffset  = ($mktPage - 1) * $mktPerPage;
+$mktTotalPages = 1;
+$mktTotal      = 0;
+
 if ($tab === 'products') {
     $pf = $_GET['pf'] ?? 'pending_approval';
     $pw = in_array($pf,['pending_approval','approved','rejected','draft'],true) ? "AND mp.status='$pf'" : '';
+    $mktTotal = (int)$pdo->query("SELECT COUNT(*) FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id WHERE ms.status='active' $pw")->fetchColumn();
+    $mktTotalPages = max(1, (int)ceil($mktTotal / $mktPerPage));
     $pendingProducts = $pdo->query(
         "SELECT mp.*, ms.shop_name, ms.id AS shop_id, ms.user_id AS owner_id,
                 (SELECT image_path FROM mp_product_images WHERE product_id=mp.id AND is_primary=1 LIMIT 1) AS primary_image,
                 mc.name AS cat_name
          FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id LEFT JOIN mp_categories mc ON mp.category_id=mc.id
-         WHERE ms.status='active' $pw ORDER BY mp.created_at ASC LIMIT 60"
+         WHERE ms.status='active' $pw ORDER BY mp.created_at ASC LIMIT $mktPerPage OFFSET $mktOffset"
     )->fetchAll();
 }
 if ($tab === 'shops') {
@@ -168,10 +197,12 @@ if ($tab === 'shops') {
     if ($sf === 'pending_verification') $sw = "AND ms.verification_status='pending'";
     elseif ($sf === 'active') $sw = "AND ms.status='active'";
     elseif ($sf === 'suspended') $sw = "AND ms.status='suspended'";
+    $mktTotal = (int)$pdo->query("SELECT COUNT(*) FROM mp_shops ms WHERE 1=1 $sw")->fetchColumn();
+    $mktTotalPages = max(1, (int)ceil($mktTotal / $mktPerPage));
     $shops = $pdo->query(
         "SELECT ms.*, u.name AS owner_name, u.email AS owner_email, COUNT(mp.id) AS product_count
          FROM mp_shops ms JOIN users u ON ms.user_id=u.id LEFT JOIN mp_products mp ON mp.shop_id=ms.id AND mp.status='approved'
-         WHERE 1=1 $sw GROUP BY ms.id ORDER BY ms.created_at DESC LIMIT 60"
+         WHERE 1=1 $sw GROUP BY ms.id ORDER BY ms.created_at DESC LIMIT $mktPerPage OFFSET $mktOffset"
     )->fetchAll();
 }
 if ($tab === 'orders') {
@@ -186,11 +217,15 @@ if ($tab === 'orders') {
         'amt_low' => 'mo.total_amount ASC',
         default   => 'mo.created_at DESC',
     };
+    $ordCountSt = $pdo->prepare("SELECT COUNT(*) FROM mp_orders mo WHERE 1=1 " . ($ow ? 'AND ' . implode(' AND ', $ow) : ''));
+    $ordCountSt->execute($owParams);
+    $mktTotal = (int)$ordCountSt->fetchColumn();
+    $mktTotalPages = max(1, (int)ceil($mktTotal / $mktPerPage));
     $ordersSt = $pdo->prepare(
         "SELECT mo.*, ms.shop_name, cu.name AS customer_name
          FROM mp_orders mo JOIN mp_shops ms ON mo.shop_id=ms.id JOIN users cu ON mo.customer_id=cu.id
          WHERE 1=1 " . ($ow ? 'AND ' . implode(' AND ', $ow) : '') . "
-         ORDER BY $ordOrderBy LIMIT 60"
+         ORDER BY $ordOrderBy LIMIT $mktPerPage OFFSET $mktOffset"
     );
     $ordersSt->execute($owParams);
     $orders = $ordersSt->fetchAll();
@@ -199,6 +234,8 @@ if ($tab === 'orders') {
 // Boosts
 $boostOrders = [];
 if ($tab === 'boosts') {
+    $mktTotal = (int)$pdo->query("SELECT COUNT(*) FROM mp_boost_orders WHERE status = 'pending'")->fetchColumn();
+    $mktTotalPages = max(1, (int)ceil($mktTotal / $mktPerPage));
     $boostOrders = $pdo->query(
         "SELECT mb.*, ms.shop_name, u.name AS owner_name, mp.name AS product_name
          FROM mp_boost_orders mb
@@ -206,15 +243,90 @@ if ($tab === 'boosts') {
          JOIN users u ON ms.user_id = u.id
          LEFT JOIN mp_products mp ON mb.product_id = mp.id
          WHERE mb.status = 'pending'
-         ORDER BY mb.created_at ASC LIMIT 60"
+         ORDER BY mb.created_at ASC LIMIT $mktPerPage OFFSET $mktOffset"
     )->fetchAll();
+}
+
+// Quote requests — platform-wide, view-only oversight (folded in from the
+// former standalone admin/quote_requests.php page)
+$quoteRequests = [];
+$qrItems       = [];
+$qrItemCounts  = [];
+$qrStatCounts  = [];
+if ($tab === 'quotes') {
+    $qStatusFilter  = $_GET['status'] ?? 'all';
+    $qValidStatuses = ['pending','quoted','declined','cancelled','expired','paid'];
+    $qSearch = trim($_GET['q'] ?? '');
+
+    $qWhere  = ['1=1'];
+    $qParams = [];
+    if (in_array($qStatusFilter, $qValidStatuses, true)) { $qWhere[] = 'mqr.status = ?'; $qParams[] = $qStatusFilter; }
+    if ($qSearch !== '') { $qWhere[] = '(ms.shop_name LIKE ? OR u.name LIKE ?)'; $like = '%' . $qSearch . '%'; $qParams[] = $like; $qParams[] = $like; }
+    $qWhereClause = implode(' AND ', $qWhere);
+
+    $qCountSt = $pdo->prepare("SELECT COUNT(*) FROM mp_quote_requests mqr JOIN mp_shops ms ON mqr.shop_id=ms.id JOIN users u ON mqr.customer_id=u.id WHERE $qWhereClause");
+    $qCountSt->execute($qParams);
+    $mktTotal = (int)$qCountSt->fetchColumn();
+    $mktTotalPages = max(1, (int)ceil($mktTotal / $mktPerPage));
+
+    $qListSt = $pdo->prepare(
+        "SELECT mqr.*, ms.shop_name, ms.phone AS shop_phone, ms.email AS shop_email,
+                u.name AS customer_name, u.phone AS customer_phone, u.email AS customer_email
+         FROM mp_quote_requests mqr
+         JOIN mp_shops ms ON mqr.shop_id = ms.id
+         JOIN users u ON mqr.customer_id = u.id
+         WHERE $qWhereClause
+         ORDER BY mqr.created_at DESC
+         LIMIT $mktPerPage OFFSET $mktOffset"
+    );
+    $qListSt->execute($qParams);
+    $quoteRequests = $qListSt->fetchAll();
+
+    if ($quoteRequests) {
+        $ids = implode(',', array_column($quoteRequests, 'id'));
+        $itemsStmt = $pdo->query("SELECT * FROM mp_quote_request_items WHERE quote_request_id IN ($ids) ORDER BY sort_order ASC");
+        foreach ($itemsStmt->fetchAll() as $row) {
+            $qrItems[$row['quote_request_id']][] = $row;
+            $qrItemCounts[$row['quote_request_id']] = ($qrItemCounts[$row['quote_request_id']] ?? 0) + 1;
+        }
+    }
+    // Stat chips — always unfiltered, independent of the current status/search filter
+    $qrStatCounts = $pdo->query("SELECT status, COUNT(*) AS n FROM mp_quote_requests GROUP BY status")->fetchAll(PDO::FETCH_KEY_PAIR);
+}
+
+function mkt_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['tab', 'pf', 'sf', 'of', 'osort', 'status', 'q', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'marketplace.php?' . http_build_query($merged);
+}
+
+function mkt_render_pagination(int $page, int $totalPages, int $total): void {
+    if ($totalPages <= 1) return;
+    echo '<div class="pagination">';
+    if ($page > 1) echo '<a href="' . sanitize(mkt_qstr(['page' => $page - 1])) . '">‹ Prev</a>';
+    $pStart = max(1, $page - 3);
+    $pEnd   = min($totalPages, $page + 3);
+    if ($pStart > 1) echo '<span>…</span>';
+    for ($p = $pStart; $p <= $pEnd; $p++) {
+        echo $p === $page
+            ? '<span class="current">' . $p . '</span>'
+            : '<a href="' . sanitize(mkt_qstr(['page' => $p])) . '">' . $p . '</a>';
+    }
+    if ($pEnd < $totalPages) echo '<span>…</span>';
+    if ($page < $totalPages) echo '<a href="' . sanitize(mkt_qstr(['page' => $page + 1])) . '">Next ›</a>';
+    echo '<span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page ' . $page . ' of ' . $totalPages . ' (' . $total . ' total)</span>';
+    echo '</div>';
 }
 
 // Settings
 $cfg = [];
 if ($tab === 'settings') {
     foreach (['mp_enabled','mp_require_product_approval','mp_featured_product_7day_price','mp_featured_product_30day_price',
-              'mp_featured_shop_7day_price','mp_featured_shop_30day_price','mp_seller_subscription_price','mp_verified_seller_fee'] as $k) {
+              'mp_featured_shop_7day_price','mp_featured_shop_30day_price','mp_seller_subscription_price','mp_verified_seller_fee',
+              'mp_quotes_enabled','mp_quote_response_days','mp_quote_eligible_shops','mp_default_sort'] as $k) {
         $cfg[$k] = get_platform_setting($k, '');
     }
 }
@@ -248,6 +360,10 @@ if ($tab === 'settings') {
         .adm-set-title { font-size:.74rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 14px; }
         .adm-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
         @media(max-width:520px){ .adm-stats { grid-template-columns:repeat(3,1fr); } .adm-grid2 { grid-template-columns:1fr; } }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -278,6 +394,7 @@ if ($tab === 'settings') {
 
     <!-- Tabs -->
     <div class="adm-tabs">
+        <?php if ($hasProductsPerm): ?>
         <a href="?tab=products" class="adm-tab <?php echo $tab==='products'?'active':''; ?>">
             Products <?php if ($pendingProds): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $pendingProds; ?></span><?php endif; ?>
         </a>
@@ -288,6 +405,10 @@ if ($tab === 'settings') {
         <a href="?tab=boosts" class="adm-tab <?php echo $tab==='boosts'?'active':''; ?>">
             &#9889; Boosts <?php if ($pendingBoosts): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $pendingBoosts; ?></span><?php endif; ?>
         </a>
+        <?php endif; ?>
+        <?php if ($hasQuotesPerm): ?>
+        <a href="?tab=quotes" class="adm-tab <?php echo $tab==='quotes'?'active':''; ?>">📝 Quote Requests</a>
+        <?php endif; ?>
         <?php if (is_admin()): ?><a href="?tab=settings" class="adm-tab <?php echo $tab==='settings'?'active':''; ?>">&#9881; Settings</a><?php endif; ?>
     </div>
 
@@ -337,6 +458,7 @@ if ($tab === 'settings') {
         </div>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No products found.</div><?php endif; ?>
+    <?php mkt_render_pagination($mktPage, $mktTotalPages, $mktTotal); ?>
     <?php endif; ?>
 
     <!-- ═══ SHOPS ═══ -->
@@ -396,6 +518,7 @@ if ($tab === 'settings') {
         </div>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No shops found.</div><?php endif; ?>
+    <?php mkt_render_pagination($mktPage, $mktTotalPages, $mktTotal); ?>
     <?php endif; ?>
 
     <!-- ═══ ORDERS ═══ -->
@@ -406,7 +529,7 @@ if ($tab === 'settings') {
         <a href="?tab=orders&of=<?php echo $v; ?>" class="<?php echo $of===$v?'active':''; ?>"><?php echo $l; ?></a>
         <?php endforeach; ?>
     </div>
-    <form method="get" style="margin-bottom:12px;">
+    <form method="get" action="marketplace.php" style="margin-bottom:12px;">
         <input type="hidden" name="tab" value="orders"><input type="hidden" name="of" value="<?php echo sanitize($of); ?>">
         <select name="osort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
             <option value="newest" <?php echo $ordSort==='newest'?'selected':''; ?>>Newest First</option>
@@ -432,6 +555,7 @@ if ($tab === 'settings') {
         <div style="font-size:.78rem;color:var(--text-muted,#6b7280);">&#128205; <?php echo sanitize(mb_substr($o['delivery_address']??'',0,60)); ?></div>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No orders found.</div><?php endif; ?>
+    <?php mkt_render_pagination($mktPage, $mktTotalPages, $mktTotal); ?>
     <?php endif; ?>
 
     <!-- ═══ BOOSTS ═══ -->
@@ -468,6 +592,88 @@ if ($tab === 'settings') {
     <?php endforeach; else: ?>
     <div class="empty-state">No pending boost orders.</div>
     <?php endif; ?>
+    <?php mkt_render_pagination($mktPage, $mktTotalPages, $mktTotal); ?>
+    <?php endif; ?>
+
+    <!-- ═══ QUOTE REQUESTS ═══ -->
+    <?php if ($tab === 'quotes'): ?>
+    <div class="adm-stats" style="grid-template-columns:repeat(auto-fill,minmax(90px,1fr));">
+        <a href="<?php echo mkt_qstr(['status'=>null,'page'=>null]); ?>" class="adm-stat" style="text-decoration:none;color:inherit;"><strong><?php echo array_sum($qrStatCounts); ?></strong><span>All</span></a>
+        <?php foreach (['pending'=>'Pending','quoted'=>'Quoted','paid'=>'Paid','declined'=>'Declined','cancelled'=>'Cancelled','expired'=>'Expired'] as $sv=>$sl): ?>
+        <a href="<?php echo mkt_qstr(['status'=>$sv,'page'=>null]); ?>" class="adm-stat" style="text-decoration:none;color:inherit;"><strong><?php echo (int)($qrStatCounts[$sv] ?? 0); ?></strong><span><?php echo $sl; ?></span></a>
+        <?php endforeach; ?>
+    </div>
+
+    <form method="get" class="adm-filter" style="flex-wrap:wrap;">
+        <input type="hidden" name="tab" value="quotes">
+        <select name="status" onchange="this.form.submit()" style="padding:5px 9px;border:1px solid var(--border);border-radius:8px;font-size:.78rem;background:var(--surface);">
+            <option value="all" <?php echo $qStatusFilter==='all'?'selected':''; ?>>All Statuses</option>
+            <?php foreach ($qValidStatuses as $vs): ?>
+            <option value="<?php echo $vs; ?>" <?php echo $qStatusFilter===$vs?'selected':''; ?>><?php echo ucfirst($vs); ?></option>
+            <?php endforeach; ?>
+        </select>
+        <input type="text" name="q" value="<?php echo sanitize($qSearch); ?>" placeholder="Search shop or customer name…" style="flex:1;min-width:180px;padding:5px 9px;border:1px solid var(--border);border-radius:8px;font-size:.78rem;">
+        <button type="submit" class="button button-secondary button-small">Filter</button>
+        <?php if ($qStatusFilter !== 'all' || $qSearch !== ''): ?><a href="?tab=quotes" class="button button-secondary button-small">Clear</a><?php endif; ?>
+    </form>
+
+    <?php if (!$quoteRequests): ?>
+    <div class="empty-state">No quote requests match this filter.</div>
+    <?php else: ?>
+    <?php
+    $qrColors = ['pending'=>'#f59e0b','quoted'=>'#3b82f6','declined'=>'#ef4444','cancelled'=>'#6b7280','expired'=>'#6b7280','paid'=>'#10b981'];
+    foreach ($quoteRequests as $r): $qc = $qrColors[$r['status']] ?? '#6b7280';
+    ?>
+    <div class="adm-row" style="border-left:4px solid <?php echo $qc; ?>;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+            <div>
+                <strong>Request #<?php echo $r['id']; ?></strong>
+                <span style="font-size:.76rem;color:var(--text-muted,#6b7280);">&nbsp;·&nbsp; <?php echo $qrItemCounts[$r['id']] ?? 0; ?> item(s) <?php if ($r['total_amount'] !== null): ?>&nbsp;·&nbsp; GH&#8373; <?php echo number_format((float)$r['total_amount'],2); ?><?php endif; ?></span>
+            </div>
+            <span class="adm-badge" style="background:<?php echo $qc; ?>1a;color:<?php echo $qc; ?>;"><?php echo ucfirst($r['status']); ?></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px;font-size:.82rem;">
+            <div>
+                &#127978; <strong><?php echo sanitize($r['shop_name']); ?></strong>
+                <?php if ($r['shop_phone']): ?><a href="tel:<?php echo sanitize($r['shop_phone']); ?>" style="color:var(--primary,#0f766e);text-decoration:none;font-weight:600;margin-left:6px;">📞 <?php echo sanitize($r['shop_phone']); ?></a><?php endif; ?>
+                <?php if ($r['shop_email']): ?><a href="mailto:<?php echo sanitize($r['shop_email']); ?>" style="color:var(--primary,#0f766e);text-decoration:none;font-weight:600;margin-left:6px;">✉</a><?php endif; ?>
+            </div>
+            <div>
+                🧑 <strong><?php echo sanitize($r['customer_name']); ?></strong>
+                <?php if ($r['customer_phone']): ?><a href="tel:<?php echo sanitize($r['customer_phone']); ?>" style="color:var(--primary,#0f766e);text-decoration:none;font-weight:600;margin-left:6px;">📞 <?php echo sanitize($r['customer_phone']); ?></a><?php endif; ?>
+                <?php if ($r['customer_email']): ?><a href="mailto:<?php echo sanitize($r['customer_email']); ?>" style="color:var(--primary,#0f766e);text-decoration:none;font-weight:600;margin-left:6px;">✉</a><?php endif; ?>
+            </div>
+        </div>
+        <?php if ($r['buyer_notes']): ?><div style="font-size:.76rem;color:var(--text-muted,#6b7280);margin-bottom:4px;">📝 <?php echo sanitize(mb_substr($r['buyer_notes'],0,140)); ?></div><?php endif; ?>
+        <?php if ($r['decline_reason']): ?><div style="font-size:.76rem;color:#c0392b;margin-bottom:4px;">Declined: <?php echo sanitize(mb_substr($r['decline_reason'],0,140)); ?></div><?php endif; ?>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="font-size:.76rem;color:var(--text-muted,#6b7280);">Sent <?php echo time_ago($r['created_at']); ?><?php if ($r['quoted_at']): ?> &nbsp;·&nbsp; Quoted <?php echo time_ago($r['quoted_at']); ?><?php endif; ?></div>
+            <?php if (!empty($qrItems[$r['id']])): ?>
+            <button type="button" class="button button-secondary button-small" onclick="mktToggleQrItems(<?php echo $r['id']; ?>, this)">▸ View Items</button>
+            <?php endif; ?>
+        </div>
+        <?php if (!empty($qrItems[$r['id']])): ?>
+        <div id="qr-items-<?php echo $r['id']; ?>" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border);">
+            <?php foreach ($qrItems[$r['id']] as $qi): ?>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;font-size:.82rem;<?php echo !$qi['is_available'] ? 'opacity:.5;' : ''; ?>">
+                <div>
+                    <?php echo !$qi['is_available'] ? '<s>' : ''; ?><?php echo sanitize($qi['item_name']); ?><?php if ($qi['quantity_note']): ?> <span style="color:var(--text-muted,#6b7280);font-weight:400;">(<?php echo sanitize($qi['quantity_note']); ?>)</span><?php endif; ?><?php echo !$qi['is_available'] ? '</s>' : ''; ?>
+                    <?php if ($qi['buyer_note']): ?><div style="font-size:.74rem;color:var(--text-muted,#6b7280);">Note: <?php echo sanitize($qi['buyer_note']); ?></div><?php endif; ?>
+                </div>
+                <div style="white-space:nowrap;font-weight:700;">
+                    <?php if (!$qi['is_available']): ?><span style="color:#c0392b;font-weight:700;">Unavailable</span>
+                    <?php elseif ($qi['price'] !== null): ?>GH&#8373; <?php echo number_format((float)$qi['price'],2); ?>
+                    <?php else: ?><span style="color:var(--text-muted,#6b7280);font-weight:400;">Not priced yet</span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php endforeach; ?>
+    <?php endif; ?>
+    <?php mkt_render_pagination($mktPage, $mktTotalPages, $mktTotal); ?>
     <?php endif; ?>
 
     <!-- ═══ SETTINGS ═══ -->
@@ -483,6 +689,27 @@ if ($tab === 'settings') {
                 <input type="checkbox" name="mp_require_product_approval" value="1" <?php echo ($cfg['mp_require_product_approval']??'1')==='1'?'checked':''; ?>>
                 Require admin to approve products before listing
             </label>
+        </div>
+
+        <div class="adm-set-section">
+            <p class="adm-set-title">Product Listings</p>
+            <div class="form-group" style="max-width:320px;">
+                <label>Default sort order on the public Marketplace page</label>
+                <select name="mp_default_sort">
+                    <?php $sortOptions = [
+                        'default'    => 'Default (Featured, then a mix of new & trending, then others)',
+                        'featured'   => 'Featured First',
+                        'newest'     => 'Newest',
+                        'price_asc'  => 'Price: Low → High',
+                        'price_desc' => 'Price: High → Low',
+                        'popular'    => 'Most Viewed',
+                    ]; ?>
+                    <?php foreach ($sortOptions as $sv=>$sl): ?>
+                    <option value="<?php echo $sv; ?>" <?php echo ($cfg['mp_default_sort']??'default')===$sv?'selected':''; ?>><?php echo $sl; ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <p class="meta" style="margin-top:4px;">Applies whenever a visitor hasn't picked a sort themselves — they can still override it with the sort dropdown on the Marketplace page.</p>
+            </div>
         </div>
 
         <div class="adm-set-section">
@@ -502,10 +729,43 @@ if ($tab === 'settings') {
             </div>
         </div>
 
+        <div class="adm-set-section">
+            <p class="adm-set-title">Quote Requests</p>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:12px;">
+                <input type="checkbox" name="mp_quotes_enabled" value="1" <?php echo ($cfg['mp_quotes_enabled']??'1')==='1'?'checked':''; ?>>
+                Enable Quote Requests platform-wide
+            </label>
+            <div class="adm-grid2">
+                <div class="form-group">
+                    <label>Which shops can receive quote requests?</label>
+                    <select name="mp_quote_eligible_shops">
+                        <option value="all"      <?php echo ($cfg['mp_quote_eligible_shops']??'all')==='all'?'selected':''; ?>>All active shops</option>
+                        <option value="featured"  <?php echo ($cfg['mp_quote_eligible_shops']??'all')==='featured'?'selected':''; ?>>Featured shops only</option>
+                        <option value="verified"  <?php echo ($cfg['mp_quote_eligible_shops']??'all')==='verified'?'selected':''; ?>>Verified shops only</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Auto-expire unanswered requests after (days)</label>
+                    <input type="number" name="mp_quote_response_days" min="1" max="30" value="<?php echo sanitize($cfg['mp_quote_response_days']??'2'); ?>">
+                </div>
+            </div>
+            <p class="meta" style="font-size:.78rem;">Full oversight of every shop's quote requests lives on the <a href="marketplace.php?tab=quotes">📝 Quote Requests</a> tab above.</p>
+        </div>
+
         <button type="submit" class="button button-primary">Save Settings</button>
     </form>
     <?php endif; ?>
 
 </main>
+
+<script>
+function mktToggleQrItems(id, btn) {
+    var box = document.getElementById('qr-items-' + id);
+    if (!box) return;
+    var open = box.style.display !== 'none';
+    box.style.display = open ? 'none' : 'block';
+    btn.textContent = open ? '▸ View Items' : '▾ Hide Items';
+}
+</script>
 </body>
 </html>

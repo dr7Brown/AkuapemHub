@@ -46,10 +46,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$error) {
-        $selfPath  = save_uploaded_image($selfieFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/selfie');
-        $ghPath    = ($ghanaFile && $ghanaFile['name']) ? save_uploaded_image($ghanaFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/ghana_card') : null;
-        $licPath   = ($licenseFile && $licenseFile['name'] && is_valid_image_upload($licenseFile)) ? save_uploaded_image($licenseFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/license') : null;
-        $vehPath   = ($vehicleFile && $vehicleFile['name'] && is_valid_image_upload($vehicleFile)) ? save_uploaded_image($vehicleFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/vehicle') : null;
+        $selfPath  = save_uploaded_id_image($selfieFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/selfie');
+        $ghPath    = ($ghanaFile && $ghanaFile['name']) ? save_uploaded_id_image($ghanaFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/ghana_card') : null;
+        $licPath   = ($licenseFile && $licenseFile['name'] && is_valid_image_upload($licenseFile)) ? save_uploaded_id_image($licenseFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/license') : null;
+        $vehPath   = ($vehicleFile && $vehicleFile['name'] && is_valid_image_upload($vehicleFile)) ? save_uploaded_id_image($vehicleFile, 'uploads/delivery_verify/' . $agentProfile['id'] . '/vehicle') : null;
 
         if ($existing) {
             $pdo->prepare(

@@ -2317,3 +2317,209 @@ ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
     'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
     'delivery_commission'
 ) NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v044  Master Product Catalog (Provision Shops, extensible to future
+--        catalog types — electrical, bookshop, etc.)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Central, admin-curated product catalog so sellers can pick an existing
+-- product (e.g. "Milo 400g") instead of typing every field from scratch.
+-- Kept deliberately flat: one table, category as plain text (not a separate
+-- lookup table — mp_categories is a different, coarser concept and a shop
+-- still picks its own mp_categories value normally), one image per product,
+-- import summaries logged via the existing audit_logs (log_audit_action())
+-- instead of a dedicated history table.
+
+CREATE TABLE IF NOT EXISTS master_products (
+    id              INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    catalog_type    VARCHAR(40) NOT NULL DEFAULT 'provision',
+    category        VARCHAR(100) DEFAULT NULL,
+    name            VARCHAR(255) NOT NULL,
+    brand           VARCHAR(120) DEFAULT NULL,
+    sku             VARCHAR(100) DEFAULT NULL,
+    description     TEXT,
+    package_size    VARCHAR(60) DEFAULT NULL,
+    search_keywords TEXT,
+    default_image   VARCHAR(255) DEFAULT NULL,
+    status          ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_mp_catalog (catalog_type),
+    KEY idx_mp_status (status),
+    KEY idx_mp_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Brings an earlier, more complex draft of this table (category_id FK,
+-- separate alternative_name/manufacturer/weight/volume/unit columns — built
+-- and only ever tested locally, never used with real data) in line with the
+-- simplified schema above. All safe no-ops if master_products was just
+-- created fresh by the CREATE TABLE above.
+--
+-- The category_id FK constraint must be dropped explicitly before the column
+-- itself on real MySQL (MariaDB cascades this automatically when the column
+-- is dropped, but MySQL 8 errors with "Cannot drop index ... needed in a
+-- foreign key constraint" otherwise). Looked up dynamically via
+-- information_schema rather than a hardcoded constraint name, since
+-- unnamed foreign keys are auto-named by the server and that name isn't
+-- guaranteed to be the same across every database this has been applied to.
+SET @fk_name := (
+    SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'master_products'
+      AND COLUMN_NAME = 'category_id' AND REFERENCED_TABLE_NAME IS NOT NULL
+    LIMIT 1
+);
+SET @drop_fk_sql := IF(@fk_name IS NOT NULL,
+    CONCAT('ALTER TABLE master_products DROP FOREIGN KEY `', @fk_name, '`'),
+    'DO 0'
+);
+PREPARE stmt FROM @drop_fk_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+ALTER TABLE master_products DROP COLUMN IF EXISTS category_id;
+ALTER TABLE master_products DROP COLUMN IF EXISTS alternative_name;
+ALTER TABLE master_products DROP COLUMN IF EXISTS manufacturer;
+ALTER TABLE master_products DROP COLUMN IF EXISTS weight;
+ALTER TABLE master_products DROP COLUMN IF EXISTS volume;
+ALTER TABLE master_products DROP COLUMN IF EXISTS unit;
+ALTER TABLE master_products DROP COLUMN IF EXISTS created_by;
+ALTER TABLE master_products ADD COLUMN IF NOT EXISTS category VARCHAR(100) DEFAULT NULL AFTER catalog_type;
+
+-- The earlier draft's now-unneeded sibling tables (categories lookup, image
+-- gallery, import history) — folded into master_products/audit_logs above.
+DROP TABLE IF EXISTS master_product_images;
+DROP TABLE IF EXISTS master_product_imports;
+DROP TABLE IF EXISTS master_product_categories;
+
+-- Provenance link: which catalog entry a shop's product came from (nullable —
+-- manually-created products never set this)
+ALTER TABLE mp_products ADD COLUMN IF NOT EXISTS master_product_id INT UNSIGNED DEFAULT NULL AFTER category_id;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v045  Master Product Catalog — admin-manageable catalog types
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Catalog types (Provision Shop, and later Electrical/Bookshop/...) were a
+-- hardcoded PHP array — admins now add/edit these themselves, so they need
+-- to live in the database instead. `slug` is what's actually stored in
+-- master_products.catalog_type (a plain VARCHAR, not a real FK), so it's
+-- immutable once created — editing only ever changes the display `name`.
+CREATE TABLE IF NOT EXISTS catalog_types (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    slug       VARCHAR(40) NOT NULL,
+    name       VARCHAR(100) NOT NULL,
+    sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_catalog_types_slug (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO catalog_types (slug, name, sort_order) VALUES ('provision', 'Provision Shop', 0);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v046  Marketplace Quote Requests — buyer sends a shopping list, seller
+--       prices it, buyer pays through the existing Paystack/mp_orders flow.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Each item is priced as one lump sum for the whole line (e.g. "2kg rice —
+-- GH₵25"), not unit price × numeric quantity, so `quantity_note` stays free
+-- text with no parsing required. Once quoted+paid, this converts into a real
+-- mp_orders/mp_order_items pair (product_id NULL — that FK is nullable) and
+-- everything downstream (delivery, payouts) runs through the unmodified
+-- existing pipeline.
+CREATE TABLE IF NOT EXISTS mp_quote_requests (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    customer_id         INT UNSIGNED NOT NULL,
+    shop_id             INT UNSIGNED NOT NULL,
+    status              ENUM('pending','quoted','declined','cancelled','expired','paid') NOT NULL DEFAULT 'pending',
+    buyer_notes         TEXT,
+    decline_reason      TEXT,
+    total_amount        DECIMAL(10,2) DEFAULT NULL,
+    platform_payment_id INT UNSIGNED DEFAULT NULL,
+    order_id            INT UNSIGNED DEFAULT NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    quoted_at           DATETIME DEFAULT NULL,
+    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_mqr_customer (customer_id),
+    KEY idx_mqr_shop (shop_id),
+    KEY idx_mqr_status (status),
+    FOREIGN KEY (customer_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (shop_id) REFERENCES mp_shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS mp_quote_request_items (
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    quote_request_id INT UNSIGNED NOT NULL,
+    item_name         VARCHAR(255) NOT NULL,
+    quantity_note     VARCHAR(100) DEFAULT NULL,
+    buyer_note        VARCHAR(255) DEFAULT NULL,
+    price             DECIMAL(10,2) DEFAULT NULL,
+    is_available      TINYINT(1) NOT NULL DEFAULT 1,
+    sort_order        SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    KEY idx_mqri_request (quote_request_id),
+    FOREIGN KEY (quote_request_id) REFERENCES mp_quote_requests(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v047  Per-Feature User Bans — restrict a user from a specific module
+--       (Jobs, Marketplace, News, Events, Funerals, Delivery) without
+--       blocking their login or every other feature, mirroring the existing
+--       moderator_permissions table shape.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS user_feature_bans (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT UNSIGNED NOT NULL,
+    feature_key VARCHAR(40) NOT NULL,
+    reason      VARCHAR(255) DEFAULT NULL,
+    banned_by   INT UNSIGNED NOT NULL,
+    banned_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_ufb_user_feature (user_id, feature_key),
+    KEY idx_ufb_user (user_id),
+    FOREIGN KEY (user_id)   REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (banned_by) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v048  Marketplace Quote Requests — admin settings defaults
+-- ═══════════════════════════════════════════════════════════════════════════
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('mp_quotes_enabled', '1'),
+('mp_quote_response_days', '2'),
+('mp_quote_eligible_shops', 'all');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v049  Marketplace — admin-configurable default product listing sort order.
+-- 'default' = featured/sponsored first, then a daily-reshuffled mix of
+-- recently-posted and popular items, then everything else (see the
+-- $defaultOrderBy build in marketplace.php).
+-- ═══════════════════════════════════════════════════════════════════════════
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('mp_default_sort', 'default');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v050  Marketplace — indexes for the sort columns marketplace.php's "Newest",
+-- "Most Viewed", and "Default" listing orders use. Added dynamically via
+-- information_schema (rather than plain ADD INDEX IF NOT EXISTS) since that
+-- clause isn't reliably supported the same way on real MySQL 8 as it is on
+-- MariaDB — same reasoning as the FK-drop lookup earlier in this file.
+-- ═══════════════════════════════════════════════════════════════════════════
+SET @idx_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mp_products' AND INDEX_NAME = 'idx_mprod_created'
+);
+SET @add_idx_sql := IF(@idx_exists = 0,
+    'ALTER TABLE mp_products ADD INDEX idx_mprod_created (created_at)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_idx_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @idx_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mp_products' AND INDEX_NAME = 'idx_mprod_viewcount'
+);
+SET @add_idx_sql := IF(@idx_exists = 0,
+    'ALTER TABLE mp_products ADD INDEX idx_mprod_viewcount (view_count)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_idx_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

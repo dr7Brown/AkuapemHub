@@ -254,3 +254,6 @@ AkuapemHub/
 - [ ] Set `uploads/` directory permissions to allow web-server writes
 - [ ] Remove or password-protect the individual `migrate*.php` scripts
 - [ ] Review platform fee settings (all default to `0` / free)
+
+<!-- Cloudflare -->
+The one thing to be careful with: don't turn on "Cache Everything" or aggressive page-rule caching for logged-in pages — this app is session/CSRF-token-driven (csrf_field() on every form), so caching a dynamic page with someone else's CSRF token or session state would break things or leak — Cloudflare's default behavior (respecting Set-Cookie, not caching HTML by default) is the safe mode; only extend caching to genuinely static paths like assets/*.

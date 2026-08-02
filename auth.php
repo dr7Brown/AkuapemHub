@@ -97,6 +97,19 @@ function require_module_enabled(string $key, string $label): void {
     }
 }
 
+/** Blocks a specific action when the current user has been restricted from
+ *  that feature (admin/users.php's "Manage Restrictions" panel), without
+ *  affecting login or any other feature. $featureKey matches all_ban_features(). */
+function require_not_banned_from(string $featureKey): void {
+    $user = current_user();
+    if (!$user || !is_banned_from_feature((int)$user['id'], $featureKey)) return;
+    $details = get_user_feature_ban_details((int)$user['id']);
+    $reason  = $details[$featureKey]['reason'] ?? null;
+    flash('You have been restricted from this feature.' . ($reason ? ' Reason: ' . $reason : '') . ' Contact support if you believe this is an error.', 'error');
+    header('Location: ' . (defined('BASE_URL') ? BASE_URL : '') . '/index.php');
+    exit;
+}
+
 function login_user($user) {
     // Regenerate session ID on login to prevent session fixation attacks
     session_regenerate_id(true);

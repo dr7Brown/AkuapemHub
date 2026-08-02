@@ -30,7 +30,7 @@ $error  = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
-    $ip        = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $ip        = client_ip();
     $userAgent = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500);
     $submitted = preg_replace('/\D/', '', trim($_POST['otp'] ?? ''));
 

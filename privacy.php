@@ -166,6 +166,7 @@ $lastUpdated = '23 June 2026';
     <?php if ($user): ?>
         <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <?php else: ?>
+        <?php require __DIR__ . '/partials/social_tiles.php'; ?>
         <footer style="text-align:center;padding:20px 16px 32px;font-size:.8rem;color:#6b7280;border-top:1px solid #e5e7eb;margin-top:40px;">
             &copy; <?php echo date('Y'); ?> <?php echo sanitize(APP_NAME); ?> &nbsp;·&nbsp;
             <a href="contact.php">Contact</a> &nbsp;·&nbsp;

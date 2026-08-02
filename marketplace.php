@@ -16,18 +16,22 @@ $condition = trim($_GET['condition'] ?? '');
 $minPrice  = (float)($_GET['min'] ?? 0);
 $maxPrice  = (float)($_GET['max'] ?? 0);
 $town      = trim($_GET['town']      ?? '');
-$sort      = $_GET['sort']           ?? 'featured';
+$sort      = $_GET['sort']           ?? get_platform_setting('mp_default_sort', 'default');
 $page      = max(1, (int)($_GET['page'] ?? 1));
 $perPage   = 24;
 $offset    = ($page - 1) * $perPage;
 
 // ── Categories ─────────────────────────────────────────────────────────────
-$categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name')->fetchAll();
+// Rarely changes (admin-managed), fetched on every single page load — a
+// cheap, high-value APCu cache candidate.
+$categories = apcu_remember('mp_categories_list_v1', 300, function () use ($pdo) {
+    return $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name')->fetchAll();
+});
 $activeCat  = null;
 foreach ($categories as $c) { if ($c['slug'] === $catSlug) { $activeCat = $c; break; } }
 
 // ── Build query ────────────────────────────────────────────────────────────
-$where  = ["mp.status = 'approved'", "ms.status = 'active'"];
+$where  = ["mp.status = 'approved'", "ms.status = 'active'", "ms.user_id NOT IN (SELECT id FROM users WHERE banned=1)"];
 $params = [];
 
 if ($q !== '') {
@@ -50,37 +54,74 @@ if ($town !== '') {
     $params[] = '%' . $town . '%';
 }
 
+// 'default' — the blended "smart" listing order: featured/sponsored pinned to
+// the top, then a daily-reshuffled mix of recently-posted and popular items,
+// then everything else. RAND() is seeded by the day number (not per-request)
+// so pagination stays stable within a day while the mix still varies day to
+// day, instead of the same items being permanently stuck in the same order.
+// The "popular" cutoff (average view count across all approved products) is
+// cached — it was previously a subquery re-run on every single request that
+// used this sort, which is the majority of traffic once 'default' is the
+// platform's own default.
+$avgViewCount = (float)apcu_remember('mp_avg_view_count_v1', 60, function () use ($pdo) {
+    return $pdo->query("SELECT AVG(view_count) FROM mp_products WHERE status='approved'")->fetchColumn();
+});
+$defaultOrderBy =
+    "(CASE
+        WHEN mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE() THEN 3
+        WHEN mp.is_featured=1 AND mp.featured_end>=CURDATE() THEN 2
+        WHEN mp.created_at >= NOW() - INTERVAL 14 DAY
+          OR mp.view_count >= $avgViewCount THEN 1
+        ELSE 0
+      END) DESC, RAND(TO_DAYS(CURDATE()))";
+
 $orderBy = match($sort) {
     'price_asc'  => 'COALESCE(mp.discount_price,mp.price) ASC',
     'price_desc' => 'COALESCE(mp.discount_price,mp.price) DESC',
     'newest'     => 'mp.created_at DESC',
     'popular'    => 'mp.view_count DESC',
-    default      => '(CASE WHEN mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE() THEN 2 WHEN mp.is_featured=1 AND mp.featured_end>=CURDATE() THEN 1 ELSE 0 END) DESC, mp.created_at DESC',
+    'featured'   => '(CASE WHEN mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE() THEN 2 WHEN mp.is_featured=1 AND mp.featured_end>=CURDATE() THEN 1 ELSE 0 END) DESC, mp.created_at DESC',
+    default      => $defaultOrderBy, // covers 'default' and any unrecognized value
 };
 
 $whereClause = implode(' AND ', $where);
 
-// Count
-$countSt = $pdo->prepare("SELECT COUNT(*) FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id WHERE $whereClause");
-$countSt->execute($params);
-$total     = (int)$countSt->fetchColumn();
-$totalPages = max(1, (int)ceil($total / $perPage));
+// The plain, unfiltered browse (no search/category/condition/price/town) is
+// the overwhelming majority of Marketplace traffic — everyone landing on the
+// page fresh. That case has only sort+page as inputs, so it's cached as a
+// unit (count + rows together) for a short window; any filter at all falls
+// back to a live, uncached query since the filter-combination space is
+// unbounded and each one is comparatively rare.
+$noFiltersApplied = $q === '' && !$activeCat && $condition === '' && $minPrice <= 0 && $maxPrice <= 0 && $town === '';
 
-// Products
-$st = $pdo->prepare(
-    "SELECT mp.*, ms.shop_name, ms.slug AS shop_slug, ms.id AS shop_id,
-            mc.name AS cat_name, mc.icon AS cat_icon,
-            mpi.image_path AS primary_image
-     FROM mp_products mp
-     JOIN mp_shops ms ON mp.shop_id = ms.id
-     LEFT JOIN mp_categories mc ON mp.category_id = mc.id
-     LEFT JOIN mp_product_images mpi ON mpi.product_id = mp.id AND mpi.is_primary = 1
-     WHERE $whereClause
-     ORDER BY $orderBy
-     LIMIT $perPage OFFSET $offset"
-);
-$st->execute($params);
-$products = $st->fetchAll();
+$fetchListing = function () use ($pdo, $whereClause, $params, $orderBy, $perPage, $offset) {
+    $countSt = $pdo->prepare("SELECT COUNT(*) FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id WHERE $whereClause");
+    $countSt->execute($params);
+    $total = (int)$countSt->fetchColumn();
+
+    $st = $pdo->prepare(
+        "SELECT mp.*, ms.shop_name, ms.slug AS shop_slug, ms.id AS shop_id,
+                mc.name AS cat_name, mc.icon AS cat_icon,
+                mpi.image_path AS primary_image
+         FROM mp_products mp
+         JOIN mp_shops ms ON mp.shop_id = ms.id
+         LEFT JOIN mp_categories mc ON mp.category_id = mc.id
+         LEFT JOIN mp_product_images mpi ON mpi.product_id = mp.id AND mpi.is_primary = 1
+         WHERE $whereClause
+         ORDER BY $orderBy
+         LIMIT $perPage OFFSET $offset"
+    );
+    $st->execute($params);
+    return ['total' => $total, 'products' => $st->fetchAll()];
+};
+
+$listing = $noFiltersApplied
+    ? apcu_remember("mp_listing_v1:$sort:$page", 45, $fetchListing)
+    : $fetchListing();
+
+$total      = $listing['total'];
+$products   = $listing['products'];
+$totalPages = max(1, (int)ceil($total / $perPage));
 
 // URL helper for pagination
 function mp_page_url(int $page): string {
@@ -165,6 +206,7 @@ function mp_page_url(int $page): string {
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;"><?php echo APP_NAME; ?></a>
     <a href="marketplace.php" class="mp-brand" style="font-size:.88rem;">/ 🛍️ Marketplace</a>
     <div class="mp-nav-actions">
+        <a href="shops.php" class="button button-secondary button-small">🏪 Shops</a>
         <?php if ($user): ?>
         <a href="cart.php" class="mp-cart-btn button button-secondary button-small">
             🛒 Cart<?php if ($cartCount > 0): ?><span class="mp-cart-count"><?php echo $cartCount; ?></span><?php endif; ?>
@@ -220,6 +262,7 @@ function mp_page_url(int $page): string {
         <input type="number" name="max" value="<?php echo $maxPrice ?: ''; ?>" placeholder="Max GHS" min="0" step="0.01" style="width:90px;">
 
         <select name="sort" onchange="this.form.submit()">
+            <option value="default"    <?php echo $sort==='default'?'selected':''; ?>>Default</option>
             <option value="featured"   <?php echo $sort==='featured'?'selected':''; ?>>Featured First</option>
             <option value="newest"     <?php echo $sort==='newest'?'selected':''; ?>>Newest</option>
             <option value="price_asc"  <?php echo $sort==='price_asc'?'selected':''; ?>>Price: Low → High</option>

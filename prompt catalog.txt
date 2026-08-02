@@ -1,0 +1,253 @@
+i suggest you create another button when shop owner wants to add product to shop
+with the name "Add from Catalog" then he selects "Provision shop catalog", we will be 
+adding catalog for electrical shop, catalog for bookshops , etc later. 
+
+Build a dedicated Master Product Catalog Module specifically for Provision Shops.
+
+This module will serve as the central database of products that all provision shops on AkuapemConnect can use.
+
+The objective is to eliminate duplicate product creation by allowing shops to simply select existing products from the catalog instead of creating them from scratch.
+
+Only administrators can create, edit and manage the Master Catalog.
+
+--------------------------------------------------
+BUSINESS OBJECTIVE
+--------------------------------------------------
+
+Create one central product catalog for common grocery and provision products.
+
+Every shop shares the same catalog.
+
+Each shop only manages its own inventory, pricing and stock.
+
+--------------------------------------------------
+MASTER PRODUCT INFORMATION
+--------------------------------------------------
+
+Each product should contain:
+
+Product Name
+
+Alternative Name
+
+Brand
+
+Manufacturer
+
+Category
+
+SKU
+
+Default Image
+
+Additional Images
+
+Description
+
+Weight
+
+Volume
+
+Unit
+
+Package Size
+
+Product Tags
+
+Search Keywords
+
+Status
+
+Created Date
+
+Updated Date
+
+--------------------------------------------------
+PRODUCT CATEGORIES
+--------------------------------------------------
+
+Examples:
+
+Rice
+
+Cooking Oil
+
+Milk
+
+Tea
+
+Coffee
+
+Chocolate Drinks
+
+Soft Drinks
+
+Water
+
+Juice
+
+Biscuits
+
+Bread
+
+Sugar
+
+Salt
+
+Spices
+
+Noodles
+
+Pasta
+
+Flour
+
+Beans
+
+Canned Foods
+
+Tomatoes
+
+Sardines
+
+Corned Beef
+
+Tuna
+
+Seasoning Cubes
+
+Soap
+
+Detergents
+
+Toothpaste
+
+Toilet Rolls
+
+Diapers
+
+Baby Food
+
+Baby Wipes
+
+Pet Food
+
+Stationery
+
+Batteries
+
+Snacks
+
+Confectionery
+
+Frozen Foods
+
+Cleaning Supplies
+
+--------------------------------------------------
+ADMIN FEATURES
+--------------------------------------------------
+
+Create Product
+
+Edit Product
+
+Delete Product
+
+Deactivate Product
+
+Merge Duplicate Products
+
+Upload Product Images
+
+Bulk Import Products
+
+Bulk Export Products
+
+Search Products
+
+Filter Products
+
+Assign Categories
+
+--------------------------------------------------
+SEARCH
+--------------------------------------------------
+
+Allow search by:
+
+Product Name
+
+Brand
+
+Category
+
+Weight
+
+SKU
+
+Tags
+
+--------------------------------------------------
+BULK IMPORT
+--------------------------------------------------
+
+Support Excel/CSV import.
+
+--------------------------------------------------
+PRODUCT IMAGES
+--------------------------------------------------
+
+Store default images.
+
+Every shop using this product shares the same default image unless they upload their own.
+
+--------------------------------------------------
+DUPLICATE DETECTION
+--------------------------------------------------
+
+Prevent duplicate products.
+
+Example:
+
+"Milo 400g"
+
+should not exist twice.
+
+Suggest existing products before saving.
+
+--------------------------------------------------
+AUDIT LOGS
+--------------------------------------------------
+
+Log every:
+
+Create
+
+Update
+
+Delete
+
+Import
+
+Merge
+
+--------------------------------------------------
+DATABASE TABLE
+--------------------------------------------------
+
+master_products
+
+master_product_categories
+
+master_product_images
+
+master_product_tags
+
+master_product_imports
+
+--------------------------------------------------
+BUSINESS OBJECTIVE
+--------------------------------------------------
+
+Create a reusable product catalog for all provision shops to reduce data entry, improve consistency, and simplify inventory management.

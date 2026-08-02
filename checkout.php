@@ -38,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($deliveryAddress === '') $error = 'Please enter a delivery address.';
     elseif ($receiverName === '')  $error = 'Please enter the receiver name.';
     elseif ($receiverPhone === '') $error = 'Please enter the receiver phone number.';
+    elseif (is_banned_from_feature((int)$user['id'], 'mp')) $error = 'You have been restricted from the Marketplace. Contact support if you believe this is an error.';
     elseif (!paystack_configured()) $error = 'Payment gateway is not configured. Please contact support.';
 
     if (!$error) {

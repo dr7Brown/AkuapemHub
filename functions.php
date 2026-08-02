@@ -223,7 +223,10 @@ function get_worker_request_counts($workerId) {
 
 function get_open_jobs_count() {
     global $pdo;
-    $stmt = $pdo->query('SELECT COUNT(*) FROM service_requests WHERE status IN ("open","partially_staffed")');
+    $stmt = $pdo->query(
+        'SELECT COUNT(*) FROM service_requests sr JOIN users u ON sr.customer_id = u.id
+         WHERE sr.status IN ("open","partially_staffed") AND u.banned = 0'
+    );
     return (int)$stmt->fetchColumn();
 }
 
@@ -397,7 +400,6 @@ function save_completion_photos($requestId, array $files) {
     global $pdo;
     $allowedTypes = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
     $maxSize = 5 * 1024 * 1024;
-    $uploadDir = __DIR__ . '/uploads/completions/' . $requestId;
     $saved = [];
 
     if (empty($files['name']) || !is_array($files['name'])) {
@@ -408,19 +410,21 @@ function save_completion_photos($requestId, array $files) {
         if ($files['error'][$index] !== UPLOAD_ERR_OK) {
             continue;
         }
-        $tmpPath = $files['tmp_name'][$index];
-        $size = $files['size'][$index];
-        $mimeType = mime_content_type($tmpPath);
-        if (!isset($allowedTypes[$mimeType]) || $size > $maxSize) {
+        $file = [
+            'name'     => $files['name'][$index],
+            'type'     => $files['type'][$index],
+            'tmp_name' => $files['tmp_name'][$index],
+            'error'    => $files['error'][$index],
+            'size'     => $files['size'][$index],
+        ];
+        $mimeType = mime_content_type($file['tmp_name']);
+        if (!isset($allowedTypes[$mimeType]) || $file['size'] > $maxSize) {
             continue;
         }
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
-        }
-        $fileName = bin2hex(random_bytes(8)) . '.' . $allowedTypes[$mimeType];
-        $destination = $uploadDir . '/' . $fileName;
-        if (move_uploaded_file($tmpPath, $destination)) {
-            $relativePath = 'uploads/completions/' . $requestId . '/' . $fileName;
+        $relativePath = save_uploaded_image($file, 'uploads/completions/' . $requestId,
+            (int)get_platform_setting('img_completion_maxwidth', '1200'),
+            (int)get_platform_setting('img_completion_quality', '85'));
+        if ($relativePath) {
             $pdo->prepare('INSERT INTO completion_photos (request_id, file_path, uploaded_at) VALUES (?, ?, NOW())')->execute([$requestId, $relativePath]);
             $saved[] = $relativePath;
         }
@@ -506,6 +510,93 @@ function save_uploaded_image(array $file, $relativeDir, int $maxWidth = 0, int $
         return $relativeDir . '/' . $fileName;
     }
     return null;
+}
+
+/**
+ * Save an ID/verification document photo (Ghana Card, license, selfie, business
+ * registration, etc.), compressed down until it's under $maxSizeBytes. Unlike
+ * save_uploaded_image(), this targets a byte-size cap rather than a fixed quality —
+ * ID text needs to stay legible, so it starts at a generous resolution/quality and
+ * only trades away more of each as needed to hit the cap, rather than applying one
+ * fixed compression level that might be too harsh for a large scan or too loose for
+ * a huge phone photo.
+ */
+function save_uploaded_id_image(array $file, $relativeDir, int $maxSizeBytes = 1048576, int $maxWidth = 2000): ?string {
+    $mimeAliases = [
+        'image/x-png'  => 'image/png',
+        'image/pjpeg'  => 'image/jpeg',
+        'image/jpg'    => 'image/jpeg',
+    ];
+    $allowedTypes = ['image/jpeg' => true, 'image/png' => true, 'image/webp' => true];
+    $maxUploadSize = 8 * 1024 * 1024; // raw phone photos are often 3-8MB before we compress them down
+
+    if (empty($file['name']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+
+    $mimeType = mime_content_type($file['tmp_name']);
+    $mimeType = $mimeAliases[$mimeType] ?? $mimeType;
+
+    if (!isset($allowedTypes[$mimeType]) || $file['size'] > $maxUploadSize || !extension_loaded('gd')) {
+        return null;
+    }
+
+    $src = match ($mimeType) {
+        'image/jpeg' => @imagecreatefromjpeg($file['tmp_name']),
+        'image/png'  => @imagecreatefrompng($file['tmp_name']),
+        'image/webp' => @imagecreatefromwebp($file['tmp_name']),
+        default      => false,
+    };
+    if (!$src) {
+        return null;
+    }
+
+    $origW = imagesx($src);
+    $origH = imagesy($src);
+    $width = min($origW, $maxWidth);
+    $bytes = null;
+
+    for ($attempt = 0; $attempt < 4; $attempt++) {
+        $scale    = $width / $origW;
+        $w        = max(1, (int)round($origW * $scale));
+        $h        = max(1, (int)round($origH * $scale));
+        $resized  = imagecreatetruecolor($w, $h);
+        imagefill($resized, 0, 0, imagecolorallocate($resized, 255, 255, 255));
+        imagecopyresampled($resized, $src, 0, 0, 0, 0, $w, $h, $origW, $origH);
+
+        $underCap = false;
+        foreach ([85, 70, 55, 40, 28] as $quality) {
+            ob_start();
+            imagejpeg($resized, null, $quality);
+            $data = ob_get_clean();
+            $bytes = $data; // keep the smallest attempt so far as a fallback
+            if (strlen($data) <= $maxSizeBytes) {
+                $underCap = true;
+                break;
+            }
+        }
+        imagedestroy($resized);
+        if ($underCap || $width < 500) {
+            break;
+        }
+        $width = (int)round($width * 0.75); // still too big at every quality level — shrink and retry
+    }
+    imagedestroy($src);
+
+    if ($bytes === null) {
+        return null;
+    }
+
+    $uploadDir = __DIR__ . '/' . $relativeDir;
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+        return null;
+    }
+    $fileName = bin2hex(random_bytes(8)) . '.jpg';
+    $destPath = $uploadDir . '/' . $fileName;
+    if (file_put_contents($destPath, $bytes) === false) {
+        return null;
+    }
+    return $relativeDir . '/' . $fileName;
 }
 
 function is_valid_image_upload(array $file) {
@@ -1709,6 +1800,36 @@ function display_name($user) {
     return !empty($user['username']) ? $user['username'] : $user['name'];
 }
 
+/**
+ * Whether APCu is actually usable in this request — the extension can be
+ * present but disabled (common on shared hosting, and often off by default
+ * for the CLI SAPI even when on for web). Always degrade to "no cache"
+ * rather than erroring, so a host without APCu behaves identically, just
+ * slower.
+ */
+function apcu_is_available(): bool {
+    static $available = null;
+    if ($available === null) {
+        $available = function_exists('apcu_fetch') && function_exists('apcu_store') && (bool)ini_get('apc.enabled');
+    }
+    return $available;
+}
+
+/**
+ * Fetch $key from APCu, or compute it via $fn and cache it for $ttlSeconds.
+ * Falls back to always calling $fn() when APCu isn't available — callers
+ * never need their own "is caching on" branch.
+ */
+function apcu_remember(string $key, int $ttlSeconds, callable $fn) {
+    if (!apcu_is_available()) return $fn();
+    $hit = false;
+    $value = apcu_fetch($key, $hit);
+    if ($hit) return $value;
+    $value = $fn();
+    apcu_store($key, $value, $ttlSeconds);
+    return $value;
+}
+
 function get_platform_setting($key, $default = null) {
     global $pdo;
     try {
@@ -1729,11 +1850,78 @@ function module_enabled(string $key): bool {
     return get_platform_setting("{$key}_enabled", '1') === '1';
 }
 
+/** Binary CIDR match, works for both IPv4 and IPv6 (inet_pton gives 4 or 16 raw bytes). */
+function ip_in_cidr(string $ip, string $cidr): bool {
+    [$subnet, $bits] = array_pad(explode('/', $cidr), 2, '32');
+    $ipBin = @inet_pton($ip);
+    $subnetBin = @inet_pton($subnet);
+    if ($ipBin === false || $subnetBin === false || strlen($ipBin) !== strlen($subnetBin)) return false;
+    $bits = (int)$bits;
+    $bytes = intdiv($bits, 8);
+    $remainder = $bits % 8;
+    if ($bytes > 0 && substr($ipBin, 0, $bytes) !== substr($subnetBin, 0, $bytes)) return false;
+    if ($remainder === 0) return true;
+    $mask = (~(0xFF >> $remainder)) & 0xFF;
+    return (ord($ipBin[$bytes]) & $mask) === (ord($subnetBin[$bytes]) & $mask);
+}
+
+/** Whether $ip falls in one of Cloudflare's published edge-node ranges
+ *  (cloudflare.com/ips). Used to decide whether CF-Connecting-IP can be trusted. */
+function is_cloudflare_edge_ip(string $ip): bool {
+    static $ranges = [
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+        '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+        '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+        '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+    ];
+    foreach ($ranges as $range) {
+        if (ip_in_cidr($ip, $range)) return true;
+    }
+    return false;
+}
+
+/** The visitor's real IP address. If the request came through Cloudflare (verified
+ *  via REMOTE_ADDR being one of Cloudflare's published edge ranges), trusts the
+ *  CF-Connecting-IP header it sets; otherwise falls back to REMOTE_ADDR directly.
+ *  Use this everywhere instead of $_SERVER['REMOTE_ADDR'] so rate-limiting, security
+ *  logs, and referral tracking keep working once the site is proxied through Cloudflare. */
+function client_ip(): string {
+    $remote = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    if (!empty($_SERVER['HTTP_CF_CONNECTING_IP']) && is_cloudflare_edge_ip($remote)) {
+        $candidate = trim($_SERVER['HTTP_CF_CONNECTING_IP']);
+        if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+            return $candidate;
+        }
+    }
+    return $remote;
+}
+
 function set_platform_setting($key, $value) {
     global $pdo;
     $pdo->prepare('INSERT INTO platform_settings (setting_key, setting_value, updated_at) VALUES (?, ?, NOW())
         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = NOW()')
         ->execute([$key, $value]);
+}
+
+/** Admin-managed social media links, filtered down to only the ones that
+ *  currently have a URL set (empty ones are hidden, never shown as dead tiles). */
+function get_social_links() {
+    $platforms = [
+        'facebook'         => 'Facebook',
+        'instagram'        => 'Instagram',
+        'tiktok'           => 'TikTok',
+        'whatsapp_channel' => 'WhatsApp Channel',
+    ];
+    $links = [];
+    foreach ($platforms as $key => $label) {
+        $url = trim(get_platform_setting('social_' . $key, ''));
+        if ($url !== '') {
+            $links[] = ['key' => $key, 'label' => $label, 'url' => $url];
+        }
+    }
+    return $links;
 }
 
 /** Whether email verification is currently required before the given action.
@@ -1829,6 +2017,7 @@ function all_mod_permissions(): array {
             'approve_delivery_agents'   => 'Approve / reject delivery agent applications',
             'approve_verifications'     => 'Review rider & worker verification badges',
             'approve_boosts'            => 'Activate sponsored & featured listings',
+            'manage_quote_requests'     => 'View marketplace quote requests platform-wide',
         ],
         'User & Community' => [
             'manage_users'     => 'View, ban, and manage user accounts',
@@ -1836,9 +2025,12 @@ function all_mod_permissions(): array {
             'manage_referrals' => 'View and manage the referral programme',
         ],
         'Platform' => [
-            'manage_ads'           => 'Create, edit, and delete advertisements',
-            'manage_communication' => 'Send broadcast notifications to users',
-            'view_reports'         => 'View analytics, revenue, and platform reports',
+            'manage_ads'            => 'Create, edit, and delete advertisements',
+            'manage_communication'  => 'Send broadcast notifications to users',
+            'view_reports'          => 'View analytics, revenue, and platform reports',
+            'manage_master_catalog' => 'Manage the shared product catalog',
+            'manage_towns'          => 'Manage the Akuapem towns list',
+            'manage_media_settings' => 'Configure image upload sizes & quality',
         ],
     ];
 }
@@ -1980,6 +2172,176 @@ function revoke_all_mod_permissions(int $userId): void {
 }
 
 /**
+ * Per-feature user bans — lets an admin restrict a user from one module
+ * (jobs, marketplace, news, events, funerals, delivery) without blocking
+ * login or every other feature, unlike the whole-system users.banned flag.
+ * Mirrors the moderator_permissions helpers above.
+ */
+function all_ban_features(): array {
+    return [
+        'jobs'     => 'Jobs & Services — post jobs, apply to jobs',
+        'mp'       => 'Marketplace — sell & buy',
+        'news'     => 'News — submit articles',
+        'events'   => 'Events — submit events',
+        'funerals' => 'Funeral Announcements — submit',
+        'delivery' => 'Delivery Services — become / act as an agent',
+    ];
+}
+
+/**
+ * Check if a user is currently restricted from a specific feature.
+ * Self-healing: creates the table if migrate/install.sql hasn't run yet.
+ */
+function is_banned_from_feature(int $userId, string $featureKey): bool {
+    static $cache   = [];
+    static $tableOk = null;
+    global $pdo;
+
+    if (!isset($cache[$userId])) {
+        if ($tableOk === null) {
+            try {
+                $pdo->query('SELECT 1 FROM user_feature_bans LIMIT 1');
+                $tableOk = true;
+            } catch (Exception $e) {
+                try {
+                    $pdo->exec("CREATE TABLE IF NOT EXISTS user_feature_bans (
+                        id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                        user_id     INT UNSIGNED NOT NULL,
+                        feature_key VARCHAR(40) NOT NULL,
+                        reason      VARCHAR(255) DEFAULT NULL,
+                        banned_by   INT UNSIGNED NOT NULL,
+                        banned_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uq_ufb_user_feature (user_id, feature_key),
+                        KEY idx_ufb_user (user_id),
+                        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+                    $tableOk = true;
+                } catch (Exception $e2) {
+                    $tableOk = false;
+                }
+            }
+        }
+        if ($tableOk) {
+            try {
+                $st = $pdo->prepare('SELECT feature_key FROM user_feature_bans WHERE user_id = ?');
+                $st->execute([$userId]);
+                $cache[$userId] = array_column($st->fetchAll(), 'feature_key');
+            } catch (Exception $e) {
+                $cache[$userId] = [];
+            }
+        } else {
+            $cache[$userId] = [];
+        }
+    }
+    return in_array($featureKey, $cache[$userId], true);
+}
+
+/**
+ * All feature keys a user is currently restricted from (flat array).
+ */
+function get_user_feature_bans(int $userId): array {
+    global $pdo;
+    try {
+        $st = $pdo->prepare('SELECT feature_key FROM user_feature_bans WHERE user_id = ?');
+        $st->execute([$userId]);
+        return array_column($st->fetchAll(), 'feature_key');
+    } catch (Exception $e) { return []; }
+}
+
+/**
+ * Same as above but keyed by feature with reason/timestamp, for admin display.
+ */
+function get_user_feature_ban_details(int $userId): array {
+    global $pdo;
+    try {
+        $st = $pdo->prepare('SELECT feature_key, reason, banned_at FROM user_feature_bans WHERE user_id = ?');
+        $st->execute([$userId]);
+        $out = [];
+        foreach ($st->fetchAll() as $row) {
+            $out[$row['feature_key']] = ['reason' => $row['reason'], 'banned_at' => $row['banned_at']];
+        }
+        return $out;
+    } catch (Exception $e) { return []; }
+}
+
+/**
+ * Restrict a user from a feature (idempotent — refreshes reason/banned_by if already restricted).
+ */
+function ban_user_from_feature(int $userId, string $featureKey, ?string $reason, int $bannedBy): void {
+    global $pdo;
+    $pdo->prepare(
+        'INSERT INTO user_feature_bans (user_id, feature_key, reason, banned_by) VALUES (?,?,?,?)
+         ON DUPLICATE KEY UPDATE reason=VALUES(reason), banned_by=VALUES(banned_by), banned_at=NOW()'
+    )->execute([$userId, $featureKey, $reason, $bannedBy]);
+}
+
+/**
+ * Lift a specific feature restriction from a user.
+ */
+function unban_user_from_feature(int $userId, string $featureKey): void {
+    global $pdo;
+    $pdo->prepare('DELETE FROM user_feature_bans WHERE user_id=? AND feature_key=?')->execute([$userId, $featureKey]);
+}
+
+/**
+ * Shared save handler for the "Manage Restrictions" panel — used identically
+ * by admin/users.php's modal and admin/user_edit.php's inline form so there is
+ * exactly one code path that mutates ban state from a human admin action.
+ * Returns ['granted'=>[...], 'revoked'=>[...], 'whole_changed'=>bool] so the
+ * caller can build its own flash message.
+ */
+function apply_feature_ban_update(int $targetId, int $adminId, bool $wholeSystem, array $submittedFeatures, ?string $reason): array {
+    global $pdo;
+
+    $target = $pdo->prepare('SELECT name, banned FROM users WHERE id=?');
+    $target->execute([$targetId]);
+    $target = $target->fetch();
+    if (!$target) return ['granted' => [], 'revoked' => [], 'whole_changed' => false];
+
+    $wholeChanged = (bool)$target['banned'] !== $wholeSystem;
+    $pdo->prepare('UPDATE users SET banned=? WHERE id=?')->execute([$wholeSystem ? 1 : 0, $targetId]);
+
+    $validKeys = array_keys(all_ban_features());
+    $submitted = array_intersect($submittedFeatures, $validKeys);
+    $current   = get_user_feature_bans($targetId);
+    $toBan     = array_diff($submitted, $current);
+    $toUnban   = array_diff($current, $submitted);
+
+    // Upsert every currently-checked feature (not just newly-checked ones) so a
+    // retyped reason always takes effect, even without an uncheck/recheck cycle —
+    // ban_user_from_feature() is idempotent (ON DUPLICATE KEY UPDATE).
+    foreach ($submitted as $f) ban_user_from_feature($targetId, $f, $reason, $adminId);
+    foreach ($toUnban   as $f) unban_user_from_feature($targetId, $f);
+
+    $labels = all_ban_features();
+    $bannedLabels   = array_map(fn($k) => $labels[$k], $toBan);
+    $unbannedLabels = array_map(fn($k) => $labels[$k], $toUnban);
+
+    $logParts = [];
+    if ($wholeChanged) $logParts[] = 'whole-system ban ' . ($wholeSystem ? 'applied' : 'lifted');
+    if ($toBan)   $logParts[] = 'restricted from: ' . implode(', ', $toBan);
+    if ($toUnban) $logParts[] = 'restriction lifted from: ' . implode(', ', $toUnban);
+    if ($logParts) {
+        log_audit_action($adminId, 'user_feature_ban_update',
+            "Updated restrictions for {$target['name']} (#{$targetId}): " . implode('; ', $logParts) . ($reason ? ". Reason: {$reason}" : ''));
+    }
+
+    if ($wholeChanged && $wholeSystem) {
+        notify_user($targetId, 'Account Suspended', 'Your account has been suspended.' . ($reason ? " Reason: {$reason}" : '') . ' Contact support if you believe this is an error.', 'error');
+    } elseif ($wholeChanged && !$wholeSystem) {
+        notify_user($targetId, 'Account Restored', 'Your account suspension has been lifted.', 'success');
+    }
+    if ($toBan) {
+        notify_user($targetId, 'Feature Restricted', 'You have been restricted from: ' . implode(', ', $bannedLabels) . '.' . ($reason ? " Reason: {$reason}" : ''), 'warning');
+    }
+    if ($toUnban) {
+        notify_user($targetId, 'Restriction Lifted', 'Your restriction has been lifted for: ' . implode(', ', $unbannedLabels) . '.', 'success');
+    }
+
+    return ['granted' => $toBan, 'revoked' => $toUnban, 'whole_changed' => $wholeChanged];
+}
+
+/**
  * Notify all moderators who hold $permission about a new item needing review.
  * Called by admin pages when new content is submitted for approval.
  *
@@ -2030,7 +2392,7 @@ function log_mod_activity(int $modId, string $module, string $actionKey, ?int $r
         $cfg->execute([$actionKey]);
         $points = (float)($cfg->fetchColumn() ?: 1.0);
 
-        $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+        $ip = client_ip();
         $pdo->prepare(
             'INSERT INTO mod_activity_log (mod_id, module, action_key, record_id, points, notes, ip_address)
              VALUES (?,?,?,?,?,?,?)'

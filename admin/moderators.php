@@ -100,14 +100,30 @@ if ($searchQuery && $tab === 'promote') {
 
 // Audit log for moderators
 $modAudit = [];
+$modPage = $modTotalPages = 1;
+$modTotal = 0;
 if ($tab === 'activity') {
+    $modPage    = max(1, (int)($_GET['page'] ?? 1));
+    $modPerPage = 30;
+    $modOffset  = ($modPage - 1) * $modPerPage;
+    $modTotal      = (int)$pdo->query("SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'mod_%'")->fetchColumn();
+    $modTotalPages = max(1, (int)ceil($modTotal / $modPerPage));
     $modAudit = $pdo->query(
         "SELECT al.*, u.name AS admin_name
          FROM audit_logs al
          LEFT JOIN users u ON al.admin_id = u.id
          WHERE al.action LIKE 'mod_%'
-         ORDER BY al.created_at DESC LIMIT 60"
+         ORDER BY al.created_at DESC LIMIT $modPerPage OFFSET $modOffset"
     )->fetchAll();
+}
+
+function modadm_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['tab', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'moderators.php?' . http_build_query($merged);
 }
 
 $allPerms = all_mod_permissions();
@@ -156,6 +172,10 @@ $allPerms = all_mod_permissions();
         .mo-log-row { padding:10px 0; border-bottom:1px solid var(--border); font-size:.84rem; }
 
         @media(max-width:520px){ .mo-perm-grid { grid-template-columns:1fr; } }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -347,6 +367,23 @@ $allPerms = all_mod_permissions();
         </div>
         <?php endforeach; ?>
     </div>
+    <?php if ($modTotalPages > 1): ?>
+    <div class="pagination">
+        <?php if ($modPage > 1): ?><a href="<?php echo modadm_qstr(['page' => $modPage - 1]); ?>">‹ Prev</a><?php endif; ?>
+        <?php
+        $mpStart = max(1, $modPage - 3);
+        $mpEnd   = min($modTotalPages, $modPage + 3);
+        if ($mpStart > 1) echo '<span>…</span>';
+        for ($mp = $mpStart; $mp <= $mpEnd; $mp++): ?>
+            <?php if ($mp === $modPage): ?><span class="current"><?php echo $mp; ?></span>
+            <?php else: ?><a href="<?php echo modadm_qstr(['page' => $mp]); ?>"><?php echo $mp; ?></a><?php endif; ?>
+        <?php endfor;
+        if ($mpEnd < $modTotalPages) echo '<span>…</span>';
+        ?>
+        <?php if ($modPage < $modTotalPages): ?><a href="<?php echo modadm_qstr(['page' => $modPage + 1]); ?>">Next ›</a><?php endif; ?>
+        <span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page <?php echo $modPage; ?> of <?php echo $modTotalPages; ?> (<?php echo $modTotal; ?> total)</span>
+    </div>
+    <?php endif; ?>
     <?php else: ?>
     <div class="empty-state">No moderator activity recorded yet.</div>
     <?php endif; ?>

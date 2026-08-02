@@ -713,6 +713,7 @@ try {
     <a href="privacy.php" style="color:#6b7280;">Privacy</a> &nbsp;·&nbsp;
     <a href="contact.php" style="color:#6b7280;">Contact</a>
 </footer>
+<?php if (!$user) require __DIR__ . '/partials/social_tiles.php'; ?>
 
 <?php if ($user): $activeNav = 'community'; require __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 </body>

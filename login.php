@@ -19,7 +19,7 @@ if (($_GET['msg'] ?? '') === 'password_changed') {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
-    $ip       = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $ip       = client_ip();
     $email    = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
 

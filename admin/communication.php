@@ -117,9 +117,45 @@ $statConvs = (int)$pdo->query("SELECT COUNT(*) FROM conversations WHERE status='
 $statReports = (int)$pdo->query("SELECT COUNT(*) FROM message_reports WHERE status='pending'")->fetchColumn();
 $statFlagged = (int)$pdo->query("SELECT COUNT(*) FROM chat_messages WHERE is_flagged=1 AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)")->fetchColumn();
 
+// ── Shared pagination (page param means different things per tab, but only one tab renders at a time) ──
+$commPage    = max(1, (int)($_GET['page'] ?? 1));
+$commPerPage = 30;
+$commOffset  = ($commPage - 1) * $commPerPage;
+$commTotal      = 0;
+$commTotalPages = 1;
+
+function comm_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['tab', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'communication.php?' . http_build_query($merged);
+}
+
+function comm_render_pagination(int $page, int $totalPages, int $total): void {
+    if ($totalPages <= 1) return;
+    echo '<div class="pagination">';
+    if ($page > 1) echo '<a href="' . sanitize(comm_qstr(['page' => $page - 1])) . '">‹ Prev</a>';
+    $pStart = max(1, $page - 3);
+    $pEnd   = min($totalPages, $page + 3);
+    if ($pStart > 1) echo '<span>…</span>';
+    for ($p = $pStart; $p <= $pEnd; $p++) {
+        echo $p === $page
+            ? '<span class="current">' . $p . '</span>'
+            : '<a href="' . sanitize(comm_qstr(['page' => $p])) . '">' . $p . '</a>';
+    }
+    if ($pEnd < $totalPages) echo '<span>…</span>';
+    if ($page < $totalPages) echo '<a href="' . sanitize(comm_qstr(['page' => $page + 1])) . '">Next ›</a>';
+    echo '<span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page ' . $page . ' of ' . $totalPages . ' (' . $total . ' total)</span>';
+    echo '</div>';
+}
+
 // Conversations list
 $conversations = [];
 if ($tab === 'conversations' || $tab === 'dashboard') {
+    $commTotal      = (int)$pdo->query("SELECT COUNT(*) FROM conversations")->fetchColumn();
+    $commTotalPages = max(1, (int)ceil($commTotal / $commPerPage));
     $cStmt = $pdo->query("
         SELECT c.*,
                GROUP_CONCAT(u.name ORDER BY u.name SEPARATOR ', ') AS participant_names,
@@ -131,7 +167,7 @@ if ($tab === 'conversations' || $tab === 'dashboard') {
         JOIN users u ON cp.user_id = u.id
         GROUP BY c.id
         ORDER BY last_at DESC, c.created_at DESC
-        LIMIT 100
+        LIMIT $commPerPage OFFSET $commOffset
     ");
     $conversations = $cStmt->fetchAll();
 }
@@ -157,9 +193,11 @@ if ($viewConvId && $tab === 'conversations') {
 // Users list with chat status
 $chatUsers = [];
 if ($tab === 'users') {
+    $commTotal      = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE role NOT IN ('admin')")->fetchColumn();
+    $commTotalPages = max(1, (int)ceil($commTotal / $commPerPage));
     $uStmt = $pdo->query("
         SELECT id, name, email, role, can_send_messages, can_receive_messages, chat_ban_until
-        FROM users WHERE role NOT IN ('admin') ORDER BY name ASC LIMIT 200
+        FROM users WHERE role NOT IN ('admin') ORDER BY name ASC LIMIT $commPerPage OFFSET $commOffset
     ");
     $chatUsers = $uStmt->fetchAll();
 }
@@ -167,6 +205,8 @@ if ($tab === 'users') {
 // Reports
 $reports = [];
 if ($tab === 'reports') {
+    $commTotal      = (int)$pdo->query("SELECT COUNT(*) FROM message_reports")->fetchColumn();
+    $commTotalPages = max(1, (int)ceil($commTotal / $commPerPage));
     $rStmt = $pdo->query("
         SELECT mr.*, cm.message, cm.sender_id, cm.conversation_id,
                u_rep.name AS reporter_name, u_sender.name AS sender_name
@@ -175,7 +215,7 @@ if ($tab === 'reports') {
         JOIN users u_rep ON mr.reported_by = u_rep.id
         JOIN users u_sender ON cm.sender_id = u_sender.id
         ORDER BY mr.status ASC, mr.created_at DESC
-        LIMIT 100
+        LIMIT $commPerPage OFFSET $commOffset
     ");
     $reports = $rStmt->fetchAll();
 }
@@ -183,10 +223,12 @@ if ($tab === 'reports') {
 // Audit log
 $auditLogs = [];
 if ($tab === 'audit') {
+    $commTotal      = (int)$pdo->query("SELECT COUNT(*) FROM chat_audit_logs")->fetchColumn();
+    $commTotalPages = max(1, (int)ceil($commTotal / $commPerPage));
     $aStmt = $pdo->query("
         SELECT cal.*, u.name AS admin_name FROM chat_audit_logs cal
         LEFT JOIN users u ON cal.admin_id = u.id
-        ORDER BY cal.created_at DESC LIMIT 200
+        ORDER BY cal.created_at DESC LIMIT $commPerPage OFFSET $commOffset
     ");
     $auditLogs = $aStmt->fetchAll();
 }
@@ -229,6 +271,10 @@ $chatSettings = [
         .form-row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
         .form-row label { font-size:0.85rem; font-weight:600; }
         .form-row select, .form-row input { padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.85rem; }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -369,6 +415,7 @@ $chatSettings = [
                         </tbody>
                     </table>
                     </div>
+                    <?php comm_render_pagination($commPage, $commTotalPages, $commTotal); ?>
                 <?php endif; ?>
             </div>
         <?php endif; ?>
@@ -420,6 +467,7 @@ $chatSettings = [
                 <?php endforeach; ?>
                 </tbody>
             </table>
+            <?php comm_render_pagination($commPage, $commTotalPages, $commTotal); ?>
             </div>
         </div>
 
@@ -490,6 +538,7 @@ $chatSettings = [
                         <?php endif; ?>
                     </div>
                 <?php endforeach; ?>
+                <?php comm_render_pagination($commPage, $commTotalPages, $commTotal); ?>
             <?php endif; ?>
         </div>
 
@@ -516,6 +565,7 @@ $chatSettings = [
                     <?php endforeach; ?>
                     </tbody>
                 </table>
+                <?php comm_render_pagination($commPage, $commTotalPages, $commTotal); ?>
                 </div>
             <?php endif; ?>
         </div>

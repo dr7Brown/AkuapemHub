@@ -98,15 +98,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: user_edit.php?id=' . $targetId); exit;
     }
 
-    // Ban / unban
-    if ($action === 'ban' || $action === 'unban') {
-        $val = $action === 'ban' ? 1 : 0;
-        $reason = trim($_POST['ban_reason'] ?? '');
-        $pdo->prepare('UPDATE users SET banned=? WHERE id=?')->execute([$val, $targetId]);
-        log_audit_action($adminUser['id'], 'user_' . $action,
-            ucfirst($action) . ' user: ' . $target['name'] . ' (#' . $targetId . ')' . ($reason ? ". Reason: $reason" : ''));
-        if ($val) notify_user($targetId, 'Account Suspended', 'Your account has been suspended.' . ($reason ? " Reason: $reason" : '') . ' Contact support if you believe this is an error.', 'error');
-        flash('User ' . ($val ? 'banned' : 'unbanned') . '.', $val ? 'warning' : 'success');
+    // Manage Restrictions — whole-system ban and/or specific feature bans
+    if ($action === 'set_ban') {
+        $wholeSystem = isset($_POST['whole_system']);
+        $features    = (array)($_POST['features'] ?? []);
+        $reason      = trim($_POST['reason'] ?? '');
+        $result = apply_feature_ban_update($targetId, $adminUser['id'], $wholeSystem, $features, $reason ?: null);
+
+        $summary = [];
+        if ($result['whole_changed']) $summary[] = $wholeSystem ? 'whole-system ban applied' : 'whole-system ban lifted';
+        if ($result['granted']) $summary[] = count($result['granted']) . ' restriction(s) added';
+        if ($result['revoked']) $summary[] = count($result['revoked']) . ' restriction(s) lifted';
+        flash($summary ? implode(', ', $summary) . '.' : 'No changes.', 'info');
         header('Location: user_edit.php?id=' . $targetId); exit;
     }
 
@@ -462,22 +465,40 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
                 <?php endif; ?>
             </div>
 
-            <!-- Ban / Unban -->
+            <!-- Manage Restrictions (whole-system ban and/or specific features) -->
+            <?php
+            $targetFeatureBans   = get_user_feature_bans($targetId);
+            $targetFeatureDetail = get_user_feature_ban_details($targetId);
+            ?>
             <div class="ue-section">
-                <p class="ue-section-title">Account Status</p>
+                <p class="ue-section-title">Manage Restrictions</p>
                 <form method="post" action="user_edit.php?id=<?php echo $targetId; ?>">
                     <?php echo csrf_field(); ?>
-                    <input type="hidden" name="action" value="<?php echo $target['banned']?'unban':'ban'; ?>">
+                    <input type="hidden" name="action" value="set_ban">
                     <div class="form-group">
-                        <label>Reason <?php if (!$target['banned']): ?>(optional)<?php endif; ?></label>
-                        <input type="text" name="ban_reason" placeholder="Violation reason, spam, etc.">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="whole_system" <?php echo $target['banned']?'checked':''; ?>>
+                            <strong>Whole System</strong> — blocks login entirely
+                        </label>
                     </div>
-                    <?php if ($target['banned']): ?>
-                    <button type="submit" class="button button-primary button-small">Unban This User</button>
-                    <?php else: ?>
-                    <button type="submit" class="button button-small" style="background:#f59e0b;color:#fff;border-color:transparent;"
-                            onclick="return confirm('Ban this user?');">Ban This User</button>
-                    <?php endif; ?>
+                    <?php foreach (all_ban_features() as $fKey => $fLabel):
+                        $hasIt = in_array($fKey, $targetFeatureBans, true);
+                    ?>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="features[]" value="<?php echo $fKey; ?>" <?php echo $hasIt?'checked':''; ?>>
+                            <?php echo sanitize($fLabel); ?>
+                        </label>
+                        <?php if ($hasIt && !empty($targetFeatureDetail[$fKey]['reason'])): ?>
+                        <p class="form-hint">Current reason: <?php echo sanitize($targetFeatureDetail[$fKey]['reason']); ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                    <div class="form-group">
+                        <label>Reason (optional, shown to user)</label>
+                        <input type="text" name="reason" placeholder="Violation reason, spam, etc.">
+                    </div>
+                    <button type="submit" class="button button-primary button-small">Save Restrictions</button>
                 </form>
             </div>
 

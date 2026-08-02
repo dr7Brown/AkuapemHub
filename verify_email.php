@@ -50,7 +50,7 @@ if ($token === '') {
         }
 
         $success = true;
-        log_security_event($target['id'], 'email_verified', $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0', '');
+        log_security_event($target['id'], 'email_verified', client_ip(), '');
     }
 }
 

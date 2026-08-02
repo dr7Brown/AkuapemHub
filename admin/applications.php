@@ -32,7 +32,27 @@ if ($filterStatus) {
     $where[]  = 'a.status = ?';
     $params[] = $filterStatus;
 }
+if ($searchQ !== '') {
+    $where[]  = '(sr.title LIKE ? OR w.name LIKE ? OR c.name LIKE ? OR sr.location LIKE ?)';
+    $like     = '%' . $searchQ . '%';
+    array_push($params, $like, $like, $like, $like);
+}
 $whereClause = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 40;
+$offset  = ($page - 1) * $perPage;
+
+$countStmt = $pdo->prepare("
+    SELECT COUNT(*) FROM applications a
+    JOIN service_requests sr ON a.request_id = sr.id
+    JOIN users w ON a.worker_id = w.id
+    JOIN users c ON sr.customer_id = c.id
+    $whereClause
+");
+$params ? $countStmt->execute($params) : $countStmt->execute();
+$totalApps  = (int)$countStmt->fetchColumn();
+$totalPages = max(1, (int)ceil($totalApps / $perPage));
 
 $stmt = $pdo->prepare("
     SELECT a.*,
@@ -51,10 +71,19 @@ $stmt = $pdo->prepare("
     LEFT JOIN worker_profiles wp ON w.id = wp.user_id
     $whereClause
     ORDER BY FIELD(a.status,'pending','approved','rejected') ASC, a.applied_at DESC
-    LIMIT 500
+    LIMIT $perPage OFFSET $offset
 ");
 $params ? $stmt->execute($params) : $stmt->execute();
 $allApps = $stmt->fetchAll();
+
+function ap_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['status', 'q', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'applications.php?' . http_build_query($merged);
+}
 
 // Status counts (unfiltered)
 $counts  = $pdo->query("SELECT status, COUNT(*) AS n FROM applications GROUP BY status")->fetchAll();
@@ -187,6 +216,11 @@ $statusMeta = [
             .ap-actions { justify-content: flex-start; }
             .ap-title { max-width: 220px; }
         }
+
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border,#e2e8f0); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -254,13 +288,13 @@ $statusMeta = [
 
         <!-- Status filter tabs -->
         <div class="status-tabs">
-            <a href="applications.php" class="status-tab <?php echo !$filterStatus ? 'active' : ''; ?>" style="color:#374151;">
+            <a href="<?php echo ap_qstr(['status' => null, 'page' => null]); ?>" class="status-tab <?php echo !$filterStatus ? 'active' : ''; ?>" style="color:#374151;">
                 All
                 <span class="tab-count" style="background:#374151;color:#fff;"><?php echo $totalAll; ?></span>
             </a>
             <?php foreach ($statusMeta as $st => $sm): ?>
                 <?php $cnt = $countMap[$st] ?? 0; if (!$cnt) continue; ?>
-                <a href="applications.php?status=<?php echo urlencode($st); ?>"
+                <a href="<?php echo ap_qstr(['status' => $st, 'page' => null]); ?>"
                    class="status-tab <?php echo $filterStatus === $st ? 'active' : ''; ?>"
                    style="color:<?php echo $sm['color']; ?>;">
                     <?php echo $sm['label']; ?>
@@ -270,9 +304,13 @@ $statusMeta = [
         </div>
 
         <!-- Toolbar -->
-        <div class="ap-toolbar">
-            <input type="search" id="ap-search" placeholder="Search job, worker, customer…" value="<?php echo sanitize($searchQ); ?>" />
-            <span class="ap-count-note" id="ap-count"><?php echo count($allApps); ?> application<?php echo count($allApps) !== 1 ? 's' : ''; ?></span>
+        <form method="get" action="applications.php" class="ap-toolbar">
+            <?php if ($filterStatus): ?><input type="hidden" name="status" value="<?php echo sanitize($filterStatus); ?>"><?php endif; ?>
+            <input type="search" id="ap-search" name="q" placeholder="Search job, worker, customer… (Enter to search all)" value="<?php echo sanitize($searchQ); ?>" />
+            <button type="submit" class="button button-secondary button-small">Search</button>
+            <?php if ($searchQ !== ''): ?><a href="<?php echo ap_qstr(['q' => null, 'page' => null]); ?>" class="button button-secondary button-small">Clear</a><?php endif; ?>
+            <span class="ap-count-note" id="ap-count"><?php echo count($allApps); ?> of <?php echo $totalApps; ?> application<?php echo $totalApps !== 1 ? 's' : ''; ?></span>
+        </form>
         </div>
 
         <!-- Application rows -->
@@ -384,6 +422,24 @@ $statusMeta = [
                     </div>
                 </div>
             <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($totalPages > 1): ?>
+        <div class="pagination">
+            <?php if ($page > 1): ?><a href="<?php echo ap_qstr(['page' => $page - 1]); ?>">‹ Prev</a><?php endif; ?>
+            <?php
+            $pStart = max(1, $page - 3);
+            $pEnd   = min($totalPages, $page + 3);
+            if ($pStart > 1) echo '<span>…</span>';
+            for ($p = $pStart; $p <= $pEnd; $p++): ?>
+                <?php if ($p === $page): ?><span class="current"><?php echo $p; ?></span>
+                <?php else: ?><a href="<?php echo ap_qstr(['page' => $p]); ?>"><?php echo $p; ?></a><?php endif; ?>
+            <?php endfor;
+            if ($pEnd < $totalPages) echo '<span>…</span>';
+            ?>
+            <?php if ($page < $totalPages): ?><a href="<?php echo ap_qstr(['page' => $page + 1]); ?>">Next ›</a><?php endif; ?>
+            <span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page <?php echo $page; ?> of <?php echo $totalPages; ?></span>
         </div>
         <?php endif; ?>
     </main>

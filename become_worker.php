@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (trim($user['phone'] ?? '') === '') {
         $error = 'Add a phone number to your account in Settings before becoming a worker.';
     } else {
-        $idDocumentPath = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
+        $idDocumentPath = save_uploaded_id_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
         $townName = get_user_town_display($user) ?: '';
 
         $pdo->beginTransaction();

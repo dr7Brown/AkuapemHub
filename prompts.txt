@@ -835,14 +835,68 @@ i want to create video tutorials and post on social media handles
 so users could follow and use the app, especially when facing 
 difficulties. 
 
+next:
+1. admin should be able to do a CRUD of akuapem towns
+in the system.
+2. the event cards on events.php file, make them to look more classy
+3. make the event.php page look ultra modern
+
+next:
+1. wish there is a means users could browse through available shops
+/admin/index.php#complimentary_members.php when i search, no result shows 
+3. if a user is ban by admin, what happens to his listings 
+2. when admin clicks on ban, he should select which features user is ban from, as whole 
+system or list of the features
+
+next:
+1. new features were added to the system. Moderator privilages 
+should be updated so that admin can grant or not those roles as well 
+2. this should include the "Quote requests" so that when granted 
+admin and moderator could see Quote requests so then when necessary 
+they can call shop owners and alert them and give admin settings to this module 
+3. quote request settings should be added to the market place settings 
+4. admin to tell which shop to be able to recieve quote request (all, featured, verified, etc.)
+
+
+all items on market place showing "New tag" how long will that status change
 
 
 
+feat: Enhance seller product form with catalog integration and image handling
+
+- Added functionality to pre-fill product details from the Master Product Catalog when adding a product from the catalog.
+- Implemented category suggestion based on catalog product category.
+- Included master product ID in the product creation process.
+- Improved image handling to reuse catalog default images if no new images are uploaded.
+- Updated form fields to reflect catalog product details where applicable.
+
+fix: Update settings for ID document upload
+
+- Changed the function used for saving uploaded ID documents to ensure proper handling.
+
+fix: Update shop status check to include banned owners
+
+- Modified shop status validation to redirect if the shop owner is banned.
+
+feat: Introduce shops listing page
+
+- Created a new page for browsing shops with search and filter capabilities.
+- Implemented pagination and sorting options for shop listings.
+
+docs: Add step-by-step user guide for AkuapemConnect
+
+- Comprehensive guide covering account creation, navigation, job posting, and marketplace usage.
+
+fix: Update footer to include social tiles on terms page
+
+- Added social tiles to the footer for better engagement.
+
+fix: Improve logging for email verification and OTP verification
+
+- Updated logging functions to use a dedicated client IP function for better accuracy.
 
 
-
-
-
-
-
-
+next:
+1. unsigned in users should not be able to view phone number and email and should not be able to call
+2. customers are not able to apply for jobs, but no messsage when they try to, just page reload. 
+that a bad experience

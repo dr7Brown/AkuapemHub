@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['reset_otp_id_used']
     );
 
-    $ip        = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    $ip        = client_ip();
     $userAgent = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 500);
     $input     = trim($_POST['identifier'] ?? '');
 

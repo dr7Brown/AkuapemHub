@@ -37,7 +37,7 @@ function get_shop_by_user(int $userId): ?array {
 
 function get_shop(int $id): ?array {
     global $pdo;
-    $st = $pdo->prepare('SELECT ms.*, u.name AS owner_name, u.username AS owner_username FROM mp_shops ms JOIN users u ON ms.user_id = u.id WHERE ms.id = ?');
+    $st = $pdo->prepare('SELECT ms.*, u.name AS owner_name, u.username AS owner_username, u.banned AS owner_banned FROM mp_shops ms JOIN users u ON ms.user_id = u.id WHERE ms.id = ?');
     $st->execute([$id]);
     return $st->fetch() ?: null;
 }
@@ -58,6 +58,23 @@ function get_shop_active_subscription(int $shopId): ?array {
     );
     $st->execute([$shopId]);
     return $st->fetch() ?: null;
+}
+
+// Whether a shop is currently allowed to receive Quote Requests — folds in
+// both the platform-wide on/off toggle and the admin-configurable eligibility
+// scope (all / featured / verified shops), set on admin/marketplace.php's
+// Settings tab. $shop must include is_featured, featured_end, verification_status
+// (already present on any row fetched via get_shop()/get_shop_by_user()).
+function mp_shop_can_receive_quotes(array $shop): bool {
+    if (get_platform_setting('mp_quotes_enabled', '1') !== '1') return false;
+    $scope = get_platform_setting('mp_quote_eligible_shops', 'all');
+    if ($scope === 'featured') {
+        return !empty($shop['is_featured']) && (empty($shop['featured_end']) || $shop['featured_end'] >= date('Y-m-d'));
+    }
+    if ($scope === 'verified') {
+        return ($shop['verification_status'] ?? '') === 'approved';
+    }
+    return true;
 }
 
 // Whether the shop's owner has a complimentary membership — bypasses every
@@ -239,10 +256,12 @@ function get_product(int $id): ?array {
         'SELECT mp.*, ms.shop_name, ms.slug AS shop_slug, ms.id AS shop_id,
                 ms.user_id AS shop_owner_id, ms.rating AS shop_rating,
                 ms.verification_status AS shop_verified,
+                u.banned AS shop_owner_banned,
                 mc.name AS category_name, mc.slug AS category_slug,
                 mc.icon AS category_icon
          FROM mp_products mp
          JOIN mp_shops ms ON mp.shop_id = ms.id
+         JOIN users u ON ms.user_id = u.id
          LEFT JOIN mp_categories mc ON mp.category_id = mc.id
          WHERE mp.id = ?'
     );

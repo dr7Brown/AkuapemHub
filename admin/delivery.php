@@ -243,13 +243,23 @@ $vrRevenue      = (float)$pdo->query("SELECT COALESCE(SUM(fee_paid),0) FROM deli
 // ── Data for current tab ───────────────────────────────────────────────────
 $pendingRequests = $agents = $requests = $verifications = $subscriptions = $sponsoredListings = [];
 
+$delPage    = max(1, (int)($_GET['page'] ?? 1));
+$delPerPage = 30;
+$delOffset  = ($delPage - 1) * $delPerPage;
+$delTotal      = 0;
+$delTotalPages = 1;
+
 if ($tab === 'pending') {
-    $pendingRequests = $pdo->query("SELECT dr.*,cu.name AS customer_name,cu.username AS customer_username FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id WHERE dr.status='pending_approval' ORDER BY dr.is_flagged DESC,dr.created_at ASC LIMIT 60")->fetchAll();
+    $delTotal      = (int)$pdo->query("SELECT COUNT(*) FROM delivery_requests WHERE status='pending_approval'")->fetchColumn();
+    $delTotalPages = max(1, (int)ceil($delTotal / $delPerPage));
+    $pendingRequests = $pdo->query("SELECT dr.*,cu.name AS customer_name,cu.username AS customer_username FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id WHERE dr.status='pending_approval' ORDER BY dr.is_flagged DESC,dr.created_at ASC LIMIT $delPerPage OFFSET $delOffset")->fetchAll();
 }
 if ($tab === 'agents') {
     $af = $_GET['agent_status'] ?? 'pending';
     $aw = match($af) { 'pending'=>"AND da.verification_status='pending'", 'approved'=>"AND da.verification_status='approved'", 'rejected'=>"AND da.verification_status='rejected'", default=>'' };
-    $agents = $pdo->query("SELECT da.*,u.name,u.username,u.email,u.phone,u.profile_photo FROM delivery_agents da JOIN users u ON da.user_id=u.id WHERE 1=1 $aw ORDER BY (da.verification_status='pending') DESC,da.created_at DESC LIMIT 80")->fetchAll();
+    $delTotal      = (int)$pdo->query("SELECT COUNT(*) FROM delivery_agents da WHERE 1=1 $aw")->fetchColumn();
+    $delTotalPages = max(1, (int)ceil($delTotal / $delPerPage));
+    $agents = $pdo->query("SELECT da.*,u.name,u.username,u.email,u.phone,u.profile_photo FROM delivery_agents da JOIN users u ON da.user_id=u.id WHERE 1=1 $aw ORDER BY (da.verification_status='pending') DESC,da.created_at DESC LIMIT $delPerPage OFFSET $delOffset")->fetchAll();
 }
 if ($tab === 'requests') {
     $rf = $_GET['req_status'] ?? 'all'; $rw = '';
@@ -264,11 +274,17 @@ if ($tab === 'requests') {
         'fee_low'   => 'dr.delivery_fee ASC',
         default     => 'dr.created_at DESC',
     };
-    $rs = $pdo->prepare("SELECT dr.*,cu.name AS customer_name,cu.username AS customer_username,au.name AS agent_name,da2.vehicle_type FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id LEFT JOIN delivery_agents da2 ON dr.agent_id=da2.id LEFT JOIN users au ON da2.user_id=au.id WHERE 1=1 $rw $qw ORDER BY $reqOrderBy LIMIT 80");
+    $rCountStmt = $pdo->prepare("SELECT COUNT(*) FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id WHERE 1=1 $rw $qw");
+    $rCountStmt->execute($qp);
+    $delTotal      = (int)$rCountStmt->fetchColumn();
+    $delTotalPages = max(1, (int)ceil($delTotal / $delPerPage));
+    $rs = $pdo->prepare("SELECT dr.*,cu.name AS customer_name,cu.username AS customer_username,au.name AS agent_name,da2.vehicle_type FROM delivery_requests dr JOIN users cu ON dr.customer_id=cu.id LEFT JOIN delivery_agents da2 ON dr.agent_id=da2.id LEFT JOIN users au ON da2.user_id=au.id WHERE 1=1 $rw $qw ORDER BY $reqOrderBy LIMIT $delPerPage OFFSET $delOffset");
     $rs->execute($qp); $requests = $rs->fetchAll();
 }
 if ($tab === 'verifications') {
-    $verifications = $pdo->query("SELECT dv.*,u.name,u.username,u.profile_photo,da.vehicle_type,da.service_area FROM delivery_verifications dv JOIN delivery_agents da ON dv.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE dv.status='pending' ORDER BY dv.submitted_at ASC LIMIT 40")->fetchAll();
+    $delTotal      = (int)$pdo->query("SELECT COUNT(*) FROM delivery_verifications WHERE status='pending'")->fetchColumn();
+    $delTotalPages = max(1, (int)ceil($delTotal / $delPerPage));
+    $verifications = $pdo->query("SELECT dv.*,u.name,u.username,u.profile_photo,da.vehicle_type,da.service_area FROM delivery_verifications dv JOIN delivery_agents da ON dv.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE dv.status='pending' ORDER BY dv.submitted_at ASC LIMIT $delPerPage OFFSET $delOffset")->fetchAll();
 }
 if ($tab === 'monetization') {
     $subscriptions     = $pdo->query("SELECT ds.*,u.name,u.username FROM delivery_subscriptions ds JOIN delivery_agents da ON ds.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE ds.status='pending' ORDER BY ds.created_at ASC")->fetchAll();
@@ -283,10 +299,14 @@ if ($tab === 'commission') {
         $like = '%' . $cq . '%';
         $cParams = [$like, $like];
     }
+    $ccStmt = $pdo->prepare("SELECT COUNT(*) FROM delivery_agents da JOIN users u ON da.user_id=u.id $cWhere");
+    $ccStmt->execute($cParams);
+    $delTotal      = (int)$ccStmt->fetchColumn();
+    $delTotalPages = max(1, (int)ceil($delTotal / $delPerPage));
     $caStmt = $pdo->prepare(
         "SELECT da.id, da.commission_owed, da.commission_owed_since, u.name, u.username, u.email
          FROM delivery_agents da JOIN users u ON da.user_id=u.id
-         $cWhere ORDER BY da.commission_owed DESC LIMIT 100"
+         $cWhere ORDER BY da.commission_owed DESC LIMIT $delPerPage OFFSET $delOffset"
     );
     $caStmt->execute($cParams);
     $commissionAgents = $caStmt->fetchAll();
@@ -337,6 +357,33 @@ if ($tab === 'settings') {
     if ($cfg['delivery_commission_block_threshold'] === '') $cfg['delivery_commission_block_threshold'] = '50';
     if ($cfg['delivery_commission_grace_days'] === '') $cfg['delivery_commission_grace_days'] = '0';
 }
+
+function del_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['tab', 'agent_status', 'req_status', 'q', 'rsort', 'cq', 'cperiod', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'delivery.php?' . http_build_query($merged);
+}
+
+function del_render_pagination(int $page, int $totalPages, int $total): void {
+    if ($totalPages <= 1) return;
+    echo '<div class="pagination">';
+    if ($page > 1) echo '<a href="' . sanitize(del_qstr(['page' => $page - 1])) . '">‹ Prev</a>';
+    $pStart = max(1, $page - 3);
+    $pEnd   = min($totalPages, $page + 3);
+    if ($pStart > 1) echo '<span>…</span>';
+    for ($p = $pStart; $p <= $pEnd; $p++) {
+        echo $p === $page
+            ? '<span class="current">' . $p . '</span>'
+            : '<a href="' . sanitize(del_qstr(['page' => $p])) . '">' . $p . '</a>';
+    }
+    if ($pEnd < $totalPages) echo '<span>…</span>';
+    if ($page < $totalPages) echo '<a href="' . sanitize(del_qstr(['page' => $page + 1])) . '">Next ›</a>';
+    echo '<span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page ' . $page . ' of ' . $totalPages . ' (' . $total . ' total)</span>';
+    echo '</div>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -369,6 +416,10 @@ if ($tab === 'settings') {
         .form-hint { font-size:.73rem; color:var(--text-muted,#6b7280); margin-top:3px; }
         .adm-grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
         @media(max-width:520px) { .adm-stats { grid-template-columns:repeat(3,1fr); } .adm-grid2 { grid-template-columns:1fr; } }
+        .pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -476,6 +527,7 @@ if ($tab === 'settings') {
     <?php endforeach; else: ?>
     <div class="empty-state">No pending delivery requests. &#10003; All clear!</div>
     <?php endif; ?>
+    <?php del_render_pagination($delPage, $delTotalPages, $delTotal); ?>
     <?php endif; ?>
 
     <!-- ═══════════════ AGENTS ═══════════════ -->
@@ -523,6 +575,7 @@ if ($tab === 'settings') {
         </div>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No agents found.</div><?php endif; ?>
+    <?php del_render_pagination($delPage, $delTotalPages, $delTotal); ?>
     <?php endif; ?>
 
     <!-- ═══════════════ ALL REQUESTS ═══════════════ -->
@@ -533,7 +586,7 @@ if ($tab === 'settings') {
         <a href="?tab=requests&req_status=<?php echo $v; ?><?php echo $qs?"&q=".urlencode($qs):""; ?>" class="<?php echo $rf===$v?'active':''; ?>"><?php echo $l; ?></a>
         <?php endforeach; ?>
     </div>
-    <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+    <form method="get" action="delivery.php" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
         <input type="hidden" name="tab" value="requests"><input type="hidden" name="req_status" value="<?php echo sanitize($rf); ?>">
         <input type="text" name="q" value="<?php echo sanitize($qs); ?>" placeholder="Search customer, description…" style="flex:1;max-width:340px;">
         <select name="rsort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
@@ -567,6 +620,7 @@ if ($tab === 'settings') {
         </div>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No requests found.</div><?php endif; ?>
+    <?php del_render_pagination($delPage, $delTotalPages, $delTotal); ?>
     <?php endif; ?>
 
     <!-- ═══════════════ VERIFICATIONS ═══════════════ -->
@@ -595,6 +649,7 @@ if ($tab === 'settings') {
         </div>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No pending verification requests.</div><?php endif; ?>
+    <?php del_render_pagination($delPage, $delTotalPages, $delTotal); ?>
     <?php endif; ?>
 
     <!-- ═══════════════ MONETIZATION ═══════════════ -->
@@ -683,7 +738,7 @@ if ($tab === 'settings') {
     })();
     </script>
 
-    <form method="get" style="display:flex;gap:8px;margin-bottom:12px;">
+    <form method="get" action="delivery.php" style="display:flex;gap:8px;margin-bottom:12px;">
         <input type="hidden" name="tab" value="commission">
         <input type="text" name="cq" value="<?php echo sanitize($cq); ?>" placeholder="Search rider name or email…" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
         <button type="submit" class="button button-secondary button-small">Search</button>
@@ -718,6 +773,7 @@ if ($tab === 'settings') {
     <?php endforeach; else: ?>
     <div class="empty-state">No riders currently owe commission.</div>
     <?php endif; ?>
+    <?php del_render_pagination($delPage, $delTotalPages, $delTotal); ?>
     <?php endif; ?>
 
     <!-- ═══════════════ SETTINGS ═══════════════ -->

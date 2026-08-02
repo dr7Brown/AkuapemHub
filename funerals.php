@@ -16,7 +16,7 @@ $isAjax  = !empty($_GET['ajax']);
 
 function funeral_cards($pdo, array $filters, int $page, int $perPage, bool $featuredOnly = false): array {
     $offset = ($page - 1) * $perPage;
-    $where  = ["fa.status='approved'"];
+    $where  = ["fa.status='approved'", "(fa.user_id IS NULL OR fa.user_id NOT IN (SELECT id FROM users WHERE banned=1))"];
     $params = [];
 
     if (!empty($filters['q'])) {
@@ -58,7 +58,7 @@ function funeral_cards($pdo, array $filters, int $page, int $perPage, bool $feat
 }
 
 function funeral_count($pdo, array $filters): int {
-    $where  = ["fa.status='approved'"];
+    $where  = ["fa.status='approved'", "(fa.user_id IS NULL OR fa.user_id NOT IN (SELECT id FROM users WHERE banned=1))"];
     $params = [];
     if (!empty($filters['q'])) { $like='%'.$filters['q'].'%'; $where[]="(fa.deceased_name LIKE ? OR fa.venue LIKE ?)"; $params[]=$like; $params[]=$like; }
     if (!empty($filters['month'])) { $where[]="DATE_FORMAT(fa.burial_date,'%Y-%m')=?"; $params[]=$filters['month']; }

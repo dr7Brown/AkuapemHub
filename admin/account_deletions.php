@@ -48,13 +48,26 @@ $pending = $pdo->query("
     WHERE adr.status='pending' ORDER BY adr.created_at ASC
 ")->fetchAll();
 
+$histPage    = max(1, (int)($_GET['page'] ?? 1));
+$histPerPage = 30;
+$histOffset  = ($histPage - 1) * $histPerPage;
+$histTotal      = (int)$pdo->query("SELECT COUNT(*) FROM account_deletion_requests WHERE status != 'pending'")->fetchColumn();
+$histTotalPages = max(1, (int)ceil($histTotal / $histPerPage));
+
 $history = $pdo->query("
     SELECT adr.*, u.name, u.username, ru.name AS reviewer_name
     FROM account_deletion_requests adr
     JOIN users u ON u.id = adr.user_id
     LEFT JOIN users ru ON ru.id = adr.reviewed_by
-    WHERE adr.status != 'pending' ORDER BY adr.reviewed_at DESC LIMIT 30
+    WHERE adr.status != 'pending' ORDER BY adr.reviewed_at DESC LIMIT $histPerPage OFFSET $histOffset
 ")->fetchAll();
+
+function acd_qstr(array $overrides = []): string {
+    $base = [];
+    if (isset($_GET['page']) && $_GET['page'] !== '') $base['page'] = $_GET['page'];
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null);
+    return 'account_deletions.php?' . http_build_query($merged);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -73,6 +86,10 @@ $history = $pdo->query("
 .acd-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-top:8px; }
 .acd-hist-row { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; padding:10px 0; border-bottom:1px solid var(--border); font-size:.84rem; flex-wrap:wrap; }
 .acd-hist-row:last-child { border-bottom:none; }
+.pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+.pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+.pagination a:hover { background:var(--surface-muted,#f9fafb); }
+.pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
 </style>
 </head>
 <body>
@@ -126,6 +143,23 @@ $history = $pdo->query("
             <span style="background:<?php echo $h['status']==='approved'?'#fee2e2':'#d1fae5'; ?>;color:<?php echo $h['status']==='approved'?'#991b1b':'#065f46'; ?>;font-size:.7rem;font-weight:800;padding:2px 8px;border-radius:10px;white-space:nowrap;"><?php echo ucfirst($h['status']); ?></span>
         </div>
         <?php endforeach; ?>
+        <?php if ($histTotalPages > 1): ?>
+        <div class="pagination">
+            <?php if ($histPage > 1): ?><a href="<?php echo acd_qstr(['page' => $histPage - 1]); ?>">‹ Prev</a><?php endif; ?>
+            <?php
+            $hpStart = max(1, $histPage - 3);
+            $hpEnd   = min($histTotalPages, $histPage + 3);
+            if ($hpStart > 1) echo '<span>…</span>';
+            for ($hp = $hpStart; $hp <= $hpEnd; $hp++): ?>
+                <?php if ($hp === $histPage): ?><span class="current"><?php echo $hp; ?></span>
+                <?php else: ?><a href="<?php echo acd_qstr(['page' => $hp]); ?>"><?php echo $hp; ?></a><?php endif; ?>
+            <?php endfor;
+            if ($hpEnd < $histTotalPages) echo '<span>…</span>';
+            ?>
+            <?php if ($histPage < $histTotalPages): ?><a href="<?php echo acd_qstr(['page' => $histPage + 1]); ?>">Next ›</a><?php endif; ?>
+            <span style="color:var(--text-muted,#6b7280);border:none;padding-left:4px;">Page <?php echo $histPage; ?> of <?php echo $histTotalPages; ?> (<?php echo $histTotal; ?> total)</span>
+        </div>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 </main>

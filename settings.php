@@ -141,7 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'edit_pr
         } else {
             $idDocPath = $workerProfile['id_document_path'];
             if (!empty($_FILES['id_document']['name'])) {
-                $up = save_uploaded_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
+                $up = save_uploaded_id_image($_FILES['id_document'], 'uploads/worker_ids/' . $user['id']);
                 if ($up) $idDocPath = $up;
             }
             $pdo->prepare('UPDATE worker_profiles SET id_type=?,id_number=?,id_document_path=? WHERE user_id=?')->execute([$idType,$idNumber,$idDocPath,$user['id']]);
@@ -864,6 +864,7 @@ if (!$isAjax): ?>
         </div>
     </div>
     <?php endforeach; ?>
+    <?php require __DIR__ . '/partials/social_tiles.php'; ?>
 </div>
 
 <div class="card form-card">

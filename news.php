@@ -30,6 +30,7 @@ $stmt = $pdo->prepare("
     SELECT id, title, slug, summary, featured_image, view_count, published_at, featured, featured_end_date
     FROM news
     WHERE status='published'
+    AND (user_id IS NULL OR user_id NOT IN (SELECT id FROM users WHERE banned=1))
     $whereExtra
     ORDER BY $orderBy
     LIMIT ? OFFSET ?
@@ -453,6 +454,7 @@ $topAd     = $bannerAds[0] ?? null;
     <?php if ($user): ?>
         <?php $activeNav = 'news'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <?php else: ?>
+        <?php require __DIR__ . '/partials/social_tiles.php'; ?>
         <footer style="text-align:center;padding:20px 16px 32px;font-size:.8rem;color:#6b7280;border-top:1px solid #e5e7eb;margin-top:40px;">
             &copy; <?php echo date('Y'); ?> <?php echo sanitize(APP_NAME); ?> &nbsp;·&nbsp;
             <a href="privacy.php">Privacy</a> &nbsp;·&nbsp; <a href="terms.php">Terms</a>

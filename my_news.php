@@ -55,6 +55,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
     if (!$editId && requires_verified_email('news_post') && !is_email_verified()) {
         $errors[] = 'Please verify your email address before submitting an article.';
     }
+    if (!$editId && is_banned_from_feature((int)$user['id'], 'news')) {
+        $errors[] = 'You have been restricted from News. Contact support if you believe this is an error.';
+    }
 
     // Verify ownership if editing
     $existingImg = null;

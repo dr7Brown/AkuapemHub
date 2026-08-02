@@ -16,24 +16,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $userId  = (int)($_POST['user_id'] ?? 0);
     $bulkIds = array_filter(array_map('intval', $_POST['selected_users'] ?? []));
 
-    // Single user actions
-    if ($userId && !in_array($action, ['bulk_ban','bulk_unban','bulk_delete'])) {
-        // Never touch admins (unless current user is admin touching another admin)
+    // Manage Restrictions modal — whole-system ban and/or specific feature bans
+    if ($action === 'set_ban' && $userId) {
         $targetRow = $pdo->prepare('SELECT name, role FROM users WHERE id=?');
         $targetRow->execute([$userId]);
         $target = $targetRow->fetch();
 
         if ($target && ($target['role'] !== 'admin' || is_admin())) {
-            match($action) {
-                'ban'    => $pdo->prepare('UPDATE users SET banned=1 WHERE id=?')->execute([$userId]),
-                'unban'  => $pdo->prepare('UPDATE users SET banned=0 WHERE id=?')->execute([$userId]),
-                default  => null,
-            };
-            if ($action === 'ban' || $action === 'unban') {
-                log_audit_action($adminUser['id'], 'user_' . $action, ucfirst($action) . ' user: ' . $target['name'] . ' (#' . $userId . ')');
-            log_mod_activity($adminUser['id'], 'users', $action === 'ban' ? 'manage_users_ban' : 'manage_users_unban', $userId, $target['name']);
-                flash($action === 'ban' ? sanitize($target['name']) . ' banned.' : sanitize($target['name']) . ' unbanned.', 'info');
-            }
+            $wholeSystem = isset($_POST['whole_system']);
+            $features    = (array)($_POST['features'] ?? []);
+            $reason      = trim($_POST['reason'] ?? '');
+            $result = apply_feature_ban_update($userId, $adminUser['id'], $wholeSystem, $features, $reason ?: null);
+
+            if ($result['whole_changed']) log_mod_activity($adminUser['id'], 'users', $wholeSystem ? 'manage_users_ban' : 'manage_users_unban', $userId, $target['name']);
+
+            $summary = [];
+            if ($result['whole_changed']) $summary[] = $wholeSystem ? 'whole-system ban applied' : 'whole-system ban lifted';
+            if ($result['granted']) $summary[] = count($result['granted']) . ' restriction(s) added';
+            if ($result['revoked']) $summary[] = count($result['revoked']) . ' restriction(s) lifted';
+            flash(sanitize($target['name']) . ': ' . ($summary ? implode(', ', $summary) : 'no changes') . '.', 'info');
         }
     }
 
@@ -141,6 +142,16 @@ $usersSt = $pdo->prepare(
 $usersSt->execute($params);
 $users = $usersSt->fetchAll();
 
+// Batched feature-ban lookup for the current page (avoids N+1 queries)
+$userFeatureBans = [];
+if ($users) {
+    $ids = implode(',', array_column($users, 'id'));
+    $fbStmt = $pdo->query("SELECT user_id, feature_key FROM user_feature_bans WHERE user_id IN ($ids)");
+    foreach ($fbStmt->fetchAll() as $row) {
+        $userFeatureBans[$row['user_id']][] = $row['feature_key'];
+    }
+}
+
 // Stats
 $stats = [
     'total'     => (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn(),
@@ -200,6 +211,11 @@ function pageUrl(array $extra = []): string {
         .um-av img { width:100%; height:100%; object-fit:cover; }
         .um-badge-banned { background:#fee2e2; color:#c0392b; font-size:.65rem; font-weight:800; padding:1px 6px; border-radius:10px; }
         .um-badge-active { background:#d1fae5; color:#065f46; font-size:.65rem; font-weight:800; padding:1px 6px; border-radius:10px; }
+        .um-badge-restricted { display:inline-block; margin-top:3px; background:#fef3c7; color:#92400e; font-size:.62rem; font-weight:800; padding:1px 6px; border-radius:10px; }
+
+        /* Manage Restrictions modal */
+        .um-ban-item { display:flex; align-items:center; gap:8px; padding:6px 0; font-size:.85rem; }
+        .um-ban-item label { cursor:pointer; }
 
         /* Pagination */
         .um-pages { display:flex; gap:5px; justify-content:center; margin-top:16px; flex-wrap:wrap; }
@@ -338,6 +354,9 @@ function pageUrl(array $extra = []): string {
                             <?php else: ?>
                             <span class="um-badge-active">Active</span>
                             <?php endif; ?>
+                            <?php $ufb = $userFeatureBans[$u['id']] ?? []; if ($ufb): ?>
+                            <span class="um-badge-restricted"><?php echo count($ufb); ?> restricted</span>
+                            <?php endif; ?>
                         </td>
                         <td style="font-size:.78rem;color:var(--text-muted,#6b7280);white-space:nowrap;"><?php echo date('d M Y', strtotime($u['created_at'])); ?></td>
                         <td>
@@ -347,9 +366,9 @@ function pageUrl(array $extra = []): string {
                                 <a href="user_statement.php?id=<?php echo $u['id']; ?>" class="button button-secondary button-small" title="Statement">📄</a>
                                 <?php endif; ?>
                                 <?php if ($u['role'] !== 'admin' || is_admin()): ?>
-                                <button type="button" class="button button-small" style="<?php echo $u['banned']?'background:#10b981;color:#fff;border-color:transparent;':'background:#ef4444;color:#fff;border-color:transparent;'; ?>"
-                                        onclick="quickAction(<?php echo $u['id']; ?>,'<?php echo $u['banned']?'unban':'ban'; ?>')">
-                                    <?php echo $u['banned']?'Unban':'Ban'; ?>
+                                <button type="button" class="button button-small" style="<?php echo ($u['banned']||$ufb)?'background:#10b981;color:#fff;border-color:transparent;':'background:#ef4444;color:#fff;border-color:transparent;'; ?>"
+                                        onclick="openBanModal(<?php echo $u['id']; ?>, '<?php echo sanitize(addslashes($u['name'])); ?>', <?php echo $u['banned']?1:0; ?>, '<?php echo implode(',', $ufb); ?>')">
+                                    <?php echo ($u['banned']||$ufb)?'Manage Restrictions':'Ban'; ?>
                                 </button>
                                 <?php endif; ?>
                             </div>
@@ -362,9 +381,41 @@ function pageUrl(array $extra = []): string {
             </table>
         </div>
 
-        <!-- Hidden fields for quick single action -->
-        <input type="hidden" name="user_id" id="quick-user-id">
     </form>
+
+    <!-- Manage Restrictions modal -->
+    <div id="banModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:999;align-items:center;justify-content:center;">
+        <div style="background:var(--surface);border-radius:12px;padding:24px;width:400px;max-width:94vw;max-height:88vh;overflow-y:auto;">
+            <h3 style="margin:0 0 16px;" id="banModalTitle">Manage Restrictions</h3>
+            <form method="post" action="users.php">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="set_ban">
+                <input type="hidden" name="user_id" id="banUserId">
+
+                <div class="um-ban-item" style="border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:6px;">
+                    <input type="checkbox" name="whole_system" id="banWholeSystem">
+                    <label for="banWholeSystem"><strong>Whole System</strong> — blocks login entirely</label>
+                </div>
+
+                <?php foreach (all_ban_features() as $fKey => $fLabel): ?>
+                <div class="um-ban-item">
+                    <input type="checkbox" name="features[]" value="<?php echo $fKey; ?>" class="ban-feature-cb" id="banFeature_<?php echo $fKey; ?>">
+                    <label for="banFeature_<?php echo $fKey; ?>"><?php echo sanitize($fLabel); ?></label>
+                </div>
+                <?php endforeach; ?>
+
+                <div style="margin:12px 0;">
+                    <label style="font-size:.82rem;font-weight:700;">Reason (optional, shown to user)</label><br>
+                    <textarea name="reason" id="banReason" rows="2" style="width:100%;margin-top:4px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.84rem;"></textarea>
+                </div>
+
+                <div style="display:flex;gap:8px;margin-top:14px;">
+                    <button type="submit" class="button button-primary">Save</button>
+                    <button type="button" class="button button-secondary" onclick="closeBanModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Pagination -->
     <?php if ($totalPages > 1): ?>
@@ -385,16 +436,20 @@ document.getElementById('select-all').addEventListener('change', function() {
     document.querySelectorAll('.row-cb').forEach(cb => cb.checked = this.checked);
 });
 
-// Quick single ban/unban
-function quickAction(userId, action) {
-    document.getElementById('quick-user-id').value = userId;
-    document.getElementById('bulk-action-sel').value = ''; // clear bulk
-    var f = document.getElementById('bulk-form');
-    var hidden = document.createElement('input');
-    hidden.type = 'hidden'; hidden.name = 'action'; hidden.value = action;
-    f.appendChild(hidden);
-    f.submit();
+// Manage Restrictions modal
+function openBanModal(userId, name, isBanned, featureCsv) {
+    document.getElementById('banUserId').value = userId;
+    document.getElementById('banModalTitle').textContent = 'Manage Restrictions: ' + name;
+    document.getElementById('banWholeSystem').checked = isBanned == 1;
+    document.getElementById('banReason').value = '';
+    var active = featureCsv ? featureCsv.split(',') : [];
+    document.querySelectorAll('.ban-feature-cb').forEach(function(cb) {
+        cb.checked = active.indexOf(cb.value) !== -1;
+    });
+    document.getElementById('banModal').style.display = 'flex';
 }
+function closeBanModal() { document.getElementById('banModal').style.display = 'none'; }
+document.getElementById('banModal').addEventListener('click', function(e) { if (e.target === this) closeBanModal(); });
 
 function confirmBulk() {
     var sel = document.getElementById('bulk-action-sel').value;
