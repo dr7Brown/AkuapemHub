@@ -36,13 +36,6 @@ if ($editId) {
     $shop = get_active_seller_shop((int)$user['id']);
 }
 
-$shopMarket = null;
-if (!empty($shop['market_id'])) {
-    $shopMarketStmt = $pdo->prepare('SELECT name, status FROM markets WHERE id=?');
-    $shopMarketStmt->execute([$shop['market_id']]);
-    $shopMarket = $shopMarketStmt->fetch() ?: null;
-}
-
 $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name')->fetchAll();
 $maxImagesForShop = mp_shop_max_images((int)$shop['id']);
 $error = '';
@@ -227,12 +220,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <?php if ($error): ?><div class="alert alert-error"><?php echo sanitize($error); ?></div><?php endif; ?>
 
-    <?php if ($shopMarket): ?>
-    <div class="alert alert-info" style="display:flex;align-items:center;gap:10px;">
-        <span>🏬 This listing appears under <strong><?php echo sanitize($shopMarket['name']); ?></strong> — buyers can only check out while it's marked Open (currently <?php echo $shopMarket['status'] === 'open' ? '<strong>Open</strong>' : 'Closed'; ?>). You'll bring sold items to its storehouse instead of arranging delivery yourself.</span>
-    </div>
-    <?php endif; ?>
-
     <?php if ($catalogProduct): ?>
     <div class="alert alert-success" style="display:flex;align-items:center;gap:10px;">
         <?php if ($catalogProduct['default_image']): ?><img src="<?php echo sanitize($catalogProduct['default_image']); ?>" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;flex-shrink:0;"><?php endif; ?>
@@ -253,7 +240,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="form-group">
                 <label for="description">Description</label>
-                <textarea id="description" name="description" class="rich-editor" rows="4" placeholder="Describe the product — condition, features, what's included…"><?php echo sanitize($_POST['description'] ?? ($product['description'] ?? ($catalogProduct['description'] ?? ''))); ?></textarea>
+                <textarea id="description" name="description" class="rich-editor" rows="4" placeholder="Describe the product — condition, features, what's included…"><?php echo $_POST['description'] ?? ($product['description'] ?? ($catalogProduct['description'] ?? '')); ?></textarea>
             </div>
             <div class="form-group">
                 <label for="category_id">Category</label>

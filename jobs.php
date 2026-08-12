@@ -122,6 +122,21 @@ if (is_worker()) {
     $draftStmt->execute([$user['id']]);
     $drafts = $draftStmt->fetchAll();
 
+    // ...and their own PUBLISHED postings too — otherwise a worker who also
+    // posts jobs has no way to see those listings once they leave draft
+    // status (this branch is the only place a worker-role account renders
+    // at all; the customer branch below never runs for them).
+    $myPostedStmt = $pdo->prepare(
+        "SELECT sr.*, sr.posting_fee_status, sc.name AS category_name, u.name AS assigned_worker_name
+         FROM service_requests sr
+         JOIN service_categories sc ON sr.category_id = sc.id
+         LEFT JOIN users u ON sr.assigned_worker_id = u.id
+         WHERE sr.customer_id = ? AND sr.status != 'draft'
+         ORDER BY sr.created_at DESC"
+    );
+    $myPostedStmt->execute([$user['id']]);
+    $myPostedJobs = $myPostedStmt->fetchAll();
+
 } elseif (is_customer()) {
     // Drafts — shown separately above main job list
     $draftStmt = $pdo->prepare(
@@ -413,6 +428,45 @@ if ($user) {
                 </div>
             </section>
             <?php endif; ?>
+
+            <?php if (!empty($myPostedJobs)): ?>
+            <section class="panel" style="margin-bottom:12px;" id="my-posted-jobs-section">
+                <div class="panel-header" style="margin-bottom:8px;">
+                    <h2 style="font-size:1rem;margin:0;">Jobs I've Posted <span style="background:var(--text-muted);color:#fff;border-radius:10px;padding:1px 8px;font-size:0.75rem;font-weight:600;"><?php echo count($myPostedJobs); ?></span></h2>
+                    <a href="request.php" class="button button-small button-secondary">New job</a>
+                </div>
+                <div class="jobs-grid">
+                    <?php foreach ($myPostedJobs as $mp): ?>
+                    <?php $mpFeeStatus = $mp['posting_fee_status'] ?? 'free'; ?>
+                    <div class="job-card">
+                        <div class="job-card-header">
+                            <span class="category-badge"><?php echo sanitize($mp['category_name']); ?></span>
+                            <span class="status status-<?php echo sanitize($mp['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $mp['status'])); ?></span>
+                        </div>
+                        <h3 class="job-title"><?php echo sanitize($mp['title']); ?></h3>
+                        <div class="job-description"><?php echo render_rich($mp['description']); ?></div>
+                        <?php if ($mp['location']): ?><p class="meta">📍 <?php echo sanitize($mp['location']); ?></p><?php endif; ?>
+                        <p class="meta">💰 GH₵ <?php echo sanitize($mp['budget']); ?><?php if ($mp['assigned_worker_name']): ?> · <?php echo sanitize($mp['assigned_worker_name']); ?><?php endif; ?></p>
+                        <?php if ($mpFeeStatus === 'pending'): ?>
+                        <p class="meta" style="color:#92400e;">💳 Posting fee pending — <a href="pay_job_post.php?id=<?php echo $mp['id']; ?>">Pay now →</a></p>
+                        <?php endif; ?>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+                            <?php if (!in_array($mp['status'], ['pending','cancelled'], true)): ?>
+                            <a href="manage_applicants.php?id=<?php echo $mp['id']; ?>" class="button button-primary button-small">👥 Manage Applicants</a>
+                            <?php endif; ?>
+                            <?php if (in_array($mp['status'], ['pending','open','partially_staffed'], true)): ?>
+                            <a href="edit_job.php?id=<?php echo $mp['id']; ?>" class="button button-secondary button-small">✏️ Edit</a>
+                            <?php elseif ($mp['status'] === 'rejected'): ?>
+                            <a href="request.php?edit=<?php echo $mp['id']; ?>" class="button button-secondary button-small">✏️ Edit &amp; Resubmit</a>
+                            <?php endif; ?>
+                            <a href="request_detail.php?id=<?php echo $mp['id']; ?>" class="button button-small">Details</a>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+            <?php endif; ?>
+
             <section class="panel" id="open-jobs">
                 <div class="stats-grid">
                     <div class="stat-card">

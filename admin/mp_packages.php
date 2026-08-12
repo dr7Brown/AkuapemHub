@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save_plan') {
         $id                       = (int)($_POST['id'] ?? 0);
         $name                     = trim($_POST['name'] ?? '');
-        $scope                    = ($_POST['scope'] ?? '') === 'market' ? 'market' : 'marketplace';
+        $scope                    = 'marketplace';
         $description              = trim($_POST['description'] ?? '') ?: null;
         $durationDays             = max(1, (int)($_POST['duration_days'] ?? 30));
         $price                    = max(0, (float)($_POST['price'] ?? 0));
@@ -117,9 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$plans = $pdo->query('SELECT * FROM mp_seller_subscription_plans ORDER BY display_order ASC, price ASC')->fetchAll();
-$marketplacePlans = array_values(array_filter($plans, fn($p) => $p['scope'] === 'marketplace'));
-$marketPlans      = array_values(array_filter($plans, fn($p) => $p['scope'] === 'market'));
+$plans = $pdo->query("SELECT * FROM mp_seller_subscription_plans WHERE scope='marketplace' ORDER BY display_order ASC, price ASC")->fetchAll();
 
 // ── Analytics ────────────────────────────────────────────────────────────────
 $activeShops  = (int)$pdo->query("SELECT COUNT(DISTINCT shop_id) FROM mp_seller_subscriptions WHERE status='active' AND end_date >= CURDATE()")->fetchColumn();
@@ -439,14 +437,8 @@ function mpp_qstr(array $overrides = []): string {
 
     <div class="mpp-card">
         <h2 style="margin-top:0;font-size:1rem;">🛍️ Marketplace Packages</h2>
-        <p style="font-size:.82rem;color:var(--text-muted,#6b7280);margin-top:-6px;">For regular Marketplace shops.</p>
-        <?php $renderPlanTable($marketplacePlans, 'No marketplace packages yet — add one below.'); ?>
-    </div>
-
-    <div class="mpp-card">
-        <h2 style="margin-top:0;font-size:1rem;">🏬 Periodic Market Packages</h2>
-        <p style="font-size:.82rem;color:var(--text-muted,#6b7280);margin-top:-6px;">For shops tied to a periodic market (Ofie, Nkurakan, etc.) — see <a href="markets.php">Periodic Markets</a>. Pricing/limits can differ from the regular Marketplace packages above.</p>
-        <?php $renderPlanTable($marketPlans, 'No market packages yet — add one below.'); ?>
+        <p style="font-size:.82rem;color:var(--text-muted,#6b7280);margin-top:-6px;">For Marketplace shops.</p>
+        <?php $renderPlanTable($plans, 'No packages yet — add one below.'); ?>
     </div>
 
     <div class="mpp-card">
@@ -459,12 +451,6 @@ function mpp_qstr(array $overrides = []): string {
             <p class="mpp-section-title">Basics</p>
             <div class="mpp-form-grid">
                 <div><label>Package Name *</label><input type="text" name="name" id="f_name" required></div>
-                <div><label>Applies To</label>
-                    <select name="scope" id="f_scope">
-                        <option value="marketplace">Marketplace (regular shops)</option>
-                        <option value="market">Periodic Markets (Ofie, Nkurakan, etc.)</option>
-                    </select>
-                </div>
                 <div><label>Monthly Price (GH&#8373;)</label><input type="number" step="0.01" min="0" name="price" id="f_price" value="0"></div>
                 <div><label>Yearly Price (GH&#8373;, optional)</label><input type="number" step="0.01" min="0" name="yearly_price" id="f_yearly_price"></div>
                 <div><label>Duration (days)</label><input type="number" min="1" name="duration_days" id="f_duration_days" value="30"></div>
@@ -521,7 +507,6 @@ function editPlan(p) {
     document.getElementById('mpp-form-heading').textContent = 'Edit Package — ' + p.name;
     document.getElementById('f_id').value = p.id;
     document.getElementById('f_name').value = p.name;
-    document.getElementById('f_scope').value = p.scope;
     document.getElementById('f_price').value = p.price;
     document.getElementById('f_yearly_price').value = p.yearly_price ?? '';
     document.getElementById('f_duration_days').value = p.duration_days;

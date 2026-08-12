@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="form-group">
                 <label for="description">Description *</label>
-                <textarea id="description" name="description" class="rich-editor" rows="5" required><?php echo sanitize($_POST['description'] ?? $job['description']); ?></textarea>
+                <textarea id="description" name="description" class="rich-editor" rows="5" required><?php echo $_POST['description'] ?? $job['description']; ?></textarea>
             </div>
             <div class="form-group">
                 <label for="category_id">Category *</label>

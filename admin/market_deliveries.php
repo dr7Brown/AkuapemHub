@@ -39,6 +39,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$order || !$order['market_id'] || !user_can_manage_market((int)$adminUser['id'], (int)$order['market_id'])) {
         flash('You are not assigned to manage this market.', 'error');
+    } elseif ($action === 'accept' && $order['status'] === 'pending') {
+        // Market orders have no seller to click "Accept Order" the way a
+        // regular shop's owner would — the assigned agent does it here instead.
+        $pdo->prepare("UPDATE mp_orders SET status='processing', updated_at=NOW() WHERE id=?")->execute([$orderId]);
+        log_audit_action($adminUser['id'], 'market_order_accepted', "Order #{$orderId} ({$order['shop_name']}, {$order['market_name']}) accepted");
+        flash('Order accepted.', 'success');
     } elseif ($action === 'mark_at_storehouse' && $order['status'] === 'processing') {
         $pdo->prepare("UPDATE mp_orders SET status='at_storehouse', updated_at=NOW() WHERE id=?")->execute([$orderId]);
         log_audit_action($adminUser['id'], 'market_order_at_storehouse', "Order #{$orderId} ({$order['shop_name']}, {$order['market_name']}) marked received at storehouse");
@@ -67,18 +73,23 @@ if (!$noMarketsAssigned) {
         'SELECT id, name FROM markets WHERE id IN (' . implode(',', array_map('intval', $managedMarketIds)) . ') ORDER BY name'
     )->fetchAll();
 
-    $where  = ["o.market_id IN (" . implode(',', array_map('intval', $managedMarketIds)) . ")", "o.status IN ('processing','at_storehouse')"];
+    // 'pending' is included so agents can accept a just-paid order (no seller
+    // exists to do it for them) — gated on payment_status='paid' so an
+    // abandoned/unpaid checkout never shows up here.
+    $where  = ["o.market_id IN (" . implode(',', array_map('intval', $managedMarketIds)) . ")", "o.status IN ('pending','processing','at_storehouse')", "o.payment_status='paid'"];
     $params = [];
     if ($filterMarketId) { $where[] = 'o.market_id = ?'; $params[] = $filterMarketId; }
 
     $orders = $pdo->prepare(
-        "SELECT o.*, s.shop_name, m.name AS market_name, m.storehouse_location, m.storehouse_maps_link, u.name AS buyer_name, u.phone AS buyer_phone
+        "SELECT o.*, s.shop_name, m.name AS market_name, m.storehouse_location, m.storehouse_maps_link, u.name AS buyer_name, u.phone AS buyer_phone,
+                t.name AS delivery_town_name, t.district AS delivery_town_district
          FROM mp_orders o
          JOIN mp_shops s ON o.shop_id = s.id
          LEFT JOIN markets m ON o.market_id = m.id
          JOIN users u ON o.customer_id = u.id
+         LEFT JOIN towns t ON o.delivery_town_id = t.id
          WHERE " . implode(' AND ', $where) . "
-         ORDER BY (o.status='at_storehouse') DESC, o.created_at ASC"
+         ORDER BY FIELD(o.status,'pending','at_storehouse','processing'), o.created_at ASC"
     );
     $orders->execute($params);
     $orders = $orders->fetchAll();
@@ -104,6 +115,7 @@ if ($orders) {
         .md-card  { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; margin-bottom: 12px; }
         .md-head  { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap; }
         .md-badge { display:inline-block; padding:2px 9px; border-radius:20px; font-size:.68rem; font-weight:800; }
+        .md-badge.pending       { background:#fee2e2; color:#c0392b; }
         .md-badge.processing    { background:#fef3c7; color:#92400e; }
         .md-badge.at_storehouse { background:#dbeafe; color:#1e40af; }
         .md-items { font-size:.82rem; color:var(--text-muted,#6b7280); margin:8px 0; }
@@ -125,9 +137,10 @@ if ($orders) {
     <?php endif; ?>
 
     <p style="font-size:.84rem;color:var(--text-muted,#6b7280);margin-bottom:14px;">
-        Orders paid for at a market you manage. Mark <strong>Received at Storehouse</strong> once the
-        seller physically drops it off, then <strong>Handed to Buyer</strong> once they collect it —
-        this starts the seller's payout confirmation window, same as a regular delivery.
+        Orders paid for at a market you manage. <strong>Accept</strong> a newly-paid order, mark
+        <strong>Received at Storehouse</strong> once it's dropped off, then mark it
+        <strong>handed over</strong> once the buyer has it — pickup or delivery, whichever they chose —
+        which starts the payout confirmation window.
     </p>
 
     <?php if ($noMarketsAssigned): ?>
@@ -153,7 +166,7 @@ if ($orders) {
     <?php if (!$orders): ?>
     <div class="md-empty">
         <div style="font-size:2.5rem;opacity:.35;margin-bottom:10px;">📦</div>
-        <p style="margin:0;font-weight:700;">No orders awaiting storehouse handoff</p>
+        <p style="margin:0;font-weight:700;">No orders need action right now</p>
     </div>
     <?php else: ?>
     <?php foreach ($orders as $o): ?>
@@ -166,15 +179,39 @@ if ($orders) {
                     Buyer: <?php echo sanitize($o['buyer_name']); ?><?php echo $o['buyer_phone'] ? ' · ' . sanitize($o['buyer_phone']) : ''; ?>
                 </div>
             </div>
-            <span class="md-badge <?php echo $o['status']; ?>"><?php echo $o['status']==='at_storehouse' ? 'At Storehouse' : 'Awaiting Drop-off'; ?></span>
+            <span class="md-badge <?php echo $o['status']; ?>"><?php echo ['pending'=>'New — Needs Acceptance','processing'=>'Awaiting Drop-off','at_storehouse'=>'At Storehouse'][$o['status']]; ?></span>
         </div>
+        <?php if ($o['fulfillment_method'] === 'delivery'): ?>
+        <div style="font-size:.82rem;padding:6px 9px;margin-top:6px;background:#dbeafe;border-radius:6px;color:#1e40af;">
+            🚚 <strong>Deliver to <?php echo sanitize($o['delivery_town_name']); ?>, <?php echo sanitize($o['delivery_town_district']); ?></strong>
+            <?php if ($o['delivery_address']): ?><br><?php echo sanitize($o['delivery_address']); ?><?php endif; ?>
+            <?php if ($o['delivery_maps_link']): ?> — <a href="<?php echo sanitize($o['delivery_maps_link']); ?>" target="_blank" rel="noopener">Map</a><?php endif; ?>
+        </div>
+        <?php else: ?>
+        <div style="font-size:.82rem;padding:6px 9px;margin-top:6px;background:var(--surface-muted,#f8fafc);border-radius:6px;color:var(--text-muted,#6b7280);">
+            🏬 Storehouse pickup — buyer collects in person.
+        </div>
+        <?php endif; ?>
         <div class="md-items">
             <?php foreach ($itemsByOrder[$o['id']] ?? [] as $it): ?>
             <div class="md-item-row"><span><?php echo sanitize($it['product_name']); ?> × <?php echo (int)$it['quantity']; ?></span><span>GH₵ <?php echo number_format((float)$it['subtotal'], 2); ?></span></div>
             <?php endforeach; ?>
+            <?php if ((float)$o['delivery_fee'] > 0): ?>
+            <div class="md-item-row"><span><?php echo $o['fulfillment_method']==='delivery'?'Delivery Fee':'Pickup Fee'; ?></span><span>GH₵ <?php echo number_format((float)$o['delivery_fee'], 2); ?></span></div>
+            <?php endif; ?>
+            <?php if ((float)$o['system_charge'] > 0): ?>
+            <div class="md-item-row"><span>System Charge</span><span>GH₵ <?php echo number_format((float)$o['system_charge'], 2); ?></span></div>
+            <?php endif; ?>
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;">
-            <?php if ($o['status'] === 'processing'): ?>
+            <?php if ($o['status'] === 'pending'): ?>
+            <form method="post" style="display:inline;">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="accept">
+                <input type="hidden" name="order_id" value="<?php echo (int)$o['id']; ?>">
+                <button type="submit" class="button button-primary button-small">✅ Accept Order</button>
+            </form>
+            <?php elseif ($o['status'] === 'processing'): ?>
             <form method="post" style="display:inline;">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="mark_at_storehouse">
@@ -182,11 +219,11 @@ if ($orders) {
                 <button type="submit" class="button button-primary button-small">✅ Received at Storehouse</button>
             </form>
             <?php elseif ($o['status'] === 'at_storehouse'): ?>
-            <form method="post" style="display:inline;" onsubmit="return confirm('Confirm this order has been handed to the buyer?');">
+            <form method="post" style="display:inline;" onsubmit="return confirm('<?php echo $o['fulfillment_method']==='delivery' ? 'Confirm this order has been delivered to the buyer?' : 'Confirm this order has been handed to the buyer?'; ?>');">
                 <?php echo csrf_field(); ?>
                 <input type="hidden" name="action" value="mark_delivered">
                 <input type="hidden" name="order_id" value="<?php echo (int)$o['id']; ?>">
-                <button type="submit" class="button button-primary button-small" style="background:#10b981;border-color:transparent;">📬 Handed to Buyer</button>
+                <button type="submit" class="button button-primary button-small" style="background:#10b981;border-color:transparent;"><?php echo $o['fulfillment_method']==='delivery' ? '🚚 Delivered to Buyer' : '📬 Handed to Buyer'; ?></button>
             </form>
             <?php endif; ?>
         </div>

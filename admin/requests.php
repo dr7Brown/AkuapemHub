@@ -110,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                     "Your listing \"{$newTitle}\" was edited by an admin.", 'info', 'request_detail.php?id=' . $requestId);
                 flash('Job updated.', 'success');
             } else {
-                header('Location: requests.php?err=' . urlencode('Title, description, and category are required.'));
+                header('Location: requests.php?edit=' . $requestId . '&err=' . urlencode('Title, description, and category are required.'));
                 exit;
             }
         } elseif ($_POST['action'] === 'feature' && $request) {
@@ -126,6 +126,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 $errFlash = $_GET['err'] ?? '';
 $filterStatus = $_GET['status'] ?? '';
 $categories = get_categories();
+
+// Job being edited (server-rendered pre-fill — avoids needing JS to inject
+// HTML into the hidden textarea behind the rich editor, which doesn't work:
+// RichEditor reads the textarea's value once at page load and replaces it
+// with its own contenteditable div, so setting .value afterward via JS
+// never reaches the visible editor).
+$editRequestId = (int)($_GET['edit'] ?? 0);
+$editRequest = null;
+if ($editRequestId) {
+    $erStmt = $pdo->prepare('SELECT * FROM service_requests WHERE id = ?');
+    $erStmt->execute([$editRequestId]);
+    $editRequest = $erStmt->fetch() ?: null;
+}
 
 // Pending-first sort so items needing action bubble to top
 $stmt = $pdo->query("
@@ -460,7 +473,7 @@ $statusMeta = [
                                     onclick="openRejectModal(<?php echo (int)$request['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <?php endif; ?>
-                                <button type="button" class="button button-secondary button-small" onclick='openEditModal(<?php echo json_encode($request); ?>)'>✏️ Edit</button>
+                                <a href="requests.php?edit=<?php echo (int)$request['id']; ?>" class="button button-secondary button-small">✏️ Edit</a>
                                 <button type="submit" name="action" value="feature" class="button button-secondary button-small"
                                     style="<?php echo $arFeatActive ? 'color:#854d0e;border-color:#f59e0b;' : ''; ?>">
                                     <?php echo $arFeatActive ? '⭐' : 'Feature'; ?>
@@ -558,56 +571,61 @@ $statusMeta = [
         </div>
 
         <!-- Edit modal -->
-        <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeEditModal()">
+        <?php if ($editRequest): $editBudgetLocked = $editRequest['payment_mode'] === 'escrow'; ?>
+        <div id="edit-modal" style="display:flex;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this) window.location='requests.php'">
             <div style="background:#fff;border-radius:14px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
-                <h3 id="edit-modal-heading" style="margin:0 0 14px;font-size:1rem;">Edit Job Listing</h3>
+                <h3 style="margin:0 0 14px;font-size:1rem;">Edit: <?php echo sanitize($editRequest['title']); ?></h3>
                 <form method="post" action="requests.php">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="edit">
-                    <input type="hidden" name="request_id" id="edit-request-id" value="">
+                    <input type="hidden" name="request_id" value="<?php echo (int)$editRequest['id']; ?>">
                     <div style="margin-bottom:10px;">
                         <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Title</label>
-                        <input type="text" name="title" id="edit-title" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                        <input type="text" name="title" required value="<?php echo sanitize($editRequest['title']); ?>" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
                     </div>
                     <div style="margin-bottom:10px;">
                         <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Description</label>
-                        <textarea name="description" id="edit-description" rows="4" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;"></textarea>
+                        <textarea name="description" class="rich-editor" rows="4" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;"><?php echo $editRequest['description']; ?></textarea>
                     </div>
                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
                         <div>
                             <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Category</label>
-                            <select name="category_id" id="edit-category" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                            <select name="category_id" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
                                 <?php foreach ($categories as $c): ?>
-                                <option value="<?php echo $c['id']; ?>"><?php echo sanitize($c['name']); ?></option>
+                                <option value="<?php echo $c['id']; ?>" <?php echo (int)$editRequest['category_id'] === (int)$c['id'] ? 'selected' : ''; ?>><?php echo sanitize($c['name']); ?></option>
                                 <?php endforeach; ?>
                             </select>
                         </div>
                         <div>
                             <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Workers Needed</label>
-                            <input type="number" name="workers_needed" id="edit-workers" min="1" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                            <input type="number" name="workers_needed" min="1" value="<?php echo (int)$editRequest['workers_needed']; ?>" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
                         </div>
                     </div>
                     <div style="margin-bottom:10px;">
                         <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Location</label>
-                        <input type="text" name="location" id="edit-location" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                        <input type="text" name="location" value="<?php echo sanitize($editRequest['location']); ?>" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
                     </div>
                     <div style="margin-bottom:10px;">
                         <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Skills Needed</label>
-                        <input type="text" name="skills_needed" id="edit-skills" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                        <input type="text" name="skills_needed" value="<?php echo sanitize($editRequest['skills_needed']); ?>" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
                     </div>
                     <div style="margin-bottom:14px;">
                         <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Budget</label>
-                        <input type="text" name="budget" id="edit-budget" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
-                        <p id="edit-budget-locked-note" style="display:none;font-size:.76rem;color:#92400e;margin:4px 0 0;">🔒 Locked — payment mode is escrow, funds are already held at this amount.</p>
+                        <input type="text" name="budget" value="<?php echo sanitize($editRequest['budget']); ?>" <?php echo $editBudgetLocked ? 'disabled' : ''; ?> style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;<?php echo $editBudgetLocked ? 'background:#f3f4f6;' : ''; ?>">
+                        <?php if ($editBudgetLocked): ?>
+                        <p style="font-size:.76rem;color:#92400e;margin:4px 0 0;">🔒 Locked — payment mode is escrow, funds are already held at this amount.</p>
+                        <?php endif; ?>
                     </div>
                     <div style="display:flex;gap:8px;">
                         <button type="submit" class="button button-primary">Save Changes</button>
-                        <button type="button" class="button button-secondary" onclick="closeEditModal()">Cancel</button>
+                        <a href="requests.php" class="button button-secondary">Cancel</a>
                     </div>
                 </form>
             </div>
         </div>
+        <?php endif; ?>
     </main>
+    <script src="../assets/js/rich-editor.js" defer></script>
 
     <script>
     // Toggle detail panel
@@ -653,27 +671,6 @@ $statusMeta = [
     }
     function closeRejectModal() {
         document.getElementById('reject-modal').style.display = 'none';
-    }
-
-    function openEditModal(r) {
-        document.getElementById('edit-modal-heading').textContent = 'Edit: ' + r.title;
-        document.getElementById('edit-request-id').value = r.id;
-        document.getElementById('edit-title').value = r.title;
-        document.getElementById('edit-description').value = r.description || '';
-        document.getElementById('edit-category').value = r.category_id;
-        document.getElementById('edit-workers').value = r.workers_needed || 1;
-        document.getElementById('edit-location').value = r.location || '';
-        document.getElementById('edit-skills').value = r.skills_needed || '';
-        var budgetField = document.getElementById('edit-budget');
-        var lockedNote  = document.getElementById('edit-budget-locked-note');
-        var budgetLocked = r.payment_mode === 'escrow';
-        budgetField.value = r.budget || '';
-        budgetField.disabled = budgetLocked;
-        lockedNote.style.display = budgetLocked ? 'block' : 'none';
-        document.getElementById('edit-modal').style.display = 'flex';
-    }
-    function closeEditModal() {
-        document.getElementById('edit-modal').style.display = 'none';
     }
     </script>
 </body>

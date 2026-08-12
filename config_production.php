@@ -61,6 +61,12 @@ session_start();
 // ── Security headers (sent with every response) ─────────────────────────────
 // Works even on shared hosting where php.ini's expose_php can't be changed.
 header_remove('X-Powered-By');
+// Every page here is session-bound (CSRF tokens, flash messages, logged-in
+// state) — if Cloudflare (or a browser) ever caches one, a later visitor/tab
+// gets served someone else's stale CSRF token and every form on that page
+// silently 403s with "Security check failed" until they hard-refresh.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 header('X-Frame-Options: SAMEORIGIN');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');

@@ -2772,3 +2772,105 @@ SET @drop_idx_sql := IF(@idx_exists > 0,
 PREPARE stmt FROM @drop_idx_sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v063  Market recurrence schedule + pre-order window. Some markets run
+-- weekly (e.g. every Monday & Thursday), others monthly (e.g. the first
+-- Saturday of the month) — recurrence_type picks which, and
+-- recurrence_weekdays/recurrence_week_of_month hold the pattern. Each
+-- market can independently open pre-orders N days ahead of its computed
+-- next market day (preorder_days). Markets that never configure a
+-- schedule (recurrence_type stays 'manual') keep today's exact behaviour —
+-- the admin's manual Open/Closed toggle is the only gate, with no
+-- pre-order window — so this is purely additive.
+-- `status` keeps its existing ENUM('open','closed') and becomes an
+-- emergency override in scheduled markets: 'closed' force-shuts the
+-- market regardless of the computed schedule window.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS recurrence_type ENUM('manual','weekly','monthly') NOT NULL DEFAULT 'manual' AFTER schedule_note;
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS recurrence_weekdays VARCHAR(20) NULL AFTER recurrence_type;
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS recurrence_week_of_month TINYINT NULL AFTER recurrence_weekdays;
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS preorder_days SMALLINT UNSIGNED NOT NULL DEFAULT 0 AFTER recurrence_week_of_month;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v064  Market fulfillment charges — storehouse pickup is no longer free by
+-- default; each market sets its own pickup_fee, plus an optional per-town
+-- home-delivery price list (market_delivery_towns, reusing the existing
+-- global `towns` table admin/towns.php already manages). The buyer picks
+-- Pickup or Delivery-to-town at payment time in pay_quote.php; the chosen
+-- fee is added to the charge and stored on mp_orders.delivery_fee — that
+-- column already existed but was never actually read or written anywhere
+-- in the app, so this is its first real use rather than a new column.
+-- Fulfillment stays agent-handled (no rider/Delivery-Services integration):
+-- the same assigned market agent who already staffs
+-- admin/market_deliveries.php just gets a "Delivered" step alongside
+-- "Handed to Buyer" depending on which the buyer chose.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS pickup_fee DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER preorder_days;
+
+CREATE TABLE IF NOT EXISTS market_delivery_towns (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    market_id     INT UNSIGNED NOT NULL,
+    town_id       INT UNSIGNED NOT NULL,
+    delivery_fee  DECIMAL(10,2) NOT NULL DEFAULT 0,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_market_town (market_id, town_id),
+    FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE CASCADE,
+    FOREIGN KEY (town_id)   REFERENCES towns(id)   ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS fulfillment_method ENUM('pickup','delivery') NOT NULL DEFAULT 'pickup' AFTER market_id;
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS delivery_town_id INT UNSIGNED NULL AFTER fulfillment_method;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v065  Backfill: markets created before the periodic-markets custom-order
+-- pivot (the hidden "system shop" per market — see admin/markets.php's
+-- save_market handler) never got their companion mp_shops row, since that
+-- auto-creation only runs on INSERT going forward. Any such market silently
+-- broke "Send Custom Order" — request_market_order.php couldn't find a
+-- shop_id to attach the quote request to and bounced the buyer back to
+-- markets.php with no explanation. Idempotent: only inserts for markets
+-- that still have no companion shop.
+-- ═══════════════════════════════════════════════════════════════════════════
+INSERT INTO mp_shops (user_id, shop_name, slug, market_id, status)
+SELECT (SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1),
+       CONCAT(m.name, ' — Custom Orders'),
+       CONCAT('market-', m.id, '-custom-orders'),
+       m.id,
+       'active'
+FROM markets m
+WHERE NOT EXISTS (SELECT 1 FROM mp_shops s WHERE s.market_id = m.id)
+  AND EXISTS (SELECT 1 FROM users WHERE role = 'admin');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v066  Order cutoff time — a scheduled market's payment window used to stay
+-- open all day on market day (until midnight). Admin can now set a precise
+-- time-of-day that orders close instead; NULL (the default) keeps today's
+-- exact behaviour — open through end of day. get_market_schedule() combines
+-- it with market day's date to compute order_close_at.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS order_close_time TIME NULL AFTER preorder_days;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v067  Per-market brand colour — markets.php cards and market_view.php now
+-- each render with their own gradient instead of one fixed green, derived
+-- from a single admin-picked base hex via mkt_color_shades() (functions.php).
+-- NULL/blank falls back to the app's default green.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE markets ADD COLUMN IF NOT EXISTS color VARCHAR(7) NULL AFTER pickup_fee;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v068  Buyer-proposed item pricing + a platform-wide "system charge" on
+-- market custom orders. Buyers now suggest a price per item when they send
+-- their shopping list (mp_quote_request_items.price is populated at
+-- submission instead of staying NULL) — the agent then confirms it as-is or
+-- edits it in admin/market_orders.php, same "price" action as before.
+-- System charge is one global rate (platform_settings
+-- market_system_charge_type 'flat'|'percent' + market_system_charge_value,
+-- read via get_market_system_charge() in functions.php) added on top of the
+-- item total and fulfillment fee at payment time — distinct from
+-- pickup_fee/delivery fees, which stay per-market.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS system_charge DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER delivery_fee;

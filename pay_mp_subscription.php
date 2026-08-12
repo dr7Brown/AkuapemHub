@@ -20,9 +20,7 @@ if (get_platform_setting('mp_subscription_enabled','0') !== '1') {
     header('Location: seller_dashboard.php'); exit;
 }
 
-// Market-linked shops see only market-scoped packages, and vice versa —
-// pricing/limits are intentionally allowed to differ between the two.
-$planScope = !empty($shop['market_id']) ? 'market' : 'marketplace';
+$planScope = 'marketplace';
 $plansStmt = $pdo->prepare("SELECT * FROM mp_seller_subscription_plans WHERE status='active' AND scope=? ORDER BY display_order ASC, price ASC");
 $plansStmt->execute([$planScope]);
 $plans = $plansStmt->fetchAll();

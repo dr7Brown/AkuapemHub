@@ -15,7 +15,9 @@ $page    = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 24;
 $offset  = ($page - 1) * $perPage;
 
-$where  = ["ms.status = 'active'", "u.banned = 0"];
+// ms.market_id IS NULL — a market's hidden "system shop" isn't a real
+// storefront, it exists only as the FK anchor custom orders need.
+$where  = ["ms.status = 'active'", "ms.market_id IS NULL", "u.banned = 0"];
 $params = [];
 
 if ($q !== '') {
@@ -59,7 +61,7 @@ $shops = $st->fetchAll();
 // Regions with at least one active shop, for the filter dropdown
 $regions = $pdo->query(
     "SELECT DISTINCT ms.region FROM mp_shops ms JOIN users u ON ms.user_id = u.id
-     WHERE ms.status='active' AND u.banned=0 AND ms.region IS NOT NULL AND ms.region != ''
+     WHERE ms.status='active' AND ms.market_id IS NULL AND u.banned=0 AND ms.region IS NOT NULL AND ms.region != ''
      ORDER BY ms.region ASC"
 )->fetchAll(PDO::FETCH_COLUMN);
 

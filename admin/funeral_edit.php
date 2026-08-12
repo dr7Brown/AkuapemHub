@@ -106,7 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $isNew = !$id;
-$v = fn($k) => sanitize($fa[$k] ?? '');
+$v    = fn($k) => sanitize($fa[$k] ?? '');
+$vRaw = fn($k) => $fa[$k] ?? ''; // for rich-editor fields — sanitize() would double-escape their stored HTML
 $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : '';
 ?>
 <!DOCTYPE html>
@@ -187,7 +188,7 @@ $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : 
             </div>
             <div class="afe-field">
                 <label>Biography</label>
-                <textarea name="biography" class="form-control rich-editor" rows="6" placeholder="Brief biography or tribute…"><?php echo $v('biography'); ?></textarea>
+                <textarea name="biography" class="form-control rich-editor" rows="6" placeholder="Brief biography or tribute…"><?php echo $vRaw('biography'); ?></textarea>
             </div>
 
             <p class="afe-section">Funeral Schedule</p>

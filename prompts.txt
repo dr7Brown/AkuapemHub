@@ -987,10 +987,55 @@ a market, i still see "/ 🛍️ Marketplace" i think it should
 be replaced with the market name. 
 2. users and admin cant perform crud of jobs posted 
 
+next: 
+i mean, go through the marketplace and periodic market and make 
+sure everything works. i just tried to send custom order to one 
+of the markets, but no response. besides, users must enter market 
+to be able to make custom orders. admin should set days for 
+market opening, and set days for market pre orders, ie 3 days 
+to market opening days so that users can start sending their 
+custom orders even before the market day. these feature should 
+be unique for every market
 
+next:
+1. admin to manage list of towns and their delivery charges 
+for periodic market place custom orders.
+2. admin admin dedicated page to manage all periodic market place settings. 
+3. admin to manage (edit) periodic market days for each market
+3. admin to manage (edit) periodic market pre order days for each market
 
+next: 
+1. add countdown timer to market cards on "/markets.php" 
+the timer then "left to start placing orders"
+when order time set by admin is due, then timer for 
+"time left for market day" starts. 
 
+2. add some more features and contents to "/markets.php" 
+and enhance the design too 
 
+3. when user clicks on "send custom order" in a market, 
+he is redirected back to "/markets.php"
+
+next:
+1. for each market, admin to set time of the market day 
+that order receiving closes. 
+in that way, in that way when market day starts, timer for 
+order to end starts. 
+2. add seconds to the timer. 
+3. still polish the market cards small
+
+next:
+pre order ends 12:00 midnights before the market day starts 
+the text now changes to "order" instead of "pre order" but same functionality .
+then order closes at the configured time. 
+
+next: 
+1. today is the market day but showing 
+" next market day
+Wednesday, 12 August" in market_view
+2. /market market card showing "order open" at the same time "Order closed for this cycle" 
+same card. user is allowed to make orders though time pass, fix it 
+3. make time timer area a bit wide. to draw much forcus
 
 
 

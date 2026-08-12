@@ -11,6 +11,9 @@ if (!$id) { header('Location: marketplace.php'); exit; }
 
 $shop = get_shop($id);
 if (!$shop || $shop['status'] !== 'active' || $shop['owner_banned']) { header('Location: marketplace.php'); exit; }
+// A market's hidden "system shop" isn't a real storefront (no products,
+// never browsable) — it exists only as the FK anchor custom orders need.
+if (!empty($shop['market_id'])) { header('Location: markets.php'); exit; }
 
 $shareTitle = $shop['shop_name'];
 $shareUrl   = rtrim(BASE_URL, '/') . '/shop.php?id=' . $id;
@@ -155,13 +158,6 @@ if ($user && $canReviewShop && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST[
             </div>
         </div>
     </div>
-    <?php if (!empty($shop['market_id'])): ?>
-    <div style="margin-top:10px;padding:9px 12px;border-radius:10px;font-size:.82rem;background:<?php echo $shop['market_status']==='open'?'#d1fae5':'#fee2e2'; ?>;color:<?php echo $shop['market_status']==='open'?'#065f46':'#c0392b'; ?>;">
-        🏬 <strong><?php echo sanitize($shop['market_name']); ?></strong> — <?php echo $shop['market_status']==='open' ? 'Open for orders now' : 'Currently closed for checkout'; ?>
-        <?php if ($shop['market_schedule_note']): ?><span style="opacity:.85;">&nbsp;·&nbsp; <?php echo sanitize($shop['market_schedule_note']); ?></span><?php endif; ?>
-        <?php if ($shop['market_status']!=='open'): ?><div style="margin-top:2px;font-size:.78rem;">You can still browse and add items to your cart — checkout opens once this market is marked Open.</div><?php endif; ?>
-    </div>
-    <?php endif; ?>
     <?php if ($shop['description']): ?>
     <p style="margin:0;font-size:.85rem;color:var(--text-muted,#6b7280);max-width:600px;"><?php echo sanitize(mb_substr($shop['description'],0,200)); ?></p>
     <?php endif; ?>

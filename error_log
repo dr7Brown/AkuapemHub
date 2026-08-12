@@ -1069,3 +1069,376 @@ Stack trace:
 #0 /home/royayfxh/akuapemconnect.com/funeral.php(17): PDO->prepare()
 #1 {main}
   thrown in /home/royayfxh/akuapemconnect.com/funeral.php on line 17
+[12-Jul-2026 15:12:32 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'view_count' in 'SET' in /home/royayfxh/akuapemconnect.com/funeral.php:17
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/funeral.php(17): PDO->prepare()
+#1 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/funeral.php on line 17
+[12-Jul-2026 15:13:54 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S02]: Base table or view not found: 1146 Table 'royayfxh_akuapemconnectx.news_likes' doesn't exist in /home/royayfxh/akuapemconnect.com/news_article.php:44
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/news_article.php(44): PDO->prepare()
+#1 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/news_article.php on line 44
+[12-Jul-2026 15:13:57 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S02]: Base table or view not found: 1146 Table 'royayfxh_akuapemconnectx.news_likes' doesn't exist in /home/royayfxh/akuapemconnect.com/news_article.php:44
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/news_article.php(44): PDO->prepare()
+#1 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/news_article.php on line 44
+[12-Jul-2026 15:13:58 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S02]: Base table or view not found: 1146 Table 'royayfxh_akuapemconnectx.news_likes' doesn't exist in /home/royayfxh/akuapemconnect.com/news_article.php:44
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/news_article.php(44): PDO->prepare()
+#1 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/news_article.php on line 44
+[12-Jul-2026 15:23:09 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'view_count' in 'SET' in /home/royayfxh/akuapemconnect.com/event.php:16
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/event.php(16): PDO->prepare()
+#1 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/event.php on line 16
+[12-Jul-2026 15:26:35 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S02]: Base table or view not found: 1146 Table 'royayfxh_akuapemconnectx.news_likes' doesn't exist in /home/royayfxh/akuapemconnect.com/news_article.php:44
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/news_article.php(44): PDO->prepare()
+#1 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/news_article.php on line 44
+[13-Jul-2026 03:55:05 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: evansdjimatey@gmail.com)
+[13-Jul-2026 19:03:35 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 05:06:48 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 12:46:45 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 12:46:57 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 12:47:06 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 13:10:06 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 13:39:17 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 13:39:26 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 13:39:32 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 13:39:54 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[14-Jul-2026 14:33:05 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: jecobedamoakohene@gmail.com)
+[14-Jul-2026 14:33:13 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: jecobedamoakohene@gmail.com)
+[14-Jul-2026 14:33:20 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: jecobedamoakohene@gmail.com)
+[14-Jul-2026 14:33:26 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: jecobedamoakohene@gmail.com)
+[19-Jul-2026 20:02:20 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: ozitalim@gmail.com)
+[19-Jul-2026 20:05:42 UTC] PHP Warning:  imagecreatefromwebp(): gd-webp cannot get webp info in /home/royayfxh/akuapemconnect.com/image_utils.php on line 18
+[19-Jul-2026 20:05:42 UTC] PHP Warning:  imagecreatefromwebp(): &quot;/tmp/phpVXRCnn&quot; is not a valid WEBP file in /home/royayfxh/akuapemconnect.com/image_utils.php on line 18
+[23-Jul-2026 04:33:38 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: vikingdaisy5@gmail.com)
+[24-Jul-2026 06:52:44 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: phrymson@gmail.com)
+[24-Jul-2026 06:55:46 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: phrymson@gmail.com)
+[24-Jul-2026 08:33:03 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: nkay3015@gmail.com)
+[24-Jul-2026 08:48:35 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: nkay3015@gmail.com)
+[24-Jul-2026 08:48:35 UTC] [WhatsAppService] Provider not set. Would send to +233504854156: Your AkuapemConnect Password Reset Code is: 277251
+
+Valid for 10 minutes. Do not share this code.
+[24-Jul-2026 08:54:01 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: nkay3015@gmail.com)
+[24-Jul-2026 08:54:01 UTC] [WhatsAppService] Provider not set. Would send to +233504854156: Your AkuapemConnect Password Reset Code is: 974109
+
+Valid for 10 minutes. Do not share this code.
+[25-Jul-2026 11:20:56 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:21:00 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:25:45 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:25:46 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:26:15 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:26:18 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:29:04 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:29:08 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:29:13 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:32:59 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:32:59 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:33:12 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 11:34:16 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 12:00:30 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 12:18:41 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 12:48:39 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 12:49:05 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 12:49:22 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 12:49:46 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 12:50:24 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 12:51:18 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 14:47:16 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 14:47:44 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 14:48:02 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 14:49:00 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 14:54:01 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 14:54:06 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 14:54:11 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 14:54:17 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 16:07:03 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 16:07:09 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 16:32:50 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 16:33:00 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 16:33:38 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:05:35 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 17:05:40 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 17:06:27 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:08:51 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 17:08:54 UTC] PHP Fatal error:  Uncaught Error: Call to undefined function render_stars() in /home/royayfxh/akuapemconnect.com/product.php:391
+Stack trace:
+#0 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/product.php on line 391
+[25-Jul-2026 17:09:20 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:38:05 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:38:26 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:38:57 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:39:06 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:39:30 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[25-Jul-2026 17:39:38 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[28-Jul-2026 10:41:59 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: workeruser4@akuapemconnect.com)
+[28-Jul-2026 17:41:22 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: user1@akuapemconnect.com)
+[28-Jul-2026 17:43:11 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: admin@akuapemconnect.com)
+[28-Jul-2026 18:05:29 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Error: authentication failed: (reason unavailable)
+ (to: oseigodfred20@gmail.com)
+[29-Jul-2026 10:45:12 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(78): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_product_form.php(31): mp_shop_max_images()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:50:53 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(78): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_product_form.php(31): mp_shop_max_images()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:51:00 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(78): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_product_form.php(31): mp_shop_max_images()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:51:03 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(78): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_product_form.php(31): mp_shop_max_images()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:51:05 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(78): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_product_form.php(31): mp_shop_max_images()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:52:49 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/functions.php(1753): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/jobs.php(399): is_feature_paid()
+#3 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:53:06 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(112): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_dashboard.php(1008): mp_shop_can_list_product()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:53:10 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(112): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_dashboard.php(1008): mp_shop_can_list_product()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:53:15 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(112): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_dashboard.php(1008): mp_shop_can_list_product()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[29-Jul-2026 11:53:28 UTC] PHP Fatal error:  Uncaught PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'is_complimentary' in 'SELECT' in /home/royayfxh/akuapemconnect.com/functions.php:1747
+Stack trace:
+#0 /home/royayfxh/akuapemconnect.com/functions.php(1747): PDO->prepare()
+#1 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(70): user_has_complimentary_access()
+#2 /home/royayfxh/akuapemconnect.com/marketplace_functions.php(112): mp_shop_owner_is_complimentary()
+#3 /home/royayfxh/akuapemconnect.com/seller_dashboard.php(1008): mp_shop_can_list_product()
+#4 {main}
+  thrown in /home/royayfxh/akuapemconnect.com/functions.php on line 1747
+[01-Aug-2026 15:50:22 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: bbagyapong@gmail.com)
+[01-Aug-2026 21:26:11 UTC] PHP Parse error:  syntax error, unexpected end of file in /home/royayfxh/akuapemconnect.com/seller_dashboard.php on line 805
+[02-Aug-2026 06:27:12 UTC] PHP Parse error:  syntax error, unexpected end of file, expecting "elseif" or "else" or "endif" in /home/royayfxh/akuapemconnect.com/marketplace.php on line 280
+[02-Aug-2026 18:55:38 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: josiahao4847@gmail.com)
+[03-Aug-2026 05:37:30 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: owususheilla7@gmail.com)
+[03-Aug-2026 08:03:59 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: shop@expresslabgh.com)
+[05-Aug-2026 06:16:12 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: admin@akuapemconnect.com)
+[05-Aug-2026 08:02:25 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: admin@akuapemconnect.com)
+[05-Aug-2026 12:46:18 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: admin@akuapemconnect.com)
+[05-Aug-2026 13:53:56 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: enochalarbi@gmail.com)
+[05-Aug-2026 13:57:59 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: charlesjims247@gmail.com)
+[06-Aug-2026 13:46:45 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: asamoahfredaboahemaa@gmail.com)
+[06-Aug-2026 13:54:39 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: asamoahfredaboahemaa@gmail.com)
+[06-Aug-2026 14:44:09 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: missrica47@gmail.com)
+[06-Aug-2026 14:49:27 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: ashongfaustina7@gmail.com)
+[06-Aug-2026 15:29:54 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: evansdjimatey@gmail.com)
+[07-Aug-2026 08:44:06 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: jey1122333@gmail.com)
+[08-Aug-2026 10:17:27 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: chunyankson@gmail.com)
+[08-Aug-2026 19:47:43 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: andersonsmaith@gmail.com)
+[08-Aug-2026 19:56:54 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: mallambilal6374@gmail.com)
+[08-Aug-2026 20:06:05 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: evans.java20@gmail.com)
+[09-Aug-2026 03:09:40 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: johndoe@gmail.com)
+[09-Aug-2026 03:17:23 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: joneydoe@gmail.com)
+[09-Aug-2026 05:49:46 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: ireneawatey24@gmail.com)
+[09-Aug-2026 08:28:08 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: admin@akuapemconnect.com)
+[09-Aug-2026 13:31:43 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: dormenyohannah017@gmail.com)
+[09-Aug-2026 19:22:32 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: qhophimantle@gmail.com)
+[11-Aug-2026 10:22:39 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: innocentaddo757@gmail.com)
+[11-Aug-2026 10:26:52 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: innocentaddo757@gmail.com)
+[11-Aug-2026 10:26:52 UTC] [WhatsAppService] Provider not set. Would send to +233594591652: Your AkuapemConnect Password Reset Code is: 636074
+
+Valid for 10 minutes. Do not share this code.
+[11-Aug-2026 10:26:54 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: innocentaddo757@gmail.com)
+[11-Aug-2026 10:26:54 UTC] [WhatsAppService] Provider not set. Would send to +233594591652: Your AkuapemConnect Password Reset Code is: 466248
+
+Valid for 10 minutes. Do not share this code.
+[11-Aug-2026 19:53:15 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: princeantwi722@gmail.com)
+[12-Aug-2026 08:06:51 UTC] [Email SMTP] Error → Auth failed: 535 5.7.8 Authentication failed.
+ (to: admin@akuapemconnect.com)

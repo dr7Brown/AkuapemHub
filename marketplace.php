@@ -16,7 +16,6 @@ $condition = trim($_GET['condition'] ?? '');
 $minPrice  = (float)($_GET['min'] ?? 0);
 $maxPrice  = (float)($_GET['max'] ?? 0);
 $town      = trim($_GET['town']      ?? '');
-$marketId  = (int)($_GET['market_id'] ?? 0);
 $sort      = $_GET['sort']           ?? get_platform_setting('mp_default_sort', 'default');
 $page      = max(1, (int)($_GET['page'] ?? 1));
 $perPage   = 24;
@@ -32,7 +31,9 @@ $activeCat  = null;
 foreach ($categories as $c) { if ($c['slug'] === $catSlug) { $activeCat = $c; break; } }
 
 // ── Build query ────────────────────────────────────────────────────────────
-$where  = ["mp.status = 'approved'", "ms.status = 'active'", "ms.user_id NOT IN (SELECT id FROM users WHERE banned=1)"];
+// ms.market_id IS NULL — a market's hidden "system shop" never lists
+// products, but this excludes it from browsing defensively either way.
+$where  = ["mp.status = 'approved'", "ms.status = 'active'", "ms.market_id IS NULL", "ms.user_id NOT IN (SELECT id FROM users WHERE banned=1)"];
 $params = [];
 
 if ($q !== '') {
@@ -54,18 +55,6 @@ if ($town !== '') {
     $where[] = 'ms.region LIKE ?';
     $params[] = '%' . $town . '%';
 }
-if ($marketId) {
-    $where[] = 'ms.market_id = ?';
-    $params[] = $marketId;
-}
-
-$activeMarket = null;
-if ($marketId) {
-    $amStmt = $pdo->prepare('SELECT * FROM markets WHERE id=?');
-    $amStmt->execute([$marketId]);
-    $activeMarket = $amStmt->fetch() ?: null;
-}
-
 // 'default' — the blended "smart" listing order: featured/sponsored pinned to
 // the top, then a daily-reshuffled mix of recently-posted and popular items,
 // then everything else. RAND() is seeded by the day number (not per-request)
@@ -104,7 +93,7 @@ $whereClause = implode(' AND ', $where);
 // unit (count + rows together) for a short window; any filter at all falls
 // back to a live, uncached query since the filter-combination space is
 // unbounded and each one is comparatively rare.
-$noFiltersApplied = $q === '' && !$activeCat && $condition === '' && $minPrice <= 0 && $maxPrice <= 0 && $town === '' && !$marketId;
+$noFiltersApplied = $q === '' && !$activeCat && $condition === '' && $minPrice <= 0 && $maxPrice <= 0 && $town === '';
 
 $fetchListing = function () use ($pdo, $whereClause, $params, $orderBy, $perPage, $offset) {
     $countSt = $pdo->prepare("SELECT COUNT(*) FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id WHERE $whereClause");
@@ -216,13 +205,10 @@ function mp_page_url(int $page): string {
 <!-- Header -->
 <header class="mp-topbar">
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;">← Back Home</a>
-    <a href="<?php echo $activeMarket ? 'marketplace.php?market_id='.(int)$activeMarket['id'] : 'marketplace.php'; ?>" class="mp-brand" style="font-size:.88rem;">
-        / <?php echo $activeMarket ? '🏬 ' . sanitize($activeMarket['name']) : '🛍️ Marketplace'; ?>
+    <a href="marketplace.php" class="mp-brand" style="font-size:.88rem;">
+        / 🛍️ Marketplace
     </a>
     <div class="mp-nav-actions">
-        <?php if ($activeMarket): ?>
-        <a href="marketplace.php" class="button button-secondary button-small">🛍️ All Marketplace</a>
-        <?php endif; ?>
         <a href="shops.php" class="button button-secondary button-small">🏪 Shops</a>
         <?php if ($user): ?>
         <a href="cart.php" class="mp-cart-btn button button-secondary button-small">

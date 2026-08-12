@@ -2345,6 +2345,178 @@ function get_managed_market_ids(int $userId): array {
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
+/** Next date >= $from whose ISO weekday (1=Mon..7=Sun) is in $weekdays. */
+function next_weekday_occurrence(DateTimeImmutable $from, array $weekdays): ?DateTimeImmutable {
+    if (!$weekdays) return null;
+    for ($i = 0; $i < 14; $i++) {
+        $candidate = $from->modify("+{$i} days");
+        if (in_array((int)$candidate->format('N'), $weekdays, true)) return $candidate;
+    }
+    return null;
+}
+
+/** The Nth (1-4) or last (-1) occurrence of ISO weekday $weekday within the
+ *  month $monthStart falls in — null if that occurrence doesn't exist
+ *  (e.g. a "5th Monday" that month doesn't have). */
+function nth_weekday_of_month(DateTimeImmutable $monthStart, int $weekday, int $weekOfMonth): ?DateTimeImmutable {
+    $monthStart = $monthStart->modify('first day of this month');
+    if ($weekOfMonth === -1) {
+        $monthEnd = $monthStart->modify('last day of this month');
+        $diff = (int)$monthEnd->format('N') - $weekday;
+        if ($diff < 0) $diff += 7;
+        return $monthEnd->modify("-{$diff} days");
+    }
+    $diff = $weekday - (int)$monthStart->format('N');
+    if ($diff < 0) $diff += 7;
+    $result = $monthStart->modify("+{$diff} days")->modify('+' . (($weekOfMonth - 1) * 7) . ' days');
+    // A "4th Friday" can spill into next month on a short 4-week month — reject it.
+    if ((int)$result->format('n') !== (int)$monthStart->format('n')) return null;
+    return $result;
+}
+
+/** Next date >= $from that is the $weekOfMonth-th occurrence of ISO weekday
+ *  $weekday in its month — checks this month, then rolls forward. */
+function next_monthly_weekday_occurrence(DateTimeImmutable $from, int $weekday, int $weekOfMonth): ?DateTimeImmutable {
+    for ($monthOffset = 0; $monthOffset <= 3; $monthOffset++) {
+        $monthStart = $from->modify('first day of this month')->modify("+{$monthOffset} month");
+        $candidate = nth_weekday_of_month($monthStart, $weekday, $weekOfMonth);
+        if ($candidate && $candidate >= $from) return $candidate;
+    }
+    return null;
+}
+
+/**
+ * Computes a market's current pre-order/payment window from its recurrence
+ * schedule. Markets that never configure one (recurrence_type='manual', the
+ * default) fall back to exactly today's behaviour: submission always
+ * allowed, payment gated purely on the admin's manual status toggle.
+ *
+ * For scheduled markets, `status='closed'` remains a manual emergency
+ * override that force-shuts the market regardless of the computed window.
+ */
+function get_market_schedule(array $market): array {
+    $today = new DateTimeImmutable('today');
+    $now   = new DateTimeImmutable('now');
+    $type  = $market['recurrence_type'] ?? 'manual';
+
+    $result = [
+        'next_market_date'   => null,
+        'preorder_starts_at' => null,
+        'order_close_at'     => null,
+        'is_scheduled'       => $type !== 'manual',
+        'is_market_day'      => false,
+        'is_preorder_open'   => true,
+        'is_payment_open'    => ($market['status'] ?? 'closed') === 'open',
+    ];
+
+    if ($type === 'manual') return $result;
+
+    $weekdays = array_values(array_filter(array_map('intval', explode(',', (string)($market['recurrence_weekdays'] ?? '')))));
+    $preorderDays = max(0, (int)($market['preorder_days'] ?? 0));
+    $orderCloseTime = $market['order_close_time'] ?? null;
+
+    $next = $type === 'weekly'
+        ? next_weekday_occurrence($today, $weekdays)
+        : ($weekdays && $market['recurrence_week_of_month'] !== null
+            ? next_monthly_weekday_occurrence($today, $weekdays[0], (int)$market['recurrence_week_of_month'])
+            : null);
+
+    if ($next) {
+        $result['next_market_date']   = $next;
+        $result['preorder_starts_at'] = $next->modify("-{$preorderDays} days");
+        $result['is_market_day']      = $today == $next;
+
+        // No cutoff time set (the default) keeps the old behaviour — open
+        // through the very end of market day.
+        $result['order_close_at'] = $orderCloseTime
+            ? DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $next->format('Y-m-d') . ' ' . $orderCloseTime)
+            : $next->setTime(23, 59, 59);
+
+        // Submission and payment share the exact same window — buyers can
+        // send a shopping list any time from preorder_starts_at through
+        // order_close_at, and can pay any time in that same span. Both must
+        // check the cutoff, not just payment — otherwise submission (and
+        // the "Orders Open" badge) stays stuck "open" after the cutoff has
+        // passed on market day, contradicting the live countdown and the
+        // payment gate, and letting buyers submit past the cutoff.
+        $result['is_preorder_open'] = $today >= $result['preorder_starts_at'] && $now <= $result['order_close_at'];
+        $result['is_payment_open']  = $result['is_preorder_open'];
+    }
+
+    // Emergency override always wins, scheduled or not — force-closing a
+    // market stops new submissions too, not just payment.
+    if (($market['status'] ?? 'open') === 'closed') {
+        $result['is_preorder_open'] = false;
+        $result['is_payment_open']  = false;
+    }
+
+    return $result;
+}
+
+/** Human-readable summary of a market's recurrence, e.g. "Every Monday &
+ *  Thursday" or "First Saturday of the month". Falls back to the free-text
+ *  schedule_note for unscheduled ('manual') markets. */
+function market_schedule_label(array $market): string {
+    $type = $market['recurrence_type'] ?? 'manual';
+    if ($type === 'manual') return (string)($market['schedule_note'] ?? '');
+
+    $names = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    $weekdays = array_values(array_filter(array_map('intval', explode(',', (string)($market['recurrence_weekdays'] ?? '')))));
+    if (!$weekdays) return '';
+
+    if ($type === 'weekly') {
+        return 'Every ' . implode(' & ', array_map(fn($d) => $names[$d - 1] ?? '', $weekdays));
+    }
+
+    $wom = (int)($market['recurrence_week_of_month'] ?? 0);
+    $womLabel = $wom === -1 ? 'Last' : (['', 'First', 'Second', 'Third', 'Fourth'][$wom] ?? '');
+    return trim("{$womLabel} {$names[$weekdays[0] - 1]} of the month");
+}
+
+/** Lightens ($percent > 0) or darkens ($percent < 0) a #rrggbb colour by
+ *  blending each channel toward white/black. $percent is -1..1. */
+function adjust_hex_brightness(string $hex, float $percent): string {
+    $hex = ltrim($hex, '#');
+    if (strlen($hex) === 3) $hex = $hex[0].$hex[0].$hex[1].$hex[1].$hex[2].$hex[2];
+    $channels = [];
+    foreach ([0, 2, 4] as $offset) {
+        $c = hexdec(substr($hex, $offset, 2));
+        $c = $percent >= 0 ? $c + (255 - $c) * $percent : $c * (1 + $percent);
+        $channels[] = (int)round(max(0, min(255, $c)));
+    }
+    return sprintf('#%02x%02x%02x', ...$channels);
+}
+
+/** Every market's card/hero renders as a 3-stop gradient (light → base →
+ *  dark) so it always looks like the same polished style, just tinted to
+ *  whichever base colour the admin picked (admin/markets.php's colour
+ *  field). Falls back to the app's default green when a market has no
+ *  colour set or an invalid one was somehow stored. */
+function mkt_color_shades(?string $baseHex): array {
+    $default = '#2f8f5b';
+    $hex = ($baseHex && preg_match('/^#[0-9a-f]{6}$/i', $baseHex)) ? $baseHex : $default;
+    return [
+        'g1' => adjust_hex_brightness($hex, 0.18),
+        'g2' => adjust_hex_brightness($hex, -0.27),
+        'g3' => adjust_hex_brightness($hex, -0.58),
+    ];
+}
+
+/**
+ * Platform-wide system charge added to every periodic-market custom order
+ * on top of the item total and fulfillment (pickup/delivery) fee — distinct
+ * from pickup_fee/market_delivery_towns.delivery_fee, which are set per
+ * market. Admin picks either a flat GH₵ amount or a percentage of the item
+ * total (admin/market_settings.php); a value of 0 (the default) means no
+ * charge at all.
+ */
+function get_market_system_charge(float $itemTotal): float {
+    $type  = get_platform_setting('market_system_charge_type', 'flat');
+    $value = (float)get_platform_setting('market_system_charge_value', '0');
+    if ($value <= 0) return 0.0;
+    return $type === 'percent' ? round($itemTotal * $value / 100, 2) : round($value, 2);
+}
+
 /**
  * Get all permissions granted to a specific user (by user ID).
  */

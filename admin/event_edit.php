@@ -94,8 +94,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $isNew = !$id;
-$v  = fn($k) => sanitize($ev[$k] ?? '');
-$dt = fn($k) => !empty($ev[$k]) ? $ev[$k] : '';
+$v    = fn($k) => sanitize($ev[$k] ?? '');
+$vRaw = fn($k) => $ev[$k] ?? ''; // for rich-editor fields — sanitize() would double-escape their stored HTML
+$dt   = fn($k) => !empty($ev[$k]) ? $ev[$k] : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -146,7 +147,7 @@ $dt = fn($k) => !empty($ev[$k]) ? $ev[$k] : '';
             </div>
             <div class="ee-field">
                 <label>Description</label>
-                <textarea name="description" class="form-control rich-editor" rows="6" placeholder="Describe the event…"><?php echo $v('description'); ?></textarea>
+                <textarea name="description" class="form-control rich-editor" rows="6" placeholder="Describe the event…"><?php echo $vRaw('description'); ?></textarea>
             </div>
 
             <p class="ee-section">Date &amp; Time</p>
