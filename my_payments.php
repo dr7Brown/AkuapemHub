@@ -11,6 +11,7 @@ $stmt = $pdo->prepare("
             WHEN 'featured_job'        THEN sr.title
             WHEN 'job_post'            THEN sr2.title
             WHEN 'escrow_with_posting' THEN sr3.title
+            WHEN 'sponsor'             THEN spn.name
             ELSE NULL
         END AS job_title,
         CASE pp.payment_type
@@ -25,11 +26,13 @@ $stmt = $pdo->prepare("
             WHEN 'featured_news'       THEN COALESCE(fnp.name, '—')
             WHEN 'mp_subscription'     THEN COALESCE(msp.name, '—')
             WHEN 'mp_boost'            THEN COALESCE(mbp.name, '—')
+            WHEN 'sponsor'             THEN COALESCE(spp.name, '—')
         END AS package_name
     FROM platform_payments pp
     LEFT JOIN service_requests sr   ON pp.payment_type = 'featured_job'        AND sr.id   = pp.reference_id
     LEFT JOIN service_requests sr2  ON pp.payment_type = 'job_post'            AND sr2.id  = pp.reference_id
     LEFT JOIN service_requests sr3  ON pp.payment_type = 'escrow_with_posting' AND sr3.id  = pp.reference_id
+    LEFT JOIN sponsors spn          ON pp.payment_type = 'sponsor'             AND spn.id  = pp.reference_id
     LEFT JOIN featured_job_packages fp       ON pp.payment_type = 'featured_job'        AND fp.id   = pp.package_id
     LEFT JOIN worker_promotion_packages wp2  ON pp.payment_type = 'featured_worker'     AND wp2.id  = pp.package_id
     LEFT JOIN verification_packages vp       ON pp.payment_type = 'verification'        AND vp.id   = pp.package_id
@@ -41,6 +44,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN featured_news_packages fnp     ON pp.payment_type = 'featured_news'       AND fnp.id  = pp.package_id
     LEFT JOIN mp_seller_subscription_plans msp ON pp.payment_type = 'mp_subscription'  AND msp.id  = pp.package_id
     LEFT JOIN mp_boost_packages mbp          ON pp.payment_type = 'mp_boost'            AND mbp.id  = pp.package_id
+    LEFT JOIN sponsor_packages spp           ON pp.payment_type = 'sponsor'             AND spp.id  = pp.package_id
     WHERE pp.user_id = ?
     ORDER BY pp.created_at DESC
 ");
@@ -72,6 +76,8 @@ $typeLabel = [
     'delivery_sponsored'     => 'Rider Sponsored Listing',
     'delivery_verification'  => 'Rider Verification Badge',
     'delivery_commission'    => 'Delivery Commission',
+    'worker_premium'         => 'Worker Premium Subscription',
+    'sponsor'                => 'Sponsorship',
 ];
 ?>
 <!DOCTYPE html>

@@ -149,6 +149,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    // Send a custom notification (optionally also by email)
+    if ($action === 'send_notification') {
+        $title    = trim($_POST['notif_title'] ?? '');
+        $body     = trim($_POST['notif_body']  ?? '');
+        $type     = $_POST['notif_type'] ?? 'info';
+        $alsoMail = isset($_POST['notif_email']);
+        $validTypes = ['info','success','warning','error'];
+        if (!in_array($type, $validTypes, true)) $type = 'info';
+
+        if (!$title || !$body) {
+            $error = 'Title and message are required.';
+        } else {
+            notify_user($targetId, $title, $body, $type, null, $adminUser['id']);
+            if ($alsoMail && $target['email']) {
+                send_email_notification($target['email'], $title, render_rich($body), $targetId);
+            }
+            log_audit_action($adminUser['id'], 'user_notify', "Sent notification to {$target['name']} (#{$targetId}): \"$title\"");
+            flash('Notification sent.', 'success');
+            header('Location: user_edit.php?id=' . $targetId); exit;
+        }
+    }
+
     // Chat restrictions
     if ($action === 'chat_restrict') {
         $canSend    = isset($_POST['can_send'])    ? 1 : 0;
@@ -193,18 +215,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: ../index.php'); exit;
     }
 
-    // Complimentary membership — grant/revoke
+    // Complimentary membership — grant/revoke. This one-click button always
+    // grants 'full' access; for picking specific paid features instead, use
+    // admin/complimentary_members.php's Grant/Edit modal.
     if ($action === 'grant_complimentary' && is_admin()) {
-        $pdo->prepare('UPDATE users SET is_complimentary=1, complimentary_granted_at=NOW(), complimentary_granted_by=? WHERE id=?')
-            ->execute([$adminUser['id'], $targetId]);
-        log_audit_action($adminUser['id'], 'complimentary_granted', "Granted complimentary membership to {$target['name']} (#{$targetId})");
+        grant_complimentary_features($targetId, ['full'], $adminUser['id']);
+        log_audit_action($adminUser['id'], 'complimentary_granted', "Granted complimentary membership (full access) to {$target['name']} (#{$targetId})");
         notify_user($targetId, '⭐ Complimentary Membership Granted', 'You now have free access to every paid feature on the platform.', 'success');
         flash('Complimentary membership granted.', 'success');
         header('Location: user_edit.php?id=' . $targetId); exit;
     }
     if ($action === 'revoke_complimentary' && is_admin()) {
-        $pdo->prepare('UPDATE users SET is_complimentary=0, complimentary_granted_at=NULL, complimentary_granted_by=NULL WHERE id=?')
-            ->execute([$targetId]);
+        revoke_complimentary_access($targetId);
         log_audit_action($adminUser['id'], 'complimentary_revoked', "Revoked complimentary membership from {$target['name']} (#{$targetId})");
         notify_user($targetId, 'Complimentary Membership Ended', 'Your complimentary membership has ended. Paid features now require payment as normal.', 'info');
         flash('Complimentary membership revoked.', 'success');
@@ -215,6 +237,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Reload fresh data after any POST
 $userStmt->execute([$targetId]);
 $target = $userStmt->fetch();
+
+// Complimentary grant keys, for an accurate "what does this cover" message.
+$targetGrantKeys = [];
+if (!empty($target['is_complimentary'])) {
+    $cgStmt = $pdo->prepare('SELECT feature_key FROM complimentary_grants WHERE user_id=?');
+    $cgStmt->execute([$targetId]);
+    $targetGrantKeys = $cgStmt->fetchAll(PDO::FETCH_COLUMN);
+}
 
 // ── Stats ─────────────────────────────────────────────────────────────────────
 $jobsPosted      = (int)$pdo->prepare('SELECT COUNT(*) FROM service_requests WHERE customer_id=?')->execute([$targetId]) ?
@@ -236,13 +266,16 @@ $daStmt->execute([$targetId]);
 $deliveryAgent = null;
 try { $daStmt->execute([$targetId]); $deliveryAgent = $daStmt->fetch() ?: null; } catch(Exception $e){}
 
-// Shop
-$shopStmt = null;
-$shop = null;
+// Shops — a seller may have more than one (regular + one per market)
+$shops = [];
 try {
-    $shopStmt = $pdo->prepare('SELECT id, shop_name, status, rating, total_sales FROM mp_shops WHERE user_id=?');
+    $shopStmt = $pdo->prepare(
+        'SELECT ms.id, ms.shop_name, ms.status, ms.rating, ms.total_sales, mk.name AS market_name
+         FROM mp_shops ms LEFT JOIN markets mk ON ms.market_id = mk.id
+         WHERE ms.user_id=? ORDER BY (ms.market_id IS NULL) DESC, ms.shop_name'
+    );
     $shopStmt->execute([$targetId]);
-    $shop = $shopStmt->fetch() ?: null;
+    $shops = $shopStmt->fetchAll();
 } catch(Exception $e){}
 
 // Recent audit activity by this user
@@ -365,6 +398,7 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
                 <div class="ue-info-row"><span>Availability</span><span><?php echo ucfirst($workerProfile['availability']); ?></span></div>
                 <div class="ue-info-row"><span>Verification</span><span><?php echo ucfirst($workerProfile['verification_status']); ?></span></div>
                 <div class="ue-info-row"><span>Featured</span><span><?php echo $workerProfile['is_featured']?'Yes':'No'; ?></span></div>
+                <div class="ue-info-row"><span>Profile Views</span><span>👁️ <?php echo number_format((int)$workerProfile['view_count']); ?></span></div>
                 <?php endif; ?>
 
                 <?php if ($deliveryAgent): ?>
@@ -375,12 +409,15 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
                 <div class="ue-info-row"><span>Rating</span><span><?php echo $deliveryAgent['rating']>0?number_format((float)$deliveryAgent['rating'],1).'★':'—'; ?></span></div>
                 <?php endif; ?>
 
-                <?php if ($shop): ?>
+                <?php if ($shops): ?>
                 <hr class="ue-divider">
-                <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted,#6b7280);margin-bottom:6px;">Marketplace Shop</div>
-                <div class="ue-info-row"><span>Shop</span><span><?php echo sanitize($shop['shop_name']); ?></span></div>
-                <div class="ue-info-row"><span>Status</span><span><?php echo ucfirst($shop['status']); ?></span></div>
-                <div class="ue-info-row"><span>Sales</span><span><?php echo number_format((int)$shop['total_sales']); ?></span></div>
+                <div style="font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted,#6b7280);margin-bottom:6px;">Marketplace Shop<?php echo count($shops) > 1 ? 's' : ''; ?></div>
+                <?php foreach ($shops as $shIdx => $sh): ?>
+                <?php if ($shIdx > 0): ?><hr class="ue-divider" style="margin:8px 0;"><?php endif; ?>
+                <div class="ue-info-row"><span><?php echo $sh['market_name'] ? '🏬 ' . sanitize($sh['market_name']) : 'Shop'; ?></span><span><?php echo sanitize($sh['shop_name']); ?></span></div>
+                <div class="ue-info-row"><span>Status</span><span><?php echo ucfirst($sh['status']); ?></span></div>
+                <div class="ue-info-row"><span>Sales</span><span><?php echo number_format((int)$sh['total_sales']); ?></span></div>
+                <?php endforeach; ?>
                 <?php endif; ?>
             </div>
         </aside>
@@ -433,6 +470,41 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
                         </div>
                     </div>
                     <button type="submit" class="button button-primary button-small">Save Profile Changes</button>
+                </form>
+            </div>
+
+            <!-- Send Notification -->
+            <div class="ue-section">
+                <p class="ue-section-title">Send Notification</p>
+                <form method="post" action="user_edit.php?id=<?php echo $targetId; ?>">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="send_notification">
+                    <div class="ue-grid2">
+                        <div class="form-group">
+                            <label>Title *</label>
+                            <input type="text" name="notif_title" required maxlength="150" placeholder="e.g. Account update">
+                        </div>
+                        <div class="form-group">
+                            <label>Type</label>
+                            <select name="notif_type">
+                                <option value="info">Info</option>
+                                <option value="success">Success</option>
+                                <option value="warning">Warning</option>
+                                <option value="error">Error</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Message *</label>
+                        <textarea name="notif_body" class="rich-editor" rows="4" required placeholder="Message shown in this user's notifications"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+                            <input type="checkbox" name="notif_email" value="1">
+                            Also send by email<?php echo $target['email'] ? ' (' . sanitize($target['email']) . ')' : ''; ?>
+                        </label>
+                    </div>
+                    <button type="submit" class="button button-primary button-small">📨 Send Notification</button>
                 </form>
             </div>
 
@@ -586,8 +658,13 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
             <div class="ue-section">
                 <p class="ue-section-title">Complimentary Membership</p>
                 <?php if (!empty($target['is_complimentary'])): ?>
+                <?php $allFeatures = all_complimentary_features(); $isFullGrant = in_array('full', $targetGrantKeys, true); ?>
                 <p style="font-size:.85rem;color:var(--text-muted,#6b7280);margin:0 0 12px;">
-                    ⭐ This user has free access to every paid feature on the platform<?php if (!empty($target['complimentary_granted_at'])): ?> since <?php echo date('d M Y', strtotime($target['complimentary_granted_at'])); ?><?php endif; ?>.
+                    ⭐ This user has free access to
+                    <?php echo $isFullGrant ? 'every paid feature on the platform' : sanitize(implode(', ', array_map(fn($k) => $allFeatures[$k] ?? $k, $targetGrantKeys))); ?>
+                    <?php if (!empty($target['complimentary_granted_at'])): ?> since <?php echo date('d M Y', strtotime($target['complimentary_granted_at'])); ?><?php endif; ?>.
+                    Manage exactly which features are granted from
+                    <a href="complimentary_members.php">Complimentary Memberships</a>.
                 </p>
                 <form method="post" action="user_edit.php?id=<?php echo $targetId; ?>">
                     <?php echo csrf_field(); ?>
@@ -598,13 +675,13 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
                     </button>
                 </form>
                 <?php else: ?>
-                <p style="font-size:.85rem;color:var(--text-muted,#6b7280);margin:0 0 12px;">Grant free access to every currently-paid feature (job posting, featured listings, verification, marketplace subscriptions, delivery premium, etc.) until revoked.</p>
+                <p style="font-size:.85rem;color:var(--text-muted,#6b7280);margin:0 0 12px;">Grant free access to every currently-paid feature (job posting, featured listings, verification, marketplace subscriptions, delivery premium, etc.) until revoked. To grant only specific features instead, use <a href="complimentary_members.php">Complimentary Memberships</a>.</p>
                 <form method="post" action="user_edit.php?id=<?php echo $targetId; ?>">
                     <?php echo csrf_field(); ?>
                     <input type="hidden" name="action" value="grant_complimentary">
                     <button type="submit" class="button button-small" style="background:#f59e0b;color:#fff;border-color:transparent;"
-                            onclick="return confirm('Grant <?php echo sanitize(addslashes($target['name'])); ?> a complimentary membership?');">
-                        ⭐ Grant Complimentary Membership
+                            onclick="return confirm('Grant <?php echo sanitize(addslashes($target['name'])); ?> full complimentary access?');">
+                        ⭐ Grant Complimentary Membership (Full)
                     </button>
                 </form>
                 <?php endif; ?>
@@ -646,5 +723,6 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
         </div><!-- /right -->
     </div><!-- /layout -->
 </main>
+<script src="../assets/js/rich-editor.js" defer></script>
 </body>
 </html>

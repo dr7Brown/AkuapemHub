@@ -353,6 +353,18 @@ function activatePurchasedFeature(array $payment): void {
             notify_user($payment['user_id'], 'Service listing active', "Your service listing is now active for {$days} days. You'll appear in Find Workers.", 'success');
             break;
 
+        case 'worker_premium':
+            $pkg = $pdo->prepare("SELECT duration_days FROM worker_premium_packages WHERE id = ?");
+            $pkg->execute([$payment['package_id']]);
+            $pkg = $pkg->fetch();
+            $days = $pkg ? (int)$pkg['duration_days'] : 30;
+            $pdo->prepare("UPDATE worker_profiles
+                SET subscription_status = 'premium', premium_expiry = DATE_ADD(CURDATE(), INTERVAL ? DAY), premium_renewal_notice_sent = 0
+                WHERE id = ?")
+                ->execute([$days, $payment['reference_id']]);
+            notify_user($payment['user_id'], 'Premium activated', "Your worker subscription is now Premium for {$days} days — you'll rank higher in search results.", 'success');
+            break;
+
         case 'escrow_payment':
             $jobId = (int)$payment['reference_id'];
 
@@ -590,6 +602,27 @@ function activatePurchasedFeature(array $payment): void {
             notify_admins_and_managers(
                 'New escrow job awaiting approval',
                 "Job #{$jobId} \"{$jobTitle}\" was posted with escrow (GH₵ " . number_format($payment['amount'], 2) . ") held and posting fee paid. Review and approve it in the admin panel.",
+                'info'
+            );
+            break;
+
+        case 'sponsor':
+            $spPkg = $pdo->prepare("SELECT duration_days FROM sponsor_packages WHERE id=?");
+            $spPkg->execute([$payment['package_id']]);
+            $spDays = (int)($spPkg->fetch()['duration_days'] ?? 30);
+            $spRow = $pdo->prepare("SELECT name FROM sponsors WHERE id=?");
+            $spRow->execute([$payment['reference_id']]);
+            $spRow = $spRow->fetch();
+            $spName = $spRow ? $spRow['name'] : "Sponsor #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE sponsors
+                SET status='pending_approval', start_date=CURDATE(), end_date=DATE_ADD(CURDATE(), INTERVAL ? DAY), updated_at=NOW()
+                WHERE id=? AND status='pending_payment'")
+                ->execute([$spDays, $payment['reference_id']]);
+            notify_user($payment['user_id'], '✅ Sponsorship payment confirmed',
+                "Payment for \"{$spName}\" was received. Your sponsor listing is now queued for admin review.", 'success');
+            notify_admins_and_managers(
+                'Sponsor submission awaiting review (paid)',
+                "\"{$spName}\" — sponsorship fee paid by user {$payment['user_id']}. Review in Admin → Sponsors.",
                 'info'
             );
             break;

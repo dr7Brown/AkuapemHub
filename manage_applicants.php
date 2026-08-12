@@ -8,9 +8,18 @@ require_login();
 require_not_banned_from('jobs');
 $user = current_user();
 
+// A "worker" role only means that's their CURRENT role — someone who posted
+// a job before switching to worker (or switches back and forth) still owns
+// that job's customer_id and needs to manage its applicants. Every query
+// below already scopes by customer_id = $user['id'], so only bounce a
+// worker away when they have no posted jobs at all to manage.
 if ($user['role'] === 'worker') {
-    header('Location: worker_history.php');
-    exit;
+    $hasPostedJobsStmt = $pdo->prepare('SELECT 1 FROM service_requests WHERE customer_id = ? LIMIT 1');
+    $hasPostedJobsStmt->execute([$user['id']]);
+    if (!$hasPostedJobsStmt->fetch()) {
+        header('Location: worker_history.php');
+        exit;
+    }
 }
 
 $focusJobId = intval($_GET['id'] ?? 0);
@@ -341,9 +350,9 @@ if (!$focusJobId) {
     <?php else: ?>
         <a href="jobs.php" class="button button-secondary button-small">← Dashboard</a>
     <?php endif; ?>
-    <span class="brand">
-        <?php echo $focusJobId ? '👥 Applicants' : '👥 Manage Applicants'; ?>
-    </span>
+    <!-- <span class="brand"> -->
+        <!-- <?php //echo $focusJobId ? '👥 Applicants' : '👥 Manage Applicants'; ?> -->
+    <!-- </span> -->
 </header>
 <main class="page-shell">
     <?php foreach (get_flashes() as $f): ?>

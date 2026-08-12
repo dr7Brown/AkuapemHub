@@ -23,7 +23,7 @@ $existingStmt->execute([$agentProfile['id']]);
 $existing = $existingStmt->fetch() ?: null;
 
 $verificationFee = (float)get_platform_setting('delivery_verification_fee', '0.00');
-$feeEnabled      = get_platform_setting('delivery_enable_verification_fee', '0') === '1' && !user_has_complimentary_access();
+$feeEnabled      = get_platform_setting('delivery_enable_verification_fee', '0') === '1' && !user_has_complimentary_access(null, 'delivery_verification');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();

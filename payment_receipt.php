@@ -232,7 +232,7 @@ $receiptDate = date('d M Y, g:i A', strtotime($receipt['date']));
         }
     </style>
 </head>
-<body>
+<body class="has-bottom-nav">
 
 <header class="app-topbar no-print">
     <a href="my_payments.php" class="button button-secondary button-small">← Back</a>

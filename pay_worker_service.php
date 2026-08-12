@@ -16,16 +16,21 @@ if (!$profile) {
     exit;
 }
 
-// Already paid/free — nothing to do
-if (in_array($profile['service_fee_status'], ['free', 'paid'], true)) {
+// Already paid — nothing to do
+if ($profile['service_fee_status'] === 'paid') {
     flash('Your service listing is already active.', 'info');
     header('Location: worker_profile.php');
     exit;
 }
 
-// Backend check: is paid worker service actually required?
+// Backend check: is paid worker service actually required right now? If not,
+// a 'free' status needs no payment. If it IS required, a stale 'free' status
+// (set before the admin turned this on) must fall through to the packages
+// below instead of being treated as "already active".
 if (!is_feature_paid('enable_paid_worker_service')) {
-    $pdo->prepare("UPDATE worker_profiles SET service_fee_status = 'free' WHERE user_id = ?")->execute([$user['id']]);
+    if ($profile['service_fee_status'] !== 'free') {
+        $pdo->prepare("UPDATE worker_profiles SET service_fee_status = 'free' WHERE user_id = ?")->execute([$user['id']]);
+    }
     flash('Your profile is now active in listings.', 'success');
     header('Location: worker_profile.php');
     exit;

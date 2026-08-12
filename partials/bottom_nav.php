@@ -10,6 +10,12 @@ if (!isset($user) || !$user) {
 
 // Theme colours are now injected globally via db.php ob_start() — no need to echo here.
 
+// When the admin does NOT require a verified email to log in, unverified
+// users can reach every page — nudge them to verify instead of silently
+// letting it slide. If login itself requires verification, this state can't
+// occur (login.php already blocks it), so behaviour there is unchanged.
+$needsEmailVerifyNudge = !is_email_verified() && !requires_verified_email('login');
+
 global $pdo;
 
 // Unread chat count
@@ -38,6 +44,11 @@ try {
     $navUnreadNotifs = 0;
 }
 
+// The bell's badge combines unread notifications + unread chat messages, so
+// it reads as one "you have unread things" count; the Messages tab below
+// still shows its own dedicated chat-only badge.
+$navBellCount = $navUnreadNotifs + $navUnreadMessages;
+
 $navItems = [];
 if (module_enabled('jobs')) {
     $navItems['home']   = ['href' => 'jobs.php',            'icon' => '💼', 'label' => 'Jobs'];
@@ -57,6 +68,48 @@ if (!isset($activeNav)) {
     }
 }
 ?>
+<?php if ($needsEmailVerifyNudge): ?>
+<div id="email-verify-modal" class="evm-overlay" role="dialog" aria-modal="true" aria-label="Verify your email">
+    <div class="evm-card">
+        <div class="evm-icon">📧</div>
+        <h2>Verify your email</h2>
+        <p>We sent a verification link to <strong><?php echo sanitize($user['email']); ?></strong>. Open your inbox and click the link to unlock full access to AkuapemConnect.</p>
+        <form method="post" action="resend_verification.php" style="margin:0;">
+            <?php echo csrf_field(); ?>
+            <button type="submit" class="button button-primary" style="width:100%;">Resend verification email</button>
+        </form>
+        <button type="button" id="evm-dismiss" class="button button-secondary" style="width:100%;margin-top:8px;">Continue without verifying</button>
+    </div>
+</div>
+<style>
+.evm-overlay { display:none; position:fixed; inset:0; z-index:1200; background:rgba(0,0,0,.45); align-items:center; justify-content:center; padding:16px; }
+.evm-overlay.open { display:flex; }
+.evm-card { background:var(--surface,#fff); border-radius:16px; max-width:380px; width:100%; padding:24px 22px; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.25); }
+.evm-icon { font-size:2.2rem; margin-bottom:6px; }
+.evm-card h2 { margin:0 0 8px; font-size:1.15rem; }
+.evm-card p { margin:0 0 16px; font-size:.88rem; color:var(--text-muted,#6b7280); line-height:1.5; }
+</style>
+<script>
+(function () {
+    var KEY     = 'evm_dismissed_<?php echo (int)$user['id']; ?>';
+    var overlay = document.getElementById('email-verify-modal');
+    if (!overlay) return;
+    if (!sessionStorage.getItem(KEY)) {
+        overlay.classList.add('open');
+    }
+    document.getElementById('evm-dismiss').addEventListener('click', function () {
+        sessionStorage.setItem(KEY, '1');
+        overlay.classList.remove('open');
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && overlay.classList.contains('open')) {
+            sessionStorage.setItem(KEY, '1');
+            overlay.classList.remove('open');
+        }
+    });
+})();
+</script>
+<?php endif; ?>
 <?php require __DIR__ . '/social_tiles.php'; ?>
 <nav class="bottom-nav">
     <?php foreach ($navItems as $key => $item): ?>
@@ -66,10 +119,10 @@ if (!isset($activeNav)) {
         </a>
     <?php endforeach; ?>
 </nav>
-<!-- Fixed notification bell — top-right corner, every page -->
+<!-- Fixed notification bell — top-right corner, every page. -->
 <a href="notifications.php" id="notif-bell"
    aria-label="Notifications" aria-haspopup="true" aria-expanded="false"
-   style="position:fixed;top:10px;right:14px;z-index:1100;
+   style="position:fixed;top:10px;right:68px;z-index:1100;
           width:40px;height:40px;border-radius:50%;
           background:var(--surface,#fff);
           box-shadow:0 2px 10px rgba(0,0,0,.15);
@@ -77,9 +130,81 @@ if (!isset($activeNav)) {
           display:flex;align-items:center;justify-content:center;
           font-size:1.1rem;text-decoration:none;
           transition:box-shadow .15s;">
-    <span class="nav-icon<?php echo $navUnreadNotifs ? ' nav-badge' : ''; ?>"
-          <?php echo $navUnreadNotifs ? 'data-count="' . min($navUnreadNotifs, 99) . '"' : ''; ?>>🔔</span>
+    <span class="nav-icon<?php echo $navBellCount ? ' nav-badge' : ''; ?>"
+          <?php echo $navBellCount ? 'data-count="' . min($navBellCount, 99) . '"' : ''; ?>>🔔</span>
 </a>
+
+<!-- Fixed profile avatar with dropdown — top-right corner, every page. -->
+<div id="avatar-wrap" style="position:fixed;top:10px;right:14px;z-index:1100;">
+    <button id="avatar-btn" aria-expanded="false" aria-haspopup="true"
+            style="background:none;border:none;padding:0;cursor:pointer;display:flex;align-items:center;border-radius:50%;
+                   box-shadow:0 2px 10px rgba(0,0,0,.15);">
+        <?php if (!empty($user['profile_photo'])): ?>
+            <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile" class="avatar" style="pointer-events:none;" />
+        <?php else: ?>
+            <span class="avatar" style="pointer-events:none;"><?php echo sanitize(strtoupper(substr(display_name($user), 0, 1))); ?></span>
+        <?php endif; ?>
+    </button>
+    <div id="avatar-menu" role="menu"
+         style="display:none;position:absolute;right:0;top:calc(100% + 8px);min-width:180px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:999;overflow:hidden;">
+        <div style="padding:12px 14px 10px;border-bottom:1px solid #f1f5f9;">
+            <strong style="display:block;font-size:.88rem;"><?php echo sanitize(display_name($user)); ?></strong>
+            <span style="font-size:.75rem;color:#6b7280;"><?php echo sanitize($user['email']); ?></span>
+        </div>
+        <?php if ($user['role'] === 'worker'): ?>
+        <a href="worker_profile.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>👤</span> My Worker Profile
+        </a>
+        <?php else: ?>
+        <a href="jobs.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>🏠</span> Dashboard
+        </a>
+        <?php endif; ?>
+        <a href="settings.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>⚙️</span> Settings
+        </a>
+        <div style="border-top:1px solid #f1f5f9;"></div>
+        <a href="marketplace.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>🛍️</span> Marketplace
+        </a>
+        <?php if (module_enabled('markets')): ?>
+        <a href="markets.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>🏬</span> Periodic Markets
+        </a>
+        <?php endif; ?>
+        <a href="orders.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>📋</span> My Orders
+        </a>
+        <a href="seller_dashboard.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>🏪</span> My Shop
+        </a>
+        <a href="my_saved.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>❤️</span> Saved Products
+        </a>
+        <div style="border-top:1px solid #f1f5f9;"></div>
+        <a href="logout.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:#c0392b;text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background=''">
+            <span>🚪</span> Logout
+        </a>
+    </div>
+</div>
+<script>
+(function() {
+    var btn  = document.getElementById('avatar-btn');
+    var menu = document.getElementById('avatar-menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var open = menu.style.display === 'block';
+        menu.style.display = open ? 'none' : 'block';
+        btn.setAttribute('aria-expanded', String(!open));
+    });
+    document.addEventListener('click', function() {
+        menu.style.display = 'none';
+        btn.setAttribute('aria-expanded', 'false');
+    });
+    menu.addEventListener('click', function(e) { e.stopPropagation(); });
+})();
+</script>
 
 <!-- Notification popup — opened from the bell instead of navigating to notifications.php -->
 <div id="notif-popup" role="dialog" aria-label="Notifications">
@@ -94,8 +219,27 @@ if (!isset($activeNav)) {
 
 <style>
 #notif-bell:hover { box-shadow:0 4px 16px rgba(0,0,0,.2); }
-/* Shrink badge text inside fixed bell */
-#notif-bell .nav-badge::after { font-size:.58rem; min-width:16px; height:16px; }
+/* Unread-count bubble on the fixed bell. Not inside .bottom-nav-item, so it
+   needs its own full rule (not just the size tweak this used to be) —
+   positioned to the TOP-LEFT of the bell (not top-right) since the profile
+   avatar sits immediately to the bell's right and a right-side bubble would
+   render underneath/behind it. */
+#notif-bell .nav-badge { position:relative; }
+#notif-bell .nav-badge::after {
+    content:attr(data-count);
+    position:absolute;
+    top:-4px; left:-8px;
+    min-width:16px; height:16px;
+    padding:0 4px;
+    border-radius:999px;
+    background:var(--secondary);
+    color:#fff;
+    font-size:.58rem;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
 
 #notif-popup {
     display:none;

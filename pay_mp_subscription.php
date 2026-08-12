@@ -11,7 +11,7 @@ require_once __DIR__ . '/paystack.php';
 require_module_enabled('mp', 'Marketplace');
 require_login();
 $user  = current_user();
-$shop  = get_shop_by_user((int)$user['id']);
+$shop  = get_active_seller_shop((int)$user['id']);
 
 if (!$shop) { flash('Create your shop first.', 'warning'); header('Location: seller_dashboard.php?tab=setup'); exit; }
 
@@ -20,7 +20,12 @@ if (get_platform_setting('mp_subscription_enabled','0') !== '1') {
     header('Location: seller_dashboard.php'); exit;
 }
 
-$plans = $pdo->query("SELECT * FROM mp_seller_subscription_plans WHERE status='active' ORDER BY display_order ASC, price ASC")->fetchAll();
+// Market-linked shops see only market-scoped packages, and vice versa —
+// pricing/limits are intentionally allowed to differ between the two.
+$planScope = !empty($shop['market_id']) ? 'market' : 'marketplace';
+$plansStmt = $pdo->prepare("SELECT * FROM mp_seller_subscription_plans WHERE status='active' AND scope=? ORDER BY display_order ASC, price ASC");
+$plansStmt->execute([$planScope]);
+$plans = $plansStmt->fetchAll();
 if (!$plans) { flash('No subscription plans available. Contact admin.', 'info'); header('Location: seller_dashboard.php'); exit; }
 
 // Active subscription check (joins the plan's price so upgrade/downgrade can be told apart)
@@ -37,8 +42,8 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
     $planId = (int)($_POST['plan_id'] ?? 0);
-    $planSt = $pdo->prepare("SELECT * FROM mp_seller_subscription_plans WHERE id=? AND status='active'");
-    $planSt->execute([$planId]); $plan = $planSt->fetch();
+    $planSt = $pdo->prepare("SELECT * FROM mp_seller_subscription_plans WHERE id=? AND status='active' AND scope=?");
+    $planSt->execute([$planId, $planScope]); $plan = $planSt->fetch();
     if (!$plan) { $error = 'Select a valid plan.'; }
 
     if (!$error) {
@@ -76,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        if (user_has_complimentary_access()) $charge = 0;
+        if (user_has_complimentary_access(null, 'mp_subscription')) $charge = 0;
 
         $pdo->prepare("INSERT INTO mp_seller_subscriptions (shop_id,plan_id,start_date,end_date,price_paid,status) VALUES (?,?,?,?,?,'pending')")
             ->execute([$shop['id'], $planId, $start, $end, $charge]);

@@ -6,7 +6,7 @@ require_module_enabled('events', 'Events');
 require_login();
 $user = current_user();
 
-$feeEnabled = (bool)(int)get_platform_setting('event_fee_enabled', '0') && !user_has_complimentary_access();
+$feeEnabled = (bool)(int)get_platform_setting('event_fee_enabled', '0') && !user_has_complimentary_access(null, 'event_fee');
 $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
 
 $errors  = [];
@@ -207,7 +207,7 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
         #price-row { display:none; }
     </style>
 </head>
-<body>
+<body class="has-bottom-nav">
     <header class="topbar">
         <a href="community.php" class="button button-secondary button-small">← Community</a>
         <h1>My Events</h1>
@@ -303,9 +303,13 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                 </div>
                 <div class="me-field">
                     <label>Google Maps Link <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
-                    <div class="desc">Paste a Google Maps share link. Attendees can click it to get directions.</div>
-                    <input type="url" name="google_maps_link" class="form-control"
-                           value="<?php echo $v('google_maps_link'); ?>" placeholder="https://maps.google.com/…">
+                    <div class="desc">Paste a Google Maps share link, or tap "Get Link" while at the venue to use your current location. Attendees can click it to get directions.</div>
+                    <div style="display:flex;gap:8px;">
+                        <input type="url" name="google_maps_link" id="google_maps_link" class="form-control" style="flex:1;"
+                               value="<?php echo $v('google_maps_link'); ?>" placeholder="https://maps.google.com/…">
+                        <button type="button" id="me-get-maps-link" class="button button-secondary button-small" style="flex-shrink:0;">📍 Get Link</button>
+                    </div>
+                    <p class="meta" id="me-maps-link-status" style="margin-top:4px;"></p>
                 </div>
 
                 <p class="me-section">Organizer &amp; Tickets</p>
@@ -425,6 +429,34 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
         function toggle() { priceRow.style.display = sel.value === 'paid' ? '' : 'none'; }
         sel.addEventListener('change', toggle);
         toggle();
+    })();
+    (function () {
+        var btn    = document.getElementById('me-get-maps-link');
+        var input  = document.getElementById('google_maps_link');
+        var status = document.getElementById('me-maps-link-status');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+            if (!navigator.geolocation) {
+                status.textContent = 'Geolocation is not supported by your browser.';
+                return;
+            }
+            status.textContent = 'Locating…';
+            navigator.geolocation.getCurrentPosition(function (position) {
+                var lat      = position.coords.latitude;
+                var lng      = position.coords.longitude;
+                var accuracy = position.coords.accuracy;
+                input.value  = 'https://maps.google.com/?q=' + lat + ',' + lng;
+                if (accuracy > 1000) {
+                    status.textContent = '⚠️ Low-confidence location (accurate to ~' + Math.round(accuracy / 1000) + 'km) — likely from WiFi/IP, not GPS. Open the link to check the pin, or use a phone with GPS for a precise result.';
+                } else if (accuracy > 100) {
+                    status.textContent = 'Location captured (accurate to ~' + Math.round(accuracy) + 'm) — please open the link to confirm the pin lands on the venue before saving.';
+                } else {
+                    status.textContent = 'Location captured: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '.';
+                }
+            }, function () {
+                status.textContent = 'Unable to retrieve your location. Please allow location access and try again, or paste a link manually.';
+            }, { enableHighAccuracy: true });
+        });
     })();
     </script>
 

@@ -16,6 +16,7 @@ $condition = trim($_GET['condition'] ?? '');
 $minPrice  = (float)($_GET['min'] ?? 0);
 $maxPrice  = (float)($_GET['max'] ?? 0);
 $town      = trim($_GET['town']      ?? '');
+$marketId  = (int)($_GET['market_id'] ?? 0);
 $sort      = $_GET['sort']           ?? get_platform_setting('mp_default_sort', 'default');
 $page      = max(1, (int)($_GET['page'] ?? 1));
 $perPage   = 24;
@@ -52,6 +53,17 @@ if ($maxPrice > 0) { $where[] = 'COALESCE(mp.discount_price, mp.price) <= ?'; $p
 if ($town !== '') {
     $where[] = 'ms.region LIKE ?';
     $params[] = '%' . $town . '%';
+}
+if ($marketId) {
+    $where[] = 'ms.market_id = ?';
+    $params[] = $marketId;
+}
+
+$activeMarket = null;
+if ($marketId) {
+    $amStmt = $pdo->prepare('SELECT * FROM markets WHERE id=?');
+    $amStmt->execute([$marketId]);
+    $activeMarket = $amStmt->fetch() ?: null;
 }
 
 // 'default' — the blended "smart" listing order: featured/sponsored pinned to
@@ -92,7 +104,7 @@ $whereClause = implode(' AND ', $where);
 // unit (count + rows together) for a short window; any filter at all falls
 // back to a live, uncached query since the filter-combination space is
 // unbounded and each one is comparatively rare.
-$noFiltersApplied = $q === '' && !$activeCat && $condition === '' && $minPrice <= 0 && $maxPrice <= 0 && $town === '';
+$noFiltersApplied = $q === '' && !$activeCat && $condition === '' && $minPrice <= 0 && $maxPrice <= 0 && $town === '' && !$marketId;
 
 $fetchListing = function () use ($pdo, $whereClause, $params, $orderBy, $perPage, $offset) {
     $countSt = $pdo->prepare("SELECT COUNT(*) FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id WHERE $whereClause");
@@ -142,7 +154,7 @@ function mp_page_url(int $page): string {
     ]); ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .mp-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 64px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+        .mp-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 120px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
         .mp-brand  { font-weight:900; font-size:1.05rem; color:var(--primary,#0f766e); text-decoration:none; display:flex; align-items:center; gap:6px; }
         .mp-nav-actions { display:flex; gap:8px; align-items:center; }
         .mp-cart-btn { position:relative; text-decoration:none; }
@@ -204,8 +216,13 @@ function mp_page_url(int $page): string {
 <!-- Header -->
 <header class="mp-topbar">
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;">← Back Home</a>
-    <a href="marketplace.php" class="mp-brand" style="font-size:.88rem;">/ 🛍️ Marketplace</a>
+    <a href="<?php echo $activeMarket ? 'marketplace.php?market_id='.(int)$activeMarket['id'] : 'marketplace.php'; ?>" class="mp-brand" style="font-size:.88rem;">
+        / <?php echo $activeMarket ? '🏬 ' . sanitize($activeMarket['name']) : '🛍️ Marketplace'; ?>
+    </a>
     <div class="mp-nav-actions">
+        <?php if ($activeMarket): ?>
+        <a href="marketplace.php" class="button button-secondary button-small">🛍️ All Marketplace</a>
+        <?php endif; ?>
         <a href="shops.php" class="button button-secondary button-small">🏪 Shops</a>
         <?php if ($user): ?>
         <a href="cart.php" class="mp-cart-btn button button-secondary button-small">
@@ -213,7 +230,7 @@ function mp_page_url(int $page): string {
         </a>
         <a href="seller_dashboard.php" class="button button-primary button-small">My Shop</a>
         <?php else: ?>
-        <a href="login.php" class="button button-secondary button-small">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
         <a href="register.php" class="button button-primary button-small">Join</a>
         <?php endif; ?>
     </div>
@@ -312,7 +329,7 @@ function mp_page_url(int $page): string {
                 <div class="mp-card-name"><?php echo sanitize($p['name']); ?></div>
                 <div class="mp-card-shop">🏪 <?php echo sanitize(mb_substr($p['shop_name'],0,30)); ?></div>
                 <div class="mp-card-price">
-                    GH&#8373; <?php echo number_format($effPrice, 2); ?>
+                    GH&#8373; <?php echo number_format($effPrice, 2); ?><?php if (!empty($p['price_unit'])): ?> <small>/ <?php echo sanitize($p['price_unit']); ?></small><?php endif; ?>
                     <?php if ($discPct > 0): ?><span class="mp-card-orig">GH&#8373; <?php echo number_format((float)$p['price'],2); ?></span><?php endif; ?>
                 </div>
             </div>

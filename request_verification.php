@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Complimentary members skip payment but still need the same human
         // document review every request goes through — submit it for review
         // instead of the generic "contact support" dead end.
-        if (user_has_complimentary_access()) {
+        if (user_has_complimentary_access(null, 'enable_paid_verification_badges')) {
             $pdo->prepare("UPDATE worker_profiles SET verification_status = 'pending', verification_rejection_reason = NULL WHERE user_id = ?")
                 ->execute([$user['id']]);
             log_audit_action($user['id'], 'verification_requested', "Complimentary member — verification submitted for review, user ID {$user['id']}");

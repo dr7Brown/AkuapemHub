@@ -24,7 +24,7 @@ if ($article['status'] !== 'pending_payment') {
     header('Location: my_news.php'); exit;
 }
 
-$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0') && !user_has_complimentary_access();
+$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0') && !user_has_complimentary_access(null, 'news_fee');
 $feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
 
 if (!$feeEnabled) {

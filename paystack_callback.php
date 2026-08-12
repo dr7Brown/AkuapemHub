@@ -100,6 +100,7 @@ if ($result['success']) {
             'verification'          => 'worker_profile.php',
             'job_post'              => 'jobs.php',
             'worker_service'        => 'worker_profile.php',
+            'worker_premium'        => 'worker_profile.php',
             'escrow_payment'        => 'request_detail.php?id=' . $payment['reference_id'],
             'escrow_with_posting'   => 'request_detail.php?id=' . $payment['reference_id'],
             'news_post'             => 'my_news.php',
@@ -115,6 +116,7 @@ if ($result['success']) {
             'delivery_sponsored'    => 'delivery_agent_jobs.php',
             'delivery_verification' => 'delivery_agent_jobs.php',
             'delivery_commission'   => 'delivery_agent_jobs.php?tab=earnings',
+            'sponsor'               => 'my_payments.php',
         ];
         flash('Payment already confirmed.', 'info');
         $redirect = $alreadyRedirects[$payment['payment_type']] ?? 'jobs.php';

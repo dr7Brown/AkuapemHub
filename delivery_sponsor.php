@@ -22,7 +22,7 @@ $packages = [
     ['days' => 30, 'price' => (float)get_platform_setting('delivery_sponsored_30day_price', '30.00'), 'label' => '30 Days'],
     ['days' => 90, 'price' => (float)get_platform_setting('delivery_sponsored_90day_price', '70.00'), 'label' => '90 Days'],
 ];
-$requiresPayment = get_platform_setting('delivery_sponsored_requires_payment', '0') === '1' && !user_has_complimentary_access();
+$requiresPayment = get_platform_setting('delivery_sponsored_requires_payment', '0') === '1' && !user_has_complimentary_access(null, 'delivery_sponsored');
 
 $activeSponsored = null;
 if (agent_is_sponsored($agentProfile)) {

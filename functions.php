@@ -154,10 +154,79 @@ function log_security_event(?int $userId, string $action, string $ip, string $us
     }
 }
 
-function notify_user($userId, $title, $body, $type = 'info', $link = null) {
+function notify_user($userId, $title, $body, $type = 'info', $link = null, $adminId = null) {
     global $pdo;
-    $stmt = $pdo->prepare('INSERT INTO notifications (user_id, title, body, type, is_read, link, created_at) VALUES (?, ?, ?, ?, 0, ?, NOW())');
-    return $stmt->execute([$userId, $title, $body, $type, $link]);
+    $stmt = $pdo->prepare('INSERT INTO notifications (user_id, sent_by_admin_id, title, body, type, is_read, link, created_at) VALUES (?, ?, ?, ?, ?, 0, ?, NOW())');
+    return $stmt->execute([$userId, $adminId, $title, $body, $type, $link]);
+}
+
+/**
+ * Broadcast target categories for admin-composed notifications/emails.
+ * Key => display label; broadcast_recipient_ids() resolves a key to user IDs.
+ */
+function broadcast_categories(): array {
+    return [
+        'all'              => 'All Users',
+        'role_customer'    => 'Customers',
+        'role_worker'      => 'Workers',
+        'role_manager'     => 'Managers',
+        'verified_workers' => 'Verified Workers',
+        'sellers'          => 'Marketplace Sellers',
+        'delivery_agents'  => 'Delivery Agents',
+        'complimentary'    => 'Complimentary Members',
+    ];
+}
+
+function broadcast_recipient_ids(string $category): array {
+    global $pdo;
+    switch ($category) {
+        case 'all':
+            $sql = "SELECT id FROM users WHERE role != 'admin' AND banned = 0"; break;
+        case 'role_customer':
+            $sql = "SELECT id FROM users WHERE role = 'customer' AND banned = 0"; break;
+        case 'role_worker':
+            $sql = "SELECT id FROM users WHERE role = 'worker' AND banned = 0"; break;
+        case 'role_manager':
+            $sql = "SELECT id FROM users WHERE role = 'manager' AND banned = 0"; break;
+        case 'verified_workers':
+            $sql = "SELECT u.id FROM users u JOIN worker_profiles wp ON wp.user_id = u.id
+                    WHERE u.role = 'worker' AND wp.is_verified = 1 AND u.banned = 0"; break;
+        case 'sellers':
+            $sql = "SELECT DISTINCT u.id FROM users u JOIN mp_shops s ON s.user_id = u.id
+                    WHERE s.status = 'active' AND u.role != 'admin' AND u.banned = 0"; break;
+        case 'delivery_agents':
+            $sql = "SELECT DISTINCT u.id FROM users u JOIN delivery_agents d ON d.user_id = u.id
+                    WHERE u.role != 'admin' AND u.banned = 0"; break;
+        case 'complimentary':
+            $sql = "SELECT id FROM users WHERE is_complimentary = 1 AND role != 'admin' AND banned = 0"; break;
+        default:
+            return [];
+    }
+    return array_map('intval', $pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * Sends an admin-composed notification (and optionally an email) to every
+ * user in a broadcast category. Returns ['sent'=>int, 'emailed'=>int].
+ */
+function send_bulk_notification(string $category, string $title, string $body, string $type, int $adminId, bool $alsoEmail = false): array {
+    global $pdo;
+    $ids = broadcast_recipient_ids($category);
+    foreach ($ids as $uid) {
+        notify_user($uid, $title, $body, $type, null, $adminId);
+    }
+    $emailed = 0;
+    if ($alsoEmail && $ids) {
+        if (function_exists('set_time_limit')) set_time_limit(180);
+        $htmlBody = render_rich($body);
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("SELECT id, email FROM users WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+        foreach ($stmt->fetchAll() as $row) {
+            if (send_email_notification($row['email'], $title, $htmlBody, (int)$row['id'])) $emailed++;
+        }
+    }
+    return ['sent' => count($ids), 'emailed' => $emailed];
 }
 
 function get_notifications($userId, $limit = 10) {
@@ -823,6 +892,10 @@ function score_worker_core(array $worker, ?string $matchText, ?float $originLat,
         $score += 5;
         $reasons[] = 'Verified worker';
     }
+    if (($worker['subscription_status'] ?? '') === 'premium') {
+        $score += 6;
+        $reasons[] = 'Premium worker';
+    }
 
     return [
         'score' => (int)min(100, $score),
@@ -948,6 +1021,7 @@ function sweep_expired_featured() {
     $pdo->exec("UPDATE worker_profiles SET is_featured = 0 WHERE is_featured = 1 AND featured_end_date IS NOT NULL AND featured_end_date < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET is_verified = 0, verification_status = 'expired' WHERE is_verified = 1 AND verification_expiry IS NOT NULL AND verification_expiry < CURDATE()");
     $pdo->exec("UPDATE worker_profiles SET service_fee_status = 'free' WHERE service_fee_status = 'paid' AND service_fee_expiry IS NOT NULL AND service_fee_expiry < CURDATE()");
+    $pdo->exec("UPDATE worker_profiles SET subscription_status = 'free' WHERE subscription_status = 'premium' AND premium_expiry IS NOT NULL AND premium_expiry < CURDATE()");
 
     // 2-day warning: featured jobs
     $featJobsExpiring = $pdo->query(
@@ -978,6 +1052,13 @@ function sweep_expired_featured() {
     foreach ($expiring as $row) {
         notify_user($row['user_id'], 'Service Listing Expiring Soon', 'Your service listing expires on ' . $row['service_fee_expiry'] . '. Renew now to stay visible in Find Workers.', 'warning');
         $pdo->prepare("UPDATE worker_profiles SET service_renewal_notice_sent = 1 WHERE user_id = ?")->execute([$row['user_id']]);
+    }
+
+    // 7-day warning: premium subscription (once per cycle, flag prevents repeat)
+    $premiumExpiring = $pdo->query("SELECT user_id, premium_expiry FROM worker_profiles WHERE subscription_status = 'premium' AND premium_expiry IS NOT NULL AND premium_expiry BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND premium_renewal_notice_sent = 0")->fetchAll();
+    foreach ($premiumExpiring as $row) {
+        notify_user($row['user_id'], 'Premium Subscription Expiring Soon', 'Your Premium subscription expires on ' . $row['premium_expiry'] . '. Renew now to keep your search ranking boost.', 'warning');
+        $pdo->prepare("UPDATE worker_profiles SET premium_renewal_notice_sent = 1 WHERE user_id = ?")->execute([$row['user_id']]);
     }
 
     // ── Marketplace products ──────────────────────────────────────────────
@@ -1135,6 +1216,31 @@ function sweep_expired_featured() {
                 'warning');
         }
     } catch (Exception $e) { /* Delivery tables not yet installed */ }
+
+    // ── Sponsors ────────────────────────────────────────────────────────────
+    try {
+        // 3-day expiry warning
+        $spExpiring = $pdo->query(
+            "SELECT user_id, name, end_date FROM sponsors
+             WHERE status = 'active' AND end_date = DATE_ADD(CURDATE(), INTERVAL 3 DAY)"
+        )->fetchAll();
+        foreach ($spExpiring as $sp) {
+            if (!$sp['user_id']) continue; // admin-added sponsor, no owning account to notify
+            notify_user((int)$sp['user_id'], 'Sponsorship Expiring Soon',
+                '"' . $sp['name'] . '" will come off the homepage on ' . $sp['end_date'] . '. Renew to keep your logo featured.',
+                'warning', 'become_sponsor.php');
+        }
+
+        // On expiry
+        $spExpired = $pdo->query("SELECT id, user_id, name FROM sponsors WHERE status = 'active' AND end_date IS NOT NULL AND end_date < CURDATE()")->fetchAll();
+        foreach ($spExpired as $sp) {
+            $pdo->prepare("UPDATE sponsors SET status = 'expired', updated_at = NOW() WHERE id = ?")->execute([$sp['id']]);
+            if (!$sp['user_id']) continue; // admin-added sponsor, no owning account to notify
+            notify_user((int)$sp['user_id'], 'Sponsorship Expired',
+                '"' . $sp['name'] . '" has come off the homepage. Renew any time to go live again.',
+                'info', 'become_sponsor.php');
+        }
+    } catch (Exception $e) { /* Sponsors tables not yet installed */ }
 }
 
 function consume_job_post_credit(int $userId, int $jobId): bool {
@@ -1941,22 +2047,94 @@ function public_job_statuses_sql() {
 }
 
 /**
- * Whether $userId (default: the logged-in user) has been granted a
- * complimentary membership by an admin — free access to every paid feature
- * on the platform. Always queries fresh (no session caching) so a revoke
- * takes effect on the member's very next action, not just their next login.
+ * Catalog of every individually-grantable complimentary feature, keyed the
+ * same way each feature checks for payment (the enable_paid_* keys match
+ * is_feature_paid()'s $featureKey exactly; the rest match the feature_key
+ * strings used directly by user_has_complimentary_access() call sites).
+ * 'full' is a separate sentinel (not listed here) that covers every key,
+ * including any added here in the future.
  */
-function user_has_complimentary_access(?int $userId = null): bool {
+function all_complimentary_features(): array {
+    return [
+        'enable_paid_job_posting'         => 'Job Posting',
+        'enable_paid_worker_service'      => 'Worker Service (apply to jobs)',
+        'enable_paid_featured_jobs'       => 'Featured Jobs',
+        'enable_paid_featured_workers'    => 'Featured Workers',
+        'enable_paid_verification_badges' => 'Verification Badges',
+        'enable_paid_worker_premium'      => 'Worker Premium Subscription',
+        'enable_paid_featured_news'       => 'Featured News',
+        'enable_paid_featured_events'     => 'Featured Events',
+        'enable_paid_featured_funerals'   => 'Featured Funerals',
+        'news_fee'                        => 'News Posting Fee',
+        'event_fee'                       => 'Event Posting Fee',
+        'funeral_fee'                     => 'Funeral Posting Fee',
+        'mp_subscription'                 => 'Marketplace Seller Subscription',
+        'mp_boost'                        => 'Marketplace Boost (featured/sponsored listings)',
+        'delivery_premium'                => 'Delivery Premium Subscription',
+        'delivery_sponsored'              => 'Delivery Sponsored Listing',
+        'delivery_verification'           => 'Delivery Rider Verification Fee',
+    ];
+}
+
+/**
+ * Whether $userId (default: the logged-in user) has been granted
+ * complimentary access — by an admin — either to every paid feature
+ * ('full') or to the specific $featureKey passed in. Always queries fresh
+ * (no session caching) so a revoke takes effect on the member's very next
+ * action, not just their next login.
+ *
+ * $featureKey === null keeps the pre-granular behavior (true if the user has
+ * ANY active grant at all) for call sites not yet updated to name a feature.
+ */
+function user_has_complimentary_access(?int $userId = null, ?string $featureKey = null): bool {
     global $pdo;
     $userId = $userId ?? (current_user()['id'] ?? null);
     if (!$userId) return false;
     $stmt = $pdo->prepare('SELECT is_complimentary FROM users WHERE id=?');
     $stmt->execute([$userId]);
-    return (bool)$stmt->fetchColumn();
+    if (!$stmt->fetchColumn()) return false;
+    if ($featureKey === null) return true;
+    $g = $pdo->prepare("SELECT 1 FROM complimentary_grants WHERE user_id=? AND feature_key IN ('full', ?) LIMIT 1");
+    $g->execute([$userId, $featureKey]);
+    return (bool)$g->fetchColumn();
+}
+
+/**
+ * Set $userId's complimentary access to exactly the given feature keys (or
+ * just ['full'] for everything) — replaces whatever was granted before, so
+ * the admin's checkbox selection always matches the resulting grant set
+ * (used both for a fresh grant and for editing an existing member's grants).
+ */
+function grant_complimentary_features(int $userId, array $featureKeys, int $grantedBy): void {
+    global $pdo;
+    $valid = array_keys(all_complimentary_features());
+    $featureKeys = array_values(array_intersect($featureKeys, array_merge($valid, ['full'])));
+    if (!$featureKeys) return;
+
+    $pdo->prepare('UPDATE users SET is_complimentary=1, complimentary_granted_at=NOW(), complimentary_granted_by=? WHERE id=?')
+        ->execute([$grantedBy, $userId]);
+
+    $pdo->prepare('DELETE FROM complimentary_grants WHERE user_id=?')->execute([$userId]);
+    if (in_array('full', $featureKeys, true)) {
+        $featureKeys = ['full'];
+    }
+
+    $ins = $pdo->prepare('INSERT IGNORE INTO complimentary_grants (user_id, feature_key, granted_by) VALUES (?, ?, ?)');
+    foreach ($featureKeys as $key) {
+        $ins->execute([$userId, $key, $grantedBy]);
+    }
+}
+
+/** Fully revoke complimentary access — clears the flag and every grant row. */
+function revoke_complimentary_access(int $userId): void {
+    global $pdo;
+    $pdo->prepare('UPDATE users SET is_complimentary=0, complimentary_granted_at=NULL, complimentary_granted_by=NULL WHERE id=?')
+        ->execute([$userId]);
+    $pdo->prepare('DELETE FROM complimentary_grants WHERE user_id=?')->execute([$userId]);
 }
 
 function is_feature_paid($featureKey) {
-    if (user_has_complimentary_access()) return false;
+    if (user_has_complimentary_access(null, $featureKey)) return false;
     $mode = get_platform_setting('monetization_mode', 'free');
     if ($mode === 'free') return false;
     if ($mode === 'paid') return true;
@@ -2013,6 +2191,7 @@ function all_mod_permissions(): array {
             'approve_events'            => 'Approve / reject community events',
             'approve_funerals'          => 'Approve / reject funeral announcements',
             'approve_news'              => 'Approve / reject news articles',
+            'approve_sponsors'          => 'Approve / reject sponsor submissions',
             'approve_delivery_requests' => 'Approve / reject delivery requests',
             'approve_delivery_agents'   => 'Approve / reject delivery agent applications',
             'approve_verifications'     => 'Review rider & worker verification badges',
@@ -2031,6 +2210,10 @@ function all_mod_permissions(): array {
             'manage_master_catalog' => 'Manage the shared product catalog',
             'manage_towns'          => 'Manage the Akuapem towns list',
             'manage_media_settings' => 'Configure image upload sizes & quality',
+        ],
+        'Periodic Markets' => [
+            'manage_markets'            => 'Create markets, open/close them, and assign storehouse managers',
+            'manage_market_deliveries'  => 'Manage storehouse handoffs for assigned markets',
         ],
     ];
 }
@@ -2130,6 +2313,36 @@ function require_mod_permission(string $permission, string $back = 'index.php'):
 </div></main></body></html>';
     }
     exit;
+}
+
+/**
+ * Whether $userId may manage storehouse deliveries for a specific market —
+ * admins always can; managers need both the global 'manage_market_deliveries'
+ * permission AND an explicit market_managers assignment to that market.
+ * Unlike every other moderator permission in this app (which is a flat,
+ * platform-wide on/off), this one is scoped per-record, since Ofie Market's
+ * manager and Nkurakan Market's manager are different people.
+ */
+function user_can_manage_market(int $userId, int $marketId): bool {
+    global $pdo;
+    $roleSt = $pdo->prepare('SELECT role FROM users WHERE id=?');
+    $roleSt->execute([$userId]);
+    if ($roleSt->fetchColumn() === 'admin') return true;
+
+    if (!in_array('manage_market_deliveries', get_user_mod_permissions($userId), true)) return false;
+    $st = $pdo->prepare('SELECT 1 FROM market_managers WHERE market_id=? AND user_id=?');
+    $st->execute([$marketId, $userId]);
+    return (bool)$st->fetchColumn();
+}
+
+/**
+ * Market IDs a given manager is assigned to (empty for admins, who see all).
+ */
+function get_managed_market_ids(int $userId): array {
+    global $pdo;
+    $st = $pdo->prepare('SELECT market_id FROM market_managers WHERE user_id=?');
+    $st->execute([$userId]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
 /**
@@ -2580,7 +2793,7 @@ function log_audit_action($adminId, $action, $description) {
 
 function get_active_packages($table) {
     global $pdo;
-    static $allowed = ['featured_job_packages', 'worker_promotion_packages', 'verification_packages', 'job_posting_packages', 'worker_service_packages'];
+    static $allowed = ['featured_job_packages', 'worker_promotion_packages', 'verification_packages', 'job_posting_packages', 'worker_service_packages', 'worker_premium_packages', 'featured_event_packages', 'featured_funeral_packages', 'featured_news_packages', 'sponsor_packages'];
     if (!in_array($table, $allowed, true)) return [];
     $stmt = $pdo->query("SELECT * FROM $table WHERE status = 'active' ORDER BY price ASC");
     return $stmt->fetchAll();

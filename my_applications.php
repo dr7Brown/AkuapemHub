@@ -24,6 +24,20 @@ if (is_worker()) {
     $myJobApps = $appStmt->fetchAll();
 }
 
+// ── Jobs I've posted (as customer) — shown alongside worker applications,
+// same as the Delivery/Marketplace tabs already show both sides of activity
+// regardless of the user's current role. ─────────────────────────────────
+$postStmt = $pdo->prepare("
+    SELECT sr.id, sr.title, sr.location, sr.budget, sr.budget_amount, sr.status,
+           sr.rejection_reason, sr.created_at, c.name AS category_name
+    FROM service_requests sr
+    LEFT JOIN service_categories c ON sr.category_id = c.id
+    WHERE sr.customer_id = ?
+    ORDER BY sr.created_at DESC LIMIT 100
+");
+$postStmt->execute([$user['id']]);
+$myPostedJobs = $postStmt->fetchAll();
+
 // ── Funeral Announcements ─────────────────────────────────────────────────────
 $funeralStmt = $pdo->prepare("SELECT id, deceased_name, burial_date, status, rejection_reason, created_at FROM funeral_announcements WHERE user_id = ? ORDER BY created_at DESC LIMIT 100");
 $funeralStmt->execute([$user['id']]);
@@ -134,6 +148,11 @@ function appBadgeClass(string $s): string {
         'accepted'         => 'approved',
         'assigned'         => 'approved',
         'applied'          => 'under_review',
+        'under_review'     => 'under_review',
+        'interview_scheduled' => 'under_review',
+        'offered'          => 'shortlisted',
+        'hired'            => 'approved',
+        'position_filled'  => 'expired',
         'shortlisted'      => 'shortlisted',
         'rejected'         => 'rejected',
         'withdrawn'        => 'withdrawn',
@@ -223,7 +242,7 @@ function appBadgeLabel(string $s): string {
         $dlCount  = count($myDeliveryRequests) + count($myDeliveryApplications);
         $mpCount  = count($myMarketplaceOrders) + count($myProducts);
         $tabs = [
-            'jobs'      => ['label'=>'💼 Jobs',      'count'=>count($myJobApps)],
+            'jobs'      => ['label'=>'💼 Jobs',      'count'=>count($myJobApps) + count($myPostedJobs)],
             'delivery'  => ['label'=>'🚚 Delivery',   'count'=>$dlCount],
             'market'    => ['label'=>'🛍️ Marketplace','count'=>$mpCount],
             'events'    => ['label'=>'📅 Events',     'count'=>count($myEvents)],
@@ -232,7 +251,7 @@ function appBadgeLabel(string $s): string {
         ];
         foreach ($tabs as $key => $tab):
         ?>
-        <button class="tab-btn <?php echo $activeTab===$key?'active':''; ?>" onclick="switchTab('<?php echo $key; ?>')">
+        <button class="tab-btn <?php echo $activeTab===$key?'active':''; ?>" data-tab="<?php echo $key; ?>">
             <?php echo $tab['label']; ?>
             <?php if ($tab['count'] > 0): ?><span style="background:var(--primary-soft,#ccfbf1);color:var(--primary,#0f766e);border-radius:10px;padding:1px 6px;font-size:.72rem;margin-left:3px;"><?php echo $tab['count']; ?></span><?php endif; ?>
         </button>
@@ -241,11 +260,38 @@ function appBadgeLabel(string $s): string {
 
     <!-- ══════════════════ JOB APPLICATIONS ══════════════════ -->
     <div class="tab-panel <?php echo $activeTab==='jobs'?'active':''; ?>" id="tab-jobs">
-        <?php if (!is_worker()): ?>
-            <div class="empty-state"><p>Job applications are for workers.</p><a href="become_worker.php" class="button button-primary">Become a Worker →</a></div>
-        <?php elseif (!$myJobApps): ?>
-            <div class="empty-state">You haven't applied for any jobs yet. <a href="jobs.php">Browse open jobs →</a></div>
-        <?php else: ?>
+
+        <!-- Jobs I've posted (as customer) -->
+        <?php if ($myPostedJobs): ?>
+        <div class="section-label">My Posted Jobs</div>
+        <div class="panel" style="margin-bottom:16px;">
+            <?php foreach ($myPostedJobs as $pj): ?>
+            <div class="app-row">
+                <div class="app-info">
+                    <h3><?php echo sanitize($pj['title']); ?></h3>
+                    <p class="meta"><?php echo sanitize($pj['category_name'] ?? ''); ?><?php if ($pj['location']): ?> · <?php echo sanitize($pj['location']); ?><?php endif; ?> · <?php echo date('d M Y', strtotime($pj['created_at'])); ?></p>
+                    <?php if ($pj['budget'] || $pj['budget_amount']): ?><p class="meta">GH₵ <?php echo sanitize($pj['budget'] ?: number_format((float)$pj['budget_amount'],2)); ?></p><?php endif; ?>
+                    <?php if ($pj['status'] === 'rejected' && !empty($pj['rejection_reason'])): ?>
+                    <div class="rejection-box"><strong>Rejected:</strong> <?php echo sanitize($pj['rejection_reason']); ?></div>
+                    <?php endif; ?>
+                </div>
+                <div class="app-actions">
+                    <span class="app-badge <?php echo appBadgeClass($pj['status']); ?>"><?php echo appBadgeLabel($pj['status']); ?></span>
+                    <?php if (in_array($pj['status'], ['draft', 'rejected'], true)): ?>
+                        <a href="request.php?edit=<?php echo (int)$pj['id']; ?>" class="button button-small">Edit</a>
+                    <?php else: ?>
+                        <a href="manage_applicants.php?id=<?php echo (int)$pj['id']; ?>" class="button button-small">👥 Applicants</a>
+                        <a href="request_detail.php?id=<?php echo (int)$pj['id']; ?>" class="button button-small">View</a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- Job applications (as worker) -->
+        <?php if (is_worker() && $myJobApps): ?>
+            <div class="section-label">My Job Applications</div>
             <?php if ($jobAppStats['total'] > 0): ?>
             <div class="stat-strip">
                 <div class="stat-chip"><span class="n"><?php echo $jobAppStats['total']; ?></span><div class="l">Total</div></div>
@@ -280,6 +326,16 @@ function appBadgeLabel(string $s): string {
                 </div>
                 <?php endforeach; ?>
             <?php endforeach; ?>
+            </div>
+        <?php endif; ?>
+
+        <?php if (!$myPostedJobs && !(is_worker() && $myJobApps)): ?>
+            <div class="empty-state">
+                <p>No job activity yet.</p>
+                <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;">
+                    <a href="request.php" class="button button-primary">Post a Job</a>
+                    <a href="jobs.php" class="button button-secondary">Browse Open Jobs</a>
+                </div>
             </div>
         <?php endif; ?>
     </div>
@@ -529,13 +585,16 @@ function appBadgeLabel(string $s): string {
 <?php $activeNav = 'myapps'; require __DIR__ . '/partials/bottom_nav.php'; ?>
 
 <script>
-function switchTab(key) {
-    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
-    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
-    document.querySelector('[onclick="switchTab(\'' + key + '\')"]').classList.add('active');
-    document.getElementById('tab-' + key).classList.add('active');
-    history.replaceState(null, '', '?tab=' + key);
-}
+document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        var key = btn.getAttribute('data-tab');
+        document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+        document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+        btn.classList.add('active');
+        document.getElementById('tab-' + key).classList.add('active');
+        history.replaceState(null, '', '?tab=' + key);
+    });
+});
 </script>
 </body>
 </html>

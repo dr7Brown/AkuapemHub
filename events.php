@@ -167,12 +167,15 @@ if ($isAjax) {
         @media(max-width:480px) { .ev-grid { grid-template-columns:1fr 1fr; } }
 
         /* ── Two-column layout ── */
+        /* Sidebar renders inline below main content on mobile (it already
+           sits right after .ev-main in the HTML), and becomes a sticky side
+           column at the wider breakpoint. */
         .ev-layout  { display:block; }
-        .ev-sidebar { display:none; }
+        .ev-sidebar { display:flex; flex-direction:column; gap:20px; margin-top:24px; }
         @media(min-width:900px) {
             .ev-shell   { max-width:1200px; }
             .ev-layout  { display:grid; grid-template-columns:1fr 280px; gap:32px; align-items:start; }
-            .ev-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+            .ev-sidebar { position:sticky; top:16px; margin-top:0; }
         }
         /* ── Sidebar widgets (shared nsb-* from news.php) ── */
         .nsb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
@@ -205,14 +208,14 @@ if ($isAjax) {
         .nsb-ad-label { font-size:.65rem; text-transform:uppercase; letter-spacing:.07em; color:var(--muted,#6b7280); margin-bottom:6px; }
     </style>
 </head>
-<body>
+<body<?php echo $user ? ' class="has-bottom-nav no-own-topbar"' : ''; ?>>
 <?php if (!$user): ?>
 <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← Back Home</a>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
         <a href="community.php"  style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Community</a>
         <a href="funerals.php"   style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Funerals</a>
-        <a href="login.php"      class="button button-secondary button-small">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
     </div>
 </header>
 <?php endif; ?>
@@ -246,7 +249,7 @@ if ($isAjax) {
         <?php if ($user): ?>
         <a href="my_events.php" class="button button-primary button-small">➕ Submit Event</a>
         <?php else: ?>
-        <a href="login.php" class="button button-secondary button-small">Sign in to post</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in to post</a>
         <?php endif; ?>
     </div>
 

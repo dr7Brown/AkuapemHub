@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'save_plan') {
         $id                       = (int)($_POST['id'] ?? 0);
         $name                     = trim($_POST['name'] ?? '');
+        $scope                    = ($_POST['scope'] ?? '') === 'market' ? 'market' : 'marketplace';
         $description              = trim($_POST['description'] ?? '') ?: null;
         $durationDays             = max(1, (int)($_POST['duration_days'] ?? 30));
         $price                    = max(0, (float)($_POST['price'] ?? 0));
@@ -43,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Package name is required.';
         } else {
             $params = [
-                $name, $description, $durationDays, $price, $yearlyPrice, $productLimit,
+                $name, $scope, $description, $durationDays, $price, $yearlyPrice, $productLimit,
                 $maxImages, $unlimitedImages, $featuredShopIncluded, $featuredProductsIncluded,
                 $priorityRanking, $adCredits, $analyticsAccess, $supportLevel, $verificationIncluded,
                 $badgeName, $badgeColor, $displayOrder, $status,
@@ -51,24 +52,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($id > 0) {
                 $pdo->prepare(
                     "UPDATE mp_seller_subscription_plans SET
-                        name=?, description=?, duration_days=?, price=?, yearly_price=?, product_limit=?,
+                        name=?, scope=?, description=?, duration_days=?, price=?, yearly_price=?, product_limit=?,
                         max_images=?, unlimited_images=?, featured_shop_included=?, featured_products_included=?,
                         priority_ranking=?, ad_credits=?, analytics_access=?, support_level=?, verification_included=?,
                         badge_name=?, badge_color=?, display_order=?, status=?, updated_at=NOW()
                      WHERE id=?"
                 )->execute(array_merge($params, [$id]));
-                log_audit_action($adminUser['id'], 'mp_package_edited', "Edited marketplace package #{$id}: '{$name}'");
+                log_audit_action($adminUser['id'], 'mp_package_edited', "Edited {$scope} package #{$id}: '{$name}'");
                 flash('Package updated.', 'success');
             } else {
                 $pdo->prepare(
                     "INSERT INTO mp_seller_subscription_plans
-                        (name, description, duration_days, price, yearly_price, product_limit,
+                        (name, scope, description, duration_days, price, yearly_price, product_limit,
                          max_images, unlimited_images, featured_shop_included, featured_products_included,
                          priority_ranking, ad_credits, analytics_access, support_level, verification_included,
                          badge_name, badge_color, display_order, status)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
                 )->execute($params);
-                log_audit_action($adminUser['id'], 'mp_package_created', "Created marketplace package: '{$name}'");
+                log_audit_action($adminUser['id'], 'mp_package_created', "Created {$scope} package: '{$name}'");
                 flash('Package created.', 'success');
             }
             header('Location: mp_packages.php');
@@ -117,6 +118,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $plans = $pdo->query('SELECT * FROM mp_seller_subscription_plans ORDER BY display_order ASC, price ASC')->fetchAll();
+$marketplacePlans = array_values(array_filter($plans, fn($p) => $p['scope'] === 'marketplace'));
+$marketPlans      = array_values(array_filter($plans, fn($p) => $p['scope'] === 'market'));
 
 // ── Analytics ────────────────────────────────────────────────────────────────
 $activeShops  = (int)$pdo->query("SELECT COUNT(DISTINCT shop_id) FROM mp_seller_subscriptions WHERE status='active' AND end_date >= CURDATE()")->fetchColumn();
@@ -394,14 +397,16 @@ function mpp_qstr(array $overrides = []): string {
     </div>
     <?php else: ?>
 
-    <div class="mpp-card">
+    <?php
+    $renderPlanTable = function (array $rows, string $emptyMsg) {
+        ?>
         <table class="mpp-table">
             <thead><tr><th>#</th><th>Name</th><th>Price</th><th>Listings</th><th>Badge</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
             <tbody>
-            <?php if (!$plans): ?>
-            <tr><td colspan="7" style="text-align:center;color:var(--text-muted,#6b7280);padding:24px;">No packages yet — add one below.</td></tr>
+            <?php if (!$rows): ?>
+            <tr><td colspan="7" style="text-align:center;color:var(--text-muted,#6b7280);padding:24px;"><?php echo sanitize($emptyMsg); ?></td></tr>
             <?php endif; ?>
-            <?php foreach ($plans as $p): ?>
+            <?php foreach ($rows as $p): ?>
             <tr>
                 <td><?php echo (int)$p['display_order']; ?></td>
                 <td><strong><?php echo sanitize($p['name']); ?></strong></td>
@@ -428,6 +433,20 @@ function mpp_qstr(array $overrides = []): string {
             <?php endforeach; ?>
             </tbody>
         </table>
+        <?php
+    };
+    ?>
+
+    <div class="mpp-card">
+        <h2 style="margin-top:0;font-size:1rem;">🛍️ Marketplace Packages</h2>
+        <p style="font-size:.82rem;color:var(--text-muted,#6b7280);margin-top:-6px;">For regular Marketplace shops.</p>
+        <?php $renderPlanTable($marketplacePlans, 'No marketplace packages yet — add one below.'); ?>
+    </div>
+
+    <div class="mpp-card">
+        <h2 style="margin-top:0;font-size:1rem;">🏬 Periodic Market Packages</h2>
+        <p style="font-size:.82rem;color:var(--text-muted,#6b7280);margin-top:-6px;">For shops tied to a periodic market (Ofie, Nkurakan, etc.) — see <a href="markets.php">Periodic Markets</a>. Pricing/limits can differ from the regular Marketplace packages above.</p>
+        <?php $renderPlanTable($marketPlans, 'No market packages yet — add one below.'); ?>
     </div>
 
     <div class="mpp-card">
@@ -440,6 +459,12 @@ function mpp_qstr(array $overrides = []): string {
             <p class="mpp-section-title">Basics</p>
             <div class="mpp-form-grid">
                 <div><label>Package Name *</label><input type="text" name="name" id="f_name" required></div>
+                <div><label>Applies To</label>
+                    <select name="scope" id="f_scope">
+                        <option value="marketplace">Marketplace (regular shops)</option>
+                        <option value="market">Periodic Markets (Ofie, Nkurakan, etc.)</option>
+                    </select>
+                </div>
                 <div><label>Monthly Price (GH&#8373;)</label><input type="number" step="0.01" min="0" name="price" id="f_price" value="0"></div>
                 <div><label>Yearly Price (GH&#8373;, optional)</label><input type="number" step="0.01" min="0" name="yearly_price" id="f_yearly_price"></div>
                 <div><label>Duration (days)</label><input type="number" min="1" name="duration_days" id="f_duration_days" value="30"></div>
@@ -496,6 +521,7 @@ function editPlan(p) {
     document.getElementById('mpp-form-heading').textContent = 'Edit Package — ' + p.name;
     document.getElementById('f_id').value = p.id;
     document.getElementById('f_name').value = p.name;
+    document.getElementById('f_scope').value = p.scope;
     document.getElementById('f_price').value = p.price;
     document.getElementById('f_yearly_price').value = p.yearly_price ?? '';
     document.getElementById('f_duration_days').value = p.duration_days;

@@ -7,66 +7,168 @@ require_module_enabled('mp', 'Marketplace');
 require_login();
 $user  = current_user();
 $flash = get_flash();
-$shop  = get_shop_by_user((int)$user['id']);
+
+// A seller may have at most one regular shop + one shop per periodic
+// market. $shop is whichever one is "active" right now (remembered in
+// session); the switcher below lets them change which one that is.
+$myShops = get_shops_by_user((int)$user['id']);
+
+if (isset($_GET['switch_shop'])) {
+    $switchId = (int)$_GET['switch_shop'];
+    foreach ($myShops as $s) {
+        if ((int)$s['id'] === $switchId) { $_SESSION['seller_active_shop_id'] = $switchId; break; }
+    }
+    header('Location: seller_dashboard.php?tab=products');
+    exit;
+}
+
+$shop = get_active_seller_shop((int)$user['id']);
 $tab   = $_GET['tab'] ?? ($shop ? 'products' : 'setup');
+$allMarkets = module_enabled('markets') ? $pdo->query("SELECT id, name, status FROM markets ORDER BY name")->fetchAll() : [];
+
+// Markets the seller doesn't already have a shop under — used both to
+// gate "+ Create a Shop for a Market" and to filter that form's dropdown.
+$myShopMarketIds  = array_filter(array_column($myShops, 'market_id'));
+$availableMarkets = array_values(array_filter($allMarkets, fn($m) => !in_array($m['id'], $myShopMarketIds)));
+$hasRegularShop   = (bool)array_filter($myShops, fn($s) => empty($s['market_id']));
 
 // ── Handle shop setup / edit ──────────────────────────────────────────────
 $shopError = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'shop_settings') {
     csrf_check();
+
+    // Posted id (0 = create a new shop) is the source of truth, not which
+    // shop happens to be "active" — otherwise saving settings while your
+    // market shop is active could silently overwrite your regular shop.
+    $editId = (int)($_POST['id'] ?? 0);
+    $editingShop = null;
+    if ($editId) {
+        foreach ($myShops as $s) { if ((int)$s['id'] === $editId) { $editingShop = $s; break; } }
+        if (!$editingShop) { flash('Shop not found.', 'error'); header('Location: seller_dashboard.php?tab=setup'); exit; }
+    }
+
     $shopName   = trim($_POST['shop_name']    ?? '');
     $desc       = trim($_POST['description']  ?? '');
     $phone      = trim($_POST['phone']        ?? '');
     $email      = trim($_POST['email']        ?? '');
     $region     = trim($_POST['region']       ?? '');
     $mapsLink   = trim($_POST['google_maps_link'] ?? '');
+    $marketId   = module_enabled('markets') && ($_POST['market_id'] ?? '') !== '' ? (int)$_POST['market_id'] : null;
 
     if ($shopName === '') $shopError = 'Shop name is required.';
-    elseif (!$shop && strlen($shopName) < 3) $shopError = 'Shop name must be at least 3 characters.';
-    elseif (!$shop && requires_verified_email('shop_create') && !is_email_verified()) {
+    elseif (!$editingShop && strlen($shopName) < 3) $shopError = 'Shop name must be at least 3 characters.';
+    elseif (!$editingShop && requires_verified_email('shop_create') && !is_email_verified()) {
         $shopError = 'Please verify your email address before creating a shop.';
-    } elseif (!$shop && is_banned_from_feature((int)$user['id'], 'mp')) {
+    } elseif (!$editingShop && is_banned_from_feature((int)$user['id'], 'mp')) {
         $shopError = 'You have been restricted from the Marketplace. Contact support if you believe this is an error.';
     } elseif ($mapsLink !== '' && !filter_var($mapsLink, FILTER_VALIDATE_URL)) {
         $shopError = 'Enter a valid Google Maps link (or leave it blank).';
     }
 
     if (!$shopError) {
-        if ($shop) {
-            // Update
-            $pdo->prepare('UPDATE mp_shops SET shop_name=?, description=?, phone=?, email=?, region=?, google_maps_link=?, updated_at=NOW() WHERE id=?')
-                ->execute([$shopName, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $mapsLink ?: null, $shop['id']]);
-        } else {
-            // Create
-            $slug = mp_unique_slug($shopName, 'mp_shops', 'slug', $pdo);
-            $pdo->prepare('INSERT INTO mp_shops (user_id, shop_name, slug, description, phone, email, region, google_maps_link) VALUES (?,?,?,?,?,?,?,?)')
-                ->execute([$user['id'], $shopName, $slug, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $mapsLink ?: null]);
-        }
+        try {
+            if ($editingShop) {
+                $pdo->prepare('UPDATE mp_shops SET shop_name=?, description=?, phone=?, email=?, region=?, google_maps_link=?, market_id=?, updated_at=NOW() WHERE id=?')
+                    ->execute([$shopName, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $mapsLink ?: null, $marketId, $editingShop['id']]);
+                $shopId = $editingShop['id'];
+            } else {
+                $slug = mp_unique_slug($shopName, 'mp_shops', 'slug', $pdo);
+                $pdo->prepare('INSERT INTO mp_shops (user_id, shop_name, slug, description, phone, email, region, google_maps_link, market_id) VALUES (?,?,?,?,?,?,?,?,?)')
+                    ->execute([$user['id'], $shopName, $slug, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $mapsLink ?: null, $marketId]);
+                $shopId = (int)$pdo->lastInsertId();
+                $_SESSION['seller_active_shop_id'] = $shopId; // switch into the newly created shop
+            }
 
-        // Handle logo upload
-        if (!empty($_FILES['logo']['name']) && is_valid_image_upload($_FILES['logo'])) {
-            $shopId = $shop ? $shop['id'] : (int)$pdo->lastInsertId();
-            $logoPath = save_uploaded_image($_FILES['logo'], 'uploads/marketplace/shops/' . $shopId . '/logo',
-                (int)get_platform_setting('img_mp_logo_maxwidth', '500'),
-                (int)get_platform_setting('img_mp_logo_quality', '85'));
-            if ($logoPath) $pdo->prepare('UPDATE mp_shops SET logo_path=? WHERE id=?')->execute([$logoPath, $shopId]);
-        }
+            // Handle logo upload
+            if (!empty($_FILES['logo']['name']) && is_valid_image_upload($_FILES['logo'])) {
+                $logoPath = save_uploaded_image($_FILES['logo'], 'uploads/marketplace/shops/' . $shopId . '/logo',
+                    (int)get_platform_setting('img_mp_logo_maxwidth', '500'),
+                    (int)get_platform_setting('img_mp_logo_quality', '85'));
+                if ($logoPath) $pdo->prepare('UPDATE mp_shops SET logo_path=? WHERE id=?')->execute([$logoPath, $shopId]);
+            }
 
-        // Handle banner upload
-        if (!empty($_FILES['banner']['name']) && is_valid_image_upload($_FILES['banner'])) {
-            $shopId = $shop ? $shop['id'] : (int)$pdo->lastInsertId();
-            $bannerPath = save_uploaded_image($_FILES['banner'], 'uploads/marketplace/shops/' . $shopId . '/banner',
-                (int)get_platform_setting('img_mp_banner_maxwidth', '1200'),
-                (int)get_platform_setting('img_mp_banner_quality', '85'));
-            if ($bannerPath) $pdo->prepare('UPDATE mp_shops SET banner_path=? WHERE id=?')->execute([$bannerPath, $shopId]);
-        }
+            // Handle banner upload
+            if (!empty($_FILES['banner']['name']) && is_valid_image_upload($_FILES['banner'])) {
+                $bannerPath = save_uploaded_image($_FILES['banner'], 'uploads/marketplace/shops/' . $shopId . '/banner',
+                    (int)get_platform_setting('img_mp_banner_maxwidth', '1200'),
+                    (int)get_platform_setting('img_mp_banner_quality', '85'));
+                if ($bannerPath) $pdo->prepare('UPDATE mp_shops SET banner_path=? WHERE id=?')->execute([$bannerPath, $shopId]);
+            }
 
-        flash($shop ? 'Shop settings saved.' : 'Shop created! Now add your first product.', 'success');
-        header('Location: seller_dashboard.php?tab=products');
-        exit;
+            flash($editingShop ? 'Shop settings saved.' : 'Shop created! Now add your first product.', 'success');
+            header('Location: seller_dashboard.php?tab=products');
+            exit;
+        } catch (PDOException $e) {
+            $shopError = (int)$e->errorInfo[1] === 1062
+                ? ($marketId ? 'You already have a shop for that market.' : 'You already have a regular shop.')
+                : 'Could not save shop — please try again.';
+        }
     }
-    $shop = get_shop_by_user((int)$user['id']);
-    $tab  = 'setup';
+    $tab = 'setup';
+}
+
+// ── Copy products from another of my shops into the active shop ──────────
+// Lets a seller who's opening a market shop bring existing listings across
+// instead of re-creating them — the whole point being to cut down on
+// repeat data entry when a shop already exists in the regular Marketplace.
+// This COPIES: the original listing stays exactly as it was in its shop,
+// and the destination shop gets its own independent product row (own id,
+// own stock/orders/reviews going forward) with the same photos/price/etc.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'copy_products') {
+    csrf_check();
+    if (!$shop) { flash('Create your shop first.', 'warning'); header('Location: seller_dashboard.php'); exit; }
+
+    $sourceShopId = (int)($_POST['source_shop_id'] ?? 0);
+    $productIds   = array_map('intval', (array)($_POST['product_ids'] ?? []));
+    $sourceOwned  = false;
+    foreach ($myShops as $s) { if ((int)$s['id'] === $sourceShopId) { $sourceOwned = true; break; } }
+
+    if (!$sourceOwned || $sourceShopId === (int)$shop['id'] || !$productIds) {
+        flash('Select a shop and at least one product to copy.', 'error');
+    } else {
+        // Only copy products that actually belong to the source shop, and
+        // only as many as the destination shop's plan still has room for.
+        $inClause = implode(',', array_fill(0, count($productIds), '?'));
+        $ownedSt = $pdo->prepare("SELECT * FROM mp_products WHERE shop_id=? AND id IN ($inClause)");
+        $ownedSt->execute(array_merge([$sourceShopId], $productIds));
+        $toCopy = $ownedSt->fetchAll();
+
+        $limitCheck = mp_shop_can_list_product((int)$shop['id']);
+        $roomLeft   = $limitCheck['unlimited'] ? PHP_INT_MAX : max(0, $limitCheck['limit'] - $limitCheck['used']);
+
+        if (!$toCopy) {
+            flash('Those products could not be found in that shop.', 'error');
+        } elseif (count($toCopy) > $roomLeft) {
+            flash("Can't copy " . count($toCopy) . " product(s) — your active shop's plan only has room for {$roomLeft} more. Copy fewer, or upgrade its plan first.", 'error');
+        } else {
+            $insertSt = $pdo->prepare(
+                'INSERT INTO mp_products
+                    (shop_id, category_id, master_product_id, name, slug, description, price, price_unit,
+                     discount_price, stock_quantity, sku, condition_type, delivery_available, status)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+            );
+            $imgSt = $pdo->prepare('SELECT * FROM mp_product_images WHERE product_id=? ORDER BY sort_order');
+            $imgInsertSt = $pdo->prepare('INSERT INTO mp_product_images (product_id, image_path, is_primary, sort_order) VALUES (?,?,?,?)');
+
+            foreach ($toCopy as $p) {
+                $newSlug = mp_unique_slug($p['name'], 'mp_products', 'slug', $pdo);
+                $insertSt->execute([
+                    $shop['id'], $p['category_id'], $p['master_product_id'], $p['name'], $newSlug, $p['description'],
+                    $p['price'], $p['price_unit'], $p['discount_price'], $p['stock_quantity'], $p['sku'],
+                    $p['condition_type'], $p['delivery_available'], $p['status'],
+                ]);
+                $newProductId = (int)$pdo->lastInsertId();
+
+                $imgSt->execute([$p['id']]);
+                foreach ($imgSt->fetchAll() as $img) {
+                    $imgInsertSt->execute([$newProductId, $img['image_path'], $img['is_primary'], $img['sort_order']]);
+                }
+            }
+            flash(count($toCopy) . ' product(s) copied to ' . $shop['shop_name'] . '.', 'success');
+        }
+    }
+    header('Location: seller_dashboard.php?tab=products');
+    exit;
 }
 
 // ── Handle order status update ────────────────────────────────────────────
@@ -76,19 +178,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'order_s
 
     $orderId   = (int)$_POST['order_id'];
     $newStatus = $_POST['new_status'] ?? '';
-    // Collapsed: "confirmed" was pure busywork between pending and processing
-    // with no operational difference, so one click now takes an order straight
-    // from pending to processing ("Accept Order"). 'confirmed' stays a valid
-    // transition target only so any pre-existing order stuck there isn't stranded.
-    $validTransitions = [
-        'pending'    => ['processing','cancelled'],
-        'confirmed'  => ['processing','cancelled'],
-        'processing' => ['ready_for_delivery','cancelled'],
-    ];
 
     $orderRow = $pdo->prepare('SELECT * FROM mp_orders WHERE id = ? AND shop_id = ?');
     $orderRow->execute([$orderId, $shop['id']]);
     $order = $orderRow->fetch();
+
+    // Collapsed: "confirmed" was pure busywork between pending and processing
+    // with no operational difference, so one click now takes an order straight
+    // from pending to processing ("Accept Order"). 'confirmed' stays a valid
+    // transition target only so any pre-existing order stuck there isn't stranded.
+    // Market orders skip the delivery-agent leg entirely — the assigned market
+    // manager drives processing → at_storehouse → delivered from
+    // admin/market_deliveries.php instead, so sellers aren't offered
+    // "ready_for_delivery" for those orders. Keyed off the ORDER's own
+    // snapshotted market_id, not the shop's current one — the shop's market
+    // assignment can change after the order was placed.
+    $validTransitions = [
+        'pending'    => ['processing','cancelled'],
+        'confirmed'  => ['processing','cancelled'],
+        'processing' => !empty($order['market_id']) ? ['cancelled'] : ['ready_for_delivery','cancelled'],
+    ];
 
     // Once a buyer has paid, sellers can no longer self-cancel — the money has
     // already been credited to the shop's pending balance, so cancelling here
@@ -342,7 +451,7 @@ $validProductStatuses = ['draft','pending_approval','approved','rejected','out_o
 
 $orderStatusFilter = $_GET['ostatus'] ?? 'all';
 $orderQ            = trim($_GET['oq'] ?? '');
-$validOrderStatuses = ['pending','confirmed','processing','ready_for_delivery','in_transit','delivered','cancelled','refunded'];
+$validOrderStatuses = ['pending','confirmed','processing','ready_for_delivery','in_transit','at_storehouse','delivered','cancelled','refunded'];
 
 if ($shop) {
     $pWhere  = ['mp.shop_id = ?'];
@@ -365,6 +474,23 @@ if ($shop) {
     );
     $products->execute($pParams);
     $products = $products->fetchAll();
+
+    // Products sitting in the seller's OTHER shop(s), offered for a bulk
+    // copy into whichever shop is active now — cuts down on re-entering
+    // the same listings when opening a second (market) shop. The original
+    // stays put in its own shop; this only creates copies.
+    $otherShops = array_values(array_filter($myShops, fn($s) => (int)$s['id'] !== (int)$shop['id']));
+    $copyableProductsByShop = [];
+    foreach ($otherShops as $os) {
+        $mpSt = $pdo->prepare(
+            "SELECT id, name, price, price_unit,
+                    (SELECT image_path FROM mp_product_images WHERE product_id=mp_products.id AND is_primary=1 LIMIT 1) AS primary_image
+             FROM mp_products WHERE shop_id=? AND status != 'archived' ORDER BY name"
+        );
+        $mpSt->execute([$os['id']]);
+        $rows = $mpSt->fetchAll();
+        if ($rows) $copyableProductsByShop[$os['id']] = ['shop' => $os, 'products' => $rows];
+    }
 
     $oWhere  = ['mo.shop_id = ?'];
     $oParams = [$shop['id']];
@@ -441,7 +567,7 @@ if ($shop) {
 // ── Analytics (own queries — the $orders array above is capped at 40 rows) ──
 $analytics = null;
 if ($shop && $tab === 'analytics') {
-    $paidStatuses = "'confirmed','processing','ready_for_delivery','in_transit','delivered'"; // excludes pending/cancelled/refunded
+    $paidStatuses = "'confirmed','processing','ready_for_delivery','in_transit','at_storehouse','delivered'"; // excludes pending/cancelled/refunded
 
     $period = $_GET['period'] ?? 'month';
     $periodDateFilter = match($period) {
@@ -497,7 +623,17 @@ if ($shop && $tab === 'analytics') {
     $topProducts = $topProducts->fetchAll();
     $topProductsMax = $topProducts ? max(array_column($topProducts, 'revenue')) : 0;
 
-    $analytics = compact('totalRevenue','monthRevenue','orderCount','cancelledCount','avgOrder','dailyLabels','dailyRevenue','topProducts','topProductsMax');
+    // Most viewed products (lifetime views, not scoped to the revenue period above)
+    $topViewedProducts = $pdo->prepare("
+        SELECT name, view_count FROM mp_products
+        WHERE shop_id = ? AND status = 'approved'
+        ORDER BY view_count DESC LIMIT 5
+    ");
+    $topViewedProducts->execute([$shop['id']]);
+    $topViewedProducts = $topViewedProducts->fetchAll();
+    $topViewedProductsMax = $topViewedProducts ? max(array_column($topViewedProducts, 'view_count')) : 0;
+
+    $analytics = compact('totalRevenue','monthRevenue','orderCount','cancelledCount','avgOrder','dailyLabels','dailyRevenue','topProducts','topProductsMax','topViewedProducts','topViewedProductsMax');
 }
 
 // ── Wallet (balances, pending releases, payout history, activity ledger) ──
@@ -605,17 +741,25 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <body class="has-bottom-nav">
 
 <header class="app-topbar">
-    <a href="marketplace.php" class="button button-secondary button-small">← Marketplace</a>
-    <span class="brand">🏪 <?php echo $shop ? sanitize(mb_substr($shop['shop_name'],0,20)) : 'My Shop'; ?>
+    <a href="marketplace.php" class="button button-secondary button-small" style="flex-shrink:0;">← Marketplace</a>
+    <span class="brand" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🏪 <?php echo $shop ? sanitize(mb_substr($shop['shop_name'],0,20)) : 'My Shop'; ?>
         <?php if ($shop && !empty($shop['is_subscribed']) && !empty($shop['subscription_end']) && $shop['subscription_end'] >= date('Y-m-d')):
             $__navSub = get_shop_active_subscription((int)$shop['id']); ?>
         <span style="font-size:.62rem;font-weight:800;background:<?php echo sanitize($__navSub['badge_color'] ?? '#fef3c7'); ?>;color:#92400e;padding:1px 7px;border-radius:20px;margin-left:4px;">⭐ <?php echo sanitize($__navSub['badge_name'] ?? 'PRO'); ?></span>
         <?php endif; ?>
     </span>
-    <?php if ($shop && get_platform_setting('mp_subscription_enabled','0')==='1'): ?>
-    <a href="?tab=subscription" class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#f59e0b;font-size:.76rem;">⭐ Subscription</a>
-    <?php endif; ?>
 </header>
+
+<?php if (count($myShops) > 1): ?>
+<div style="background:var(--surface);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;gap:6px;overflow-x:auto;">
+    <?php foreach ($myShops as $s): ?>
+    <a href="?switch_shop=<?php echo (int)$s['id']; ?>" style="flex-shrink:0;text-decoration:none;font-size:.78rem;font-weight:700;padding:5px 12px;border-radius:20px;white-space:nowrap;
+        <?php echo (int)$s['id'] === (int)$shop['id'] ? 'background:var(--primary,#0f766e);color:#fff;' : 'background:var(--surface-muted,#f3f4f6);color:var(--text,#111);'; ?>">
+        <?php echo $s['market_id'] ? '🏬' : '🏪'; ?> <?php echo sanitize(mb_substr($s['shop_name'],0,20)); ?>
+    </a>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
 
 <?php if ($flash): ?>
 <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin:10px 16px 0;"><?php echo sanitize($flash['message']); ?></div>
@@ -676,6 +820,32 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     <a href="browse_master_catalog.php" class="button button-secondary button-small">📚 Add from Catalog</a>
     <a href="seller_product_form.php" class="button button-primary button-small">+ Add Product</a>
 </div>
+
+<?php if ($copyableProductsByShop): ?>
+<div class="sd-card" style="margin-bottom:14px;">
+    <p style="margin:0 0 4px;font-weight:800;font-size:.9rem;">📦 Copy products into <?php echo sanitize($shop['shop_name']); ?></p>
+    <p class="meta" style="margin:0 0 10px;">Copy listings from your other shop into this one instead of re-creating them — the original stays exactly as it is in that shop; this just creates a copy here with the same photos, price, and approval status.</p>
+    <?php foreach ($copyableProductsByShop as $entry): ?>
+    <form method="post" style="margin-bottom:<?php echo count($copyableProductsByShop) > 1 ? '14px' : '0'; ?>;">
+        <?php echo csrf_field(); ?>
+        <input type="hidden" name="form" value="copy_products">
+        <input type="hidden" name="source_shop_id" value="<?php echo (int)$entry['shop']['id']; ?>">
+        <p style="margin:0 0 6px;font-size:.82rem;font-weight:700;">From <?php echo sanitize($entry['shop']['shop_name']); ?>:</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px;margin-bottom:8px;">
+            <?php foreach ($entry['products'] as $ep): ?>
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;cursor:pointer;font-size:.8rem;">
+                <input type="checkbox" name="product_ids[]" value="<?php echo (int)$ep['id']; ?>">
+                <?php if ($ep['primary_image']): ?><img src="<?php echo sanitize($ep['primary_image']); ?>" style="width:28px;height:28px;object-fit:cover;border-radius:5px;flex-shrink:0;" alt=""><?php else: ?><span style="width:28px;height:28px;flex-shrink:0;display:flex;align-items:center;justify-content:center;opacity:.3;">📦</span><?php endif; ?>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;"><?php echo sanitize(mb_substr($ep['name'],0,28)); ?><br><span style="color:var(--text-muted,#6b7280);">GH&#8373; <?php echo number_format((float)$ep['price'],2); ?></span></span>
+            </label>
+            <?php endforeach; ?>
+        </div>
+        <button type="submit" class="button button-secondary button-small">Copy Selected →</button>
+    </form>
+    <?php endforeach; ?>
+</div>
+<?php endif; ?>
+
 <form method="get" class="sd-filters">
     <input type="hidden" name="tab" value="products">
     <select name="pstatus" onchange="this.form.submit()">
@@ -695,7 +865,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     </div>
     <div style="flex:1;min-width:0;">
         <div style="font-weight:700;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?php echo sanitize($p['name']); ?></div>
-        <div style="font-size:.76rem;color:var(--text-muted,#6b7280);">GH&#8373; <?php echo number_format(mp_effective_price($p),2); ?> &nbsp;·&nbsp; Stock: <?php echo $p['stock_quantity']; ?></div>
+        <div style="font-size:.76rem;color:var(--text-muted,#6b7280);">GH&#8373; <?php echo number_format(mp_effective_price($p),2); ?><?php if (!empty($p['price_unit'])): ?> / <?php echo sanitize($p['price_unit']); ?><?php endif; ?> &nbsp;·&nbsp; Stock: <?php echo $p['stock_quantity']; ?></div>
         <?php if ($p['status'] === 'rejected' && !empty($p['rejection_reason'])): ?>
         <div style="background:#fee2e2;border-radius:6px;padding:5px 9px;margin-top:5px;font-size:.76rem;line-height:1.5;">
             ❌ <strong>Rejected:</strong> <?php echo nl2br(sanitize($p['rejection_reason'])); ?>
@@ -726,7 +896,16 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 <?php endif; ?>
 
 <?php elseif ($tab === 'orders' && $shop): ?>
-<?php $orderStatusMap = ['pending'=>['processing','cancelled'],'confirmed'=>['processing','cancelled'],'processing'=>['ready_for_delivery','cancelled']]; ?>
+<?php
+// Storehouse info for any markets this shop's orders reference — keyed by
+// each order's own snapshotted market_id, not the shop's current one.
+$sdOrderMarketIds = array_filter(array_unique(array_column($orders, 'market_id')));
+$sdMarketsById = [];
+if ($sdOrderMarketIds) {
+    $sdMktStmt = $pdo->query('SELECT * FROM markets WHERE id IN (' . implode(',', array_map('intval', $sdOrderMarketIds)) . ')');
+    foreach ($sdMktStmt->fetchAll() as $mk) { $sdMarketsById[$mk['id']] = $mk; }
+}
+?>
 <form method="get" class="sd-filters">
     <input type="hidden" name="tab" value="orders">
     <select name="ostatus" onchange="this.form.submit()">
@@ -781,6 +960,12 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
         🚩 Buyer filed a complaint (<?php echo sanitize(ucfirst(str_replace('_',' ',$oDispute['dispute_type']))); ?>) — <?php echo $oDispute['status'] === 'investigating' ? 'under admin review' : 'awaiting admin review'; ?>. Payout release is paused.
     </div>
     <?php endif; ?>
+    <?php $sdOrderMarket = $order['market_id'] ? ($sdMarketsById[$order['market_id']] ?? null) : null; ?>
+    <?php if ($sdOrderMarket && in_array($order['status'], ['pending','confirmed','processing'], true)): ?>
+    <div style="font-size:.78rem;padding:6px 8px;margin-top:6px;background:#e0f2fe;border-radius:6px;color:#075985;">
+        🏬 <strong><?php echo sanitize($sdOrderMarket['name']); ?></strong> order — bring this to the storehouse<?php if ($sdOrderMarket['storehouse_location']): ?>: <?php echo sanitize($sdOrderMarket['storehouse_location']); ?><?php endif; ?> once you accept it. A market manager handles handoff from there — no delivery request needed.
+    </div>
+    <?php endif; ?>
     <?php if ($order['status'] === 'ready_for_delivery' && !$order['delivery_request_id']): ?>
     <div style="font-size:.78rem;padding:6px 8px;margin-top:6px;background:#fee2e2;border-radius:6px;color:#c0392b;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <span>⚠️ Delivery request failed to create.</span>
@@ -794,6 +979,13 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     <?php endif; ?>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
         <div style="font-weight:900;color:var(--primary,#0f766e);">Total: GH&#8373; <?php echo number_format((float)$order['total_amount'],2); ?></div>
+        <?php
+        $orderStatusMap = [
+            'pending'    => ['processing','cancelled'],
+            'confirmed'  => ['processing','cancelled'],
+            'processing' => $sdOrderMarket ? ['cancelled'] : ['ready_for_delivery','cancelled'],
+        ];
+        ?>
         <?php if (isset($orderStatusMap[$order['status']])): ?>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <?php foreach ($orderStatusMap[$order['status']] as $ns):
@@ -906,6 +1098,23 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
         <div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:4px;">
             <span style="font-weight:600;"><?php echo sanitize($tp['product_name']); ?></span>
             <span style="color:var(--text-muted,#6b7280);"><?php echo (int)$tp['units_sold']; ?> sold · GH&#8373; <?php echo number_format((float)$tp['revenue'],2); ?></span>
+        </div>
+        <div class="sd-an-bar-track"><div class="sd-an-bar-fill" style="width:<?php echo max(3,$pct); ?>%;"></div></div>
+    </div>
+    <?php endforeach; ?>
+    <?php endif; ?>
+</div>
+
+<div class="sd-an-card">
+    <p class="sd-an-title">Most Viewed Products (all-time)</p>
+    <?php if (!$analytics['topViewedProducts']): ?>
+    <p class="meta">No product views yet.</p>
+    <?php else: ?>
+    <?php foreach ($analytics['topViewedProducts'] as $vp): $pct = $analytics['topViewedProductsMax'] > 0 ? (float)$vp['view_count'] / $analytics['topViewedProductsMax'] * 100 : 0; ?>
+    <div class="sd-an-prod-row">
+        <div style="display:flex;justify-content:space-between;font-size:.85rem;margin-bottom:4px;">
+            <span style="font-weight:600;"><?php echo sanitize($vp['name']); ?></span>
+            <span style="color:var(--text-muted,#6b7280);">👁️ <?php echo number_format((int)$vp['view_count']); ?> view<?php echo (int)$vp['view_count'] !== 1 ? 's' : ''; ?></span>
         </div>
         <div class="sd-an-bar-track"><div class="sd-an-bar-fill" style="width:<?php echo max(3,$pct); ?>%;"></div></div>
     </div>
@@ -1313,53 +1522,121 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
     </div>
 
 <?php elseif ($tab === 'setup'): ?>
+<?php
+// Creating a brand-new shop (either the seller's first ever, or an
+// additional one for a market) is a distinct mode from editing the
+// currently active shop — a posted id of 0 is what makes save_shop INSERT.
+$creatingNew = $shop && ($_GET['new_shop'] ?? '') === '1';
+$formShop    = $creatingNew ? null : $shop;
+?>
+<?php if ($myShops && !$creatingNew): ?>
+<div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <?php if ($availableMarkets): ?>
+    <a href="?tab=setup&new_shop=1" class="button button-secondary button-small">+ Create a Shop for a Market</a>
+    <?php elseif (!$hasRegularShop): ?>
+    <a href="?tab=setup&new_shop=1" class="button button-secondary button-small">+ Create a Regular Marketplace Shop</a>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 <?php if ($shopError): ?><div class="alert alert-error"><?php echo sanitize($shopError); ?></div><?php endif; ?>
 <form method="post" action="seller_dashboard.php?tab=setup" enctype="multipart/form-data">
     <?php echo csrf_field(); ?>
     <input type="hidden" name="form" value="shop_settings">
+    <input type="hidden" name="id" value="<?php echo $formShop['id'] ?? 0; ?>">
     <div class="sd-set-section">
-        <p class="sd-set-title"><?php echo $shop ? 'Shop Information' : 'Create Your Shop'; ?></p>
+        <p class="sd-set-title"><?php echo $formShop ? 'Shop Information — ' . sanitize($formShop['shop_name']) : 'Create ' . ($creatingNew ? 'a New' : 'Your') . ' Shop'; ?></p>
+        <?php if ($creatingNew): ?><p class="meta" style="margin-top:-6px;"><a href="?tab=setup">← Back to my current shop's settings</a></p><?php endif; ?>
         <div class="form-group">
             <label for="shop_name">Shop Name *</label>
-            <input type="text" id="shop_name" name="shop_name" required value="<?php echo sanitize($_POST['shop_name'] ?? ($shop['shop_name']??'')); ?>">
+            <input type="text" id="shop_name" name="shop_name" required value="<?php echo sanitize($_POST['shop_name'] ?? ($formShop['shop_name']??'')); ?>">
         </div>
+        <?php $marketOptions = $formShop ? $allMarkets : $availableMarkets; ?>
+        <?php if ($marketOptions || ($formShop['market_id'] ?? null)): ?>
+        <?php $selMarketId = $_POST['market_id'] ?? ($formShop['market_id'] ?? ''); ?>
+        <div class="form-group">
+            <label for="market_id">Market</label>
+            <select id="market_id" name="market_id">
+                <option value="">Regular Marketplace (not tied to a periodic market)</option>
+                <?php foreach ($marketOptions as $mk): ?>
+                <option value="<?php echo $mk['id']; ?>" <?php echo (string)$selMarketId === (string)$mk['id'] ? 'selected' : ''; ?>>
+                    <?php echo sanitize($mk['name']); ?> (<?php echo ucfirst($mk['status']); ?> for purchases)
+                </option>
+                <?php endforeach; ?>
+            </select>
+            <p class="meta" style="margin-top:4px;">Pick a market if this shop sells at a scheduled market day (e.g. Ofie Market) — buyers can browse anytime but can only check out while that market is Open, and orders are picked up from its storehouse instead of delivered. You can have one regular shop plus one shop per market.</p>
+        </div>
+        <?php endif; ?>
         <div class="form-group">
             <label for="description">Shop Description</label>
-            <textarea id="description" name="description" rows="3" placeholder="Tell customers about your shop…"><?php echo sanitize($_POST['description'] ?? ($shop['description']??'')); ?></textarea>
+            <textarea id="description" name="description" rows="3" placeholder="Tell customers about your shop…"><?php echo sanitize($_POST['description'] ?? ($formShop['description']??'')); ?></textarea>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div class="form-group">
                 <label for="phone">Phone Number</label>
-                <input type="tel" id="phone" name="phone" value="<?php echo sanitize($_POST['phone'] ?? ($shop['phone']??$user['phone']??'')); ?>">
+                <input type="tel" id="phone" name="phone" value="<?php echo sanitize($_POST['phone'] ?? ($formShop['phone']??$user['phone']??'')); ?>">
             </div>
             <div class="form-group">
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" value="<?php echo sanitize($_POST['email'] ?? ($shop['email']??$user['email']??'')); ?>">
+                <input type="email" id="email" name="email" value="<?php echo sanitize($_POST['email'] ?? ($formShop['email']??$user['email']??'')); ?>">
             </div>
             <div class="form-group">
                 <label for="region">Region / Location</label>
-                <input type="text" id="region" name="region" placeholder="e.g. Akuapem North, Eastern Region" value="<?php echo sanitize($_POST['region'] ?? ($shop['region']??'')); ?>">
+                <input type="text" id="region" name="region" placeholder="e.g. Akuapem North, Eastern Region" value="<?php echo sanitize($_POST['region'] ?? ($formShop['region']??'')); ?>">
             </div>
             <div class="form-group">
                 <label for="google_maps_link">Google Maps Pickup Link</label>
-                <input type="url" id="google_maps_link" name="google_maps_link" placeholder="https://maps.google.com/…" value="<?php echo sanitize($_POST['google_maps_link'] ?? ($shop['google_maps_link']??'')); ?>">
-                <p class="meta" style="margin-top:4px;">Paste a Google Maps share link to your shop/pickup location — this helps delivery riders find you when picking up orders.</p>
+                <div style="display:flex;gap:8px;">
+                    <input type="url" id="google_maps_link" name="google_maps_link" placeholder="https://maps.google.com/…" value="<?php echo sanitize($_POST['google_maps_link'] ?? ($formShop['google_maps_link']??'')); ?>" style="flex:1;">
+                    <button type="button" id="sd-get-maps-link" class="button button-secondary button-small" style="flex-shrink:0;">📍 Get Link</button>
+                </div>
+                <p class="meta" style="margin-top:4px;" id="sd-maps-link-status">Paste a Google Maps share link to your shop/pickup location, or tap "Get Link" to use your current location — this helps delivery riders find you when picking up orders.</p>
             </div>
         </div>
         <div class="form-group">
             <label for="logo">Shop Logo</label>
             <input type="file" id="logo" name="logo" accept="image/jpeg,image/png,image/webp">
-            <?php if ($shop && $shop['logo_path']): ?><div style="margin-top:6px;"><img src="<?php echo sanitize($shop['logo_path']); ?>" style="height:50px;width:50px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" alt="Current logo"></div><?php endif; ?>
+            <?php if ($formShop && $formShop['logo_path']): ?><div style="margin-top:6px;"><img src="<?php echo sanitize($formShop['logo_path']); ?>" style="height:50px;width:50px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" alt="Current logo"></div><?php endif; ?>
         </div>
         <div class="form-group">
             <label for="banner">Shop Banner</label>
             <input type="file" id="banner" name="banner" accept="image/jpeg,image/png,image/webp">
             <p class="meta" style="margin-top:4px;">Wide cover image shown at the top of your shop page (e.g. 1200×300px). Optional — the banner area is hidden if you don't add one.</p>
-            <?php if ($shop && $shop['banner_path']): ?><div style="margin-top:6px;"><img src="<?php echo sanitize($shop['banner_path']); ?>" style="height:70px;width:100%;max-width:280px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" alt="Current banner"></div><?php endif; ?>
+            <?php if ($formShop && $formShop['banner_path']): ?><div style="margin-top:6px;"><img src="<?php echo sanitize($formShop['banner_path']); ?>" style="height:70px;width:100%;max-width:280px;object-fit:cover;border-radius:8px;border:1px solid var(--border);" alt="Current banner"></div><?php endif; ?>
         </div>
     </div>
-    <button type="submit" class="button button-primary" style="width:100%;padding:13px;"><?php echo $shop ? 'Save Shop Settings' : 'Create Shop'; ?></button>
+    <button type="submit" class="button button-primary" style="width:100%;padding:13px;"><?php echo $formShop ? 'Save Shop Settings' : 'Create Shop'; ?></button>
 </form>
+<script>
+(function () {
+    var btn    = document.getElementById('sd-get-maps-link');
+    var input  = document.getElementById('google_maps_link');
+    var status = document.getElementById('sd-maps-link-status');
+    if (!btn) return;
+    var defaultStatus = status.textContent;
+    btn.addEventListener('click', function () {
+        if (!navigator.geolocation) {
+            status.textContent = 'Geolocation is not supported by your browser.';
+            return;
+        }
+        status.textContent = 'Locating…';
+        navigator.geolocation.getCurrentPosition(function (position) {
+            var lat      = position.coords.latitude;
+            var lng      = position.coords.longitude;
+            var accuracy = position.coords.accuracy; // metres (radius of uncertainty)
+            input.value  = 'https://maps.google.com/?q=' + lat + ',' + lng;
+            if (accuracy > 1000) {
+                status.textContent = '⚠️ Low-confidence location (accurate to ~' + Math.round(accuracy / 1000) + 'km) — likely from your WiFi/IP, not GPS. Open the link to check the pin, or use a phone with GPS for a precise result.';
+            } else if (accuracy > 100) {
+                status.textContent = 'Location captured (accurate to ~' + Math.round(accuracy) + 'm) — please open the link to confirm the pin lands on your shop before saving.';
+            } else {
+                status.textContent = 'Location captured: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '. Click "Save Shop Settings" to store it.';
+            }
+        }, function () {
+            status.textContent = 'Unable to retrieve your location. Please allow location access and try again, or paste a link manually.';
+        }, { enableHighAccuracy: true });
+    });
+})();
+</script>
 
 <?php elseif ($tab === 'verify' && $shop): ?>
 <?php

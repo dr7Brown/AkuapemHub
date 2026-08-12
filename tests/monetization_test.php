@@ -152,6 +152,47 @@ save('enable_paid_featured_workers', '1');
 assert_eq('Featured workers enabled: payment required', true, is_feature_paid('enable_paid_featured_workers'));
 
 // ─────────────────────────────────────────────
+// Granular complimentary grants — per-feature isolation
+// ─────────────────────────────────────────────
+
+echo "\n=== Complimentary grants — per-feature isolation ===\n";
+
+global $pdo;
+save('monetization_mode', 'paid'); // every enable_paid_* key is paid regardless of value
+
+$pdo->exec("INSERT INTO users (name, email, password_hash, role, is_complimentary) VALUES ('Test Comp User', 'test_comp_user_" . time() . "@example.test', 'x', 'customer', 0)");
+$testUserId = (int)$pdo->lastInsertId();
+
+// is_feature_paid() always checks the logged-in session user — simulate one.
+$sessionBackup = $_SESSION['user'] ?? null;
+$_SESSION['user'] = ['id' => $testUserId];
+
+grant_complimentary_features($testUserId, ['enable_paid_featured_jobs'], 1);
+assert_eq('Single-feature grant: granted feature is free', false, is_feature_paid('enable_paid_featured_jobs'));
+assert_eq('Single-feature grant: unrelated feature still paid', true, is_feature_paid('enable_paid_job_posting'));
+
+grant_complimentary_features($testUserId, ['full'], 1);
+assert_eq('Full grant: previously-unrelated feature now free', false, is_feature_paid('enable_paid_job_posting'));
+assert_eq('Full grant: originally-granted feature still free', false, is_feature_paid('enable_paid_featured_jobs'));
+
+// Editing (re-granting) a subset replaces the previous grant set, not adds to it.
+grant_complimentary_features($testUserId, ['enable_paid_worker_service'], 1);
+assert_eq('Replace semantics: newly-selected feature is free', false, is_feature_paid('enable_paid_worker_service'));
+assert_eq('Replace semantics: previously-full-granted feature is paid again', true, is_feature_paid('enable_paid_job_posting'));
+
+revoke_complimentary_access($testUserId);
+assert_eq('Revoke: feature paid again', true, is_feature_paid('enable_paid_worker_service'));
+$grantCount = (int)$pdo->query("SELECT COUNT(*) FROM complimentary_grants WHERE user_id={$testUserId}")->fetchColumn();
+assert_eq('Revoke: grant rows cleared', 0, $grantCount);
+
+// Cleanup
+$pdo->exec("DELETE FROM complimentary_grants WHERE user_id={$testUserId}");
+$pdo->exec("DELETE FROM users WHERE id={$testUserId}");
+if ($sessionBackup === null) { unset($_SESSION['user']); } else { $_SESSION['user'] = $sessionBackup; }
+
+save('monetization_mode', 'free');
+
+// ─────────────────────────────────────────────
 // Restore defaults
 // ─────────────────────────────────────────────
 save('monetization_mode', 'free');

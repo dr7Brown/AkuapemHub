@@ -24,7 +24,7 @@ if ($fa['status'] !== 'pending_payment') {
     header('Location: my_funerals.php'); exit;
 }
 
-$feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0') && !user_has_complimentary_access();
+$feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0') && !user_has_complimentary_access(null, 'funeral_fee');
 $feeAmount  = (float)get_platform_setting('funeral_fee_amount', '20');
 
 if (!$feeEnabled) {

@@ -139,7 +139,7 @@ $activeNav = 'community';
 <?php if (!$user): ?>
 <header style="background:var(--surface);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;">← Back Home</a>
-    <a href="login.php" class="button button-secondary button-small">Sign in</a>
+    <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
 </header>
 <?php else: ?>
 <header class="app-topbar">
@@ -184,7 +184,7 @@ $activeNav = 'community';
             <a href="delivery_agent_jobs.php" class="button button-secondary">My Agent Dashboard →</a>
         <?php endif; ?>
     <?php else: ?>
-        <a href="login.php" class="button button-primary">Sign in to Request Delivery</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-primary">Sign in to Request Delivery</a>
         <a href="register.php" class="button button-secondary">Create Account</a>
     <?php endif; ?>
 </div>

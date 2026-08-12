@@ -2,6 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
+require_once __DIR__ . '/delivery_functions.php'; // render_stars() for the review form
 
 require_module_enabled('mp', 'Marketplace');
 
@@ -117,6 +118,8 @@ if ($product['category_id']) {
         'type'        => 'product',
         'noindex'     => !$pdIsPublic,
     ]);
+    $shareTitle = $product['name'];
+    $shareUrl   = rtrim(BASE_URL, '/') . '/product.php?id=' . (int)$product['id'];
     ?>
     <?php if ($pdIsPublic): ?>
     <script type="application/ld+json">
@@ -143,7 +146,7 @@ if ($product['category_id']) {
     <?php endif; ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .pd-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 64px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+        .pd-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 120px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; }
         .pd-shell  { max-width:1060px; margin:0 auto; padding:16px 16px 60px; }
         .pd-layout { display:grid; grid-template-columns:1fr 1fr; gap:28px; margin-bottom:28px; }
         @media(max-width:680px){ .pd-layout { grid-template-columns:1fr; } }
@@ -238,7 +241,7 @@ if ($product['category_id']) {
             🛒<?php echo $cartCount > 0 ? " ($cartCount)" : ''; ?>
         </a>
         <?php else: ?>
-        <a href="login.php" class="button button-secondary button-small">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
         <?php endif; ?>
     </div>
 </header>
@@ -285,11 +288,23 @@ if ($product['category_id']) {
             <h1 class="pd-name"><?php echo sanitize($product['name']); ?></h1>
 
             <div style="display:flex;align-items:baseline;flex-wrap:wrap;gap:4px;margin-bottom:12px;">
-                <span class="pd-price">GH&#8373; <?php echo number_format($effPrice, 2); ?></span>
+                <span class="pd-price">GH&#8373; <?php echo number_format($effPrice, 2); ?><?php if (!empty($product['price_unit'])): ?> <span style="font-size:.62em;font-weight:600;color:var(--text-muted,#6b7280);">/ <?php echo sanitize($product['price_unit']); ?></span><?php endif; ?></span>
                 <?php if ($discPct > 0): ?>
                     <span class="pd-orig">GH&#8373; <?php echo number_format((float)$product['price'], 2); ?></span>
                     <span class="pd-disc">-<?php echo $discPct; ?>%</span>
                 <?php endif; ?>
+            </div>
+
+            <?php if (!empty($product['market_id'])): ?>
+            <div style="margin-bottom:12px;padding:9px 12px;border-radius:10px;font-size:.82rem;background:<?php echo $product['market_status']==='open'?'#d1fae5':'#fee2e2'; ?>;color:<?php echo $product['market_status']==='open'?'#065f46':'#c0392b'; ?>;">
+                🏬 <strong><?php echo sanitize($product['market_name']); ?></strong> — <?php echo $product['market_status']==='open' ? 'Open for orders now' : 'Currently closed for checkout'; ?>
+                <?php if ($product['market_schedule_note']): ?><span style="opacity:.85;">&nbsp;·&nbsp; <?php echo sanitize($product['market_schedule_note']); ?></span><?php endif; ?>
+                <?php if ($product['market_status']!=='open'): ?><div style="margin-top:2px;font-size:.78rem;">You can still add this to your cart — checkout opens once this market is marked Open.</div><?php endif; ?>
+            </div>
+            <?php endif; ?>
+
+            <div style="margin-bottom:12px;">
+                <?php require __DIR__ . '/partials/share_buttons.php'; ?>
             </div>
 
             <div class="pd-meta">
@@ -376,7 +391,7 @@ if ($product['category_id']) {
     <?php endif; ?>
 
     <!-- Reviews -->
-    <div style="margin-bottom:20px;">
+    <div id="reviews" style="margin-bottom:20px;">
         <p style="font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 12px;">
             Reviews (<?php echo count($reviews); ?>)
         </p>

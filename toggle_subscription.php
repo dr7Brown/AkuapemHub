@@ -16,6 +16,15 @@ if (!$profile) {
     exit;
 }
 
+// Upgrading (free -> premium) costs money once the admin requires it —
+// send them to the real payment flow instead of flipping the flag for free.
+// Downgrading (premium -> free) stays instant and free either way; there's
+// no reason to charge someone to cancel.
+if ($profile['subscription_status'] !== 'premium' && is_feature_paid('enable_paid_worker_premium')) {
+    header('Location: pay_worker_premium.php');
+    exit;
+}
+
 $newStatus = $profile['subscription_status'] === 'premium' ? 'free' : 'premium';
 $pdo->prepare('UPDATE worker_profiles SET subscription_status = ?, updated_at = NOW() WHERE user_id = ?')->execute([$newStatus, $user['id']]);
 

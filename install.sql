@@ -2523,3 +2523,252 @@ SET @add_idx_sql := IF(@idx_exists = 0,
 PREPARE stmt FROM @add_idx_sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v051  Worker Premium Subscription — real paid tier for worker_profiles'
+-- existing subscription_status column (previously just a free self-toggle
+-- with no functional effect beyond a cosmetic badge). Mirrors the
+-- worker_service listing-fee flow: package table, Paystack payment, expiry.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE worker_profiles
+    ADD COLUMN IF NOT EXISTS premium_expiry DATE DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS premium_renewal_notice_sent TINYINT(1) NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS worker_premium_packages (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(80) NOT NULL,
+    description   TEXT NULL DEFAULT NULL,
+    duration_days SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- INSERT IGNORE INTO worker_premium_packages (name, duration_days, price, status) VALUES
+--     ('Monthly Premium', 30,  0.00, 'active'),
+--     ('Annual Premium',  365, 0.00, 'active');
+
+ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
+    'featured_job','featured_worker','verification','job_post','worker_service',
+    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
+    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
+    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
+    'delivery_commission','worker_premium'
+) NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v052  View-count analytics for jobs & worker profiles — extends the existing
+-- view_count pattern already used by events/funeral_announcements/news/
+-- mp_shops/mp_products (session-deduped increment, one row-write per PK) to
+-- the two remaining listing types.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS view_count INT UNSIGNED NOT NULL DEFAULT 0;
+ALTER TABLE worker_profiles  ADD COLUMN IF NOT EXISTS view_count INT UNSIGNED NOT NULL DEFAULT 0;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v053  Granular complimentary-membership grants — lets an admin comp a
+-- specific paid feature (or 'full' for everything, including any paid
+-- feature added later) instead of always granting every feature at once.
+-- users.is_complimentary stays the "has at least one active grant" flag.
+-- Backfills a 'full' grant for every pre-existing complimentary member so
+-- upgrading doesn't silently strip access they were already granted under
+-- the old blanket (single-flag) system.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS complimentary_grants (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  feature_key VARCHAR(64) NOT NULL,
+  granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  granted_by INT UNSIGNED NULL,
+  UNIQUE KEY uniq_user_feature (user_id, feature_key),
+  KEY idx_cg_user (user_id)
+);
+INSERT IGNORE INTO complimentary_grants (user_id, feature_key, granted_by)
+    SELECT id, 'full', complimentary_granted_by FROM users WHERE is_complimentary = 1;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v054  applications.status was missing the intermediate hiring-workflow
+-- values (under_review/shortlisted/interview_scheduled/offered) and terminal
+-- values (hired/expired/position_filled) that manage_applicants.php's
+-- "update_status" action, my_applications.php, and
+-- partials/_applicant_card.php already read and write — the ENUM only had
+-- the original pending/approved/rejected/withdrawn/completed/accepted/
+-- declined set, so setting any of the newer statuses silently failed under
+-- non-strict SQL mode (coerced to an empty value instead of erroring),
+-- leaving the application stuck showing "pending" even after the employer
+-- moved it forward and the applicant was notified.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE applications MODIFY COLUMN status ENUM(
+    'pending','approved','rejected','withdrawn','completed','accepted','declined',
+    'under_review','shortlisted','interview_scheduled','offered','hired','expired','position_filled'
+) NOT NULL DEFAULT 'pending';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v055  Sponsors — a public homepage sponsor list. Businesses pick a paid
+-- package, submit their details (incl. logo), and go live once an admin
+-- approves — same pending_payment -> pending_approval -> active shape as
+-- news/events/funeral announcements, so it reuses the same monetization
+-- and moderation patterns rather than inventing a new one.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS sponsor_packages (
+  id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name          VARCHAR(100) NOT NULL,
+  duration_days INT NOT NULL DEFAULT 30,
+  price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT IGNORE INTO sponsor_packages (id, name, duration_days, price, status) VALUES
+(1, 'Bronze - 30 Days', 30, 100.00, 'active'),
+(2, 'Silver - 90 Days', 90, 250.00, 'active'),
+(3, 'Gold - 365 Days', 365, 800.00, 'active');
+
+CREATE TABLE IF NOT EXISTS sponsors (
+  id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id          INT UNSIGNED NOT NULL,
+  package_id       INT UNSIGNED NOT NULL,
+  name             VARCHAR(150) NOT NULL,
+  logo_path        VARCHAR(255) NOT NULL,
+  website_url      VARCHAR(512) DEFAULT NULL,
+  description      VARCHAR(500) DEFAULT NULL,
+  contact_email    VARCHAR(180) DEFAULT NULL,
+  contact_phone    VARCHAR(30)  DEFAULT NULL,
+  status           ENUM('pending_payment','pending_approval','active','rejected','expired') NOT NULL DEFAULT 'pending_payment',
+  rejection_reason VARCHAR(500) DEFAULT NULL,
+  start_date       DATE DEFAULT NULL,
+  end_date         DATE DEFAULT NULL,
+  created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME NULL,
+  KEY idx_sponsors_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
+    'featured_job','featured_worker','verification','job_post','worker_service',
+    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
+    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
+    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
+    'delivery_commission','worker_premium','sponsor'
+) NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v056  Let an admin add a sponsor directly (comp'd/partner sponsors that
+-- never go through the paid become_sponsor.php flow) — no owning platform
+-- user and no purchased package are required for these, so both columns
+-- need to allow NULL. Paid, user-submitted sponsors are unaffected.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE sponsors MODIFY COLUMN user_id INT UNSIGNED NULL;
+ALTER TABLE sponsors MODIFY COLUMN package_id INT UNSIGNED NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v057  Track which admin composed a notification, so admin-sent messages
+-- (distinct from system-triggered ones like payment/approval alerts) can be
+-- listed and managed from the Communication Centre's Notifications tab.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS sent_by_admin_id INT UNSIGNED NULL AFTER user_id;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v058  Optional price unit — lets a seller say a product price is "per
+-- litre"/"per acre"/"per kg" and a customer say a job budget is "per
+-- day"/"per month", displayed alongside the price wherever it's shown.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE mp_products ADD COLUMN IF NOT EXISTS price_unit VARCHAR(40) NULL AFTER price;
+ALTER TABLE service_requests ADD COLUMN IF NOT EXISTS price_unit VARCHAR(40) NULL AFTER budget_amount;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v059  Periodic Markets — Ofie Market, Nkurakan, Asenema, Adowso, etc.
+-- Extends the Marketplace module rather than duplicating it: a market shop
+-- is a normal mp_shops row with market_id set, and a market order is a
+-- normal mp_orders row that takes the new 'at_storehouse' fulfillment leg
+-- instead of the delivery-agent leg. Sellers list/browse/checkout exactly
+-- as before; only the physical handoff differs (storehouse pickup, managed
+-- per-market by an assigned manager, instead of a delivery rider).
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS markets (
+  id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name                 VARCHAR(120) NOT NULL,
+  slug                 VARCHAR(120) NOT NULL UNIQUE,
+  description          VARCHAR(500) DEFAULT NULL,
+  schedule_note        VARCHAR(200) DEFAULT NULL,
+  storehouse_location  VARCHAR(200) DEFAULT NULL,
+  storehouse_maps_link VARCHAR(512) DEFAULT NULL,
+  status               ENUM('open','closed') NOT NULL DEFAULT 'closed',
+  created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS market_managers (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  market_id   INT UNSIGNED NOT NULL,
+  user_id     INT UNSIGNED NOT NULL,
+  granted_by  INT UNSIGNED NOT NULL,
+  granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_market_manager (market_id, user_id),
+  FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS market_id INT UNSIGNED NULL AFTER user_id;
+ALTER TABLE mp_orders MODIFY COLUMN status ENUM(
+    'pending','confirmed','processing','ready_for_delivery','in_transit',
+    'delivered','cancelled','refunded','at_storehouse'
+) NOT NULL DEFAULT 'pending';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v060  Fix: mp_shops.market_id was being read live for order fulfillment
+-- decisions (who can manage an order, whether a seller can self-ship it).
+-- A seller changing/clearing their shop's market mid-order would silently
+-- orphan in-flight orders or let them skip the storehouse leg. Snapshot the
+-- market onto the order at checkout instead, same as mp_order_items already
+-- snapshots product_name/price rather than joining live to mp_products.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS market_id INT UNSIGNED NULL AFTER shop_id;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v061  Market-seller packages — periodic market sellers may need different
+-- pricing/limits than regular Marketplace sellers (in-person storehouse
+-- pickup is a lighter-weight, occasional-trader use case). Reuses the
+-- existing seller subscription plan system rather than duplicating it —
+-- a plan is now scoped to either regular Marketplace shops or market shops.
+-- Existing plans default to 'marketplace', so nothing changes for them.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE mp_seller_subscription_plans ADD COLUMN IF NOT EXISTS scope ENUM('marketplace','market') NOT NULL DEFAULT 'marketplace' AFTER name;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v062  Multi-shop sellers — a seller may now have at most ONE regular
+-- Marketplace shop PLUS at most ONE shop per periodic market (not
+-- unlimited shops). mp_shops.user_id used to be flatly UNIQUE, blocking a
+-- seller from ever opening a second (market) shop alongside their existing
+-- regular one. Swaps that for a generated-column trick since plain
+-- UNIQUE(user_id, market_id) wouldn't work — NULL never equals NULL in a
+-- unique index, so it wouldn't actually cap regular shops at one.
+-- Index changes go through information_schema/dynamic SQL rather than
+-- ADD/DROP INDEX IF EXISTS — see the v050 note above on why.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Add the replacement index BEFORE dropping the old one — uq_mshop_user
+-- also backs the user_id foreign key, and MariaDB refuses to drop an index
+-- an FK depends on unless another index can take over that role first.
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS market_uniq INT UNSIGNED
+    GENERATED ALWAYS AS (COALESCE(market_id, 0)) STORED AFTER market_id;
+
+SET @idx_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mp_shops' AND INDEX_NAME = 'uq_mshop_user_market'
+);
+SET @add_idx_sql := IF(@idx_exists = 0,
+    'ALTER TABLE mp_shops ADD UNIQUE KEY uq_mshop_user_market (user_id, market_uniq)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_idx_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @idx_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'mp_shops' AND INDEX_NAME = 'uq_mshop_user'
+);
+SET @drop_idx_sql := IF(@idx_exists > 0,
+    'ALTER TABLE mp_shops DROP INDEX uq_mshop_user',
+    'DO 0'
+);
+PREPARE stmt FROM @drop_idx_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;

@@ -900,3 +900,177 @@ next:
 1. unsigned in users should not be able to view phone number and email and should not be able to call
 2. customers are not able to apply for jobs, but no messsage when they try to, just page reload. 
 that a bad experience
+
+
+next:
+1. can we same to other form fields that 
+require user to enter google map location. 
+2. shop analytics to include number of people who view shop, product listing. 
+3. add this view analytics to other listings 
+if that wont slow down the system
+
+next: 
+1. make this page classic and add more beautiful ui "worker_profile_public.php"
+
+Organized & Detail-Oriented
+Excellent Communication Skills
+Proficient in MS Office Suite
+Team Player & Self-Motivated
+
+Next:
+1. 
+https://akuapemconnect.com/admin/requests.php
+"This page isn’t working
+akuapemconnect.com is currently unable to handle this request.
+HTTP ERROR 500"
+
+2. https://akuapemconnect.com/my_applications.php at this page, i click on the next tabs in the panel it works 
+then non of the tabs work again.
+
+3. where will users see list of jobs they have posted. not showing on their dashboard. probably they may want to edit it or something.
+
+Next:
+1. https://akuapemconnect.com/jobs.php each job card shows the full content 
+making job cards very length especially with lengthy job 
+description. Make them short. visitors should see full job details after they click 
+on details button. 
+2. https://akuapemconnect.com/request_detail.php has side bar on wide screen 
+which is fine. but on mobile users should see related contents/ thus content of the sidebar 
+at the buttom of the page. its a strategy to keep visitors on the page for long. 
+3. same to events and others
+
+4. For unsigned in users, the lenght of the 
+job cards are okay at "https://akuapemconnect.com/browse_jobs.php", i want it same for signed in users. 
+at "https://akuapemconnect.com/jobs.php"
+ 
+5. notification bell covers user profile picture 
+
+next:
+1. marketplace packages under admin are not editable. 
+make them editable like the rest.
+
+Next:
+1. When admin clicks on Grant button for  complimentary on "complimentary_members.php"
+a menu should show checkboxes, so he select Full, or other 
+paid packages that he want to grant free for Members
+ 
+next:
+1. marketplace.php has a "← Back Home" link on to. i want you to replace 
+"AkuapemConnect" on "job.php" top left with same button and function.
+
+next:
+after removing the Subscribe button from seller_dashboard.php 
+the shopname has also gone behind the bell icon and profile picture
+
+Next:
+ERROR:
+"https://akuapemconnect.com/login.php"
+Web server is returning an unknown error Error code 520
+Visit cloudflare.com for more information.
+2026-08-06 14:32:55 UTC
+"
+If you are the owner of this website:
+There is an issue between Cloudflare's cache and your origin web server. Cloudflare monitors for these errors and automatically investigates the cause. To help support the investigation, you can pull the corresponding error log from your web server and submit it our support team. Please include the Ray ID (which is at the bottom of this error page). Additional troubleshooting resources.
+"
+ai response to the error:
+Right, that confirms it — an intermittent failure that clears on retry is a transient origin/hosting issue, not a code bug in this app. As I laid out: check cPanel's CloudLinux "Resource Usage" tab for a "Faults" spike around the time it happens, and Cloudflare's Events log to see if it's an isolated blip or a cluster. If it starts happening frequently (not just once), that's a signal to raise with your host about LVE limits on the plan — nothing to fix in the codebase here unless it stops clearing on refresh.
+
+
+next: 
+1. users struggle to create account, especially for worker. 
+make it a bit flexible.
+Let users set worker profile, later after they are done signing up to the app. 
+
+next:
+1. when i enter periodic market and i enter 
+a market, i still see "/ 🛍️ Marketplace" i think it should 
+be replaced with the market name. 
+2. users and admin cant perform crud of jobs posted 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

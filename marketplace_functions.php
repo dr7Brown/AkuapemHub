@@ -28,16 +28,42 @@ function mp_unique_slug(string $base, string $table, string $column, PDO $pdo, i
 
 // ── Fetchers ──────────────────────────────────────────────────────────────────
 
-function get_shop_by_user(int $userId): ?array {
+// All shops owned by a user — regular shop first (if any), then market
+// shops by name. A seller may have at most one regular shop plus one shop
+// per periodic market (enforced by mp_shops' uq_mshop_user_market index).
+function get_shops_by_user(int $userId): array {
     global $pdo;
-    $st = $pdo->prepare('SELECT * FROM mp_shops WHERE user_id = ?');
+    $st = $pdo->prepare('SELECT * FROM mp_shops WHERE user_id = ? ORDER BY (market_id IS NULL) DESC, shop_name');
     $st->execute([$userId]);
-    return $st->fetch() ?: null;
+    return $st->fetchAll();
+}
+
+// The shop a seller is currently working in, across all seller-facing
+// pages — remembered in session (set via seller_dashboard.php's shop
+// switcher) so pages don't need to thread a ?shop_id= through every link.
+// Self-healing: falls back to the user's first shop if the session value
+// is stale, foreign, or unset.
+function get_active_seller_shop(int $userId): ?array {
+    $shops = get_shops_by_user($userId);
+    if (!$shops) return null;
+    if (!empty($_SESSION['seller_active_shop_id'])) {
+        foreach ($shops as $s) {
+            if ((int)$s['id'] === (int)$_SESSION['seller_active_shop_id']) return $s;
+        }
+    }
+    return $shops[0];
 }
 
 function get_shop(int $id): ?array {
     global $pdo;
-    $st = $pdo->prepare('SELECT ms.*, u.name AS owner_name, u.username AS owner_username, u.banned AS owner_banned FROM mp_shops ms JOIN users u ON ms.user_id = u.id WHERE ms.id = ?');
+    $st = $pdo->prepare(
+        'SELECT ms.*, u.name AS owner_name, u.username AS owner_username, u.banned AS owner_banned,
+                mk.name AS market_name, mk.status AS market_status, mk.schedule_note AS market_schedule_note
+         FROM mp_shops ms
+         JOIN users u ON ms.user_id = u.id
+         LEFT JOIN markets mk ON ms.market_id = mk.id
+         WHERE ms.id = ?'
+    );
     $st->execute([$id]);
     return $st->fetch() ?: null;
 }
@@ -64,7 +90,7 @@ function get_shop_active_subscription(int $shopId): ?array {
 // both the platform-wide on/off toggle and the admin-configurable eligibility
 // scope (all / featured / verified shops), set on admin/marketplace.php's
 // Settings tab. $shop must include is_featured, featured_end, verification_status
-// (already present on any row fetched via get_shop()/get_shop_by_user()).
+// (already present on any row fetched via get_shop()/get_active_seller_shop()).
 function mp_shop_can_receive_quotes(array $shop): bool {
     if (get_platform_setting('mp_quotes_enabled', '1') !== '1') return false;
     $scope = get_platform_setting('mp_quote_eligible_shops', 'all');
@@ -84,7 +110,22 @@ function mp_shop_owner_is_complimentary(int $shopId): bool {
     $st = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id = ?');
     $st->execute([$shopId]);
     $ownerId = $st->fetchColumn();
-    return $ownerId ? user_has_complimentary_access((int)$ownerId) : false;
+    return $ownerId ? user_has_complimentary_access((int)$ownerId, 'mp_subscription') : false;
+}
+
+// Whether any active plan exists for a shop's scope (marketplace vs market).
+// Market packages are admin-defined separately from regular ones — if an
+// admin enables subscriptions before setting up any market-scoped package,
+// market shops must not be silently locked out with no way to subscribe;
+// they're treated as exempt (like the module being off) until one exists.
+function mp_shop_scope_has_active_plans(int $shopId): bool {
+    global $pdo;
+    $shopSt = $pdo->prepare('SELECT market_id FROM mp_shops WHERE id=?');
+    $shopSt->execute([$shopId]);
+    $scope = $shopSt->fetchColumn() ? 'market' : 'marketplace';
+    $st = $pdo->prepare("SELECT 1 FROM mp_seller_subscription_plans WHERE scope=? AND status='active' LIMIT 1");
+    $st->execute([$scope]);
+    return (bool)$st->fetchColumn();
 }
 
 // Max images a shop's products may carry: -1 = unlimited, otherwise a count.
@@ -96,6 +137,7 @@ function mp_shop_max_images(int $shopId): int {
     if (get_platform_setting('mp_subscription_enabled', '0') !== '1') {
         return 5;
     }
+    if (!mp_shop_scope_has_active_plans($shopId)) return 5;
     $sub = get_shop_active_subscription($shopId);
     if (!$sub) return 5;
     return $sub['unlimited_images'] ? -1 : (int)$sub['max_images'];
@@ -130,6 +172,9 @@ function mp_shop_can_list_product(int $shopId): array {
         return ['allowed' => true, 'limit' => -1, 'used' => 0, 'unlimited' => true, 'no_subscription' => false];
     }
     if (get_platform_setting('mp_subscription_enabled', '0') !== '1') {
+        return ['allowed' => true, 'limit' => -1, 'used' => 0, 'unlimited' => true, 'no_subscription' => false];
+    }
+    if (!mp_shop_scope_has_active_plans($shopId)) {
         return ['allowed' => true, 'limit' => -1, 'used' => 0, 'unlimited' => true, 'no_subscription' => false];
     }
     $sub = get_shop_active_subscription($shopId);
@@ -255,14 +300,16 @@ function get_product(int $id): ?array {
     $st = $pdo->prepare(
         'SELECT mp.*, ms.shop_name, ms.slug AS shop_slug, ms.id AS shop_id,
                 ms.user_id AS shop_owner_id, ms.rating AS shop_rating,
-                ms.verification_status AS shop_verified,
+                ms.verification_status AS shop_verified, ms.market_id,
                 u.banned AS shop_owner_banned,
                 mc.name AS category_name, mc.slug AS category_slug,
-                mc.icon AS category_icon
+                mc.icon AS category_icon,
+                mk.name AS market_name, mk.status AS market_status, mk.schedule_note AS market_schedule_note
          FROM mp_products mp
          JOIN mp_shops ms ON mp.shop_id = ms.id
          JOIN users u ON ms.user_id = u.id
          LEFT JOIN mp_categories mc ON mp.category_id = mc.id
+         LEFT JOIN markets mk ON ms.market_id = mk.id
          WHERE mp.id = ?'
     );
     $st->execute([$id]);
@@ -307,8 +354,8 @@ function mp_get_cart_count(int $userId): int {
 function mp_get_cart_items(int $userId): array {
     global $pdo;
     $st = $pdo->prepare(
-        'SELECT ci.*, mp.name, mp.price, mp.discount_price, mp.stock_quantity, mp.status,
-                ms.shop_name, ms.id AS shop_id, ms.slug AS shop_slug,
+        'SELECT ci.*, mp.name, mp.price, mp.price_unit, mp.discount_price, mp.stock_quantity, mp.status,
+                ms.shop_name, ms.id AS shop_id, ms.slug AS shop_slug, ms.market_id,
                 mpi.image_path AS primary_image
          FROM mp_cart c
          JOIN mp_cart_items ci ON ci.cart_id = c.id
@@ -348,6 +395,7 @@ function mp_order_status_label(string $status): string {
         'delivered'            => 'Delivered',
         'cancelled'            => 'Cancelled',
         'refunded'             => 'Refunded',
+        'at_storehouse'        => 'At Storehouse',
     ][$status] ?? ucfirst($status);
 }
 
@@ -361,6 +409,7 @@ function mp_order_status_color(string $status): string {
         'delivered'          => '#10b981',
         'cancelled'          => '#ef4444',
         'refunded'           => '#6b7280',
+        'at_storehouse'      => '#0ea5e9',
     ][$status] ?? '#9ca3af';
 }
 
@@ -374,6 +423,7 @@ function mp_order_status_bg(string $status): string {
         'delivered'          => '#d1fae5',
         'cancelled'          => '#fee2e2',
         'refunded'           => '#f3f4f6',
+        'at_storehouse'      => '#e0f2fe',
     ][$status] ?? '#f3f4f6';
 }
 

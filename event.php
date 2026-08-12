@@ -93,12 +93,14 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
         .ed-back   { display:inline-flex; align-items:center; gap:6px; color:var(--text-muted,#6b7280); text-decoration:none; font-size:.85rem; font-weight:600; margin-bottom:20px; }
         .ed-back:hover { color:var(--primary,#0f766e); }
 
-        /* Two-column layout */
+        /* Two-column layout — sidebar renders inline below main content on
+           mobile (it already sits right after .ed-main in the HTML), and
+           becomes a sticky side column at the wider breakpoint. */
         .ed-layout { display:block; }
-        .ed-sidebar { display:none; }
+        .ed-sidebar { display:flex; flex-direction:column; gap:20px; margin-top:24px; }
         @media(min-width:900px){
             .ed-layout  { display:grid; grid-template-columns:1fr 280px; gap:28px; align-items:start; }
-            .ed-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+            .ed-sidebar { position:sticky; top:16px; margin-top:0; }
         }
 
         @keyframes edFadeUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
@@ -210,13 +212,13 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
         .nsb-ad a { display:block; }
     </style>
 </head>
-<body>
+<body<?php echo $user ? ' class="has-bottom-nav no-own-topbar"' : ''; ?>>
 <?php if (!$user): ?>
 <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
     <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← Back Home</a>
     <div style="display:flex;gap:8px;">
         <a href="events.php"   style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Events</a>
-        <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
     </div>
 </header>
 <?php endif; ?>

@@ -51,6 +51,7 @@ Disallow: /customer_payments.php
 Disallow: /switch_to_customer.php
 Disallow: /become_worker.php
 Disallow: /become_delivery_agent.php
+Disallow: /become_sponsor.php
 Disallow: /seller_dashboard.php
 Disallow: /seller_boost.php
 Disallow: /seller_product_form.php

@@ -1,6 +1,5 @@
 <?php
 // Application configuration for XAMPP / local environment.
-// Copy this file to config.php and update values if needed.
 
 // ── Error display: hidden from visitors in production, shown on local XAMPP ──
 $__isLocal = in_array($_SERVER['SERVER_NAME'] ?? '', ['localhost', '127.0.0.1'], true);
@@ -70,6 +69,8 @@ if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
 session_start();
 
 // ── Security headers (sent with every response) ─────────────────────────────
+// Works even on shared hosting where php.ini's expose_php can't be changed.
+header_remove('X-Powered-By');
 header('X-Frame-Options: SAMEORIGIN');
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');

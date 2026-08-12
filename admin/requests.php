@@ -3,6 +3,7 @@ require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
 
 require_login();
+$user = current_user();
 if (!is_admin_or_manager()) {
     header('Location: ../jobs.php');
     exit;
@@ -27,9 +28,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 send_business_message($request['customer_id'], $request['contact_info'], "AkuapemConnect: Your request '{$request['title']}' has been approved and is now visible to workers.", 'whatsapp');
                 notify_workers_of_matching_job($request);
             } elseif ($bulkAction === 'remove') {
+                $applicantIds = $pdo->prepare('SELECT worker_id FROM applications WHERE request_id = ?');
+                $applicantIds->execute([$request['id']]);
+                $applicantIds = $applicantIds->fetchAll(PDO::FETCH_COLUMN);
+
                 $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$request['id']]);
                 send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
                 notify_user($request['customer_id'], 'Request removed', "Your request '{$request['title']}' was removed by admin.", 'warning');
+                foreach ($applicantIds as $workerId) {
+                    notify_user((int)$workerId, 'Job Listing Removed', "The job \"{$request['title']}\" you applied to was removed by admin.", 'warning');
+                }
             } elseif ($bulkAction === 'feature') {
                 $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$request['id']]);
                 send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n", $request['customer_id']);
@@ -72,9 +80,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 "Your request \"{$request['title']}\" was not approved." . ($reason ? "\n\nReason: {$reason}" : '') . "\n\nClick to edit and resubmit.",
                 'error', 'request_detail.php?id=' . $requestId);
         } elseif ($_POST['action'] === 'remove' && $request) {
+            $applicantIds = $pdo->prepare('SELECT worker_id FROM applications WHERE request_id = ?');
+            $applicantIds->execute([$requestId]);
+            $applicantIds = $applicantIds->fetchAll(PDO::FETCH_COLUMN);
+
             $pdo->prepare('DELETE FROM service_requests WHERE id = ?')->execute([$requestId]);
             send_email_notification($request['customer_email'], 'Your request has been removed', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been removed by the admin.\n\nContact support for more information.", $request['customer_id']);
             notify_user($request['customer_id'], 'Request removed', "Your request '{$request['title']}' was removed by admin.", 'warning');
+            log_audit_action($user['id'], 'request_remove', "Removed request #{$requestId}: '{$request['title']}'" . ($applicantIds ? ' (' . count($applicantIds) . ' applicant(s) notified)' : ''));
+            foreach ($applicantIds as $workerId) {
+                notify_user((int)$workerId, 'Job Listing Removed', "The job \"{$request['title']}\" you applied to was removed by admin.", 'warning');
+            }
+        } elseif ($_POST['action'] === 'edit' && $request) {
+            $newTitle    = trim($_POST['title'] ?? '');
+            $newDesc     = trim($_POST['description'] ?? '');
+            $newCategory = (int)($_POST['category_id'] ?? 0);
+            $newLocation = trim($_POST['location'] ?? '');
+            $newSkills   = trim($_POST['skills_needed'] ?? '');
+            $newWorkers  = max(1, (int)($_POST['workers_needed'] ?? $request['workers_needed']));
+            $canEditBudget = $request['payment_mode'] === 'direct';
+            $newBudget   = $canEditBudget ? trim($_POST['budget'] ?? $request['budget']) : $request['budget'];
+
+            if ($newTitle !== '' && $newDesc !== '' && $newCategory) {
+                $pdo->prepare(
+                    'UPDATE service_requests SET title=?, description=?, category_id=?, location=?, skills_needed=?, workers_needed=?, budget=?, updated_at=NOW() WHERE id=?'
+                )->execute([$newTitle, $newDesc, $newCategory, $newLocation ?: null, $newSkills ?: null, $newWorkers, $newBudget, $requestId]);
+                log_audit_action($user['id'], 'request_edit', "Edited request #{$requestId}: '{$newTitle}'");
+                notify_user($request['customer_id'], 'Job Listing Updated by Admin',
+                    "Your listing \"{$newTitle}\" was edited by an admin.", 'info', 'request_detail.php?id=' . $requestId);
+                flash('Job updated.', 'success');
+            } else {
+                header('Location: requests.php?err=' . urlencode('Title, description, and category are required.'));
+                exit;
+            }
         } elseif ($_POST['action'] === 'feature' && $request) {
             $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$requestId]);
             send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n", $request['customer_id']);
@@ -87,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
 
 $errFlash = $_GET['err'] ?? '';
 $filterStatus = $_GET['status'] ?? '';
+$categories = get_categories();
 
 // Pending-first sort so items needing action bubble to top
 $stmt = $pdo->query("
@@ -395,6 +434,7 @@ $statusMeta = [
                                 · <?php echo (int)$request['workers_approved']; ?>/<?php echo (int)$request['workers_needed']; ?> workers
                                 · <?php echo sanitize($request['customer_name']); ?>
                                 · <?php echo date('d M Y', strtotime($request['created_at'])); ?>
+                                · 👁️ <?php echo number_format((int)$request['view_count']); ?>
                                 · <button class="rq-toggle-btn" type="button" onclick="toggleDetail(this)">details ▾</button>
                             </div>
                         </div>
@@ -420,6 +460,7 @@ $statusMeta = [
                                     onclick="openRejectModal(<?php echo (int)$request['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <?php endif; ?>
+                                <button type="button" class="button button-secondary button-small" onclick='openEditModal(<?php echo json_encode($request); ?>)'>✏️ Edit</button>
                                 <button type="submit" name="action" value="feature" class="button button-secondary button-small"
                                     style="<?php echo $arFeatActive ? 'color:#854d0e;border-color:#f59e0b;' : ''; ?>">
                                     <?php echo $arFeatActive ? '⭐' : 'Feature'; ?>
@@ -515,6 +556,57 @@ $statusMeta = [
                 </form>
             </div>
         </div>
+
+        <!-- Edit modal -->
+        <div id="edit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;" onclick="if(event.target===this)closeEditModal()">
+            <div style="background:#fff;border-radius:14px;padding:24px;max-width:520px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+                <h3 id="edit-modal-heading" style="margin:0 0 14px;font-size:1rem;">Edit Job Listing</h3>
+                <form method="post" action="requests.php">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="edit">
+                    <input type="hidden" name="request_id" id="edit-request-id" value="">
+                    <div style="margin-bottom:10px;">
+                        <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Title</label>
+                        <input type="text" name="title" id="edit-title" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Description</label>
+                        <textarea name="description" id="edit-description" rows="4" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;"></textarea>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                        <div>
+                            <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Category</label>
+                            <select name="category_id" id="edit-category" required style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                                <?php foreach ($categories as $c): ?>
+                                <option value="<?php echo $c['id']; ?>"><?php echo sanitize($c['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Workers Needed</label>
+                            <input type="number" name="workers_needed" id="edit-workers" min="1" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                        </div>
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Location</label>
+                        <input type="text" name="location" id="edit-location" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                    </div>
+                    <div style="margin-bottom:10px;">
+                        <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Skills Needed</label>
+                        <input type="text" name="skills_needed" id="edit-skills" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                    </div>
+                    <div style="margin-bottom:14px;">
+                        <label style="font-weight:600;font-size:.85rem;display:block;margin-bottom:4px;">Budget</label>
+                        <input type="text" name="budget" id="edit-budget" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;">
+                        <p id="edit-budget-locked-note" style="display:none;font-size:.76rem;color:#92400e;margin:4px 0 0;">🔒 Locked — payment mode is escrow, funds are already held at this amount.</p>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button type="submit" class="button button-primary">Save Changes</button>
+                        <button type="button" class="button button-secondary" onclick="closeEditModal()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </main>
 
     <script>
@@ -561,6 +653,27 @@ $statusMeta = [
     }
     function closeRejectModal() {
         document.getElementById('reject-modal').style.display = 'none';
+    }
+
+    function openEditModal(r) {
+        document.getElementById('edit-modal-heading').textContent = 'Edit: ' + r.title;
+        document.getElementById('edit-request-id').value = r.id;
+        document.getElementById('edit-title').value = r.title;
+        document.getElementById('edit-description').value = r.description || '';
+        document.getElementById('edit-category').value = r.category_id;
+        document.getElementById('edit-workers').value = r.workers_needed || 1;
+        document.getElementById('edit-location').value = r.location || '';
+        document.getElementById('edit-skills').value = r.skills_needed || '';
+        var budgetField = document.getElementById('edit-budget');
+        var lockedNote  = document.getElementById('edit-budget-locked-note');
+        var budgetLocked = r.payment_mode === 'escrow';
+        budgetField.value = r.budget || '';
+        budgetField.disabled = budgetLocked;
+        lockedNote.style.display = budgetLocked ? 'block' : 'none';
+        document.getElementById('edit-modal').style.display = 'flex';
+    }
+    function closeEditModal() {
+        document.getElementById('edit-modal').style.display = 'none';
     }
     </script>
 </body>

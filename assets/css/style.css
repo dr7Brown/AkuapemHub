@@ -543,11 +543,19 @@ textarea {
   color: var(--text);
 }
 
-.jobs-grid .request-card > p:not(.meta) {
+.jobs-grid .request-card > p:not(.meta),
+.job-description {
+  font-size: 0.84rem;
+  line-height: 1.55;
+  color: var(--text);
+  flex: 1;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  min-height: 0;
+  max-height: calc(1.55em * 3);
+  word-break: break-word;
 }
 
 /* Small uppercase label used as section heading inside detail cards */
@@ -1019,7 +1027,7 @@ body.has-bottom-nav {
   content: attr(data-count);
   position: absolute;
   top: -4px;
-  right: -10px;
+  left: -10px;
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
@@ -1047,6 +1055,20 @@ body.has-bottom-nav {
   position: sticky;
   top: 0;
   z-index: 20;
+}
+
+/* Reserve space so page-specific topbar buttons don't sit under the
+   fixed notification bell + profile avatar (partials/bottom_nav.php). */
+.has-bottom-nav .app-topbar,
+.has-bottom-nav .topbar {
+  padding-right: 120px;
+}
+
+/* Pages with no page-specific topbar (hero content starts at the very top)
+   reserve vertical space instead, so it doesn't render under the fixed
+   bell + avatar. */
+body.has-bottom-nav.no-own-topbar {
+  padding-top: 54px;
 }
 
 .app-topbar .brand {

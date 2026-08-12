@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $featureKeys = [
             'enable_paid_featured_jobs', 'enable_paid_featured_workers',
             'enable_paid_verification_badges', 'enable_paid_job_posting',
-            'enable_paid_worker_service',
+            'enable_paid_worker_service', 'enable_paid_worker_premium',
             'enable_paid_featured_events', 'enable_paid_featured_funerals', 'enable_paid_featured_news',
         ];
         $anyFeaturePaid = false;
@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tab = 'settings';
 
     } elseif ($action === 'save_module_toggles') {
-        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery'] as $modKey) {
+        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets'] as $modKey) {
             set_platform_setting("{$modKey}_enabled", isset($_POST["{$modKey}_enabled"]) ? '1' : '0');
         }
         log_audit_action($user['id'], 'module_toggles_updated', 'Updated platform module availability');
@@ -215,9 +215,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'verification'    => 'verification_packages',
             'job_posting'     => 'job_posting_packages',
             'worker_service'  => 'worker_service_packages',
+            'worker_premium'  => 'worker_premium_packages',
             'featured_event'  => 'featured_event_packages',
             'featured_funeral'=> 'featured_funeral_packages',
             'featured_news'   => 'featured_news_packages',
+            'sponsor'         => 'sponsor_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgName !== '') {
@@ -239,7 +241,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare("INSERT INTO $table (name, description, post_count, price, status) VALUES (?, ?, ?, ?, ?)")
                         ->execute([$pkgName, $pkgDesc, $pkgPostCount, $pkgPrice, $pkgStatus]);
                 }
-            } elseif ($pkgType === 'worker_service') {
+            } elseif ($pkgType === 'worker_service' || $pkgType === 'worker_premium') {
                 $pkgDesc = trim($_POST['pkg_description'] ?? '') ?: null;
                 if ($pkgId > 0) {
                     $pdo->prepare("UPDATE $table SET name = ?, description = ?, duration_days = ?, price = ?, status = ? WHERE id = ?")
@@ -264,14 +266,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Package name is required.';
         }
         $tabMap = [
-            'featured_job'    => 'featured_jobs',
-            'featured_worker' => 'featured_workers',
-            'verification'    => 'verification',
-            'job_posting'     => 'job_posting',
-            'worker_service'  => 'worker_service',
+            'featured_job'    => 'job_pkgs',
+            'featured_worker' => 'worker_pkgs',
+            'verification'    => 'worker_pkgs',
+            'job_posting'     => 'job_pkgs',
+            'worker_service'  => 'worker_pkgs',
+            'worker_premium'  => 'worker_pkgs',
             'featured_event'  => 'community',
             'featured_funeral'=> 'community',
             'featured_news'   => 'community',
+            'sponsor'         => 'community',
         ];
         $tab = $tabMap[$pkgType] ?? 'settings';
 
@@ -284,9 +288,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'verification'    => 'verification_packages',
             'job_posting'     => 'job_posting_packages',
             'worker_service'  => 'worker_service_packages',
+            'worker_premium'  => 'worker_premium_packages',
             'featured_event'  => 'featured_event_packages',
             'featured_funeral'=> 'featured_funeral_packages',
             'featured_news'   => 'featured_news_packages',
+            'sponsor'         => 'sponsor_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgId > 0) {
@@ -295,14 +301,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $success = 'Package deleted.';
         }
         $tabMap2 = [
-            'featured_job'    => 'featured_jobs',
-            'featured_worker' => 'featured_workers',
-            'verification'    => 'verification',
-            'job_posting'     => 'job_posting',
-            'worker_service'  => 'worker_service',
+            'featured_job'    => 'job_pkgs',
+            'featured_worker' => 'worker_pkgs',
+            'verification'    => 'worker_pkgs',
+            'job_posting'     => 'job_pkgs',
+            'worker_service'  => 'worker_pkgs',
+            'worker_premium'  => 'worker_pkgs',
             'featured_event'  => 'community',
             'featured_funeral'=> 'community',
             'featured_news'   => 'community',
+            'sponsor'         => 'community',
         ];
         $tab = $tabMap2[$pkgType] ?? 'settings';
 
@@ -367,6 +375,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ->execute([$days, $payment['reference_id']]);
                 notify_user($payment['user_id'], 'Service listing confirmed', 'Your worker service listing is now active. You will appear in search results for ' . $days . ' days.', 'success');
                 log_audit_action($user['id'], 'payment_confirmed', "Confirmed worker_service payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}, worker profile ID {$payment['reference_id']}");
+            } elseif ($payment['payment_type'] === 'worker_premium' && $payment['reference_id']) {
+                $pkgRow = $pdo->prepare('SELECT duration_days FROM worker_premium_packages WHERE id = ?');
+                $pkgRow->execute([$payment['package_id']]);
+                $pkgRow = $pkgRow->fetch();
+                $days = $pkgRow ? (int)$pkgRow['duration_days'] : 30;
+                $pdo->prepare("UPDATE worker_profiles SET subscription_status = 'premium', premium_expiry = DATE_ADD(CURDATE(), INTERVAL ? DAY), premium_renewal_notice_sent = 0 WHERE id = ?")
+                    ->execute([$days, $payment['reference_id']]);
+                notify_user($payment['user_id'], 'Premium confirmed', 'Your Premium subscription is now active for ' . $days . ' days. You will rank higher in search results.', 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed worker_premium payment ref {$payment['reference_code']} (GH₵{$payment['amount']}) for user ID {$payment['user_id']}, worker profile ID {$payment['reference_id']}");
             } elseif ($payment['payment_type'] === 'featured_event' && $payment['reference_id']) {
                 $pkgRow = $pdo->prepare('SELECT duration_days FROM featured_event_packages WHERE id = ?');
                 $pkgRow->execute([$payment['package_id']]);
@@ -404,6 +421,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     notify_user((int)$sub['owner_id'], '⭐ Subscription Activated!', $sub['plan_name'] . ' for ' . $sub['shop_name'] . ' is active until ' . date('d M Y', strtotime($sub['end_date'])) . '.', 'success');
                     log_audit_action($user['id'], 'payment_confirmed', "Confirmed mp_subscription payment ref {$payment['reference_code']} for user ID {$payment['user_id']}");
                 }
+            } elseif ($payment['payment_type'] === 'sponsor' && $payment['reference_id']) {
+                $pkgRow = $pdo->prepare('SELECT duration_days FROM sponsor_packages WHERE id = ?');
+                $pkgRow->execute([$payment['package_id']]);
+                $pkgRow = $pkgRow->fetch();
+                $days = $pkgRow ? (int)$pkgRow['duration_days'] : 30;
+                $spRow = $pdo->prepare('SELECT name FROM sponsors WHERE id = ?');
+                $spRow->execute([$payment['reference_id']]);
+                $spName = $spRow->fetch()['name'] ?? "Sponsor #{$payment['reference_id']}";
+                $pdo->prepare("UPDATE sponsors SET status='pending_approval', start_date=CURDATE(), end_date=DATE_ADD(CURDATE(), INTERVAL ? DAY), updated_at=NOW() WHERE id=? AND status='pending_payment'")
+                    ->execute([$days, $payment['reference_id']]);
+                notify_user($payment['user_id'], '✅ Sponsorship payment confirmed', "Payment for \"{$spName}\" was received. Your sponsor listing is now queued for admin review.", 'success');
+                log_audit_action($user['id'], 'payment_confirmed', "Confirmed sponsor payment ref {$payment['reference_code']} for user ID {$payment['user_id']}");
             }
             $success = 'Payment confirmed and feature activated.';
         }
@@ -436,7 +465,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'] ?? 0, 'worker_verified', "Verified worker user ID {$workerId}");
             $success = 'Worker verified.';
         }
-        $tab = 'verification';
+        $tab = 'worker_pkgs';
 
     } elseif ($action === 'approve_verification') {
         $workerUserId = intval($_POST['worker_user_id'] ?? 0);
@@ -447,7 +476,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'] ?? 0, 'worker_verified', "Verified worker user ID {$workerUserId} (admin approved)");
             $success = 'Worker verified.';
         }
-        $tab = 'verification';
+        $tab = 'worker_pkgs';
 
     } elseif ($action === 'reject_verification') {
         $workerUserId = intval($_POST['worker_user_id'] ?? 0);
@@ -460,7 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'] ?? 0, 'verification_rejected', "Rejected verification for user ID {$workerUserId}" . ($reason ? " — reason: {$reason}" : ''));
             $success = 'Verification request rejected.';
         }
-        $tab = 'verification';
+        $tab = 'worker_pkgs';
 
     } elseif ($action === 'request_resubmission') {
         $workerUserId = intval($_POST['worker_user_id'] ?? 0);
@@ -473,7 +502,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'] ?? 0, 'verification_resubmission_requested', "Requested resubmission for verification user ID {$workerUserId}" . ($reason ? " — notes: {$reason}" : ''));
             $success = 'Resubmission requested. Worker notified.';
         }
-        $tab = 'verification';
+        $tab = 'worker_pkgs';
 
     } elseif ($action === 'unfeature_job') {
         $jobId = intval($_POST['job_id'] ?? 0);
@@ -483,7 +512,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'], 'job_unfeatured', "Removed featured status for job ID {$jobId}");
             $success = 'Job featured status removed.';
         }
-        $tab = 'featured_jobs';
+        $tab = 'job_pkgs';
 
     } elseif ($action === 'unfeature_worker') {
         $workerId = intval($_POST['worker_user_id'] ?? 0);
@@ -493,7 +522,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'], 'worker_unfeatured', "Removed featured status for worker user ID {$workerId}");
             $success = 'Featured status removed.';
         }
-        $tab = 'featured_workers';
+        $tab = 'worker_pkgs';
 
     } elseif ($action === 'revoke_verification') {
         $workerId = intval($_POST['worker_user_id'] ?? 0);
@@ -504,7 +533,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             log_audit_action($user['id'] ?? 0, 'verification_revoked', "Revoked verification for worker user ID {$workerId}");
             $success = 'Verification revoked.';
         }
-        $tab = 'verification';
+        $tab = 'worker_pkgs';
     }
 
     header('Location: monetization.php?tab=' . urlencode($tab) . ($success ? '&msg=' . urlencode($success) : ($error ? '&err=' . urlencode($error) : '')));
@@ -526,6 +555,7 @@ $enableFeaturedWorkers   = get_platform_setting('enable_paid_featured_workers', 
 $enableVerification      = get_platform_setting('enable_paid_verification_badges', '0');
 $enablePaidJobPosting    = get_platform_setting('enable_paid_job_posting', '0');
 $enablePaidWorkerService = get_platform_setting('enable_paid_worker_service', '0');
+$enablePaidWorkerPremium = get_platform_setting('enable_paid_worker_premium', '0');
 $enableFeaturedEvents    = get_platform_setting('enable_paid_featured_events', '0');
 $enableFeaturedFunerals  = get_platform_setting('enable_paid_featured_funerals', '0');
 $enableFeaturedNews      = get_platform_setting('enable_paid_featured_news', '0');
@@ -550,6 +580,7 @@ $moduleToggles = [
     'news'     => ['label' => 'News & Updates',        'desc' => 'Articles & platform news'],
     'funerals' => ['label' => 'Funeral Announcements', 'desc' => 'Memorial notices'],
     'delivery' => ['label' => 'Delivery Services',      'desc' => 'Send & receive parcels'],
+    'markets'  => ['label' => 'Periodic Markets',        'desc' => 'Ofie Market, Nkurakan Market & other scheduled markets'],
 ];
 foreach ($moduleToggles as $modKey => &$modInfo) {
     $modInfo['enabled'] = module_enabled($modKey);
@@ -581,9 +612,11 @@ $verificationPackages = get_active_packages('verification_packages');
 $allVerificationPackages = $pdo->query("SELECT * FROM verification_packages ORDER BY price ASC")->fetchAll();
 $allJobPostingPackages   = $pdo->query("SELECT * FROM job_posting_packages ORDER BY price ASC")->fetchAll();
 $allWorkerServicePackages = $pdo->query("SELECT * FROM worker_service_packages ORDER BY price ASC")->fetchAll();
+$allWorkerPremiumPackages = $pdo->query("SELECT * FROM worker_premium_packages ORDER BY price ASC")->fetchAll();
 $allFeaturedEventPackages   = $pdo->query("SELECT * FROM featured_event_packages ORDER BY price ASC")->fetchAll();
 $allFeaturedFuneralPackages = $pdo->query("SELECT * FROM featured_funeral_packages ORDER BY price ASC")->fetchAll();
 $allFeaturedNewsPackages    = $pdo->query("SELECT * FROM featured_news_packages ORDER BY price ASC")->fetchAll();
+$allSponsorPackages         = $pdo->query("SELECT * FROM sponsor_packages ORDER BY price ASC")->fetchAll();
 
 // Pending payments with context
 $pendingPayments = $pdo->query("
@@ -601,6 +634,7 @@ $pendingPayments = $pdo->query("
             WHEN 'featured_news'   THEN COALESCE(fnp.name, '—')
             WHEN 'mp_subscription' THEN COALESCE(msp.name, '—')
             WHEN 'mp_boost'        THEN COALESCE(mbp.name, '—')
+            WHEN 'sponsor'         THEN COALESCE(spp.name, '—')
             ELSE '—'
         END AS package_name
     FROM platform_payments pp
@@ -616,6 +650,7 @@ $pendingPayments = $pdo->query("
     LEFT JOIN featured_news_packages fnp    ON pp.payment_type = 'featured_news'   AND fnp.id = pp.package_id
     LEFT JOIN mp_seller_subscription_plans msp ON pp.payment_type = 'mp_subscription' AND msp.id = pp.package_id
     LEFT JOIN mp_boost_packages mbp         ON pp.payment_type = 'mp_boost'        AND mbp.id = pp.package_id
+    LEFT JOIN sponsor_packages spp          ON pp.payment_type = 'sponsor'         AND spp.id = pp.package_id
     WHERE pp.status = 'pending'
     ORDER BY pp.created_at DESC
 ")->fetchAll();
@@ -822,11 +857,8 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
 
         <nav class="mono-tabs">
             <button class="mono-tab <?php echo $tab === 'settings' ? 'active' : ''; ?>" data-tab="settings">Settings</button>
-            <button class="mono-tab <?php echo $tab === 'featured_jobs' ? 'active' : ''; ?>" data-tab="featured_jobs">Featured Jobs</button>
-            <button class="mono-tab <?php echo $tab === 'featured_workers' ? 'active' : ''; ?>" data-tab="featured_workers">Featured Workers</button>
-            <button class="mono-tab <?php echo $tab === 'verification' ? 'active' : ''; ?>" data-tab="verification">Verification</button>
-            <button class="mono-tab <?php echo $tab === 'job_posting' ? 'active' : ''; ?>" data-tab="job_posting">Job Posting Pkgs</button>
-            <button class="mono-tab <?php echo $tab === 'worker_service' ? 'active' : ''; ?>" data-tab="worker_service">Listing Pkgs</button>
+            <button class="mono-tab <?php echo $tab === 'job_pkgs' ? 'active' : ''; ?>" data-tab="job_pkgs">📋 Job Pkgs</button>
+            <button class="mono-tab <?php echo $tab === 'worker_pkgs' ? 'active' : ''; ?>" data-tab="worker_pkgs">👷 Worker Pkgs <?php if (!empty($pendingVerificationPayments)): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($pendingVerificationPayments); ?></span><?php endif; ?></button>
             <button class="mono-tab <?php echo $tab === 'marketplace' ? 'active' : ''; ?>" data-tab="marketplace">🛍️ Marketplace <?php if (count($mpPendingBoosts)): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($mpPendingBoosts); ?></span><?php endif; ?></button>
             <button class="mono-tab <?php echo $tab === 'community' ? 'active' : ''; ?>" data-tab="community">📢 Community Pkgs</button>
             <button class="mono-tab <?php echo $tab === 'payments' ? 'active' : ''; ?>" data-tab="payments">Pending Payments <?php if ($pendingPayments): ?><span style="background:var(--primary);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($pendingPayments); ?></span><?php endif; ?></button>
@@ -915,6 +947,13 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                                     <td>
                                         <label style="margin-right:16px;"><input type="radio" name="enable_paid_worker_service" value="0" <?php echo !$enablePaidWorkerService ? 'checked' : ''; ?>> Free</label>
                                         <label><input type="radio" name="enable_paid_worker_service" value="1" <?php echo $enablePaidWorkerService ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Worker Premium Subscription</strong><br><span class="meta">Charge workers for a search-ranking boost</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_worker_premium" value="0" <?php echo !$enablePaidWorkerPremium ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_worker_premium" value="1" <?php echo $enablePaidWorkerPremium ? 'checked' : ''; ?>> Paid</label>
                                     </td>
                                 </tr>
                                 <tr>
@@ -1130,8 +1169,8 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
             </section>
         </div>
 
-        <!-- FEATURED JOB PACKAGES TAB -->
-        <div class="tab-panel <?php echo $tab === 'featured_jobs' ? 'active' : ''; ?>" id="tab-featured_jobs">
+        <!-- ═══════════════ JOB PACKAGES TAB (Featured, Posting) ═══════════════ -->
+        <div class="tab-panel <?php echo $tab === 'job_pkgs' ? 'active' : ''; ?>" id="tab-job_pkgs">
             <section class="panel">
                 <h2>Featured Job Packages</h2>
                 <table class="pkg-table">
@@ -1201,10 +1240,56 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                 </table>
             </section>
             <?php endif; ?>
+
+            <section class="panel" style="margin-top:20px;">
+                <h2>Job Posting Packages</h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Name</th><th>Post count</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($allJobPostingPackages as $pkg): ?>
+                            <tr>
+                                <td><?php echo sanitize($pkg['name']); ?></td>
+                                <td><?php echo $pkg['post_count'] == -1 ? 'Unlimited' : $pkg['post_count']; ?></td>
+                                <td><?php echo number_format($pkg['price'], 2); ?></td>
+                                <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
+                                <td>
+                                    <button class="button button-small button-secondary" onclick="editJobPostPkg(<?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', '<?php echo sanitize($pkg['description'] ?? ''); ?>', <?php echo $pkg['post_count']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
+                                        <input type="hidden" name="action" value="delete_package" />
+                                        <input type="hidden" name="pkg_type" value="job_posting" />
+                                        <input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>" />
+                                        <button type="submit" class="button button-small button-secondary">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <h3 style="margin-top: 20px;">Add / Edit Package</h3>
+                <form method="post" action="monetization.php" id="form-job_posting">
+                    <input type="hidden" name="action" value="save_package" />
+                    <input type="hidden" name="pkg_type" value="job_posting" />
+                    <input type="hidden" name="pkg_id" id="job_posting_id" value="0" />
+                    <label>Package name</label>
+                    <input type="text" name="pkg_name" id="job_posting_name" required placeholder="e.g. Single Post" />
+                    <label>Description <span class="meta">(shown to customers — optional)</span></label>
+                    <textarea name="pkg_description" id="job_posting_description" rows="2" placeholder="e.g. Post one job to the marketplace. Credits never expire." style="resize:vertical;"></textarea>
+                    <label>Post count (-1 for unlimited)</label>
+                    <input type="number" name="pkg_post_count" id="job_posting_post_count" required value="1" min="-1" />
+                    <label>Price (GH₵)</label>
+                    <input type="number" name="pkg_price" id="job_posting_price" required min="0" step="0.01" value="0" />
+                    <label>Status</label>
+                    <select name="pkg_status" id="job_posting_status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <button type="submit" class="button button-primary">Save package</button>
+                        <button type="button" class="button button-secondary" onclick="document.getElementById('job_posting_id').value=0; document.getElementById('form-job_posting').reset();">Clear</button>
+                    </div>
+                </form>
+            </section>
         </div>
 
-        <!-- FEATURED WORKER PACKAGES TAB -->
-        <div class="tab-panel <?php echo $tab === 'featured_workers' ? 'active' : ''; ?>" id="tab-featured_workers">
+        <!-- ═══════════════ WORKER PACKAGES TAB (Featured, Verification, Listing, Premium) ═══════════════ -->
+        <div class="tab-panel <?php echo $tab === 'worker_pkgs' ? 'active' : ''; ?>" id="tab-worker_pkgs">
             <?php if (!empty($activeFeaturedWorkers)): ?>
             <section class="panel" style="margin-bottom:16px;">
                 <h2 style="margin-top:0;">Currently Featured Workers <span class="meta">(<?php echo count($activeFeaturedWorkers); ?> active)</span></h2>
@@ -1229,7 +1314,7 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                 </table>
             </section>
             <?php endif; ?>
-            <section class="panel">
+            <section class="panel" style="margin-bottom:20px;">
                 <h2>Worker Promotion Packages</h2>
                 <table class="pkg-table">
                     <thead><tr><th>Name</th><th>Duration</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
@@ -1272,11 +1357,8 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     </div>
                 </form>
             </section>
-        </div>
 
-        <!-- VERIFICATION TAB -->
-        <div class="tab-panel <?php echo $tab === 'verification' ? 'active' : ''; ?>" id="tab-verification">
-            <section class="panel">
+            <section class="panel" style="margin-bottom:20px;">
                 <h2>Verification Packages</h2>
                 <table class="pkg-table">
                     <thead><tr><th>Name</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
@@ -1429,60 +1511,8 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     </tbody>
                 </table>
             </section>
-        </div>
 
-        <!-- JOB POSTING PACKAGES TAB -->
-        <div class="tab-panel <?php echo $tab === 'job_posting' ? 'active' : ''; ?>" id="tab-job_posting">
-            <section class="panel">
-                <h2>Job Posting Packages</h2>
-                <table class="pkg-table">
-                    <thead><tr><th>Name</th><th>Post count</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
-                    <tbody>
-                        <?php foreach ($allJobPostingPackages as $pkg): ?>
-                            <tr>
-                                <td><?php echo sanitize($pkg['name']); ?></td>
-                                <td><?php echo $pkg['post_count'] == -1 ? 'Unlimited' : $pkg['post_count']; ?></td>
-                                <td><?php echo number_format($pkg['price'], 2); ?></td>
-                                <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
-                                <td>
-                                    <button class="button button-small button-secondary" onclick="editJobPostPkg(<?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', '<?php echo sanitize($pkg['description'] ?? ''); ?>', <?php echo $pkg['post_count']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
-                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
-                                        <input type="hidden" name="action" value="delete_package" />
-                                        <input type="hidden" name="pkg_type" value="job_posting" />
-                                        <input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>" />
-                                        <button type="submit" class="button button-small button-secondary">Delete</button>
-                                    </form>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-                <h3 style="margin-top: 20px;">Add / Edit Package</h3>
-                <form method="post" action="monetization.php" id="form-job_posting">
-                    <input type="hidden" name="action" value="save_package" />
-                    <input type="hidden" name="pkg_type" value="job_posting" />
-                    <input type="hidden" name="pkg_id" id="job_posting_id" value="0" />
-                    <label>Package name</label>
-                    <input type="text" name="pkg_name" id="job_posting_name" required placeholder="e.g. Single Post" />
-                    <label>Description <span class="meta">(shown to customers — optional)</span></label>
-                    <textarea name="pkg_description" id="job_posting_description" rows="2" placeholder="e.g. Post one job to the marketplace. Credits never expire." style="resize:vertical;"></textarea>
-                    <label>Post count (-1 for unlimited)</label>
-                    <input type="number" name="pkg_post_count" id="job_posting_post_count" required value="1" min="-1" />
-                    <label>Price (GH₵)</label>
-                    <input type="number" name="pkg_price" id="job_posting_price" required min="0" step="0.01" value="0" />
-                    <label>Status</label>
-                    <select name="pkg_status" id="job_posting_status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
-                    <div style="display:flex;gap:8px;margin-top:8px;">
-                        <button type="submit" class="button button-primary">Save package</button>
-                        <button type="button" class="button button-secondary" onclick="document.getElementById('job_posting_id').value=0; document.getElementById('form-job_posting').reset();">Clear</button>
-                    </div>
-                </form>
-            </section>
-        </div>
-
-        <!-- WORKER SERVICE LISTING PACKAGES TAB -->
-        <div class="tab-panel <?php echo $tab === 'worker_service' ? 'active' : ''; ?>" id="tab-worker_service">
-            <section class="panel">
+            <section class="panel" style="margin-bottom:20px;">
                 <h2>Worker Service Listing Packages</h2>
                 <table class="pkg-table">
                     <thead><tr><th>Name</th><th>Duration</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
@@ -1527,6 +1557,52 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     </div>
                 </form>
             </section>
+
+            <section class="panel">
+                <h2>Worker Premium Subscription Packages</h2>
+                <table class="pkg-table">
+                    <thead><tr><th>Name</th><th>Duration</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($allWorkerPremiumPackages as $pkg): ?>
+                            <tr>
+                                <td><?php echo sanitize($pkg['name']); ?></td>
+                                <td><?php echo $pkg['duration_days']; ?> days</td>
+                                <td><?php echo number_format($pkg['price'], 2); ?></td>
+                                <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
+                                <td>
+                                    <button class="button button-small button-secondary" onclick="editPackage('worker_premium', <?php echo $pkg['id']; ?>, '<?php echo sanitize($pkg['name']); ?>', '<?php echo sanitize($pkg['description'] ?? ''); ?>', <?php echo $pkg['duration_days']; ?>, <?php echo $pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                    <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
+                                        <input type="hidden" name="action" value="delete_package" />
+                                        <input type="hidden" name="pkg_type" value="worker_premium" />
+                                        <input type="hidden" name="pkg_id" value="<?php echo $pkg['id']; ?>" />
+                                        <button type="submit" class="button button-small button-secondary">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <h3 style="margin-top: 20px;">Add / Edit Package</h3>
+                <form method="post" action="monetization.php" id="form-worker_premium">
+                    <input type="hidden" name="action" value="save_package" />
+                    <input type="hidden" name="pkg_type" value="worker_premium" />
+                    <input type="hidden" name="pkg_id" id="worker_premium_id" value="0" />
+                    <label>Package name</label>
+                    <input type="text" name="pkg_name" id="worker_premium_name" required placeholder="e.g. Monthly Premium" />
+                    <label>Description <span class="meta">(shown to workers — optional)</span></label>
+                    <textarea name="pkg_description" id="worker_premium_description" rows="2" placeholder="e.g. Rank higher in search results for 30 days." style="resize:vertical;"></textarea>
+                    <label>Duration (days)</label>
+                    <input type="number" name="pkg_days" id="worker_premium_days" required min="1" value="30" />
+                    <label>Price (GH₵)</label>
+                    <input type="number" name="pkg_price" id="worker_premium_price" required min="0" step="0.01" value="0" />
+                    <label>Status</label>
+                    <select name="pkg_status" id="worker_premium_status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+                    <div style="display:flex;gap:8px;margin-top:8px;">
+                        <button type="submit" class="button button-primary">Save package</button>
+                        <button type="button" class="button button-secondary" onclick="resetForm('worker_premium')">Clear</button>
+                    </div>
+                </form>
+            </section>
         </div>
 
         <!-- ═══════════════ COMMUNITY PACKAGES TAB ═══════════════ -->
@@ -1537,6 +1613,7 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                 ['type' => 'featured_event',   'label' => 'Featured Event Packages',   'icon' => '📅', 'packages' => $allFeaturedEventPackages],
                 ['type' => 'featured_funeral',  'label' => 'Featured Funeral Packages', 'icon' => '🕊️', 'packages' => $allFeaturedFuneralPackages],
                 ['type' => 'featured_news',     'label' => 'Featured News Packages',    'icon' => '📰', 'packages' => $allFeaturedNewsPackages],
+                ['type' => 'sponsor',           'label' => 'Sponsor Packages',          'icon' => '🤝', 'packages' => $allSponsorPackages],
             ];
             foreach ($communityPackageSections as $sec):
             ?>
@@ -1704,6 +1781,8 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                         <td style="font-weight:700;color:var(--primary);">GH₵ <?php echo number_format((float)$pk['price'],2); ?></td>
                         <td><span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:<?php echo $pk['status']==='active'?'#d1fae5':'#f3f4f6'; ?>;color:<?php echo $pk['status']==='active'?'#065f46':'#6b7280'; ?>;"><?php echo ucfirst($pk['status']); ?></span></td>
                         <td>
+                            <button type="button" class="button button-small button-secondary" style="font-size:.7rem;padding:2px 8px;"
+                                onclick="editBoostPkg('<?php echo $bt; ?>', <?php echo $pk['id']; ?>, '<?php echo addslashes(sanitize($pk['name'])); ?>', <?php echo (int)$pk['duration_days']; ?>, <?php echo (float)$pk['price']; ?>, '<?php echo $pk['status']; ?>')">Edit</button>
                             <form method="post" style="display:inline;">
                                 <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_boost_pkg">
                                 <input type="hidden" name="pkg_id" value="<?php echo $pk['id']; ?>">
@@ -1724,14 +1803,15 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     </tbody>
                 </table>
                 <?php endif; ?>
-                <!-- Add package -->
-                <form method="post" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-                    <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_boost_pkg"><input type="hidden" name="boost_type" value="<?php echo $bt; ?>"><input type="hidden" name="pkg_id" value="0">
-                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Name</label><input type="text" name="pkg_name" placeholder="e.g. 7 Days" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:110px;"></div>
-                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Days</label><input type="number" name="pkg_days" min="1" value="7" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:70px;"></div>
-                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label><input type="number" name="pkg_price" min="0" step="0.01" value="0" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:90px;"></div>
-                    <input type="hidden" name="pkg_status" value="active">
-                    <button type="submit" class="button button-primary button-small">+ Add Package</button>
+                <!-- Add / Edit package -->
+                <form method="post" id="form-boost-<?php echo $bt; ?>" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                    <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_boost_pkg"><input type="hidden" name="boost_type" value="<?php echo $bt; ?>"><input type="hidden" name="pkg_id" id="boost-<?php echo $bt; ?>-id" value="0">
+                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Name</label><input type="text" name="pkg_name" id="boost-<?php echo $bt; ?>-name" placeholder="e.g. 7 Days" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:110px;"></div>
+                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Days</label><input type="number" name="pkg_days" id="boost-<?php echo $bt; ?>-days" min="1" value="7" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:70px;"></div>
+                    <div><label style="font-size:.72rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label><input type="number" name="pkg_price" id="boost-<?php echo $bt; ?>-price" min="0" step="0.01" value="0" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;width:90px;"></div>
+                    <input type="hidden" name="pkg_status" id="boost-<?php echo $bt; ?>-status" value="active">
+                    <button type="submit" class="button button-primary button-small" id="boost-<?php echo $bt; ?>-submit">+ Add Package</button>
+                    <button type="button" class="button button-secondary button-small" onclick="resetBoostPkgForm('<?php echo $bt; ?>')">Clear</button>
                 </form>
             </section>
             <?php endforeach; ?>
@@ -1751,6 +1831,8 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                         <td><?php echo $plan['product_limit']==-1?'Unlimited':(int)$plan['product_limit']; ?></td>
                         <td><span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:<?php echo $plan['status']==='active'?'#d1fae5':'#f3f4f6'; ?>;color:<?php echo $plan['status']==='active'?'#065f46':'#6b7280'; ?>;"><?php echo ucfirst($plan['status']); ?></span></td>
                         <td>
+                            <button type="button" class="button button-small button-secondary" style="font-size:.7rem;padding:2px 8px;"
+                                onclick="editMpSubPlan(<?php echo $plan['id']; ?>, '<?php echo addslashes(sanitize($plan['name'])); ?>', '<?php echo addslashes(sanitize($plan['description'] ?? '')); ?>', <?php echo (int)$plan['duration_days']; ?>, <?php echo (float)$plan['price']; ?>, <?php echo (int)$plan['product_limit']; ?>, '<?php echo $plan['status']; ?>')">Edit</button>
                             <form method="post" style="display:inline;" onsubmit="return confirm('Delete plan?')">
                                 <?php echo csrf_field(); ?><input type="hidden" name="action" value="delete_mp_sub_plan"><input type="hidden" name="plan_id" value="<?php echo $plan['id']; ?>">
                                 <button type="submit" class="button button-small" style="font-size:.7rem;padding:2px 8px;background:#fee2e2;color:#991b1b;border-color:transparent;">Del</button>
@@ -1761,16 +1843,17 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     </tbody>
                 </table>
                 <?php endif; ?>
-                <details style="margin-top:10px;">
-                    <summary style="font-size:.84rem;font-weight:700;cursor:pointer;color:var(--primary);">+ Add Subscription Plan</summary>
-                    <form method="post" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
-                        <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_sub_plan"><input type="hidden" name="plan_id" value="0">
-                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Plan Name *</label><input type="text" name="plan_name" required placeholder="e.g. Growth" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
-                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Duration (days)</label><input type="number" name="plan_days" min="1" value="30" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
-                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label><input type="number" name="plan_price" min="0" step="0.01" value="0" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
-                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Product Limit (-1 = unlimited)</label><input type="number" name="plan_limit" value="-1" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
-                        <div style="grid-column:1/-1;"><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Description</label><input type="text" name="plan_desc" placeholder="Describe what sellers get..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
-                        <div style="grid-column:1/-1;"><button type="submit" class="button button-primary">Save Plan</button></div>
+                <details id="mp-sub-plan-details" style="margin-top:10px;">
+                    <summary style="font-size:.84rem;font-weight:700;cursor:pointer;color:var(--primary);">+ Add / Edit Subscription Plan</summary>
+                    <form method="post" id="form-mp-sub-plan" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+                        <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_mp_sub_plan"><input type="hidden" name="plan_id" id="mp-sub-plan-id" value="0">
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Plan Name *</label><input type="text" name="plan_name" id="mp-sub-plan-name" required placeholder="e.g. Growth" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Duration (days)</label><input type="number" name="plan_days" id="mp-sub-plan-days" min="1" value="30" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label><input type="number" name="plan_price" id="mp-sub-plan-price" min="0" step="0.01" value="0" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Product Limit (-1 = unlimited)</label><input type="number" name="plan_limit" id="mp-sub-plan-limit" value="-1" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div style="grid-column:1/-1;"><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Description</label><input type="text" name="plan_desc" id="mp-sub-plan-desc" placeholder="Describe what sellers get..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Status</label><select name="plan_status" id="mp-sub-plan-status" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+                        <div style="grid-column:1/-1;display:flex;gap:8px;"><button type="submit" class="button button-primary" id="mp-sub-plan-submit">Save Plan</button><button type="button" class="button button-secondary" onclick="resetMpSubPlanForm()">Clear</button></div>
                     </form>
                 </details>
             </section>
@@ -1867,6 +1950,7 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                             <option value="event_post"      <?php echo $filterType === 'event_post'      ? 'selected' : ''; ?>>Event Post Fee</option>
                             <option value="funeral_post"    <?php echo $filterType === 'funeral_post'    ? 'selected' : ''; ?>>Funeral Post Fee</option>
                             <option value="news_post"       <?php echo $filterType === 'news_post'       ? 'selected' : ''; ?>>News Post Fee</option>
+                            <option value="sponsor"         <?php echo $filterType === 'sponsor'         ? 'selected' : ''; ?>>Sponsorship</option>
                             </optgroup>
                             <optgroup label="Marketplace">
                             <option value="mp_boost"        <?php echo $filterType === 'mp_boost'        ? 'selected' : ''; ?>>Marketplace Boost</option>
@@ -2118,6 +2202,40 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
         function resetForm(type) {
             document.getElementById(type + '_id').value = 0;
             document.getElementById('form-' + type).reset();
+        }
+
+        function editBoostPkg(type, id, name, days, price, status) {
+            document.getElementById('boost-' + type + '-id').value = id;
+            document.getElementById('boost-' + type + '-name').value = name;
+            document.getElementById('boost-' + type + '-days').value = days;
+            document.getElementById('boost-' + type + '-price').value = price;
+            document.getElementById('boost-' + type + '-status').value = status;
+            document.getElementById('boost-' + type + '-submit').textContent = 'Save Changes';
+            document.getElementById('form-boost-' + type).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        function resetBoostPkgForm(type) {
+            document.getElementById('boost-' + type + '-id').value = 0;
+            document.getElementById('form-boost-' + type).reset();
+            document.getElementById('boost-' + type + '-status').value = 'active';
+            document.getElementById('boost-' + type + '-submit').textContent = '+ Add Package';
+        }
+
+        function editMpSubPlan(id, name, desc, days, price, limit, status) {
+            document.getElementById('mp-sub-plan-details').open = true;
+            document.getElementById('mp-sub-plan-id').value = id;
+            document.getElementById('mp-sub-plan-name').value = name;
+            document.getElementById('mp-sub-plan-desc').value = desc;
+            document.getElementById('mp-sub-plan-days').value = days;
+            document.getElementById('mp-sub-plan-price').value = price;
+            document.getElementById('mp-sub-plan-limit').value = limit;
+            document.getElementById('mp-sub-plan-status').value = status;
+            document.getElementById('mp-sub-plan-submit').textContent = 'Save Changes';
+            document.getElementById('form-mp-sub-plan').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        function resetMpSubPlanForm() {
+            document.getElementById('mp-sub-plan-id').value = 0;
+            document.getElementById('form-mp-sub-plan').reset();
+            document.getElementById('mp-sub-plan-submit').textContent = 'Save Plan';
         }
 
         function editJobPostPkg(id, name, desc, postCount, price, status) {

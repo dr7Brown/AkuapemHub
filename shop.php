@@ -2,6 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
+require_once __DIR__ . '/delivery_functions.php'; // render_stars() for the review form
 
 require_module_enabled('mp', 'Marketplace');
 
@@ -10,6 +11,9 @@ if (!$id) { header('Location: marketplace.php'); exit; }
 
 $shop = get_shop($id);
 if (!$shop || $shop['status'] !== 'active' || $shop['owner_banned']) { header('Location: marketplace.php'); exit; }
+
+$shareTitle = $shop['shop_name'];
+$shareUrl   = rtrim(BASE_URL, '/') . '/shop.php?id=' . $id;
 
 $user      = current_user();
 $cartCount = $user ? mp_get_cart_count((int)$user['id']) : 0;
@@ -50,6 +54,39 @@ $revStmt = $pdo->prepare(
 );
 $revStmt->execute([$id]);
 $shopReviews = $revStmt->fetchAll();
+
+// Can review this shop? (a delivered order from it, not already reviewed as 'seller')
+$canReviewShop = false;
+if ($user) {
+    $cr = $pdo->prepare(
+        'SELECT mo.id FROM mp_orders mo
+         LEFT JOIN mp_reviews mr ON mr.order_id = mo.id AND mr.shop_id = ? AND mr.reviewer_id = ? AND mr.review_type = "seller"
+         WHERE mo.customer_id = ? AND mo.shop_id = ? AND mo.status = "delivered" AND mr.id IS NULL
+         LIMIT 1'
+    );
+    $cr->execute([$id, $user['id'], $user['id'], $id]);
+    $reviewableShopOrderId = $cr->fetchColumn();
+    $canReviewShop = (bool)$reviewableShopOrderId;
+}
+
+// Handle shop review POST
+$shopReviewError = '';
+if ($user && $canReviewShop && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'shop_review') {
+    csrf_check();
+    $srRating  = (int)($_POST['rating'] ?? 0);
+    $srComment = trim($_POST['comment'] ?? '');
+    if ($srRating < 1 || $srRating > 5) {
+        $shopReviewError = 'Please select a star rating.';
+    } else {
+        $pdo->prepare(
+            'INSERT INTO mp_reviews (reviewer_id, order_id, product_id, shop_id, rating, comment, review_type) VALUES (?,?,NULL,?,?,?,?)'
+        )->execute([$user['id'], $reviewableShopOrderId, $id, $srRating, $srComment ?: null, 'seller']);
+        mp_refresh_shop_rating($id);
+        flash('Review submitted!', 'success');
+        header('Location: shop.php?id=' . $id . '#reviews');
+        exit;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -83,12 +120,12 @@ $shopReviews = $revStmt->fetchAll();
 </head>
 <body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
 
-<header style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 64px 10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+<header style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 120px 10px 16px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
     <div style="display:flex;gap:8px;">
         <a href="marketplace.php" class="button button-secondary button-small">← Marketplace</a>
         <a href="shops.php" class="button button-secondary button-small">🏪 All Shops</a>
     </div>
-    <?php if ($user): ?><a href="cart.php" class="button button-secondary button-small">🛒<?php echo $cartCount>0?" ($cartCount)":''; ?></a><?php else: ?><a href="login.php" class="button button-secondary button-small">Sign in</a><?php endif; ?>
+    <?php if ($user): ?><a href="cart.php" class="button button-secondary button-small">🛒<?php echo $cartCount>0?" ($cartCount)":''; ?></a><?php else: ?><a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a><?php endif; ?>
 </header>
 
 <?php if ($shop['banner_path']): ?>
@@ -118,6 +155,13 @@ $shopReviews = $revStmt->fetchAll();
             </div>
         </div>
     </div>
+    <?php if (!empty($shop['market_id'])): ?>
+    <div style="margin-top:10px;padding:9px 12px;border-radius:10px;font-size:.82rem;background:<?php echo $shop['market_status']==='open'?'#d1fae5':'#fee2e2'; ?>;color:<?php echo $shop['market_status']==='open'?'#065f46':'#c0392b'; ?>;">
+        🏬 <strong><?php echo sanitize($shop['market_name']); ?></strong> — <?php echo $shop['market_status']==='open' ? 'Open for orders now' : 'Currently closed for checkout'; ?>
+        <?php if ($shop['market_schedule_note']): ?><span style="opacity:.85;">&nbsp;·&nbsp; <?php echo sanitize($shop['market_schedule_note']); ?></span><?php endif; ?>
+        <?php if ($shop['market_status']!=='open'): ?><div style="margin-top:2px;font-size:.78rem;">You can still browse and add items to your cart — checkout opens once this market is marked Open.</div><?php endif; ?>
+    </div>
+    <?php endif; ?>
     <?php if ($shop['description']): ?>
     <p style="margin:0;font-size:.85rem;color:var(--text-muted,#6b7280);max-width:600px;"><?php echo sanitize(mb_substr($shop['description'],0,200)); ?></p>
     <?php endif; ?>
@@ -130,6 +174,9 @@ $shopReviews = $revStmt->fetchAll();
         <?php endif; ?>
         <?php if (!empty($shop['google_maps_link'])): ?><a href="<?php echo sanitize($shop['google_maps_link']); ?>" target="_blank" rel="noopener" class="button button-secondary button-small">📍 Pickup Location</a><?php endif; ?>
         <?php if ((!$user || (int)$user['id'] !== (int)$shop['user_id']) && mp_shop_can_receive_quotes($shop)): ?><a href="request_quote.php?shop_id=<?php echo $id; ?>" class="button button-primary button-small">📝 Request a Custom Order</a><?php endif; ?>
+    </div>
+    <div style="margin-top:10px;">
+        <?php require __DIR__ . '/partials/share_buttons.php'; ?>
     </div>
 </div>
 
@@ -169,9 +216,30 @@ $shopReviews = $revStmt->fetchAll();
     <?php endif; ?>
 
     <!-- Shop reviews -->
-    <?php if ($shopReviews): ?>
-    <div style="margin-top:28px;">
+    <div id="reviews" style="margin-top:28px;">
         <p style="font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 12px;">Shop Reviews (<?php echo count($shopReviews); ?>)</p>
+
+        <?php if ($canReviewShop): ?>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:14px;">
+            <p style="font-weight:700;margin:0 0 10px;font-size:.9rem;">Leave a Review</p>
+            <?php if ($shopReviewError): ?><div class="alert alert-error"><?php echo sanitize($shopReviewError); ?></div><?php endif; ?>
+            <form method="post" action="shop.php?id=<?php echo $id; ?>#reviews" onsubmit="return document.querySelector('input[name=rating]:checked') || (alert('Select a rating'), false);">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="form" value="shop_review">
+                <div class="form-group">
+                    <label style="font-weight:600;font-size:.85rem;">Rating *</label>
+                    <?php echo render_stars(0, true, 'rating'); ?>
+                </div>
+                <div class="form-group">
+                    <label style="font-weight:600;font-size:.85rem;">Comment (optional)</label>
+                    <textarea name="comment" rows="2" placeholder="How was this seller?"></textarea>
+                </div>
+                <button type="submit" class="button button-primary button-small">Submit Review</button>
+            </form>
+        </div>
+        <?php endif; ?>
+
+        <?php if ($shopReviews): ?>
         <?php foreach ($shopReviews as $r): ?>
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;">
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
@@ -183,8 +251,10 @@ $shopReviews = $revStmt->fetchAll();
             <?php if ($r['comment']): ?><p style="margin:6px 0 0;font-size:.84rem;"><?php echo sanitize($r['comment']); ?></p><?php endif; ?>
         </div>
         <?php endforeach; ?>
+        <?php else: ?>
+        <div style="text-align:center;padding:20px;color:var(--text-muted,#6b7280);font-size:.85rem;">No reviews yet. Be the first!</div>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 
 </main>
 

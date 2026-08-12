@@ -191,12 +191,15 @@ $topAd     = $bannerAds[0] ?? null;
         .nc-empty     { text-align:center; padding:60px 20px; color:var(--text-muted); }
         .nc-empty-icon { font-size:3rem; margin-bottom:12px; }
         /* ── Wide-screen two-column layout ──────────────────── */
+        /* Sidebar renders inline below main content on mobile (it already
+           sits right after .nc-main in the HTML), and becomes a sticky side
+           column at the wider breakpoint. */
         .nc-layout   { display:block; }
-        .nc-sidebar  { display:none; }
+        .nc-sidebar  { display:flex; flex-direction:column; gap:20px; margin-top:24px; }
         @media (min-width:900px) {
             .nc-shell   { max-width:1200px; }
             .nc-layout  { display:grid; grid-template-columns:1fr 280px; gap:32px; align-items:start; }
-            .nc-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+            .nc-sidebar { position:sticky; top:16px; margin-top:0; }
         }
         /* ── Sidebar widgets ─────────────────────────────────── */
         .nsb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
@@ -226,7 +229,7 @@ $topAd     = $bannerAds[0] ?? null;
         }
     </style>
 </head>
-<body <?php echo $user ? 'class="has-bottom-nav"' : ''; ?>>
+<body <?php echo $user ? 'class="has-bottom-nav no-own-topbar"' : ''; ?>>
 
     <?php if (!$user): ?>
     <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
@@ -234,7 +237,7 @@ $topAd     = $bannerAds[0] ?? null;
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <a href="community.php" style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Community</a>
             <a href="events.php"    style="font-size:.85rem;color:var(--text-muted);text-decoration:none;font-weight:600;">Events</a>
-            <a href="login.php"     class="button button-secondary button-small">Sign in</a>
+            <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
         </div>
     </header>
     <?php endif; ?>
@@ -270,7 +273,7 @@ $topAd     = $bannerAds[0] ?? null;
             <?php if ($user): ?>
             <a href="my_news.php" class="button button-primary button-small">✍️ Submit Article</a>
             <?php else: ?>
-            <a href="login.php" class="button button-secondary button-small">Sign in to post</a>
+            <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in to post</a>
             <?php endif; ?>
         </div>
 

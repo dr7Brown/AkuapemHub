@@ -26,7 +26,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bio = trim($_POST['bio'] ?? '');
     $location = trim($_POST['location'] ?? '');
     $contact = trim($user['phone'] ?? '');
-    $availability = $_POST['availability'] ?? 'available';
     $skills = trim($_POST['skills'] ?? '');
     $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
@@ -36,8 +35,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($contact === '') {
         $error = 'Add a phone number to your account before updating your profile.';
     } else {
-        $stmt = $pdo->prepare('UPDATE worker_profiles SET bio = ?, location = ?, latitude = ?, longitude = ?, contact_phone = ?, availability = ?, updated_at = NOW() WHERE user_id = ?');
-        $stmt->execute([$bio, $location, $latitude, $longitude, $contact, $availability, $user['id']]);
+        // availability is saved independently by the quick-toggle above
+        // (ajax.php action=update_availability) — leaving it out of this
+        // UPDATE avoids this form silently reverting a quick-toggle change
+        // made earlier in the same page visit.
+        $stmt = $pdo->prepare('UPDATE worker_profiles SET bio = ?, location = ?, latitude = ?, longitude = ?, contact_phone = ?, updated_at = NOW() WHERE user_id = ?');
+        $stmt->execute([$bio, $location, $latitude, $longitude, $contact, $user['id']]);
 
         $pdo->prepare('DELETE FROM worker_skills WHERE worker_profile_id = ?')->execute([$profile['id']]);
         $skillList = array_filter(array_map('trim', explode(',', $skills)));
@@ -68,10 +71,13 @@ $schedule = get_worker_schedule($profile['id']);
 </head>
 <body class="has-bottom-nav">
     <header class="app-topbar">
+        <a href="settings.php" class="button button-secondary button-small">← Settings</a>
         <span class="brand"><span class="brand-icon">👤</span> Worker Profile</span>
-        <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
+        <?php foreach (get_flashes() as $f): ?>
+            <div class="alert alert-<?php echo sanitize($f['type']); ?>"><?php echo sanitize($f['message']); ?></div>
+        <?php endforeach; ?>
         <?php if ($error): ?>
             <div class="alert alert-error"><?php echo sanitize($error); ?></div>
         <?php endif; ?>
@@ -79,11 +85,24 @@ $schedule = get_worker_schedule($profile['id']);
             <div class="alert alert-success"><?php echo sanitize($success); ?></div>
         <?php endif; ?>
         <div class="panel" style="margin-bottom:16px;">
-            <p><strong>Subscription:</strong> <?php echo sanitize(ucfirst($profile['subscription_status'])); ?></p>
-            <?php if ($profile['subscription_status'] === 'free'): ?>
-                <a href="toggle_subscription.php" class="button button-primary">Upgrade to Premium</a>
-            <?php else: ?>
+            <?php
+                $pendingPremiumStmt = $pdo->prepare("SELECT id FROM platform_payments WHERE user_id = ? AND payment_type = 'worker_premium' AND status = 'pending'");
+                $pendingPremiumStmt->execute([$user['id']]);
+                $hasPendingPremium = (bool) $pendingPremiumStmt->fetch();
+                $premiumActive = $profile['subscription_status'] === 'premium'
+                    && (empty($profile['premium_expiry']) || $profile['premium_expiry'] >= date('Y-m-d'));
+            ?>
+            <p class="meta" style="margin:0 0 8px;">👁️ <?php echo number_format((int)$profile['view_count']); ?> profile view<?php echo (int)$profile['view_count'] !== 1 ? 's' : ''; ?></p>
+            <p><strong>Subscription:</strong> <?php echo sanitize(ucfirst($profile['subscription_status'])); ?><?php if ($premiumActive && $profile['premium_expiry']): ?> (until <?php echo sanitize($profile['premium_expiry']); ?>)<?php endif; ?></p>
+            <?php if ($hasPendingPremium): ?>
+                <span class="badge" style="background:#f59e0b;color:#fff;">Premium payment pending</span>
+                <a href="my_payments.php" style="margin-left:6px;color:var(--primary);">Track payment →</a>
+            <?php elseif ($premiumActive): ?>
                 <a href="toggle_subscription.php" class="button button-secondary">Switch to Free</a>
+            <?php elseif (is_feature_paid('enable_paid_worker_premium')): ?>
+                <a href="pay_worker_premium.php" class="button button-primary">Upgrade to Premium →</a>
+            <?php else: ?>
+                <a href="toggle_subscription.php" class="button button-primary">Upgrade to Premium</a>
             <?php endif; ?>
             <?php
                 $wpFeatEnd    = $profile['featured_end_date'] ?? null;
@@ -171,22 +190,16 @@ $schedule = get_worker_schedule($profile['id']);
             <?php endif; ?>
             <label>Skills</label>
             <input type="text" name="skills" value="<?php echo sanitize($skills); ?>" placeholder="e.g. electrician, plumber, welder" />
-            <label>Availability</label>
-            <select name="availability">
-                <?php foreach (get_availability_options() as $key => $label): ?>
-                    <option value="<?php echo sanitize($key); ?>" <?php echo $profile['availability'] === $key ? 'selected' : ''; ?>><?php echo sanitize($label); ?></option>
-                <?php endforeach; ?>
-            </select>
             <label>Weekly availability schedule</label>
             <div class="schedule-list">
                 <?php foreach (get_weekday_names() as $dayNum => $dayName): ?>
                     <?php $daySlot = $schedule[$dayNum][0] ?? null; ?>
                     <div class="schedule-row<?php echo $daySlot ? ' is-active' : ''; ?>" data-schedule-row>
                         <span class="schedule-day">
-                            <span class="day-switch">
+                            <label class="day-switch">
                                 <input type="checkbox" name="schedule_day[<?php echo $dayNum; ?>]" value="1" <?php echo $daySlot ? 'checked' : ''; ?> data-schedule-toggle />
                                 <span class="switch-track"></span>
-                            </span>
+                            </label>
                             <?php echo sanitize($dayName); ?>
                         </span>
                         <span class="schedule-time-range">
@@ -237,12 +250,21 @@ $schedule = get_worker_schedule($profile['id']);
             }
             status.textContent = 'Locating…';
             navigator.geolocation.getCurrentPosition(function (position) {
-                document.getElementById('latitude').value = position.coords.latitude;
-                document.getElementById('longitude').value = position.coords.longitude;
-                status.textContent = 'Location captured: ' + position.coords.latitude.toFixed(5) + ', ' + position.coords.longitude.toFixed(5) + '. Click "Save profile" to store it.';
+                var lat      = position.coords.latitude;
+                var lng      = position.coords.longitude;
+                var accuracy = position.coords.accuracy; // metres (radius of uncertainty)
+                document.getElementById('latitude').value = lat;
+                document.getElementById('longitude').value = lng;
+                if (accuracy > 1000) {
+                    status.textContent = '⚠️ Low-confidence location (accurate to ~' + Math.round(accuracy / 1000) + 'km) — likely from your WiFi/IP, not GPS. Try again on a phone with GPS for a precise result, or leave this blank.';
+                } else if (accuracy > 100) {
+                    status.textContent = 'Location captured (accurate to ~' + Math.round(accuracy) + 'm): ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '. Click "Save profile" to store it.';
+                } else {
+                    status.textContent = 'Location captured: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '. Click "Save profile" to store it.';
+                }
             }, function () {
                 status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
-            });
+            }, { enableHighAccuracy: true });
         });
     </script>
     <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>

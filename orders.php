@@ -32,7 +32,7 @@ $flash = get_flash();
 $view  = $_GET['view'] ?? 'orders';
 
 $statusFilter = $_GET['status'] ?? 'all';
-$validStatuses = ['pending','confirmed','processing','ready_for_delivery','in_transit','delivered','cancelled','refunded'];
+$validStatuses = ['pending','confirmed','processing','ready_for_delivery','in_transit','at_storehouse','delivered','cancelled','refunded'];
 $where  = ['mo.customer_id = ?'];
 $params = [$user['id']];
 if ($statusFilter !== 'all' && in_array($statusFilter, $validStatuses, true)) {
@@ -42,9 +42,11 @@ if ($statusFilter !== 'all' && in_array($statusFilter, $validStatuses, true)) {
 $whereClause = implode(' AND ', $where);
 
 $ordersStmt = $pdo->prepare(
-    "SELECT mo.*, ms.shop_name, ms.slug AS shop_slug
+    "SELECT mo.*, ms.shop_name, ms.slug AS shop_slug,
+            mk.name AS market_name, mk.storehouse_location, mk.storehouse_maps_link
      FROM mp_orders mo
      JOIN mp_shops ms ON mo.shop_id = ms.id
+     LEFT JOIN markets mk ON mo.market_id = mk.id
      WHERE $whereClause
      ORDER BY mo.created_at DESC LIMIT 40"
 );
@@ -212,7 +214,7 @@ if ($view === 'quotes') {
     <!-- Status filter tabs -->
     <div class="ord-tabs">
         <a href="orders.php" class="ord-tab <?php echo $statusFilter==='all'?'active':''; ?>">All</a>
-        <?php $tabMap = ['pending'=>'Pending','confirmed'=>'Confirmed','processing'=>'Processing','ready_for_delivery'=>'Ready','in_transit'=>'In Transit','delivered'=>'Delivered','cancelled'=>'Cancelled']; ?>
+        <?php $tabMap = ['pending'=>'Pending','confirmed'=>'Confirmed','processing'=>'Processing','ready_for_delivery'=>'Ready','in_transit'=>'In Transit','at_storehouse'=>'At Storehouse','delivered'=>'Delivered','cancelled'=>'Cancelled']; ?>
         <?php foreach ($tabMap as $v=>$l): ?>
         <a href="orders.php?status=<?php echo $v; ?>" class="ord-tab <?php echo $statusFilter===$v?'active':''; ?>"><?php echo $l; ?></a>
         <?php endforeach; ?>
@@ -234,6 +236,15 @@ if ($view === 'quotes') {
                 <?php echo mp_order_status_label($order['status']); ?>
             </span>
         </div>
+
+        <?php if (!empty($order['market_name']) && in_array($order['status'], ['processing','at_storehouse','delivered'], true)): ?>
+        <div style="margin:0 14px 10px;padding:8px 10px;border-radius:8px;font-size:.8rem;background:#e0f2fe;color:#075985;">
+            🏬 <strong><?php echo sanitize($order['market_name']); ?></strong> —
+            <?php if ($order['status'] === 'at_storehouse'): ?>Ready for pickup<?php elseif ($order['status'] === 'delivered'): ?>Picked up<?php else: ?>Seller is bringing this to the storehouse<?php endif; ?>
+            <?php if ($order['storehouse_location']): ?><br>📍 <?php echo sanitize($order['storehouse_location']); ?><?php endif; ?>
+            <?php if ($order['storehouse_maps_link']): ?> <a href="<?php echo sanitize($order['storehouse_maps_link']); ?>" target="_blank" rel="noopener" style="font-weight:700;color:#075985;">🗺 Map ↗</a><?php endif; ?>
+        </div>
+        <?php endif; ?>
 
         <?php foreach ($oItems as $item): ?>
         <div class="ord-item">
@@ -266,8 +277,9 @@ if ($view === 'quotes') {
         <?php if (in_array($order['status'], ['delivered']) && !empty($orderItems[$order['id']])): ?>
         <div style="padding:8px 14px;border-top:1px solid var(--border);display:flex;gap:8px;">
             <?php foreach ($oItems as $item): if (!$item['product_id']) continue; ?>
-            <a href="product.php?id=<?php echo $item['product_id']; ?>#reviews" class="button button-secondary button-small">★ Review</a>
+            <a href="product.php?id=<?php echo $item['product_id']; ?>#reviews" class="button button-secondary button-small">★ Review Product</a>
             <?php break; endforeach; ?>
+            <a href="shop.php?id=<?php echo $order['shop_id']; ?>#reviews" class="button button-secondary button-small">★ Review Seller</a>
         </div>
         <?php endif; ?>
     </div>

@@ -21,6 +21,11 @@ if (!$request) {
     exit;
 }
 
+if (empty($_SESSION['viewed_job'][$request['id']])) {
+    $pdo->prepare("UPDATE service_requests SET view_count=view_count+1 WHERE id=?")->execute([$request['id']]);
+    $_SESSION['viewed_job'][$request['id']] = true;
+}
+
 // Inline expiry: if deadline has passed and job is still open, expire it now
 if (!empty($request['deadline_date'])
     && $request['deadline_date'] < date('Y-m-d H:i:s')
@@ -215,21 +220,15 @@ $sbSimilar = $sbSimilar->fetchAll();
         .rd-outer   { max-width:1200px; margin:0 auto; padding:0 16px; }
         .rd-layout  { display:block; }
         .rd-main    { padding:20px 0 80px; }
-        .rd-sidebar { display:none; }
+        /* Sidebar renders inline, below main content, on mobile (it already
+           sits right after </main> in the HTML) — no duplicate "mobile"
+           content block needed, so it can never drift out of sync. */
+        .rd-sidebar { display:flex; flex-direction:column; gap:20px; margin-top:24px; }
         @media(min-width:900px){
             .rd-layout  { display:grid; grid-template-columns:1fr 280px; gap:28px; align-items:start; }
             .rd-main    { padding:24px 0 60px; }
-            .rd-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; padding-top:24px; }
-            .rd-similar-mobile { display:none; } /* sidebar's "Similar Jobs" widget takes over here */
+            .rd-sidebar { position:sticky; top:16px; padding-top:24px; margin-top:0; }
         }
-        .rd-similar-mobile   { margin-top:20px; }
-        .rd-similar-title    { font-size:.76rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 10px; }
-        .rd-similar-row      { display:flex; gap:12px; overflow-x:auto; padding-bottom:6px; -webkit-overflow-scrolling:touch; }
-        .rd-similar-row::-webkit-scrollbar { display:none; }
-        .rd-similar-card       { flex:0 0 200px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; padding:12px 14px; text-decoration:none; color:inherit; }
-        .rd-similar-card-title { font-size:.85rem; font-weight:700; line-height:1.35; margin-bottom:6px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-        .rd-similar-card-meta  { font-size:.76rem; color:var(--text-muted,#6b7280); }
-        .rd-similar-card-budget{ font-size:.82rem; font-weight:800; color:var(--primary,#0f766e); margin-top:4px; }
         .sb-widget { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; }
         .sb-head   { padding:11px 16px; font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--primary,#0f766e); border-bottom:1px solid var(--border,#e5e7eb); background:#f0fdf4; }
         .sb-job    { display:block; padding:10px 14px; border-bottom:1px solid var(--border,#e5e7eb); text-decoration:none; color:inherit; transition:background .1s; }
@@ -255,7 +254,7 @@ $sbSimilar = $sbSimilar->fetchAll();
     <header style="background:var(--surface,#fff);border-bottom:1px solid var(--border,#e5e7eb);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
         <a href="browse_jobs.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.1rem;">← Back Home</a>
         <nav style="display:flex;gap:8px;align-items:center;">
-            <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+            <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
         </nav>
     </header>
     <?php else: ?>
@@ -347,6 +346,7 @@ $sbSimilar = $sbSimilar->fetchAll();
                 <div style="flex: 1; min-width: 0;">
                     <h1 style="margin: 0 0 5px; font-size: 1.2rem; line-height: 1.3;"><?php echo sanitize($request['title']); ?></h1>
                     <p class="meta" style="margin: 0;"><?php echo sanitize($request['category_name']); ?> · <?php echo sanitize($request['location']); ?> · <?php echo sanitize(time_ago($request['created_at'])); ?></p>
+                    <p class="meta" style="margin: 2px 0 0;">👁️ <?php echo number_format((int)$request['view_count']); ?> view<?php echo (int)$request['view_count'] !== 1 ? 's' : ''; ?></p>
                 </div>
                 <span class="status status-<?php echo sanitize($request['status']); ?>" style="flex-shrink: 0;"><?php echo strtoupper(str_replace('_', ' ', $request['status'])); ?></span>
             </div>
@@ -402,7 +402,7 @@ $sbSimilar = $sbSimilar->fetchAll();
             <div class="info-grid" style="margin-bottom: 18px;">
                 <div>
                     <p class="detail-label">Budget</p>
-                    <strong>GH₵ <?php echo sanitize($request['budget']); ?></strong>
+                    <strong>GH₵ <?php echo sanitize($request['budget']); ?><?php if (!empty($request['price_unit'])): ?> / <?php echo sanitize($request['price_unit']); ?><?php endif; ?></strong>
                 </div>
                 <div>
                     <p class="detail-label">Payment</p>
@@ -546,6 +546,9 @@ $sbSimilar = $sbSimilar->fetchAll();
             if (!$rdFeatActive || $rdRenewSoon) {
                 $secondaryActions[] = ['link', 'feature_job.php?id=' . $request['id'], $rdRenewSoon ? '⭐ Renew feature' : '⭐ Feature job'];
             }
+            if (in_array($request['status'], ['pending','open','partially_staffed'], true)) {
+                $secondaryActions[] = ['link', 'edit_job.php?id=' . $request['id'], '✏️ Edit job'];
+            }
             $secondaryActions[] = ['link', 'cancel_request.php?request_id=' . $request['id'], 'Cancel request'];
             $secondaryActions[] = ['link', 'file_dispute.php?request_id=' . $request['id'], 'File dispute'];
         } elseif ($isAssignedWorker && $request['status'] !== 'cancelled') {
@@ -632,23 +635,6 @@ $sbSimilar = $sbSimilar->fetchAll();
             </section>
         <?php endif; ?>
 
-        <!-- Jobs you may also like — same widget the sidebar shows on wide
-             screens, but the sidebar is hidden below 900px, so this mirrors
-             it into the always-visible main column for mobile. -->
-        <?php if ($sbSimilar): ?>
-        <section class="rd-similar-mobile">
-            <p class="rd-similar-title">💼 Jobs you may also like</p>
-            <div class="rd-similar-row">
-                <?php foreach ($sbSimilar as $sj): ?>
-                <a href="request_detail.php?id=<?php echo (int)$sj['id']; ?>" class="rd-similar-card">
-                    <div class="rd-similar-card-title"><?php echo sanitize($sj['title']); ?></div>
-                    <div class="rd-similar-card-meta"><?php if ($sj['location']): ?>📍 <?php echo sanitize(mb_substr($sj['location'],0,24)); ?><?php endif; ?></div>
-                    <?php if ($sj['budget']): ?><div class="rd-similar-card-budget">GH₵ <?php echo sanitize($sj['budget']); ?></div><?php endif; ?>
-                </a>
-                <?php endforeach; ?>
-            </div>
-        </section>
-        <?php endif; ?>
     </main><!-- /.rd-main -->
 
     <aside class="rd-sidebar">

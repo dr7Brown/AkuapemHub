@@ -101,6 +101,7 @@ $originMap = [
     'delivery_sponsored'    => 'delivery_agent_jobs.php',
     'delivery_verification' => 'delivery_agent_jobs.php',
     'delivery_commission'   => 'pay_delivery_commission.php',
+    'sponsor'               => 'become_sponsor.php',
 ];
 $originPage = $originMap[$payment['payment_type']] ?? 'my_payments.php';
 
@@ -121,7 +122,35 @@ if ($payment['payment_type'] === 'mp_order') {
 // payment-creation time). Excludes delivery_commission — that's money already
 // owed to the platform for services rendered, not a feature-access toggle,
 // same category as escrow commission which complimentary membership never waives.
-if ($payment['status'] === 'pending' && $payment['payment_type'] !== 'delivery_commission' && user_has_complimentary_access()) {
+// mp_order (marketplace cart checkout) is likewise excluded — it's a product
+// purchase, not a feature-access fee, so complimentary membership never
+// applies to it either. escrow_payment / escrow_with_posting are excluded
+// too: both always include the job's real escrow deposit (money held for
+// the worker, never comped), and escrow_checkout.php already builds
+// escrow_with_posting's total via is_feature_paid('enable_paid_job_posting')
+// — a complimentary job-posting grant means that combined type is never
+// created for them in the first place, so there's nothing to bypass here.
+$complimentaryFeatureMap = [
+    'featured_job'     => 'enable_paid_featured_jobs',
+    'featured_worker'  => 'enable_paid_featured_workers',
+    'verification'     => 'enable_paid_verification_badges',
+    'job_post'         => 'enable_paid_job_posting',
+    'worker_service'   => 'enable_paid_worker_service',
+    'worker_premium'   => 'enable_paid_worker_premium',
+    'event_post'       => 'event_fee',
+    'funeral_post'     => 'funeral_fee',
+    'news_post'        => 'news_fee',
+    'featured_event'   => 'enable_paid_featured_events',
+    'featured_funeral' => 'enable_paid_featured_funerals',
+    'featured_news'    => 'enable_paid_featured_news',
+    'mp_boost'         => 'mp_boost',
+    'mp_subscription'  => 'mp_subscription',
+    'delivery_subscription' => 'delivery_premium',
+    'delivery_sponsored'    => 'delivery_sponsored',
+    'delivery_verification' => 'delivery_verification',
+];
+$complimentaryFeatureKey = $complimentaryFeatureMap[$payment['payment_type']] ?? null;
+if ($payment['status'] === 'pending' && $complimentaryFeatureKey !== null && user_has_complimentary_access($user['id'], $complimentaryFeatureKey)) {
     $pdo->prepare("UPDATE platform_payments SET status='abandoned' WHERE id=? AND user_id=? AND status='pending'")
         ->execute([$paymentId, $user['id']]);
     flash('You have a complimentary membership — this fee no longer applies.', 'success');

@@ -26,7 +26,7 @@ $validTypes = [
     'worker_service','featured_event','featured_funeral','featured_news',
     'mp_boost','mp_subscription','news_post',
     'delivery_subscription','delivery_sponsored','delivery_verification',
-    'escrow_payment',
+    'escrow_payment','worker_premium','sponsor',
 ];
 if (!in_array($type, $validTypes, true)) $type = '';
 
@@ -125,6 +125,8 @@ $typeLabels = [
     'delivery_sponsored'    => 'Delivery Sponsored',
     'delivery_verification' => 'Delivery Verification',
     'escrow_payment'        => 'Escrow',
+    'worker_premium'        => 'Worker Premium',
+    'sponsor'                => 'Sponsorship',
 ];
 $statusColors = [
     'paid'      => '#16a34a',

@@ -201,73 +201,7 @@ if ($user) {
 <body class="has-bottom-nav">
 
     <header class="app-topbar">
-        <span class="brand"><span class="brand-icon">🏠</span> AkuapemConnect</span>
-        <div style="display: flex; align-items: center; gap: 10px;">
-            <!-- Avatar with dropdown -->
-            <div id="avatar-wrap" style="position:relative;">
-                <button id="avatar-btn" aria-expanded="false" aria-haspopup="true"
-                        style="background:none;border:none;padding:0;cursor:pointer;display:flex;align-items:center;border-radius:50%;">
-                    <?php if (!empty($user['profile_photo'])): ?>
-                        <img src="<?php echo sanitize($user['profile_photo']); ?>" alt="Profile" class="avatar" style="pointer-events:none;" />
-                    <?php else: ?>
-                        <span class="avatar" style="pointer-events:none;"><?php echo sanitize(strtoupper(substr(display_name($user), 0, 1))); ?></span>
-                    <?php endif; ?>
-                </button>
-                <div id="avatar-menu" role="menu"
-                     style="display:none;position:absolute;right:0;top:calc(100% + 8px);min-width:180px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.12);z-index:999;overflow:hidden;">
-                    <div style="padding:12px 14px 10px;border-bottom:1px solid #f1f5f9;">
-                        <strong style="display:block;font-size:.88rem;"><?php echo sanitize(display_name($user)); ?></strong>
-                        <span style="font-size:.75rem;color:#6b7280;"><?php echo sanitize($user['email']); ?></span>
-                    </div>
-                    <?php if ($user['role'] === 'worker'): ?>
-                    <a href="worker_profile.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-                        <span>👤</span> My Worker Profile
-                    </a>
-                    <?php else: ?>
-                    <a href="jobs.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-                        <span>🏠</span> Dashboard
-                    </a>
-                    <?php endif; ?>
-                    <a href="settings.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-                        <span>⚙️</span> Settings
-                    </a>
-                    <div style="border-top:1px solid #f1f5f9;"></div>
-                    <a href="marketplace.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-                        <span>🛍️</span> Marketplace
-                    </a>
-                    <a href="orders.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-                        <span>📋</span> My Orders
-                    </a>
-                    <a href="seller_dashboard.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-                        <span>🏪</span> My Shop
-                    </a>
-                    <a href="my_saved.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-                        <span>❤️</span> Saved Products
-                    </a>
-                    <div style="border-top:1px solid #f1f5f9;"></div>
-                    <a href="logout.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:#c0392b;text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#fff5f5'" onmouseout="this.style.background=''">
-                        <span>🚪</span> Logout
-                    </a>
-                </div>
-            </div>
-            <script>
-            (function() {
-                var btn  = document.getElementById('avatar-btn');
-                var menu = document.getElementById('avatar-menu');
-                btn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    var open = menu.style.display === 'block';
-                    menu.style.display = open ? 'none' : 'block';
-                    btn.setAttribute('aria-expanded', String(!open));
-                });
-                document.addEventListener('click', function() {
-                    menu.style.display = 'none';
-                    btn.setAttribute('aria-expanded', 'false');
-                });
-                menu.addEventListener('click', function(e) { e.stopPropagation(); });
-            })();
-            </script>
-        </div>
+        <a href="index.php" style="font-weight:900;color:var(--primary,#0f766e);text-decoration:none;font-size:1.05rem;">← Back Home</a>
     </header>
 
     <main class="page-shell">
@@ -568,7 +502,7 @@ if ($user) {
                                 </div>
                             </div>
                             <div class="job-description"><?php echo render_rich($request['description']); ?></div>
-                            <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($request['budget']); ?></p>
+                            <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($request['budget']); ?><?php if (!empty($request['price_unit'])): ?> / <?php echo sanitize($request['price_unit']); ?><?php endif; ?></p>
                             <?php $myAppStatus = $myApplicationStatuses[$request['id']] ?? null; ?>
                             <div class="card-bottom">
                                 <?php if (in_array($request['status'], ['open','partially_staffed'], true)): ?>
@@ -727,7 +661,7 @@ if ($user) {
                             </div>
                             <div class="job-description"><?php echo render_rich($request['description']); ?></div>
                             <p class="meta" style="margin: 0;">
-                                GH₵ <?php echo sanitize($request['budget']); ?>
+                                GH₵ <?php echo sanitize($request['budget']); ?><?php if (!empty($request['price_unit'])): ?> / <?php echo sanitize($request['price_unit']); ?><?php endif; ?>
                                 <?php if (($request['workers_needed'] ?? 1) > 1 || ($request['workers_approved'] ?? 0) > 0): ?>
                                     · <?php echo (int)($request['workers_approved'] ?? 0); ?>/<?php echo (int)($request['workers_needed'] ?? 1); ?> hired
                                 <?php elseif ($request['assigned_worker_name']): ?>
@@ -770,6 +704,11 @@ if ($user) {
                                 </div>
                                 <?php endif; ?>
                                 <div class="card-actions">
+                                    <?php if (in_array($request['status'], ['pending','open','partially_staffed'], true)): ?>
+                                    <a href="edit_job.php?id=<?php echo $request['id']; ?>" class="button">✏️ Edit</a>
+                                    <?php elseif ($request['status'] === 'rejected'): ?>
+                                    <a href="request.php?edit=<?php echo $request['id']; ?>" class="button">✏️ Edit &amp; Resubmit</a>
+                                    <?php endif; ?>
                                     <a href="<?php echo whatsapp_share_link($request['title'], $request['location'], $request['budget'], BASE_URL . '/jobs.php'); ?>" target="_blank" class="button">Share WhatsApp</a>
                                     <a href="request_detail.php?id=<?php echo $request['id']; ?>" class="button">Details</a>
                                 </div>
@@ -796,7 +735,7 @@ if ($user) {
                             <span class="status status-<?php echo sanitize($job['status']); ?>"><?php echo strtoupper(str_replace('_', ' ', $job['status'])); ?></span>
                         </div>
                         <div class="job-description"><?php echo render_rich($job['description']); ?></div>
-                        <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($job['budget']); ?></p>
+                        <p class="meta" style="margin: 0;">GH₵ <?php echo sanitize($job['budget']); ?><?php if (!empty($job['price_unit'])): ?> / <?php echo sanitize($job['price_unit']); ?><?php endif; ?></p>
                         <div class="card-bottom">
                             <div class="card-mid-actions">
                                 <span class="card-status-badge info">Only Worker accounts can apply for jobs.</span>

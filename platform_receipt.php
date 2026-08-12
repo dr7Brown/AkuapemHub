@@ -81,6 +81,8 @@ if ($p['package_id']) {
         'featured_news'      => 'featured_news_packages',
         'mp_subscription'    => 'mp_seller_subscription_plans',
         'mp_boost'           => 'mp_boost_packages',
+        'worker_premium'     => 'worker_premium_packages',
+        'sponsor'            => 'sponsor_packages',
     ];
     if (isset($pkgTableMap[$type])) {
         $pkgStmt = $pdo->prepare("SELECT * FROM {$pkgTableMap[$type]} WHERE id = ? LIMIT 1");
@@ -113,6 +115,8 @@ $typeLabels = [
     'delivery_subscription' => 'Rider Premium Subscription',
     'delivery_sponsored'    => 'Rider Sponsored Listing',
     'delivery_verification' => 'Rider Verification Badge',
+    'worker_premium'        => 'Worker Premium Subscription',
+    'sponsor'                => 'Sponsorship',
 ];
 $typeLabel = $typeLabels[$type] ?? ucwords(str_replace('_', ' ', $type));
 
@@ -136,6 +140,8 @@ $continueUrls = [
     'delivery_subscription' => 'delivery_agent_jobs.php',
     'delivery_sponsored'    => 'delivery_agent_jobs.php',
     'delivery_verification' => 'delivery_agent_jobs.php',
+    'worker_premium'        => 'worker_profile.php',
+    'sponsor'                => 'index.php',
 ];
 $continueUrl = $continueUrls[$type] ?? 'jobs.php';
 

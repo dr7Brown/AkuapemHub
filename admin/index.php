@@ -364,6 +364,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <?php if (is_admin() || has_mod_permission('manage_ads')): ?><a href="ads.php"      data-page="ads.php">📣 Ads</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_funerals')): ?><a href="funerals.php" data-page="funerals.php">🕊️ Funerals</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_events')): ?><a href="events.php"   data-page="events.php">📅 Events</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_sponsors')): ?><a href="sponsors.php" data-page="sponsors.php">🤝 Sponsors</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents') || has_mod_permission('approve_verifications') || has_mod_permission('approve_boosts')): ?><a href="delivery.php"    data-page="delivery.php">🚚 Delivery</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_boosts') || has_mod_permission('manage_quote_requests')): ?><a href="marketplace.php" data-page="marketplace.php">🛍️ Marketplace</a><?php endif; ?>
     </div>
@@ -777,6 +778,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             ['events.php',           '📅', 'Events',       'Community events',            'approve_events'],
             ['delivery.php',         '🚚', 'Delivery',     'Agents, requests & tracking', 'approve_delivery_agents'],
             ['marketplace.php',      '🛍️', 'Marketplace',  'Shops, products, orders & quote requests', ['approve_products','approve_shops','approve_boosts','manage_quote_requests']],
+            ['markets.php',          '🏬', 'Periodic Markets', 'Ofie, Nkurakan & other scheduled markets', 'manage_markets'],
+            ['market_deliveries.php','📦', 'Storehouse Deliveries', 'Manage market pickup/handoff',      'manage_market_deliveries'],
             ['moderators.php',       '🛡️', 'Moderators',   'Roles & access control',      null],
             ['mod_performance.php',  '🏆', 'Performance',  'Points, leaderboard & rewards',null],
             ['analytics.php',        '📊', 'Analytics',    'Stats & growth trends',       'view_reports'],

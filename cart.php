@@ -73,7 +73,7 @@ foreach ($items as $item) {
             </a>
             <div style="flex:1;min-width:0;">
                 <a href="product.php?id=<?php echo $item['product_id']; ?>" style="font-weight:700;font-size:.88rem;text-decoration:none;color:inherit;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?php echo sanitize($item['name']); ?></a>
-                <div style="font-size:.78rem;color:var(--text-muted,#6b7280);">GH&#8373; <?php echo number_format(mp_effective_price($item),2); ?> each</div>
+                <div style="font-size:.78rem;color:var(--text-muted,#6b7280);">GH&#8373; <?php echo number_format(mp_effective_price($item),2); ?> <?php echo !empty($item['price_unit']) ? '/ ' . sanitize($item['price_unit']) : 'each'; ?></div>
                 <?php if ($item['status'] !== 'approved'): ?><div style="font-size:.72rem;color:#ef4444;">⚠ No longer available</div><?php endif; ?>
             </div>
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">

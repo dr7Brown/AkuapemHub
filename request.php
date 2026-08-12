@@ -45,6 +45,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $categoryId  = ($rawCategoryInput === '__other__') ? -1 : intval($rawCategoryInput);
     $location    = trim($_POST['location'] ?? '');
     $budget      = trim($_POST['budget'] ?? '');
+    $priceUnit   = trim($_POST['price_unit'] ?? '');
+    if (mb_strlen($priceUnit) > 40) $priceUnit = mb_substr($priceUnit, 0, 40);
     $contactInfo = trim($user['phone'] ?? '');
     $latitude    = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : null;
     $longitude   = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : null;
@@ -104,21 +106,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($postEditId > 0) {
                 $pdo->prepare("UPDATE service_requests SET
                     title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,google_maps_link=?,
-                    budget=?,budget_amount=?,skills_needed=?,workers_needed=?,payment_mode=?,job_type=?,
+                    budget=?,budget_amount=?,price_unit=?,skills_needed=?,workers_needed=?,payment_mode=?,job_type=?,
                     deadline_value=?,deadline_unit=?,deadline_date=?,updated_at=NOW()
                     WHERE id=? AND status IN ('draft','rejected') AND customer_id=?")
                     ->execute([$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,$googleMapsLink,
-                        $budget,$draftBudgetAmount,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
+                        $budget,$draftBudgetAmount,$priceUnit ?: null,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
                         $deadlineValue,$deadlineUnit,$deadlineDate,$postEditId,$user['id']]);
                 flash('Draft updated.', 'info');
             } else {
                 $pdo->prepare("INSERT INTO service_requests
-                    (customer_id,title,description,category_id,location,latitude,longitude,google_maps_link,budget,budget_amount,
+                    (customer_id,title,description,category_id,location,latitude,longitude,google_maps_link,budget,budget_amount,price_unit,
                      contact_info,skills_needed,workers_needed,payment_mode,job_type,deadline_value,deadline_unit,deadline_date,
                      status,payment_status,commission_percent,featured,posting_fee_status,created_at,updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft','unpaid',?,0,'free',NOW(),NOW())")
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft','unpaid',?,0,'free',NOW(),NOW())")
                     ->execute([$user['id'],$title,$description,$draftCatId,$location ?: null,$latitude,$longitude,$googleMapsLink,
-                        $budget,$draftBudgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
+                        $budget,$draftBudgetAmount,$priceUnit ?: null,$contactInfo,$skillsNeeded ?: null,$workersNeeded,$paymentMode,$jobType,
                         $deadlineValue,$deadlineUnit,$deadlineDate,$commRate]);
                 flash('Draft saved. Publish it from your dashboard whenever you are ready.', 'info');
             }
@@ -173,27 +175,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Publishing an existing draft or rejected request — update in place
             $pdo->prepare("UPDATE service_requests SET
                 title=?,description=?,category_id=?,location=?,latitude=?,longitude=?,google_maps_link=?,
-                budget=?,budget_amount=?,contact_info=?,skills_needed=?,workers_needed=?,
+                budget=?,budget_amount=?,price_unit=?,contact_info=?,skills_needed=?,workers_needed=?,
                 payment_mode=?,job_type=?,deadline_value=?,deadline_unit=?,deadline_date=?,
                 status=?,payment_status='unpaid',commission_percent=?,posting_fee_status=?,
                 rejection_reason=NULL,updated_at=NOW()
                 WHERE id=? AND status IN ('draft','rejected') AND customer_id=?")
                 ->execute([$title,$description,$categoryId,$location,$latitude,$longitude,$googleMapsLink,
-                    $budget,$budgetAmount,$contactInfo,$skillsNeeded ?: null,$workersNeeded,
+                    $budget,$budgetAmount,$priceUnit ?: null,$contactInfo,$skillsNeeded ?: null,$workersNeeded,
                     $paymentMode,$jobType,$deadlineValue,$deadlineUnit,$deadlineDate,
                     $initialStatus,$commRate,$postingFeeStatus,$postEditId,$user['id']]);
             $newJobId = $postEditId;
         } else {
             $stmt = $pdo->prepare('INSERT INTO service_requests
                 (customer_id, title, description, category_id, location, latitude, longitude, google_maps_link,
-                 budget, budget_amount, contact_info, skills_needed, workers_needed,
+                 budget, budget_amount, price_unit, contact_info, skills_needed, workers_needed,
                  payment_mode, job_type, deadline_value, deadline_unit, deadline_date,
                  status, payment_status, commission_percent, featured, posting_fee_status,
                  created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())');
             $stmt->execute([
                 $user['id'], $title, $description, $categoryId, $location, $latitude, $longitude, $googleMapsLink,
-                $budget, $budgetAmount, $contactInfo,
+                $budget, $budgetAmount, $priceUnit ?: null, $contactInfo,
                 $skillsNeeded !== '' ? $skillsNeeded : null, $workersNeeded,
                 $paymentMode, $jobType, $deadlineValue, $deadlineUnit, $deadlineDate,
                 $initialStatus, 'unpaid', $commRate, 0, $postingFeeStatus,
@@ -257,6 +259,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// On a failed submission, re-populate the form from what was just typed
+// (not just from $draft) — otherwise every field goes blank on error,
+// which reads as "nothing happened" even though $error is shown above.
+$isFailedPost = ($_SERVER['REQUEST_METHOD'] === 'POST' && $error !== '');
+
+// The form posts to a plain "request.php" (no ?edit=... in the action URL),
+// so $draft (loaded from $_GET['edit']) is always null on a POST. Without
+// this, a failed resubmission of an existing draft/rejected job would lose
+// its edit_id link and the next successful submit would create a *new*
+// duplicate job instead of updating the original.
+if ($isFailedPost && $postEditId > 0 && !$draft) {
+    $reDraftStmt = $pdo->prepare("SELECT * FROM service_requests WHERE id = ? AND status IN ('draft','rejected') AND customer_id = ?");
+    $reDraftStmt->execute([$postEditId, $user['id']]);
+    $draft = $reDraftStmt->fetch() ?: null;
+}
+
+$vTitle          = $isFailedPost ? $title : ($draft['title'] ?? '');
+$vDescription    = $isFailedPost ? $description : ($draft['description'] ?? '');
+$vCategoryRaw    = $isFailedPost ? $rawCategoryInput : ($draft ? (string)$draft['category_id'] : '');
+$vOtherCategory  = $isFailedPost ? $customCategoryName : '';
+$vSkillsNeeded   = $isFailedPost ? $skillsNeeded : ($draft['skills_needed'] ?? '');
+$vLocation       = $isFailedPost ? $location : ($draft['location'] ?? '');
+$vLatitude       = $isFailedPost ? $latitude : ($draft['latitude'] ?? null);
+$vLongitude      = $isFailedPost ? $longitude : ($draft['longitude'] ?? null);
+$vGoogleMapsLink = $isFailedPost ? $googleMapsLink : ($draft['google_maps_link'] ?? '');
+$vHiringType     = $isFailedPost ? $hiringType : ((($draft['workers_needed'] ?? 1)) > 1 ? 'multiple' : 'single');
+$vWorkersNeeded  = $isFailedPost ? $workersNeeded : max(2, (int)($draft['workers_needed'] ?? 2));
+$vJobType        = $isFailedPost ? $jobType : ($draft['job_type'] ?? 'on_site');
+$vPaymentMode    = $isFailedPost ? $paymentMode : ($draft['payment_mode'] ?? 'escrow');
+$vBudget         = $isFailedPost ? $budget : ($draft['budget'] ?? '');
+$vPriceUnit      = $isFailedPost ? $priceUnit : ($draft['price_unit'] ?? '');
+$vDeadlineValue  = $isFailedPost ? $deadlineValue : ($draft['deadline_value'] ?? '');
+$vDeadlineUnit   = $isFailedPost ? $deadlineUnit : ($draft['deadline_unit'] ?? '');
+
 $postingFeeEnabled = is_feature_paid('enable_paid_job_posting');
 $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['id']) : 0;
 ?>
@@ -304,19 +340,19 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
             <?php endif; ?>
             <label>Title</label>
-            <input type="text" name="title" required value="<?php echo $draft ? sanitize($draft['title']) : ''; ?>" />
+            <input type="text" name="title" required value="<?php echo sanitize($vTitle); ?>" />
             <label>Description</label>
-            <textarea name="description" class="rich-editor" rows="4" required><?php echo $draft ? $draft['description'] : ''; ?></textarea>
+            <textarea name="description" class="rich-editor" rows="4" required><?php echo $vDescription; ?></textarea>
             <label>Category</label>
             <select name="category_id" required>
                 <option value="">Select category</option>
                 <?php foreach ($categories as $category): ?>
-                    <option value="<?php echo $category['id']; ?>" <?php echo ($draft && (int)$draft['category_id'] === (int)$category['id']) ? 'selected' : ''; ?>><?php echo sanitize($category['name']); ?></option>
+                    <option value="<?php echo $category['id']; ?>" <?php echo ($vCategoryRaw === (string)$category['id']) ? 'selected' : ''; ?>><?php echo sanitize($category['name']); ?></option>
                 <?php endforeach; ?>
-                <option value="__other__">Other (specify)</option>
+                <option value="__other__" <?php echo ($vCategoryRaw === '__other__') ? 'selected' : ''; ?>>Other (specify)</option>
             </select>
-            <div id="other-category-wrap" style="display:none; margin-top:6px;">
-                <input type="text" name="other_category_name" id="other-category-input" placeholder="Describe the type of work (e.g. Pool cleaning, Car detailing)" />
+            <div id="other-category-wrap" style="display:<?php echo ($vCategoryRaw === '__other__') ? 'block' : 'none'; ?>; margin-top:6px;">
+                <input type="text" name="other_category_name" id="other-category-input" value="<?php echo sanitize($vOtherCategory); ?>" placeholder="Describe the type of work (e.g. Pool cleaning, Car detailing)" />
             </div>
             <p class="meta" id="category-suggestion-note"></p>
 
@@ -346,58 +382,56 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
                 <?php if ($currentDistrict !== null): ?></optgroup><?php endif; ?>
                 <option value="__other__">Other (specify)</option>
             </select>
-            <input type="text" name="location" id="location-input" required placeholder="City, neighbourhood" value="<?php echo $draft ? sanitize($draft['location']) : ''; ?>" <?php echo ($draft && $draft['location']) ? '' : 'readonly'; ?> />
-            <input type="hidden" name="latitude"    id="latitude"    value="<?php echo $draft ? sanitize($draft['latitude']    ?? '') : ''; ?>" />
-            <input type="hidden" name="longitude"   id="longitude"   value="<?php echo $draft ? sanitize($draft['longitude']   ?? '') : ''; ?>" />
+            <input type="text" name="location" id="location-input" required placeholder="City, neighbourhood" value="<?php echo sanitize($vLocation); ?>" <?php echo $vLocation !== '' ? '' : 'readonly'; ?> />
+            <input type="hidden" name="latitude"    id="latitude"    value="<?php echo sanitize($vLatitude ?? ''); ?>" />
+            <input type="hidden" name="longitude"   id="longitude"   value="<?php echo sanitize($vLongitude ?? ''); ?>" />
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
                 <button type="button" id="use-my-location" class="button button-secondary button-small">Use my current location</button>
             </div>
             <p class="meta" id="location-status">Sharing your location helps nearby workers find your job faster.</p>
             <label style="margin-top:8px;">Google Maps Link <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
             <p class="meta">Paste a Google Maps share link so workers can get directions to the job site.</p>
-            <input type="url" name="google_maps_link" class="form-control" style="margin-bottom:4px;"
-                   value="<?php echo $draft ? sanitize($draft['google_maps_link'] ?? '') : ''; ?>"
+            <input type="url" name="google_maps_link" id="google_maps_link" class="form-control" style="margin-bottom:4px;"
+                   value="<?php echo sanitize($vGoogleMapsLink ?? ''); ?>"
                    placeholder="https://maps.google.com/…">
             <label>Hiring type</label>
-            <?php $draftHiringType = ($draft && ($draft['workers_needed'] ?? 1) > 1) ? 'multiple' : 'single'; ?>
             <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:4px;" id="hiring-type-group">
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                    <input type="radio" name="hiring_type" value="single" <?php echo $draftHiringType === 'single' ? 'checked' : ''; ?> onchange="toggleWorkersNeeded(this)"> Single worker
+                    <input type="radio" name="hiring_type" value="single" <?php echo $vHiringType === 'single' ? 'checked' : ''; ?> onchange="toggleWorkersNeeded(this)"> Single worker
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                    <input type="radio" name="hiring_type" value="multiple" <?php echo $draftHiringType === 'multiple' ? 'checked' : ''; ?> onchange="toggleWorkersNeeded(this)"> Multiple workers
+                    <input type="radio" name="hiring_type" value="multiple" <?php echo $vHiringType === 'multiple' ? 'checked' : ''; ?> onchange="toggleWorkersNeeded(this)"> Multiple workers
                 </label>
             </div>
-            <div id="workers-needed-wrap" style="display:<?php echo $draftHiringType === 'multiple' ? 'block' : 'none'; ?>;margin-bottom:4px;">
+            <div id="workers-needed-wrap" style="display:<?php echo $vHiringType === 'multiple' ? 'block' : 'none'; ?>;margin-bottom:4px;">
                 <label>Number of workers needed</label>
-                <input type="number" name="workers_needed" id="workers-needed-input" min="2" max="50" value="<?php echo $draft ? max(2, (int)($draft['workers_needed'] ?? 2)) : 2; ?>" style="width:100px;" />
+                <input type="number" name="workers_needed" id="workers-needed-input" min="2" max="50" value="<?php echo (int)$vWorkersNeeded; ?>" style="width:100px;" />
             </div>
 
             <label style="margin-top:8px;">Work location type</label>
-            <?php $draftJobType = $draft['job_type'] ?? 'on_site'; ?>
             <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px;">
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                    <input type="radio" name="job_type" value="on_site" <?php echo $draftJobType === 'on_site' ? 'checked' : ''; ?>> 📍 On-site
+                    <input type="radio" name="job_type" value="on_site" <?php echo $vJobType === 'on_site' ? 'checked' : ''; ?>> 📍 On-site
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                    <input type="radio" name="job_type" value="remote" <?php echo $draftJobType === 'remote' ? 'checked' : ''; ?>> 💻 Remote
+                    <input type="radio" name="job_type" value="remote" <?php echo $vJobType === 'remote' ? 'checked' : ''; ?>> 💻 Remote
                 </label>
                 <label style="display:flex;align-items:center;gap:6px;font-weight:normal;cursor:pointer;">
-                    <input type="radio" name="job_type" value="hybrid" <?php echo $draftJobType === 'hybrid' ? 'checked' : ''; ?>> 🔄 Hybrid
+                    <input type="radio" name="job_type" value="hybrid" <?php echo $vJobType === 'hybrid' ? 'checked' : ''; ?>> 🔄 Hybrid
                 </label>
             </div>
 
             <label style="margin-top:8px;">Payment mode</label>
             <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:4px;">
                 <label style="display:flex;gap:10px;border:2px solid var(--primary);border-radius:var(--radius-sm);padding:12px;cursor:pointer;background:var(--surface-muted);" id="mode-escrow-label">
-                    <input type="radio" name="payment_mode" value="escrow" id="mode-escrow" <?php echo (!$draft || ($draft['payment_mode'] ?? 'escrow') === 'escrow') ? 'checked' : ''; ?> onchange="onModeChange()">
+                    <input type="radio" name="payment_mode" value="escrow" id="mode-escrow" <?php echo $vPaymentMode === 'escrow' ? 'checked' : ''; ?> onchange="onModeChange()">
                     <div>
                         <strong>Escrow Payment <span style="background:var(--primary);color:#fff;border-radius:4px;padding:1px 6px;font-size:0.75rem;vertical-align:middle;">Recommended</span></strong>
                         <p class="meta" style="margin:2px 0 0;">Your funds are held securely by AkuapemConnect. Released to the worker only after you confirm satisfactory completion.</p>
                     </div>
                 </label>
                 <label style="display:flex;gap:10px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;cursor:pointer;" id="mode-direct-label">
-                    <input type="radio" name="payment_mode" value="direct" id="mode-direct" <?php echo ($draft && ($draft['payment_mode'] ?? '') === 'direct') ? 'checked' : ''; ?> onchange="onModeChange()">
+                    <input type="radio" name="payment_mode" value="direct" id="mode-direct" <?php echo $vPaymentMode === 'direct' ? 'checked' : ''; ?> onchange="onModeChange()">
                     <div>
                         <strong>Direct Payment</strong>
                         <p class="meta" style="margin:2px 0 0;">You pay the worker directly. AkuapemConnect only tracks job completion, not the payment itself.</p>
@@ -406,8 +440,12 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
             </div>
 
             <label id="budget-label">Budget <span class="meta" id="budget-meta">(numeric amount, e.g. 300)</span></label>
-            <input type="text" name="budget" id="budget-input" required placeholder="e.g. 300" value="<?php echo $draft ? sanitize($draft['budget']) : ''; ?>" oninput="updateCommissionPreview()" />
+            <input type="text" name="budget" id="budget-input" required placeholder="e.g. 300" value="<?php echo sanitize($vBudget); ?>" oninput="updateCommissionPreview()" />
             <p class="meta" id="budget-suggestion"></p>
+
+            <label for="price_unit">Rate Unit <span class="meta">(optional)</span></label>
+            <input type="text" name="price_unit" id="price_unit" maxlength="40" placeholder="e.g. day, month, hour, project" value="<?php echo sanitize($vPriceUnit); ?>" />
+            <p class="meta">Shown as "per unit" next to your budget — leave blank for a flat one-off budget.</p>
 
             <div id="commission-preview" style="display:none;background:var(--surface-muted);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-top:4px;">
                 <p style="margin:0 0 8px;font-weight:600;">Payment summary</p>
@@ -435,12 +473,12 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
 
             <label style="margin-top:12px;">Deadline <span class="meta">(optional)</span></label>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                <input type="number" name="deadline_value" id="deadline-value" min="1" max="999" placeholder="e.g. 3" style="width:80px;" value="<?php echo $draft ? sanitize($draft['deadline_value'] ?? '') : ''; ?>" />
+                <input type="number" name="deadline_value" id="deadline-value" min="1" max="999" placeholder="e.g. 3" style="width:80px;" value="<?php echo sanitize($vDeadlineValue ?? ''); ?>" />
                 <select name="deadline_unit" id="deadline-unit" style="flex:1;min-width:140px;">
                     <option value="">No deadline</option>
-                    <option value="hours" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'hours') ? 'selected' : ''; ?>>Hour(s)</option>
-                    <option value="days" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'days') ? 'selected' : ''; ?>>Day(s)</option>
-                    <option value="months" <?php echo ($draft && ($draft['deadline_unit'] ?? '') === 'months') ? 'selected' : ''; ?>>Month(s)</option>
+                    <option value="hours" <?php echo ($vDeadlineUnit === 'hours') ? 'selected' : ''; ?>>Hour(s)</option>
+                    <option value="days" <?php echo ($vDeadlineUnit === 'days') ? 'selected' : ''; ?>>Day(s)</option>
+                    <option value="months" <?php echo ($vDeadlineUnit === 'months') ? 'selected' : ''; ?>>Month(s)</option>
                 </select>
             </div>
             <p class="meta" id="deadline-hint" style="margin-top:4px;"></p>
@@ -459,7 +497,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
     </main>
     <script>
         var COMMISSION_RATE = <?php echo (float)$commRate; ?>;
-        var DRAFT_SKILLS    = <?php echo $draft ? json_encode(array_filter(array_map('trim', explode(',', $draft['skills_needed'] ?? '')))) : '[]'; ?>;
+        var DRAFT_SKILLS    = <?php echo json_encode(array_filter(array_map('trim', explode(',', $vSkillsNeeded ?? '')))); ?>;
 
         function saveDraft() {
             document.getElementById('submit-type-input').value = 'draft';
@@ -526,19 +564,33 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
         }
 
         document.getElementById('use-my-location').addEventListener('click', function () {
-            var status = document.getElementById('location-status');
+            var status  = document.getElementById('location-status');
+            var mapsLink = document.getElementById('google_maps_link') || document.querySelector('[name="google_maps_link"]');
             if (!navigator.geolocation) {
                 status.textContent = 'Geolocation is not supported by your browser.';
                 return;
             }
             status.textContent = 'Locating…';
             navigator.geolocation.getCurrentPosition(function (position) {
-                document.getElementById('latitude').value = position.coords.latitude;
-                document.getElementById('longitude').value = position.coords.longitude;
-                status.textContent = 'Location captured: ' + position.coords.latitude.toFixed(5) + ', ' + position.coords.longitude.toFixed(5) + '.';
+                var lat      = position.coords.latitude;
+                var lng      = position.coords.longitude;
+                var accuracy = position.coords.accuracy;
+                document.getElementById('latitude').value = lat;
+                document.getElementById('longitude').value = lng;
+                // Don't clobber a maps link the customer already pasted in manually.
+                if (mapsLink && !mapsLink.value.trim()) {
+                    mapsLink.value = 'https://maps.google.com/?q=' + lat + ',' + lng;
+                }
+                if (accuracy > 1000) {
+                    status.textContent = '⚠️ Low-confidence location (accurate to ~' + Math.round(accuracy / 1000) + 'km) — likely from WiFi/IP, not GPS. Try again on a phone with GPS, or paste a Google Maps link manually below.';
+                } else if (accuracy > 100) {
+                    status.textContent = 'Location captured (accurate to ~' + Math.round(accuracy) + 'm): ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '.';
+                } else {
+                    status.textContent = 'Location captured: ' + lat.toFixed(5) + ', ' + lng.toFixed(5) + '.';
+                }
             }, function () {
                 status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
-            });
+            }, { enableHighAccuracy: true });
         });
 
         var townSelect = document.getElementById('town-select');
@@ -736,6 +788,7 @@ $availableCredits  = $postingFeeEnabled ? get_job_post_credits_remaining($user['
 
         // Init state
         onModeChange();
+        if (categorySelect.value) { refreshSkillOptions(); }
 
         // Pre-fill skills from draft
         if (DRAFT_SKILLS.length) {

@@ -6,7 +6,7 @@ require_module_enabled('news', 'News');
 require_login();
 $user = current_user();
 
-$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0') && !user_has_complimentary_access();
+$feeEnabled = (bool)(int)get_platform_setting('news_fee_enabled', '0') && !user_has_complimentary_access(null, 'news_fee');
 $feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
 
 $errors  = [];
@@ -181,7 +181,7 @@ $statusLabels = [
         .mn-fee-notice { background:#fffbeb; border:1px solid #f59e0b; border-radius:10px; padding:12px 16px; margin-bottom:18px; font-size:.88rem; }
     </style>
 </head>
-<body>
+<body class="has-bottom-nav">
     <header class="topbar">
         <a href="community.php" class="button button-secondary button-small">← Community</a>
         <h1>My Articles</h1>

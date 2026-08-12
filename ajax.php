@@ -51,7 +51,7 @@ switch ($action) {
             return [
                 'id'         => (int)$n['id'],
                 'title'      => $n['title'],
-                'preview'    => mb_substr($n['body'], 0, 120),
+                'preview'    => mb_substr(strip_tags($n['body']), 0, 120),
                 'type'       => $n['type'],
                 'link'       => $n['link'],
                 'is_read'    => (bool)$n['is_read'],

@@ -6,7 +6,7 @@ require_once __DIR__ . '/marketplace_functions.php';
 require_module_enabled('mp', 'Marketplace');
 require_login();
 $user = current_user();
-$shop = get_shop_by_user((int)$user['id']);
+$shop = get_active_seller_shop((int)$user['id']);
 
 if (!$shop) {
     flash('Create your shop first.', 'warning');
@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'Your boost order has been submitted. An admin will activate it once payment is confirmed.',
             'info');
 
-        $requiresPayment = get_platform_setting('mp_boost_requires_payment', '1') === '1' && $price > 0 && !user_has_complimentary_access();
+        $requiresPayment = get_platform_setting('mp_boost_requires_payment', '1') === '1' && $price > 0 && !user_has_complimentary_access(null, 'mp_boost');
         if ($requiresPayment) {
             // Redirect to Paystack checkout
             header('Location: pay_mp_boost.php?boost_id=' . $boostId);

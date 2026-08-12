@@ -10,19 +10,18 @@ its own short video.
 
 1. CREATING AN ACCOUNT (REGISTRATION)
 --------------------------------------
-1. Go to the homepage and tap "Sign Up".
+1. Visit https://akuapemconnect.com and tap "Sign Up".
 2. Fill in the form: Full name, Username, Email, Password, Phone number,
    and Town (choose from the list, or select "Other" and type it in).
-3. Choose account type: "Customer" or "Worker".
-   - If you choose Worker, also provide: ID type (Ghana Card/Passport/Other),
-     ID number, a photo of your ID, and at least one skill you offer.
-4. (Optional) Upload a profile photo.
-5. Tap Submit — you are logged in immediately.
-6. Check your email for a verification link and click it (some actions on
+3. (Optional) Upload a profile photo.
+4. Tap "Create account" — you're logged in immediately as a Customer.
+   Registration is deliberately kept to this one short step for everyone;
+   there's no ID upload or skill picking here, even if you plan to work.
+5. Check your email for a verification link and click it (some actions on
    the app require a verified email before you can use them).
-7. If you registered as a Worker and a listing fee is active, you'll be
-   asked to pay it before your worker profile becomes searchable.
-8. You'll land on the Community page — this is your home screen.
+6. You'll land on the Community page — this is your home screen.
+7. Want to earn on the app, not just hire? See Section 4 — you can set up
+   a Worker profile any time after signing up, whenever you're ready.
 
 
 2. LOGGING IN
@@ -44,13 +43,29 @@ its own short video.
 3. The bell icon (top corner) shows your notifications.
 
 
-4. BECOMING A WORKER (IF YOU SIGNED UP AS A CUSTOMER)
+4. BECOMING A WORKER / SETTING UP YOUR WORKER PROFILE
 --------------------------------------------------------
-1. Go to Settings → Worker Profile → "Become a worker".
-2. Provide your ID type/number, upload your ID photo, and select your
-   skills.
-3. Submit — your account can now apply for jobs immediately.
-4. You can switch back to "Customer mode" any time from Settings — your
+1. Get there from Settings ("Become a worker") or by tapping the "Become a
+   Worker" prompt on a job card while browsing Jobs — either takes you to
+   the same short worker setup form.
+2. Step 1, Identity verification: choose ID type (Ghana Card/Passport/
+   Other), enter your ID number, and upload a clear photo of your ID.
+   Optionally tap "Share my GPS location" here too — it helps match you
+   with nearby jobs, but it's not required.
+3. Step 2, Your skills: pick a category and a skill, tap "+ Add skill",
+   and repeat for every skill you offer (at least one is required).
+4. Tap "Create worker profile" to submit — you're switched into Worker
+   mode immediately and can start applying for jobs. If a listing fee is
+   active, you'll be asked to pay it before your profile becomes
+   searchable.
+5. Changed your mind, or don't have your ID handy right now? Tap "Skip for
+   now — I'll set this up later" at any point on this form — you'll stay in
+   Customer mode and can come back to it whenever you're ready.
+6. If you've been a worker before and switched back to Customer mode,
+   you'll see a "Welcome back" screen instead of the form — tap "Switch to
+   worker mode" to reactivate your existing profile and skills instantly,
+   no need to redo ID verification.
+7. You can switch back to "Customer mode" any time from Settings — your
    worker profile is saved, not deleted.
 
 

@@ -81,7 +81,7 @@ function shops_page_url(int $page): string {
     ]); ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .mp-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 64px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+        .mp-topbar { background:var(--surface); border-bottom:1px solid var(--border); padding:12px 120px 12px 16px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
         .mp-brand  { font-weight:900; font-size:1.05rem; color:var(--primary,#0f766e); text-decoration:none; display:flex; align-items:center; gap:6px; }
         .mp-nav-actions { display:flex; gap:8px; align-items:center; }
         .mp-cart-btn { position:relative; text-decoration:none; }
@@ -130,7 +130,7 @@ function shops_page_url(int $page): string {
         </a>
         <a href="seller_dashboard.php" class="button button-primary button-small">My Shop</a>
         <?php else: ?>
-        <a href="login.php" class="button button-secondary button-small">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
         <a href="register.php" class="button button-primary button-small">Join</a>
         <?php endif; ?>
     </div>

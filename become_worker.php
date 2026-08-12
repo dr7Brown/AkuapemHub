@@ -33,6 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $idType = $_POST['id_type'] ?? '';
     $idNumber = trim($_POST['id_number'] ?? '');
     $idTypeCustom = trim($_POST['id_type_custom'] ?? '');
+    $latitude = ($_POST['latitude'] ?? '') !== '' ? (float)$_POST['latitude'] : $user['latitude'];
+    $longitude = ($_POST['longitude'] ?? '') !== '' ? (float)$_POST['longitude'] : $user['longitude'];
 
     $skills = [];
     $decodedSkills = json_decode($_POST['skills_json'] ?? '', true);
@@ -73,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $serviceFeeStatus = is_feature_paid('enable_paid_worker_service') ? 'pending' : 'free';
             $stmt = $pdo->prepare('INSERT INTO worker_profiles (user_id, bio, location, latitude, longitude, contact_phone, id_type, id_type_custom, id_number, id_document_path, availability, service_fee_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
-            $stmt->execute([$user['id'], '', $townName, $user['latitude'], $user['longitude'], $user['phone'], $idType, ($idType === 'other' ? $idTypeCustom : null), $idNumber, $idDocumentPath, 'available', $serviceFeeStatus]);
+            $stmt->execute([$user['id'], '', $townName, $latitude, $longitude, $user['phone'], $idType, ($idType === 'other' ? $idTypeCustom : null), $idNumber, $idDocumentPath, 'available', $serviceFeeStatus]);
             $profileId = $pdo->lastInsertId();
 
             $skillStmt = $pdo->prepare('INSERT INTO worker_skills (worker_profile_id, category_id, skill_name) VALUES (?, ?, ?)');
@@ -117,6 +119,9 @@ $skillCategories = get_skill_categories_with_skills();
         <a href="logout.php" class="button button-secondary button-small">Logout</a>
     </header>
     <main class="page-shell small-shell">
+        <?php foreach (get_flashes() as $f): ?>
+            <div class="alert alert-<?php echo sanitize($f['type']); ?>"><?php echo sanitize($f['message']); ?></div>
+        <?php endforeach; ?>
         <?php if ($error): ?>
             <div class="alert alert-error"><?php echo sanitize($error); ?></div>
         <?php endif; ?>
@@ -153,6 +158,11 @@ $skillCategories = get_skill_categories_with_skills();
                     <label>Photo of ID card</label>
                     <input type="file" name="id_document" id="id-document-input" required accept="image/jpeg,image/png,image/webp" />
                     <p class="small-note" style="text-align: left; margin-top: 4px;">A clear photo of your ID document — JPEG/PNG/WEBP up to 5MB.</p>
+
+                    <input type="hidden" name="latitude" id="latitude" />
+                    <input type="hidden" name="longitude" id="longitude" />
+                    <button type="button" id="use-my-location" class="button button-secondary button-small">Share my GPS location</button>
+                    <p class="meta" id="location-status">Sharing your location helps us match you with nearby jobs.</p>
                 </div>
 
                 <div class="wizard-step" data-step="2" style="display: none;">
@@ -184,6 +194,9 @@ $skillCategories = get_skill_categories_with_skills();
                     <button type="button" id="wizard-next" class="button button-primary">Next</button>
                     <button type="submit" id="wizard-submit" class="button button-primary" style="display: none;">Create worker profile</button>
                 </div>
+                <p class="small-note" style="text-align:center;margin-top:10px;">
+                    <a href="community.php">Skip for now — I'll set this up later</a>
+                </p>
             </form>
         <?php endif; ?>
     </main>
@@ -352,6 +365,22 @@ $skillCategories = get_skill_categories_with_skills();
                 skillListEmpty.textContent = 'Add at least one skill before creating your worker profile.';
                 skillListEmpty.style.display = 'block';
             }
+        });
+
+        document.getElementById('use-my-location').addEventListener('click', function () {
+            var status = document.getElementById('location-status');
+            if (!navigator.geolocation) {
+                status.textContent = 'Geolocation is not supported by your browser.';
+                return;
+            }
+            status.textContent = 'Locating…';
+            navigator.geolocation.getCurrentPosition(function (position) {
+                document.getElementById('latitude').value = position.coords.latitude;
+                document.getElementById('longitude').value = position.coords.longitude;
+                status.textContent = 'Location captured: ' + position.coords.latitude.toFixed(5) + ', ' + position.coords.longitude.toFixed(5) + '.';
+            }, function () {
+                status.textContent = 'Unable to retrieve your location. Please allow location access and try again.';
+            });
         });
     </script>
     <script src="assets/js/ghana-card-input.js"></script>

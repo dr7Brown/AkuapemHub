@@ -54,7 +54,7 @@ $orderBy = match($sortFilter) {
 };
 
 $jobs = $pdo->prepare(
-    'SELECT sr.id, sr.title, sr.description, sr.location, sr.budget, sr.budget_amount,
+    'SELECT sr.id, sr.title, sr.description, sr.location, sr.budget, sr.budget_amount, sr.price_unit,
             sr.status, sr.featured, sr.featured_end_date, sr.created_at,
             sr.workers_needed, sr.workers_approved, sr.job_type,
             sr.payment_status, sr.payment_mode,
@@ -186,8 +186,9 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
         .bj-card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
         .bj-card-title { font-size: .97rem; font-weight: 700; margin: 0 0 3px; color: var(--text, #111827); line-height: 1.3; }
         .bj-card-meta  { font-size: .78rem; color: var(--muted, #6b7280); }
-        .bj-card-desc  { font-size: .84rem; color: var(--text, #374151); line-height: 1.55; flex: 1;
-                         display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .bj-card-desc  { font-size: .84rem; color: var(--text, #374151); line-height: 1.55; flex: 1; min-height: 0;
+                         display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+                         max-height: calc(1.55em * 3); word-break: break-word; }
         .bj-card-budget { font-size: .9rem; font-weight: 700; color: var(--primary, #0f766e); }
         .bj-card-actions { display: flex; gap: 8px; margin-top: 4px; }
         .bj-btn { padding: 8px 14px; border-radius: 7px; font-size: .82rem; font-weight: 600; text-decoration: none; text-align: center; cursor: pointer; display: inline-block; white-space: nowrap; }
@@ -225,7 +226,7 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
     <nav class="bj-nav">
         <a href="find_workers.php" class="link">Workers</a>
         <a href="community.php"    class="link">Community</a>
-        <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
     </nav>
 </header>
 
@@ -235,7 +236,7 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
     <p>Browse hundreds of open service requests — plumbing, tutoring, carpentry, events &amp; more</p>
     <div class="bj-hero-btns">
         <a href="register.php" class="primary">Create free account</a>
-        <a href="login.php"    class="secondary">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="secondary">Sign in</a>
     </div>
     <div class="bj-stats">
         <div class="bj-stat">
@@ -376,9 +377,9 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
                 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                     <?php if ($job['budget_amount']): ?>
-                        <span class="bj-card-budget">GH₵ <?php echo number_format((float)$job['budget_amount'], 2); ?></span>
+                        <span class="bj-card-budget">GH₵ <?php echo number_format((float)$job['budget_amount'], 2); ?><?php if (!empty($job['price_unit'])): ?> / <?php echo sanitize($job['price_unit']); ?><?php endif; ?></span>
                     <?php elseif ($job['budget']): ?>
-                        <span class="bj-card-budget"><?php echo sanitize(mb_substr($job['budget'], 0, 30)); ?></span>
+                        <span class="bj-card-budget"><?php echo sanitize(mb_substr($job['budget'], 0, 30)); ?><?php if (!empty($job['price_unit'])): ?> / <?php echo sanitize($job['price_unit']); ?><?php endif; ?></span>
                     <?php else: ?>
                         <span class="bj-card-meta">Budget: negotiable</span>
                     <?php endif; ?>

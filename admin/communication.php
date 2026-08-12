@@ -75,6 +75,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tab = 'reports';
     }
 
+    if ($act === 'send_notification_admin') {
+        $tid      = intval($_POST['target_user_id'] ?? 0);
+        $catKey   = trim($_POST['category'] ?? '');
+        $title    = trim($_POST['notif_title'] ?? '');
+        $body     = trim($_POST['notif_body']  ?? '');
+        $ntype    = $_POST['notif_type'] ?? 'info';
+        $alsoMail = isset($_POST['notif_email']);
+        if (!in_array($ntype, ['info','success','warning','error'], true)) $ntype = 'info';
+
+        if (!$title || !$body) {
+            $msg = 'Title and message are required.';
+        } elseif ($catKey && array_key_exists($catKey, broadcast_categories())) {
+            $result = send_bulk_notification($catKey, $title, $body, $ntype, $user['id'], $alsoMail);
+            $catLabel = broadcast_categories()[$catKey];
+            log_audit_action($user['id'], 'notification_broadcast',
+                "Sent notification to category \"$catLabel\" ({$result['sent']} user(s)" . ($alsoMail ? ", {$result['emailed']} emailed" : '') . "): \"$title\"");
+            $msg = "Notification sent to {$result['sent']} user(s)" . ($alsoMail ? " ({$result['emailed']} emailed)." : '.');
+        } elseif ($tid) {
+            notify_user($tid, $title, $body, $ntype, null, $user['id']);
+            if ($alsoMail) {
+                $emStmt = $pdo->prepare("SELECT email FROM users WHERE id=?");
+                $emStmt->execute([$tid]);
+                if ($em = $emStmt->fetchColumn()) send_email_notification($em, $title, render_rich($body), $tid);
+            }
+            log_audit_action($user['id'], 'notification_sent', "Sent notification to user #$tid: \"$title\"");
+            $msg = 'Notification sent.';
+        } else {
+            $msg = 'Choose a recipient or category first.';
+        }
+        $tab = 'notifications';
+    }
+
+    if ($act === 'update_notification') {
+        $nid   = intval($_POST['notification_id'] ?? 0);
+        $title = trim($_POST['notif_title'] ?? '');
+        $body  = trim($_POST['notif_body']  ?? '');
+        $ntype = $_POST['notif_type'] ?? 'info';
+        if (!in_array($ntype, ['info','success','warning','error'], true)) $ntype = 'info';
+        if ($nid && $title && $body) {
+            $pdo->prepare("UPDATE notifications SET title=?, body=?, type=? WHERE id=? AND sent_by_admin_id IS NOT NULL")
+                ->execute([$title, $body, $ntype, $nid]);
+            log_audit_action($user['id'], 'notification_updated', "Edited notification #$nid");
+            $msg = 'Notification updated.';
+        } else {
+            $msg = 'Title and message are required.';
+        }
+        $tab = 'notifications';
+    }
+
+    if ($act === 'delete_notification') {
+        $nid = intval($_POST['notification_id'] ?? 0);
+        $pdo->prepare("DELETE FROM notifications WHERE id=? AND sent_by_admin_id IS NOT NULL")->execute([$nid]);
+        log_audit_action($user['id'], 'notification_deleted', "Deleted notification #$nid");
+        $msg = 'Notification deleted.';
+        $tab = 'notifications';
+    }
+
     if ($act === 'grant_chat') {
         $uid1 = intval($_POST['user1_id'] ?? 0);
         $uid2 = intval($_POST['user2_id'] ?? 0);
@@ -233,8 +290,86 @@ if ($tab === 'audit') {
     $auditLogs = $aStmt->fetchAll();
 }
 
+// Admin-sent notifications (CRUD list) — system-triggered notifications
+// (payments, approvals, etc.) are intentionally excluded; this tab only
+// manages messages an admin composed and sent themselves.
+$sentNotifications = [];
+if ($tab === 'notifications') {
+    $commTotal      = (int)$pdo->query("SELECT COUNT(*) FROM notifications WHERE sent_by_admin_id IS NOT NULL")->fetchColumn();
+    $commTotalPages = max(1, (int)ceil($commTotal / $commPerPage));
+    $nStmt = $pdo->query("
+        SELECT n.*, ur.name AS recipient_name, ur.email AS recipient_email, ua.name AS admin_name
+        FROM notifications n
+        JOIN users ur ON n.user_id = ur.id
+        LEFT JOIN users ua ON n.sent_by_admin_id = ua.id
+        WHERE n.sent_by_admin_id IS NOT NULL
+        ORDER BY n.created_at DESC
+        LIMIT $commPerPage OFFSET $commOffset
+    ");
+    $sentNotifications = $nStmt->fetchAll();
+}
+
+// Notification being edited (server-rendered pre-fill — avoids needing JS
+// to inject HTML into the hidden textarea behind the rich editor)
+$editNotif = null;
+if ($tab === 'notifications' && !empty($_GET['edit'])) {
+    $eStmt = $pdo->prepare("
+        SELECT n.*, ur.name AS recipient_name FROM notifications n
+        JOIN users ur ON n.user_id = ur.id
+        WHERE n.id=? AND n.sent_by_admin_id IS NOT NULL
+    ");
+    $eStmt->execute([(int)$_GET['edit']]);
+    $editNotif = $eStmt->fetch() ?: null;
+}
+
 // Platform users for grant chat
 $allUsers = $pdo->query("SELECT id, name, role FROM users WHERE role NOT IN ('admin') ORDER BY name ASC")->fetchAll();
+
+// Recipient search for the notifications compose form — a plain <select>
+// doesn't scale to a userbase in the thousands, so recipients are found by
+// name/email/username search instead, same pattern as complimentary_members.php.
+$notifQ = '';
+$notifSearchResults = [];
+$toUser = null;
+if ($tab === 'notifications' && !$editNotif) {
+    $notifQ = trim($_GET['q'] ?? '');
+    if ($notifQ !== '') {
+        $nsStmt = $pdo->prepare(
+            "SELECT id, name, email, role FROM users
+             WHERE (name LIKE ? OR email LIKE ? OR username LIKE ?) AND role != 'admin'
+             ORDER BY name LIMIT 20"
+        );
+        $like = '%' . $notifQ . '%';
+        $nsStmt->execute([$like, $like, $like]);
+        $notifSearchResults = $nsStmt->fetchAll();
+    }
+    $toId = (int)($_GET['to'] ?? 0);
+    if ($toId) {
+        $tuStmt = $pdo->prepare("SELECT id, name, email, role FROM users WHERE id=? AND role != 'admin'");
+        $tuStmt->execute([$toId]);
+        $toUser = $tuStmt->fetch() ?: null;
+    }
+}
+
+// Broadcast category — the other way to pick a "recipient" (a whole segment
+// instead of one user). Counts are computed for the picker dropdown too.
+$category      = null;
+$categoryLabel = null;
+$categoryCount = 0;
+if ($tab === 'notifications' && !$editNotif && !$toUser) {
+    $catKey = trim($_GET['category'] ?? '');
+    if ($catKey && array_key_exists($catKey, broadcast_categories())) {
+        $category      = $catKey;
+        $categoryLabel = broadcast_categories()[$catKey];
+        $categoryCount = count(broadcast_recipient_ids($catKey));
+    }
+}
+$categoryCounts = [];
+if ($tab === 'notifications' && !$editNotif && !$toUser && !$category) {
+    foreach (array_keys(broadcast_categories()) as $ck) {
+        $categoryCounts[$ck] = count(broadcast_recipient_ids($ck));
+    }
+}
 
 $chatSettings = [
     'chat_disabled'            => get_platform_setting('chat_disabled','0'),
@@ -288,7 +423,7 @@ $chatSettings = [
     <?php endif; ?>
 
     <div class="tab-bar">
-        <?php foreach (['dashboard'=>'Dashboard','conversations'=>'Conversations','users'=>'Users','reports'=>'Reports','audit'=>'Audit Log','settings'=>'Settings'] as $k=>$label): ?>
+        <?php foreach (['dashboard'=>'Dashboard','conversations'=>'Conversations','users'=>'Users','notifications'=>'Notifications','reports'=>'Reports','audit'=>'Audit Log','settings'=>'Settings'] as $k=>$label): ?>
             <a href="communication.php?tab=<?php echo $k; ?>" class="tab-btn <?php echo $tab===$k?'active':''; ?>"><?php echo $label; ?></a>
         <?php endforeach; ?>
     </div>
@@ -493,6 +628,153 @@ $chatSettings = [
             </div>
         </div>
 
+    <!-- NOTIFICATIONS ──────────────────────────────────────────────────────── -->
+    <?php elseif ($tab === 'notifications'): ?>
+
+        <?php if (!$editNotif && !$toUser && !$category): ?>
+        <!-- Step 1: find a recipient — a plain dropdown doesn't scale to thousands of users -->
+        <div class="panel" style="margin-bottom:20px;">
+            <h3 style="margin-top:0;">Send Notification</h3>
+            <form method="get" action="communication.php" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+                <input type="hidden" name="tab" value="notifications">
+                <input type="text" name="q" value="<?php echo sanitize($notifQ); ?>" placeholder="Search recipient by name, email, or username…" style="flex:1;min-width:220px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;" autofocus>
+                <button type="submit" class="button button-secondary button-small">Search</button>
+            </form>
+            <?php if ($notifQ !== ''): ?>
+                <?php if (!$notifSearchResults): ?>
+                <div class="empty-state">No matching users.</div>
+                <?php else: ?>
+                <div class="table-wrapper">
+                <table>
+                    <thead><tr><th>Name</th><th>Email</th><th>Role</th><th style="text-align:right;">Action</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($notifSearchResults as $r): ?>
+                    <tr>
+                        <td><?php echo sanitize($r['name']); ?></td>
+                        <td><?php echo sanitize($r['email']); ?></td>
+                        <td><?php echo ucfirst($r['role']); ?></td>
+                        <td style="text-align:right;">
+                            <a href="communication.php?tab=notifications&to=<?php echo (int)$r['id']; ?>" class="button button-primary button-small">Compose →</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php endif; ?>
+            <?php endif; ?>
+
+            <hr style="margin:16px 0;border-color:var(--border);">
+            <p style="font-size:.85rem;font-weight:600;margin-bottom:8px;">Or broadcast to a category:</p>
+            <form method="get" action="communication.php" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                <input type="hidden" name="tab" value="notifications">
+                <div>
+                    <label style="font-size:.82rem;font-weight:600;">Category</label><br>
+                    <select name="category" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+                        <?php foreach (broadcast_categories() as $ck => $cl): ?>
+                        <option value="<?php echo $ck; ?>"><?php echo sanitize($cl); ?> (<?php echo $categoryCounts[$ck] ?? 0; ?>)</option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <button type="submit" class="button button-primary button-small">Compose →</button>
+            </form>
+        </div>
+
+        <?php else: ?>
+        <!-- Step 2: compose/edit, recipient already resolved -->
+        <div class="panel" style="margin-bottom:20px;">
+            <h3 style="margin-top:0;"><?php echo $editNotif ? 'Edit Notification' : 'Send Notification'; ?></h3>
+            <p style="font-size:.85rem;color:var(--text-muted);margin-top:-8px;">
+                <?php if ($editNotif): ?>
+                To: <strong><?php echo sanitize($editNotif['recipient_name']); ?></strong> — recipient can't be changed; <a href="communication.php?tab=notifications">cancel edit</a>
+                <?php elseif ($category): ?>
+                To: <strong><?php echo sanitize($categoryLabel); ?></strong> (<?php echo $categoryCount; ?> user<?php echo $categoryCount===1?'':'s'; ?>) — <a href="communication.php?tab=notifications">change recipient</a>
+                <?php else: ?>
+                To: <strong><?php echo sanitize($toUser['name']); ?></strong> — <a href="communication.php?tab=notifications&q=<?php echo urlencode($notifQ); ?>">change recipient</a>
+                <?php endif; ?>
+            </p>
+            <form method="post">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="<?php echo $editNotif ? 'update_notification' : 'send_notification_admin'; ?>">
+                <?php if ($editNotif): ?>
+                <input type="hidden" name="notification_id" value="<?php echo (int)$editNotif['id']; ?>">
+                <?php elseif ($category): ?>
+                <input type="hidden" name="category" value="<?php echo sanitize($category); ?>">
+                <?php else: ?>
+                <input type="hidden" name="target_user_id" value="<?php echo (int)$toUser['id']; ?>">
+                <?php endif; ?>
+                <div class="form-row">
+                    <div>
+                        <label>Title</label><br>
+                        <input type="text" name="notif_title" required maxlength="150" value="<?php echo sanitize($editNotif['title'] ?? ''); ?>" placeholder="e.g. Account update">
+                    </div>
+                    <div>
+                        <label>Type</label><br>
+                        <select name="notif_type">
+                            <?php foreach (['info'=>'Info','success'=>'Success','warning'=>'Warning','error'=>'Error'] as $tk=>$tl): ?>
+                            <option value="<?php echo $tk; ?>" <?php echo ($editNotif['type'] ?? 'info')===$tk?'selected':''; ?>><?php echo $tl; ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label>Message</label>
+                    <textarea name="notif_body" class="rich-editor" rows="4" required placeholder="Message shown in the recipient's notifications"><?php echo $editNotif['body'] ?? ''; ?></textarea>
+                </div>
+                <?php if (!$editNotif): ?>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:.85rem;">
+                        <input type="checkbox" name="notif_email" value="1">
+                        Also send by email
+                        <?php if ($toUser): ?> (<?php echo sanitize($toUser['email']); ?>)
+                        <?php elseif ($category): ?> to all <?php echo $categoryCount; ?> matched user(s) — may take a moment for large groups
+                        <?php endif; ?>
+                    </label>
+                </div>
+                <?php endif; ?>
+                <button type="submit" class="button button-primary button-small">📨 <?php echo $editNotif ? 'Save Changes' : 'Send Notification'; ?></button>
+                <?php if ($editNotif): ?>
+                <a href="communication.php?tab=notifications" class="button button-secondary button-small">Cancel</a>
+                <?php endif; ?>
+            </form>
+        </div>
+        <?php endif; ?>
+
+        <div class="panel">
+            <h3 style="margin-top:0;">Sent Notifications (<?php echo $commTotal; ?>)</h3>
+            <?php if (empty($sentNotifications)): ?>
+                <div class="empty-state">No notifications sent by admins yet.</div>
+            <?php else: ?>
+                <div class="table-wrapper">
+                <table>
+                    <thead><tr><th>Sent</th><th>Recipient</th><th>Title</th><th>Type</th><th>Read?</th><th>Sent By</th><th>Actions</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($sentNotifications as $n): ?>
+                        <tr>
+                            <td style="font-size:0.8rem;white-space:nowrap;"><?php echo date('M j, g:i a', strtotime($n['created_at'])); ?></td>
+                            <td><?php echo sanitize($n['recipient_name']); ?><br><span class="meta"><?php echo sanitize($n['recipient_email']); ?></span></td>
+                            <td><?php echo sanitize($n['title']); ?></td>
+                            <td><span class="badge-<?php echo $n['type']==='error'?'red':($n['type']==='success'?'green':'amber'); ?>"><?php echo ucfirst($n['type']); ?></span></td>
+                            <td><?php echo $n['is_read'] ? '<span class="badge-green">Read</span>' : '<span class="badge-amber">Unread</span>'; ?></td>
+                            <td><?php echo $n['admin_name'] ? sanitize($n['admin_name']) : '<em>—</em>'; ?></td>
+                            <td style="white-space:nowrap;">
+                                <a href="communication.php?tab=notifications&edit=<?php echo (int)$n['id']; ?>" class="button button-secondary button-small">Edit</a>
+                                <form method="post" style="display:inline;">
+                                    <?php echo csrf_field(); ?>
+                                    <input type="hidden" name="action" value="delete_notification">
+                                    <input type="hidden" name="notification_id" value="<?php echo (int)$n['id']; ?>">
+                                    <button class="button button-danger button-small" onclick="return confirm('Delete this notification? The recipient will no longer see it.')">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php comm_render_pagination($commPage, $commTotalPages, $commTotal); ?>
+                </div>
+            <?php endif; ?>
+        </div>
+
     <!-- REPORTS ────────────────────────────────────────────────────────────── -->
     <?php elseif ($tab === 'reports'): ?>
         <div class="panel">
@@ -617,5 +899,6 @@ function openRestrict(id, name, canSend, canRecv, banUntil) {
 function closeRestrict() { document.getElementById('restrictModal').style.display = 'none'; }
 document.getElementById('restrictModal')?.addEventListener('click', function(e) { if (e.target===this) closeRestrict(); });
 </script>
+<script src="../assets/js/rich-editor.js" defer></script>
 </body>
 </html>

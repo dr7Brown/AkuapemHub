@@ -24,7 +24,7 @@ if ($event['status'] !== 'pending_payment') {
     header('Location: my_events.php'); exit;
 }
 
-$feeEnabled = (bool)(int)get_platform_setting('event_fee_enabled', '0') && !user_has_complimentary_access();
+$feeEnabled = (bool)(int)get_platform_setting('event_fee_enabled', '0') && !user_has_complimentary_access(null, 'event_fee');
 $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
 
 if (!$feeEnabled) {

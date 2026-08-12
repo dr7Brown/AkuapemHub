@@ -23,12 +23,20 @@ $latestNews = $pdo->query(
 )->fetchAll();
 
 $openJobs = $pdo->query(
-    "SELECT sr.id, sr.title, sr.description, sr.budget_amount, sr.budget, sr.location, sr.created_at,
+    "SELECT sr.id, sr.title, sr.description, sr.budget_amount, sr.budget, sr.price_unit, sr.location, sr.created_at,
             sr.payment_status, sr.payment_mode, c.name AS category
      FROM service_requests sr
      LEFT JOIN service_categories c ON sr.category_id = c.id
      WHERE sr.status IN (" . public_job_statuses_sql() . ") AND sr.posting_fee_status != 'pending'
      ORDER BY (sr.featured=1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date>=CURDATE())) DESC, sr.created_at DESC LIMIT 4"
+)->fetchAll();
+
+$sponsors = $pdo->query(
+    "SELECT s.id, s.name, s.logo_path, s.website_url, sp.name AS package_name, sp.price AS package_price
+     FROM sponsors s
+     LEFT JOIN sponsor_packages sp ON s.package_id = sp.id
+     WHERE s.status='active' AND (s.end_date IS NULL OR s.end_date >= CURDATE())
+     ORDER BY sp.price DESC, s.created_at DESC LIMIT 12"
 )->fetchAll();
 
 // Marketplace featured products
@@ -203,6 +211,27 @@ try {
         .cm-mp-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.1); transform:translateY(-2px); }
         .cm-mp-card--sponsored { border:2px solid #f59e0b; }
 
+        /* ── Sponsors — classic showcase band ── */
+        .cm-sponsors-section { margin:44px 0 36px; padding:34px 0; border-top:1px solid var(--border,#e5e7eb); border-bottom:1px solid var(--border,#e5e7eb); }
+        .cm-sponsors-head { text-align:center; margin-bottom:24px; }
+        .cm-sponsors-head h2 { font-size:.8rem; font-weight:800; text-transform:uppercase; letter-spacing:.12em; color:var(--muted,#6b7280); margin:0; }
+        .cm-sponsors-head p { font-size:.86rem; color:var(--muted,#6b7280); margin:6px 0 0; }
+        .cm-sponsor-row { display:flex; flex-wrap:wrap; gap:26px; justify-content:center; }
+        .cm-sponsor-card { display:flex; flex-direction:column; align-items:center; gap:9px; text-decoration:none; width:150px; }
+        .cm-sponsor-logo-frame { display:flex; align-items:center; justify-content:center; width:150px; height:104px; background:#fff; border:1px solid var(--border,#e5e7eb); border-radius:10px; padding:16px; box-shadow:0 1px 2px rgba(0,0,0,.04); transition:box-shadow .2s ease,transform .2s ease,border-color .2s ease; }
+        .cm-sponsor-card:hover .cm-sponsor-logo-frame { box-shadow:0 12px 28px rgba(0,0,0,.1); transform:translateY(-3px); border-color:var(--primary,#0f766e); }
+        .cm-sponsor-logo-frame img { max-width:100%; max-height:100%; object-fit:contain; }
+        .cm-sponsor-name { font-size:.82rem; font-weight:700; color:var(--text,#1f2937); text-align:center; line-height:1.25; }
+        .cm-sponsor-tier { font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted,#6b7280); text-align:center; }
+        .cm-sponsors-cta { text-align:center; margin-top:26px; }
+
+        @media (min-width:768px) {
+            .cm-sponsors-section { padding:48px 0; }
+            .cm-sponsor-row { gap:36px; }
+            .cm-sponsor-card { width:210px; }
+            .cm-sponsor-logo-frame { width:210px; height:150px; padding:20px; }
+        }
+
         /* ═══════════════════════════════════════════════
            MOBILE & TABLET  (≤ 767 px)
            All content rows → horizontal scroll strips.
@@ -363,7 +392,7 @@ try {
         <?php if (module_enabled('events')): ?><a href="events.php"       style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">Events</a><?php endif; ?>
         <?php if (module_enabled('news')): ?><a href="news.php"         style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">News</a><?php endif; ?>
         <a href="about.php"        style="font-size:.85rem;color:var(--muted,#6b7280);text-decoration:none;font-weight:600;">About</a>
-        <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+        <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
     </nav>
 </header>
 <?php else: ?>
@@ -392,6 +421,7 @@ try {
     <a href="find_workers.php" class="cm-mod"><div class="cm-mod-icon">🔧</div><div class="cm-mod-title">Find Workers</div><div class="cm-mod-desc">Skilled professionals near you</div></a>
     <?php if (module_enabled('delivery')): ?><a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a><?php endif; ?>
     <?php if (module_enabled('mp')): ?><a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a><?php endif; ?>
+    <?php if (module_enabled('markets')): ?><a href="markets.php" class="cm-mod"><div class="cm-mod-icon">🏬</div><div class="cm-mod-title">Periodic Markets</div><div class="cm-mod-desc">Ofie Market, Nkurakan &amp; more</div></a><?php endif; ?>
 </div>
 
 <div class="cm-shell">
@@ -517,9 +547,9 @@ try {
                     </div>
                     <div style="text-align:right;flex-shrink:0;">
                         <?php if ($job['budget_amount']): ?>
-                        <div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?></div>
+                        <div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?><?php if (!empty($job['price_unit'])): ?> / <?php echo sanitize($job['price_unit']); ?><?php endif; ?></div>
                         <?php elseif (!empty($job['budget'])): ?>
-                        <div class="cm-job-budget" style="font-size:.8rem;"><?php echo sanitize(mb_substr($job['budget'],0,24)); ?></div>
+                        <div class="cm-job-budget" style="font-size:.8rem;"><?php echo sanitize(mb_substr($job['budget'],0,24)); ?><?php if (!empty($job['price_unit'])): ?> / <?php echo sanitize($job['price_unit']); ?><?php endif; ?></div>
                         <?php endif; ?>
                         <?php
                         $budgetLower = strtolower($job['budget'] ?? '');
@@ -701,7 +731,44 @@ try {
             <a href="register.php" class="button button-primary">Sign up to Post</a>
             <?php endif; ?>
         </div>
+        <div class="cm-cta" style="background:linear-gradient(135deg,#78350f,#92400e);">
+            <div>
+                <h3>🤝 Become a Sponsor</h3>
+                <p>Get your business logo featured on the homepage</p>
+            </div>
+            <?php if ($user): ?>
+            <a href="become_sponsor.php" class="button button-primary">Sponsor Us</a>
+            <?php else: ?>
+            <a href="register.php" class="button button-primary">Sign up to Sponsor</a>
+            <?php endif; ?>
+        </div>
     </div>
+
+    <!-- Sponsors -->
+    <?php if ($sponsors): ?>
+    <div class="cm-sponsors-section">
+        <div class="cm-sponsors-head">
+            <h2>With Thanks To Our Sponsors</h2>
+            <p>The businesses and partners supporting the AkuapemConnect community</p>
+        </div>
+        <div class="cm-sponsor-row">
+            <?php foreach ($sponsors as $sp): ?>
+            <a href="<?php echo $sp['website_url'] ? sanitize($sp['website_url']) : 'become_sponsor.php'; ?>" class="cm-sponsor-card" <?php echo $sp['website_url'] ? 'target="_blank" rel="noopener sponsored"' : ''; ?> title="<?php echo sanitize($sp['name']); ?>">
+                <span class="cm-sponsor-logo-frame">
+                    <img src="<?php echo sanitize($sp['logo_path']); ?>" alt="<?php echo sanitize($sp['name']); ?>">
+                </span>
+                <span class="cm-sponsor-name"><?php echo sanitize($sp['name']); ?></span>
+                <?php if ($sp['package_name']): ?>
+                <span class="cm-sponsor-tier"><?php echo sanitize($sp['package_name']); ?></span>
+                <?php endif; ?>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <div class="cm-sponsors-cta">
+            <a href="become_sponsor.php" class="button button-secondary">🤝 Become a Sponsor</a>
+        </div>
+    </div>
+    <?php endif; ?>
 
 </div>
 

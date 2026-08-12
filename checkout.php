@@ -19,13 +19,27 @@ if (!$items) {
 $byShop = [];
 foreach ($items as $item) {
     $sid = $item['shop_id'];
-    $byShop[$sid] = $byShop[$sid] ?? ['shop_name'=>$item['shop_name'],'shop_id'=>$sid,'items'=>[],'subtotal'=>0];
+    $byShop[$sid] = $byShop[$sid] ?? ['shop_name'=>$item['shop_name'],'shop_id'=>$sid,'market_id'=>$item['market_id'] ?: null,'items'=>[],'subtotal'=>0];
     $byShop[$sid]['items'][] = $item;
     $byShop[$sid]['subtotal'] += mp_effective_price($item) * $item['quantity'];
 }
 $grandTotal = array_sum(array_column($byShop,'subtotal'));
 
+// Market shops can only be checked out while their market is marked Open —
+// browsing/adding to cart stays allowed regardless (see marketplace.php /
+// product.php), this is the sole purchase gate.
+$closedMarketNames = [];
+$marketShopIds = array_filter(array_unique(array_column($items, 'market_id')));
+if ($marketShopIds) {
+    $mktSt = $pdo->prepare('SELECT name FROM markets WHERE id IN (' . implode(',', array_fill(0, count($marketShopIds), '?')) . ") AND status != 'open'");
+    $mktSt->execute(array_values($marketShopIds));
+    $closedMarketNames = $mktSt->fetchAll(PDO::FETCH_COLUMN);
+}
+
 $error = '';
+if ($closedMarketNames) {
+    $error = 'Checkout is unavailable — ' . implode(', ', $closedMarketNames) . ' ' . (count($closedMarketNames) === 1 ? 'is' : 'are') . ' currently closed. Remove items from that market or wait until it reopens on the next market day.';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
@@ -35,7 +49,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $receiverPhone    = trim($_POST['receiver_phone']   ?? $user['phone']);
     $notes            = trim($_POST['notes'] ?? '');
 
-    if ($deliveryAddress === '') $error = 'Please enter a delivery address.';
+    if ($error) {
+        // Closed-market gate already tripped above — leave it as the error.
+    } elseif ($deliveryAddress === '') $error = 'Please enter a delivery address.';
     elseif ($receiverName === '')  $error = 'Please enter the receiver name.';
     elseif ($receiverPhone === '') $error = 'Please enter the receiver phone number.';
     elseif (is_banned_from_feature((int)$user['id'], 'mp')) $error = 'You have been restricted from the Marketplace. Contact support if you believe this is an error.';
@@ -86,8 +102,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Create order (total reflects only what was actually fulfilled).
                 // payment_status stays 'unpaid' / status 'pending' until Paystack confirms.
                 $pdo->prepare(
-                    'INSERT INTO mp_orders (customer_id, shop_id, total_amount, delivery_address, delivery_maps_link, receiver_name, receiver_phone, payment_method, notes, status) VALUES (?,?,?,?,?,?,?,\'paystack\',?,\'pending\')'
-                )->execute([$user['id'], $shopId, $actualSubtotal, $deliveryAddress, $deliveryMapsLink, $receiverName, $receiverPhone, $notes ?: null]);
+                    'INSERT INTO mp_orders (customer_id, shop_id, market_id, total_amount, delivery_address, delivery_maps_link, receiver_name, receiver_phone, payment_method, notes, status) VALUES (?,?,?,?,?,?,?,?,\'paystack\',?,\'pending\')'
+                )->execute([$user['id'], $shopId, $group['market_id'], $actualSubtotal, $deliveryAddress, $deliveryMapsLink, $receiverName, $receiverPhone, $notes ?: null]);
                 $orderId = (int)$pdo->lastInsertId();
                 $orderIds[] = $orderId;
                 $orderMeta[$orderId] = ['shop_name' => $group['shop_name'], 'subtotal' => $actualSubtotal];

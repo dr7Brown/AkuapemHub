@@ -122,12 +122,15 @@ $csrfField = csrf_field();
     <style>
         /* ── Outer shell + two-column layout ────────────────── */
         .na-shell     { max-width:1200px; margin:0 auto; padding:0 16px 88px; }
+        /* Sidebar renders inline below main content on mobile (it already
+           sits right after .na-main in the HTML), and becomes a sticky side
+           column at the wider breakpoint. */
         .na-layout    { display:block; }
         .na-main      { min-width:0; }
-        .na-sidebar   { display:none; }
+        .na-sidebar   { display:flex; flex-direction:column; gap:20px; margin-top:24px; }
         @media (min-width:960px) {
             .na-layout  { display:grid; grid-template-columns:1fr 280px; gap:36px; align-items:start; }
-            .na-sidebar { display:flex; flex-direction:column; gap:20px; position:sticky; top:16px; }
+            .na-sidebar { position:sticky; top:16px; margin-top:0; }
             .na-main    { max-width:760px; }
         }
         /* ── Hero image ──────────────────────────────────────── */
@@ -224,7 +227,7 @@ $csrfField = csrf_field();
         <a href="news.php" class="button button-secondary button-small">← News</a>
         <span class="brand"><?php echo sanitize(APP_NAME); ?></span>
         <?php if (!$user): ?>
-            <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+            <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
         <?php endif; ?>
     </header>
 

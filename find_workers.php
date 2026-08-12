@@ -199,7 +199,7 @@ if (!empty($_GET['ajax'])) {
         <div style="display: flex; align-items: center; gap: 8px;">
             <a href="leaderboard.php" class="button button-secondary button-small">Leaderboard</a>
             <?php if (!$user): ?>
-                <a href="login.php"    class="button button-secondary button-small">Sign in</a>
+                <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
             <?php endif; ?>
         </div>
     </header>

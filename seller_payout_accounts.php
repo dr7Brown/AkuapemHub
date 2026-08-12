@@ -7,7 +7,7 @@ require_once __DIR__ . '/paystack.php';
 require_module_enabled('mp', 'Marketplace');
 require_login();
 $user = current_user();
-$shop = get_shop_by_user((int)$user['id']);
+$shop = get_active_seller_shop((int)$user['id']);
 
 if (!$shop) {
     flash('Create your shop first.', 'warning');

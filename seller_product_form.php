@@ -6,9 +6,9 @@ require_once __DIR__ . '/marketplace_functions.php';
 require_module_enabled('mp', 'Marketplace');
 require_login();
 $user = current_user();
-$shop = get_shop_by_user((int)$user['id']);
+$myShops = get_shops_by_user((int)$user['id']);
 
-if (!$shop) {
+if (!$myShops) {
     flash('Create your shop first.', 'warning');
     header('Location: seller_dashboard.php?tab=setup');
     exit;
@@ -18,13 +18,29 @@ $editId  = (int)($_GET['id'] ?? 0);
 $product = null;
 $images  = [];
 if ($editId) {
+    // Editing an existing product: shop context follows the product, not
+    // whichever shop happens to be "active" — the seller may be editing a
+    // listing under their other shop.
     $product = get_product($editId);
-    if (!$product || (int)$product['shop_id'] !== (int)$shop['id']) {
+    $shop = null;
+    if ($product) {
+        foreach ($myShops as $s) { if ((int)$s['id'] === (int)$product['shop_id']) { $shop = $s; break; } }
+    }
+    if (!$shop) {
         flash('Product not found.', 'error');
         header('Location: seller_dashboard.php?tab=products');
         exit;
     }
     $images = get_product_images($editId);
+} else {
+    $shop = get_active_seller_shop((int)$user['id']);
+}
+
+$shopMarket = null;
+if (!empty($shop['market_id'])) {
+    $shopMarketStmt = $pdo->prepare('SELECT name, status FROM markets WHERE id=?');
+    $shopMarketStmt->execute([$shop['market_id']]);
+    $shopMarket = $shopMarketStmt->fetch() ?: null;
 }
 
 $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name')->fetchAll();
@@ -60,6 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $description   = trim($_POST['description']   ?? '');
     $categoryId    = (int)($_POST['category_id']  ?? 0) ?: null;
     $price         = (float)($_POST['price']      ?? 0);
+    $priceUnit     = trim($_POST['price_unit']    ?? '');
+    if (mb_strlen($priceUnit) > 40) $priceUnit = mb_substr($priceUnit, 0, 40);
     $discountPrice = $_POST['discount_price'] !== '' ? (float)$_POST['discount_price'] : null;
     $stockQty      = (int)($_POST['stock_quantity'] ?? 0);
     $sku           = trim($_POST['sku']            ?? '');
@@ -112,13 +130,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // If previously rejected and user submits for approval, clear rejection reason
             $clearRejection = $wasRejected && $status === 'pending_approval' ? ', rejection_reason=NULL' : '';
             $pdo->prepare(
-                "UPDATE mp_products SET name=?,description=?,category_id=?,price=?,discount_price=?,stock_quantity=?,sku=?,condition_type=?,delivery_available=?,status=?,updated_at=NOW()$clearRejection WHERE id=?"
-            )->execute([$name, $description ?: null, $categoryId, $price, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, $newStatus, $editId]);
+                "UPDATE mp_products SET name=?,description=?,category_id=?,price=?,price_unit=?,discount_price=?,stock_quantity=?,sku=?,condition_type=?,delivery_available=?,status=?,updated_at=NOW()$clearRejection WHERE id=?"
+            )->execute([$name, $description ?: null, $categoryId, $price, $priceUnit ?: null, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, $newStatus, $editId]);
         } else {
             $slug = mp_unique_slug($name, 'mp_products', 'slug', $pdo);
             $pdo->prepare(
-                'INSERT INTO mp_products (shop_id, category_id, master_product_id, name, slug, description, price, discount_price, stock_quantity, sku, condition_type, delivery_available, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
-            )->execute([$shop['id'], $categoryId, $masterProductId, $name, $slug, $description ?: null, $price, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, $status]);
+                'INSERT INTO mp_products (shop_id, category_id, master_product_id, name, slug, description, price, price_unit, discount_price, stock_quantity, sku, condition_type, delivery_available, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+            )->execute([$shop['id'], $categoryId, $masterProductId, $name, $slug, $description ?: null, $price, $priceUnit ?: null, $discountPrice, $stockQty, $sku ?: null, $condition, $delivAvail, $status]);
             $editId = (int)$pdo->lastInsertId();
         }
 
@@ -209,6 +227,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <?php if ($error): ?><div class="alert alert-error"><?php echo sanitize($error); ?></div><?php endif; ?>
 
+    <?php if ($shopMarket): ?>
+    <div class="alert alert-info" style="display:flex;align-items:center;gap:10px;">
+        <span>🏬 This listing appears under <strong><?php echo sanitize($shopMarket['name']); ?></strong> — buyers can only check out while it's marked Open (currently <?php echo $shopMarket['status'] === 'open' ? '<strong>Open</strong>' : 'Closed'; ?>). You'll bring sold items to its storehouse instead of arranging delivery yourself.</span>
+    </div>
+    <?php endif; ?>
+
     <?php if ($catalogProduct): ?>
     <div class="alert alert-success" style="display:flex;align-items:center;gap:10px;">
         <?php if ($catalogProduct['default_image']): ?><img src="<?php echo sanitize($catalogProduct['default_image']); ?>" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:8px;flex-shrink:0;"><?php endif; ?>
@@ -252,6 +276,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <input type="number" id="price" name="price" required min="0.01" step="0.01" value="<?php echo sanitize($_POST['price'] ?? ($product['price']??'')); ?>">
                 </div>
                 <div class="form-group">
+                    <label for="price_unit">Unit (optional)</label>
+                    <input type="text" id="price_unit" name="price_unit" maxlength="40" placeholder="e.g. litre, kg, acre, dozen, piece" value="<?php echo sanitize($_POST['price_unit'] ?? ($product['price_unit']??'')); ?>">
+                    <p class="form-hint">Shown as "GH₵ X / unit" — leave blank for a flat price.</p>
+                </div>
+                <div class="form-group">
                     <label for="discount_price">Discount Price (GHS)</label>
                     <input type="number" id="discount_price" name="discount_price" min="0" step="0.01" value="<?php echo sanitize($_POST['discount_price'] ?? ($product['discount_price']??'')); ?>" placeholder="Optional — for sale">
                 </div>
@@ -288,13 +317,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php foreach ($images as $img): ?>
                 <div class="pf-existing-img">
                     <img src="<?php echo sanitize($img['image_path']); ?>" alt="">
-                    <form method="post" action="marketplace_ajax.php" style="display:inline;">
-                        <?php echo csrf_field(); ?>
-                        <input type="hidden" name="action" value="delete_product_image">
-                        <input type="hidden" name="image_id" value="<?php echo $img['id']; ?>">
-                        <input type="hidden" name="product_id" value="<?php echo $editId; ?>">
-                        <button type="submit" class="pf-del-img" onclick="return confirm('Remove this image?');">×</button>
-                    </form>
+                    <button type="button" class="pf-del-img" onclick="deleteProductImage(<?php echo (int)$img['id']; ?>, <?php echo (int)$editId; ?>, this)">×</button>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -330,6 +353,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </form>
 
 </main>
+
+<script>
+var CSRF = <?php echo json_encode(csrf_token()); ?>;
+function deleteProductImage(imageId, productId, btn) {
+    if (!confirm('Remove this image?')) return;
+    btn.disabled = true;
+    fetch('marketplace_ajax.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'action=delete_product_image&image_id=' + imageId + '&product_id=' + productId + '&csrf_token=' + encodeURIComponent(CSRF)
+    }).then(function () {
+        location.reload();
+    }).catch(function () {
+        btn.disabled = false;
+        alert('Could not remove image. Please try again.');
+    });
+}
+</script>
 
 <?php require_once __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>

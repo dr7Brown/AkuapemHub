@@ -48,10 +48,11 @@ $serviceLabels = [
 ];
 if (!isset($serviceLabels[$service])) $service = 'all';
 
-// Shop / agent identity for this user, if any
-$shopId  = $pdo->prepare('SELECT id FROM mp_shops WHERE user_id=?');
-$shopId->execute([$targetId]);
-$shopId  = $shopId->fetchColumn();
+// Shop / agent identity for this user, if any — a seller may have more
+// than one shop (regular + one per periodic market), so gather all of them.
+$shopIdsStmt = $pdo->prepare('SELECT id FROM mp_shops WHERE user_id=?');
+$shopIdsStmt->execute([$targetId]);
+$shopIds = array_map('intval', $shopIdsStmt->fetchAll(PDO::FETCH_COLUMN));
 
 $agentId = $pdo->prepare('SELECT id FROM delivery_agents WHERE user_id=?');
 $agentId->execute([$targetId]);
@@ -80,6 +81,8 @@ if ($service === 'all' || $service === 'platform') {
         'featured_funeral'      => 'Featured Funeral Announcement',
         'featured_news'         => 'Featured News Article',
         'mp_subscription'       => 'Marketplace Seller Subscription',
+        'worker_premium'        => 'Worker Premium Subscription',
+        'sponsor'               => 'Sponsorship',
     ];
     // Whitelist (not blacklist) the types that belong in this catch-all bucket —
     // escrow & mp_order have their own dedicated sources below. A whitelist means
@@ -170,12 +173,13 @@ if ($service === 'all' || $service === 'mp_orders') {
 
 // Marketplace Earnings — as seller (wallet ledger; skip the purely-internal
 // pending→available transfer since it's not new money, already counted once)
-if (($service === 'all' || $service === 'mp_wallet') && $shopId) {
+if (($service === 'all' || $service === 'mp_wallet') && $shopIds) {
+    $shopInClause = implode(',', array_fill(0, count($shopIds), '?'));
     $stmt = $pdo->prepare(
-        "SELECT * FROM mp_wallet_transactions WHERE shop_id=? AND type != 'released_to_available'
+        "SELECT * FROM mp_wallet_transactions WHERE shop_id IN ($shopInClause) AND type != 'released_to_available'
          AND created_at BETWEEN ? AND ? ORDER BY created_at DESC"
     );
-    $stmt->execute([$shopId, $fromSql, $toSql]);
+    $stmt->execute(array_merge($shopIds, [$fromSql, $toSql]));
     $wtLabels = ['sale_pending' => 'Order sale credited', 'withdrawal' => 'Withdrawal paid out', 'reversal' => 'Refund reversal'];
     foreach ($stmt->fetchAll() as $w) {
         $rows[] = [

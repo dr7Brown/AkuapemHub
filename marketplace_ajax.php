@@ -141,7 +141,7 @@ if ($action === 'delete_product_image') {
 
 // ── submit_shop_verification ──────────────────────────────────────────────────
 if ($action === 'submit_shop_verification') {
-    $shop = get_shop_by_user((int)$user['id']);
+    $shop = get_active_seller_shop((int)$user['id']);
     if (!$shop) mp_error('Create your shop first.', 'seller_dashboard.php');
 
     $gcFile  = $_FILES['ghana_card']   ?? null;

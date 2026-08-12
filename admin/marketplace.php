@@ -207,7 +207,7 @@ if ($tab === 'shops') {
 }
 if ($tab === 'orders') {
     $of = $_GET['of'] ?? 'all';
-    $validOf = ['pending','confirmed','processing','ready_for_delivery','in_transit','delivered','cancelled','refunded'];
+    $validOf = ['pending','confirmed','processing','ready_for_delivery','in_transit','at_storehouse','delivered','cancelled','refunded'];
     $ow = []; $owParams = [];
     if ($of !== 'all' && in_array($of, $validOf, true)) { $ow[] = 'mo.status = ?'; $owParams[] = $of; }
     $ordSort = $_GET['osort'] ?? 'newest';
@@ -525,7 +525,7 @@ if ($tab === 'settings') {
     <?php if ($tab === 'orders'): ?>
     <?php $of = $_GET['of'] ?? 'all'; ?>
     <div class="adm-filter">
-        <?php foreach (['all'=>'All','pending'=>'Pending','confirmed'=>'Confirmed','processing'=>'Processing','ready_for_delivery'=>'Ready','in_transit'=>'In Transit','delivered'=>'Delivered','cancelled'=>'Cancelled','refunded'=>'Refunded'] as $v=>$l): ?>
+        <?php foreach (['all'=>'All','pending'=>'Pending','confirmed'=>'Confirmed','processing'=>'Processing','ready_for_delivery'=>'Ready','in_transit'=>'In Transit','at_storehouse'=>'At Storehouse','delivered'=>'Delivered','cancelled'=>'Cancelled','refunded'=>'Refunded'] as $v=>$l): ?>
         <a href="?tab=orders&of=<?php echo $v; ?>" class="<?php echo $of===$v?'active':''; ?>"><?php echo $l; ?></a>
         <?php endforeach; ?>
     </div>

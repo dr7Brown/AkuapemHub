@@ -150,14 +150,14 @@ $typeBg     = ['info'=>'#eff6ff','success'=>'#f0fdf4','warning'=>'#fffbeb','erro
             <span class="nf-icon"><?php echo $icon; ?></span>
             <div class="nf-content">
                 <p class="nf-title"><?php echo sanitize($n['title']); ?></p>
-                <p class="nf-preview"><?php echo sanitize($n['body']); ?></p>
+                <p class="nf-preview"><?php echo sanitize(mb_substr(strip_tags($n['body']), 0, 160)); ?></p>
             </div>
             <span class="nf-time"><?php echo time_ago($n['created_at']); ?></span>
         </div>
 
         <!-- Expanded detail — body + link -->
         <div class="nf-expanded" id="<?php echo $cardId; ?>">
-            <div class="nf-body-full"><?php echo nl2br(sanitize($n['body'])); ?></div>
+            <div class="nf-body-full"><?php echo render_rich($n['body']); ?></div>
             <?php if (!empty($n['link'])): ?>
             <a href="<?php echo sanitize($n['link']); ?>" class="nf-action-link">
                 View →

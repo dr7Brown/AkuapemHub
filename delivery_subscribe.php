@@ -24,7 +24,7 @@ $prices = [
     'yearly'    => (float)get_platform_setting('delivery_premium_yearly_price',    '180.00'),
 ];
 $durations = ['monthly' => 30, 'quarterly' => 90, 'yearly' => 365];
-$requiresPayment = get_platform_setting('delivery_premium_requires_payment', '0') === '1' && !user_has_complimentary_access();
+$requiresPayment = get_platform_setting('delivery_premium_requires_payment', '0') === '1' && !user_has_complimentary_access(null, 'delivery_premium');
 $enabled = get_platform_setting('delivery_enable_premium', '0') === '1';
 
 // Current active subscription

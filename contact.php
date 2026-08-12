@@ -138,7 +138,7 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
                         <li><a href="jobs.php">Dashboard</a></li>
                         <?php else: ?>
                         <li><a href="register.php">Create an account</a></li>
-                        <li><a href="login.php">Sign in</a></li>
+                        <li><a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>">Sign in</a></li>
                         <li><a href="find_workers.php">Find workers</a></li>
                         <?php endif; ?>
                         <li><a href="privacy.php">Privacy Policy</a></li>

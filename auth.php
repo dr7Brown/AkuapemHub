@@ -254,7 +254,25 @@ function is_email_verified(): bool
         return true;
     }
     // Sessions created before the migration won't have this key — treat as verified
-    return !isset($user['email_verified']) || (bool) $user['email_verified'];
+    if (!isset($user['email_verified'])) {
+        return true;
+    }
+    if ($user['email_verified']) {
+        return true;
+    }
+    // Session says unverified — this snapshot is only refreshed by
+    // verify_email.php when the link is opened in this same logged-in
+    // session, so it goes stale if the user verifies from their email app,
+    // another tab, or another device. Re-check the DB before blocking/
+    // nudging, and heal the session once it's confirmed verified.
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT email_verified FROM users WHERE id = ?');
+    $stmt->execute([$user['id']]);
+    $verified = (bool) $stmt->fetchColumn();
+    if ($verified) {
+        $_SESSION['user']['email_verified'] = 1;
+    }
+    return $verified;
 }
 
 function is_admin() {
