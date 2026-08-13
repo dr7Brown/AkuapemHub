@@ -126,11 +126,13 @@ $typeLabels = [
     'subscription'       => 'Subscription',
     'boost'              => 'Boost',
     'sponsored'          => 'Sponsored',
+    'quick_service'      => 'Quick Service',
 ];
 $typeIcons = [
     'featured_job'=>'💼','featured_worker'=>'👤','verification'=>'✅','job_post'=>'📋',
     'worker_service'=>'🔧','escrow_payment'=>'🔒','delivery_fee'=>'🚚','marketplace_product'=>'🛍️',
     'event_fee'=>'📅','funeral_fee'=>'🕊️','news_fee'=>'📰','subscription'=>'⭐','boost'=>'🚀','sponsored'=>'📣',
+    'quick_service'=>'⚡',
 ];
 $totalRev = (float)($stats['total_revenue'] ?? 0);
 

@@ -199,5 +199,6 @@ $pageTitle = $isNew ? 'New Article' : 'Edit: ' . sanitize($article['title'] ?? '
         }
     }
     </script>
+    <script src="../assets/js/rich-editor.js" defer></script>
 </body>
 </html>

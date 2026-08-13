@@ -582,6 +582,78 @@ function save_uploaded_image(array $file, $relativeDir, int $maxWidth = 0, int $
 }
 
 /**
+ * Save a manager's Quick Service result attachment (PDF or image) — a
+ * generic sibling to the image-only save_uploaded_image(), generalized
+ * from the ad-hoc PDF handling already in chat_api.php's 'send' action.
+ * Stores the file as-is (no resizing) under a random filename.
+ */
+function save_uploaded_document(array $file, string $relativeDir, array $allowedMimes = ['application/pdf', 'image/jpeg', 'image/png'], int $maxBytes = 10485760): ?string {
+    if (empty($file['name']) || $file['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+    if ($file['size'] > $maxBytes) {
+        return null;
+    }
+
+    $mimeAliases = ['image/x-png' => 'image/png', 'image/pjpeg' => 'image/jpeg', 'image/jpg' => 'image/jpeg'];
+    $mimeType = mime_content_type($file['tmp_name']);
+    $mimeType = $mimeAliases[$mimeType] ?? $mimeType;
+    if (!in_array($mimeType, $allowedMimes, true)) {
+        return null;
+    }
+
+    $extByMime = ['application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png'];
+    $ext = $extByMime[$mimeType] ?? 'bin';
+
+    $uploadDir = __DIR__ . '/' . $relativeDir;
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+        return null;
+    }
+
+    $fileName = bin2hex(random_bytes(8)) . '.' . $ext;
+    $destPath = $uploadDir . '/' . $fileName;
+
+    if (move_uploaded_file($file['tmp_name'], $destPath)) {
+        return $relativeDir . '/' . $fileName;
+    }
+    return null;
+}
+
+/** Human-readable Quick Service request reference, e.g. QS-000123. */
+function qs_reference(int $id): string {
+    return 'QS-' . str_pad((string)$id, 6, '0', STR_PAD_LEFT);
+}
+
+/**
+ * Computes the Service Amount / Service Fee / Total for a Quick Service
+ * request given its configured pricing and the submitted form data.
+ * - pricing_mode='fixed': service_amount = $service['base_cost']
+ * - pricing_mode='user_entered': service_amount = the numeric value of the
+ *   form field named $service['amount_field_key']
+ * The AkuapemConnect service fee is always computed on top, separately,
+ * as either a flat GHS amount or a percentage of the service amount.
+ */
+function qs_compute_pricing(array $service, array $submittedData): array {
+    if ($service['pricing_mode'] === 'user_entered') {
+        $key = $service['amount_field_key'] ?? '';
+        $serviceAmount = $key !== '' ? (float)($submittedData[$key] ?? 0) : 0;
+    } else {
+        $serviceAmount = (float)$service['base_cost'];
+    }
+    $serviceAmount = max(0, round($serviceAmount, 2));
+
+    $feeType  = $service['service_fee_type'];
+    $feeValue = (float)$service['service_fee_value'];
+    $serviceFee = $feeType === 'percent' ? round($serviceAmount * $feeValue / 100, 2) : round($feeValue, 2);
+
+    return [
+        'service_amount' => $serviceAmount,
+        'service_fee'    => $serviceFee,
+        'total'          => round($serviceAmount + $serviceFee, 2),
+    ];
+}
+
+/**
  * Save an ID/verification document photo (Ghana Card, license, selfie, business
  * registration, etc.), compressed down until it's under $maxSizeBytes. Unlike
  * save_uploaded_image(), this targets a byte-size cap rather than a fixed quality —
@@ -2215,6 +2287,10 @@ function all_mod_permissions(): array {
             'manage_markets'            => 'Create markets, open/close them, and assign storehouse managers',
             'manage_market_deliveries'  => 'Manage storehouse handoffs for assigned markets',
         ],
+        'Quick Services' => [
+            'manage_quick_services'          => 'Create/edit services, set fees, and assign managers',
+            'manage_quick_service_requests'  => 'Process requests for assigned services',
+        ],
     ];
 }
 
@@ -2341,6 +2417,35 @@ function user_can_manage_market(int $userId, int $marketId): bool {
 function get_managed_market_ids(int $userId): array {
     global $pdo;
     $st = $pdo->prepare('SELECT market_id FROM market_managers WHERE user_id=?');
+    $st->execute([$userId]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * Whether $userId may process requests for a specific Quick Service —
+ * admins always can; managers need both the global
+ * 'manage_quick_service_requests' permission AND an explicit
+ * quick_service_managers assignment to that service (mirrors
+ * user_can_manage_market()).
+ */
+function user_can_manage_quick_service(int $userId, int $serviceId): bool {
+    global $pdo;
+    $roleSt = $pdo->prepare('SELECT role FROM users WHERE id=?');
+    $roleSt->execute([$userId]);
+    if ($roleSt->fetchColumn() === 'admin') return true;
+
+    if (!in_array('manage_quick_service_requests', get_user_mod_permissions($userId), true)) return false;
+    $st = $pdo->prepare('SELECT 1 FROM quick_service_managers WHERE service_id=? AND user_id=?');
+    $st->execute([$serviceId, $userId]);
+    return (bool)$st->fetchColumn();
+}
+
+/**
+ * Quick Service IDs a given manager is assigned to (empty for admins, who see all).
+ */
+function get_managed_quick_service_ids(int $userId): array {
+    global $pdo;
+    $st = $pdo->prepare('SELECT service_id FROM quick_service_managers WHERE user_id=?');
     $st->execute([$userId]);
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }

@@ -172,6 +172,11 @@ if (!isset($activeNav)) {
             <span>🏬</span> Periodic Markets
         </a>
         <?php endif; ?>
+        <?php if (module_enabled('quick_services')): ?>
+        <a href="my_quick_services.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>⚡</span> My Services
+        </a>
+        <?php endif; ?>
         <a href="orders.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
             <span>📋</span> My Orders
         </a>

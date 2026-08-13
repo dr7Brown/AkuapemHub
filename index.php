@@ -39,6 +39,14 @@ $sponsors = $pdo->query(
      ORDER BY sp.price DESC, s.created_at DESC LIMIT 12"
 )->fetchAll();
 
+// Quick Services — small icon grid, only the top few active services
+$quickServices = [];
+try {
+    $quickServices = $pdo->query(
+        "SELECT id, slug, icon, image_path, name, description FROM quick_services WHERE status='active' ORDER BY display_order, name LIMIT 6"
+    )->fetchAll();
+} catch (Exception $e) {}
+
 // Marketplace featured products
 $featuredProducts = [];
 try {
@@ -149,7 +157,8 @@ try {
         .cm-section-head h2 { font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--muted,#6b7280); margin:0; }
         .cm-section-head a  { font-size:.82rem; font-weight:700; color:var(--primary,#0f766e); text-decoration:none; }
 
-        /* ── Jobs cards ── */
+        /* ── Jobs cards (shared base — also reused as-is by "Open Delivery
+               Requests" below, so this stays exactly as it was) ── */
         .cm-job-row   { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
         .cm-job-card  { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:16px 16px 16px 20px; text-decoration:none; color:inherit; display:flex; flex-direction:column; position:relative; overflow:hidden; transition:box-shadow .2s,transform .2s; }
         .cm-job-card::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--primary,#0f766e); border-radius:4px 0 0 4px; }
@@ -159,6 +168,54 @@ try {
         .cm-job-footer{ display:flex; align-items:flex-end; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border,#e5e7eb); gap:8px; }
         .cm-job-budget{ font-size:.88rem; font-weight:900; color:var(--primary,#0f766e); white-space:nowrap; }
         .cm-job-meta  { font-size:.72rem; color:var(--muted,#6b7280); line-height:1.6; }
+
+        /* ── "Open Jobs & Services" only: frosted-glass override on a warm
+               gradient panel — everything here is scoped under .cm-job-panel
+               so "Open Delivery Requests" (which reuses the base .cm-job-*
+               classes above) keeps its original plain-card look. ── */
+        .cm-job-panel {
+            position:relative; overflow:hidden; border-radius:26px; padding:22px 22px 26px;
+            background:
+                radial-gradient(circle at 12% 15%, rgba(255,255,255,.55), transparent 42%),
+                radial-gradient(circle at 88% 80%, rgba(255,255,255,.4), transparent 45%),
+                linear-gradient(135deg, #f7ead9 0%, #eeddc4 45%, #e0c39d 100%);
+        }
+        .cm-job-panel .cm-section-head h2 { color:#5b4630; }
+        .cm-job-panel .cm-section-head a {
+            background:#fff; color:#3a2a17; padding:7px 16px; border-radius:20px; font-size:.78rem;
+            box-shadow:0 4px 14px rgba(90,60,20,.15);
+        }
+        .cm-job-panel .cm-job-row { gap:18px 14px; }
+        .cm-job-panel .cm-job-card {
+            background:rgba(255,255,255,.55); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+            border:1px solid rgba(255,255,255,.75); border-radius:18px; padding:16px 16px 34px;
+            overflow:visible; box-shadow:0 8px 22px rgba(90,60,20,.1);
+        }
+        .cm-job-panel .cm-job-card::before { display:none; }
+        .cm-job-panel .cm-job-card:hover { box-shadow:0 12px 30px rgba(90,60,20,.18); }
+        .cm-job-panel .cm-job-cat-row { display:flex; align-items:flex-start; justify-content:space-between; gap:6px; margin-bottom:8px; }
+        .cm-job-panel .cm-job-cat-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+        .cm-job-panel .cm-job-cat { background:rgba(255,255,255,.85); margin-bottom:0; }
+        .cm-job-panel .cm-job-cat-icon { flex-shrink:0; width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,.85); display:flex; align-items:center; justify-content:center; font-size:.9rem; box-shadow:0 2px 6px rgba(90,60,20,.12); }
+        .cm-job-panel .cm-job-title { color:#2b2015; }
+        .cm-job-panel .cm-job-footer { border-top:1px solid rgba(90,60,20,.12); margin-top:auto; }
+        .cm-job-panel .cm-job-meta { color:#6b5c47; }
+        .cm-job-panel .cm-job-bubble {
+            position:absolute; right:14px; bottom:-20px; width:72px; height:72px; border-radius:50%;
+            background:radial-gradient(circle at 35% 28%, rgba(255,255,255,.98), rgba(255,255,255,.62) 55%, rgba(255,255,255,.82) 100%);
+            border:1px solid rgba(255,255,255,.85);
+            box-shadow:0 8px 18px rgba(90,60,20,.22), inset 0 2px 5px rgba(255,255,255,.95);
+            display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+            line-height:1.15; padding:4px;
+        }
+        .cm-job-panel .cm-job-bubble-amount { font-size:.72rem; font-weight:900; color:#1a2230; }
+        .cm-job-panel .cm-job-bubble-unit   { font-size:.55rem; font-weight:700; color:#6b5c47; }
+        .cm-job-panel .cm-job-actions { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; }
+        .cm-job-panel .cm-job-actions .button {
+            background:#fff; border:1px solid rgba(255,255,255,.9); box-shadow:0 4px 14px rgba(90,60,20,.15);
+        }
+        .cm-job-panel .cm-job-actions .button-secondary { color:#3a2a17; }
+        .cm-job-panel .cm-job-actions .button-primary   { color:var(--primary,#2f8f5b); font-weight:800; }
 
         /* ── Events cards ── */
         .cm-ev-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; }
@@ -196,6 +253,33 @@ try {
         .cm-news-footer { display:flex; align-items:center; justify-content:space-between; padding-top:10px; border-top:1px solid var(--border,#e5e7eb); }
         .cm-news-meta  { font-size:.72rem; color:var(--muted,#6b7280); }
         .cm-news-read  { font-size:.75rem; font-weight:700; color:var(--primary,#0f766e); }
+
+        /* ── Quick Services strip ── */
+        .cm-qs-section .cm-section-head a {
+            background:#fff; color:var(--text,#1f2937); padding:7px 16px; border-radius:20px; font-size:.78rem;
+            border:1px solid var(--border,#e5e7eb); box-shadow:0 4px 14px rgba(0,0,0,.06);
+        }
+        .cm-qs-row  { display:grid; grid-template-columns:repeat(6, 1fr); gap:16px; }
+        .cm-qs-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:20px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; box-shadow:0 2px 10px rgba(0,0,0,.05); transition:box-shadow .2s,transform .2s; }
+        .cm-qs-card:hover { box-shadow:0 12px 30px rgba(0,0,0,.12); transform:translateY(-4px); }
+        .cm-qs-visual {
+            display:flex; align-items:center; justify-content:center; position:relative;
+            padding:30px 10px;
+        }
+        .cm-qs-visual::before {
+            content:''; position:absolute; inset:0;
+            background:radial-gradient(circle at 28% 20%, rgba(255,255,255,.5), transparent 55%);
+        }
+        .cm-qs-icon-disc {
+            width:145px; height:145px; border-radius:50%; background:rgba(255,255,255,.9);
+            display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(0,0,0,.16);
+            position:relative; z-index:1; flex-shrink:0;
+        }
+        .cm-qs-icon-disc img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+        .cm-qs-icon  { font-size:4.5rem; line-height:1; }
+        .cm-qs-body  { padding:12px 12px 15px; text-align:center; background:var(--surface,#fff); }
+        .cm-qs-title { font-weight:800; font-size:.86rem; margin-bottom:3px; }
+        .cm-qs-desc  { font-size:.72rem; color:var(--muted,#6b7280); line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
 
         .cm-empty { text-align:center; color:var(--muted,#6b7280); font-size:.88rem; padding:24px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; }
 
@@ -287,7 +371,8 @@ try {
             .cm-ev-row,
             .cm-fa-row,
             .cm-news-row,
-            .cm-mp-row {
+            .cm-mp-row,
+            .cm-qs-row {
                 display:flex;
                 flex-wrap:nowrap;
                 overflow-x:auto;
@@ -301,26 +386,60 @@ try {
             .cm-ev-row::-webkit-scrollbar,
             .cm-fa-row::-webkit-scrollbar,
             .cm-news-row::-webkit-scrollbar,
-            .cm-mp-row::-webkit-scrollbar { display:none; }
+            .cm-mp-row::-webkit-scrollbar,
+            .cm-qs-row::-webkit-scrollbar { display:none; }
 
             /* ── Card widths: exactly 3 per screen ── */
             .cm-job-card,
             .cm-ev-card,
             .cm-fa-card,
             .cm-news-card,
-            .cm-mp-card {
+            .cm-mp-card,
+            .cm-qs-card {
                 flex:0 0 calc(33.333vw - 14px);
                 min-width:96px;
                 scroll-snap-align:start;
             }
 
-            /* ── Job card mobile tweaks ── */
-            .cm-job-card { padding:10px 10px 10px 14px; }
+            /* ── Quick Services mobile tweaks (still 3 per screen, via the
+                   shared rule above) — the icon disc scales fluidly with
+                   viewport width (2.5x the old 44px baseline on a typical
+                   phone) while staying safely inside the card so it never
+                   gets clipped by .cm-qs-card's overflow:hidden. ── */
+            .cm-qs-visual { padding:14px 6px; }
+            .cm-qs-icon-disc { width:clamp(70px, 26vw, 110px); height:clamp(70px, 26vw, 110px); }
+            .cm-qs-icon  { font-size:clamp(1.9rem, 8vw, 3rem); }
+            .cm-qs-body  { padding:8px 8px 10px; }
+            .cm-qs-title { font-size:.72rem; line-height:1.25; }
+            .cm-qs-desc  { font-size:.64rem; line-height:1.3; -webkit-line-clamp:2; }
+
+            /* ── Job card mobile tweaks (shared base — also used as-is by
+                   "Open Delivery Requests") ── */
+            .cm-job-card  { padding:10px 10px 10px 14px; }
             .cm-job-cat   { font-size:.6rem; padding:2px 6px; margin-bottom:5px; }
             .cm-job-title { font-size:.8rem; line-height:1.35; padding-bottom:6px; -webkit-line-clamp:3; }
             .cm-job-footer{ padding-top:6px; gap:4px; flex-direction:column; align-items:flex-start; }
             .cm-job-budget{ font-size:.8rem; }
             .cm-job-meta  { font-size:.66rem; }
+
+            /* ── "Open Jobs & Services" only, scoped under .cm-job-panel ──
+                   2 cards per screen instead of the shared 3 (Delivery
+                   Requests keeps 3, via the un-scoped rule above), so each
+                   job card gets noticeably more room. ── */
+            .cm-job-panel { padding:16px 12px 20px; border-radius:20px; }
+            .cm-job-panel .cm-job-row   { padding:0 12px 10px; }
+            .cm-job-panel .cm-job-card  {
+                flex:0 0 calc(50vw - 20px); min-width:150px;
+                padding:12px 12px 30px;
+            }
+            .cm-job-panel .cm-job-cat   { font-size:.66rem; padding:3px 8px; }
+            .cm-job-panel .cm-job-cat-icon { width:26px; height:26px; font-size:.85rem; }
+            .cm-job-panel .cm-job-title { font-size:.86rem; }
+            .cm-job-panel .cm-job-meta  { font-size:.7rem; }
+            .cm-job-panel .cm-job-bubble{ width:64px; height:64px; right:10px; bottom:-16px; }
+            .cm-job-panel .cm-job-bubble-amount{ font-size:.68rem; }
+            .cm-job-panel .cm-job-bubble-unit{ font-size:.52rem; }
+            .cm-job-panel .cm-job-actions { padding:0 12px; }
 
             /* ── Event card mobile tweaks ── */
             .cm-ev-img { aspect-ratio:4/3; }
@@ -418,7 +537,7 @@ try {
     <?php if (module_enabled('news')): ?><a href="news.php"         class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a><?php endif; ?>
     <?php if (module_enabled('events')): ?><a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a><?php endif; ?>
     <?php if (module_enabled('funerals')): ?><a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a><?php endif; ?>
-    <a href="find_workers.php" class="cm-mod"><div class="cm-mod-icon">🔧</div><div class="cm-mod-title">Find Workers</div><div class="cm-mod-desc">Skilled professionals near you</div></a>
+    <?php if (module_enabled('quick_services')): ?><a href="quick_services.php" class="cm-mod"><div class="cm-mod-icon">⚡</div><div class="cm-mod-title">Quick Services</div><div class="cm-mod-desc">Airtime, ECG, results &amp; more</div></a><?php endif; ?>
     <?php if (module_enabled('delivery')): ?><a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a><?php endif; ?>
     <?php if (module_enabled('mp')): ?><a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a><?php endif; ?>
     <?php if (module_enabled('markets')): ?><a href="markets.php" class="cm-mod"><div class="cm-mod-icon">🏬</div><div class="cm-mod-title">Periodic Markets</div><div class="cm-mod-desc">Ofie Market, Nkurakan &amp; more</div></a><?php endif; ?>
@@ -510,77 +629,93 @@ try {
     <!-- Open Jobs & Services -->
     <?php if (module_enabled('jobs')): ?>
     <div class="cm-section">
-        <div class="cm-section-head">
-            <h2>Open Jobs &amp; Services</h2>
-            <a href="<?php echo $user ? 'jobs.php' : 'browse_jobs.php'; ?>">View all →</a>
-        </div>
-        <?php if ($openJobs): ?>
-        <div class="cm-job-row">
-            <?php foreach ($openJobs as $job): ?>
-            <a href="request_detail.php?id=<?php echo (int)$job['id']; ?>" class="cm-job-card">
-                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;">
-                    <?php if ($job['category']): ?><span class="cm-job-cat" style="margin-bottom:0;"><?php echo sanitize($job['category']); ?></span><?php endif; ?>
-                    <?php
-                    $pMode   = $job['payment_mode']   ?? 'direct';
-                    $pStatus = $job['payment_status'] ?? 'unpaid';
-                    if ($pMode === 'escrow' && $pStatus === 'paid'):
-                    ?><span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#d1fae5;color:#065f46;white-space:nowrap;">🔒 Escrow Paid</span>
-                    <?php elseif ($pMode === 'escrow' && $pStatus !== 'paid'): ?>
-                    <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#fef3c7;color:#92400e;white-space:nowrap;">🔒 Escrow</span>
-                    <?php elseif ($pStatus === 'paid'): ?>
-                    <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#dbeafe;color:#1e40af;white-space:nowrap;">✓ Paid</span>
-                    <?php else: ?>
-                    <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#f3f4f6;color:#6b7280;white-space:nowrap;">Unpaid</span>
+        <div class="cm-job-panel">
+            <div class="cm-section-head">
+                <h2>Open Jobs &amp; Services</h2>
+                <a href="<?php echo $user ? 'jobs.php' : 'browse_jobs.php'; ?>">View all →</a>
+            </div>
+            <?php if ($openJobs): ?>
+            <div class="cm-job-row">
+                <?php foreach ($openJobs as $job):
+                    // Bubble shows what the job pays — a fixed amount, a free-text
+                    // budget (e.g. "Negotiable"), or nothing if never set. Separate
+                    // from the top pill, which reflects escrow/payment-collection
+                    // status rather than the pay itself.
+                    $bubbleText = null; $bubbleUnit = null;
+                    if ($job['budget_amount']) {
+                        $bubbleText = 'GH₵' . number_format((float)$job['budget_amount'], 0);
+                        $bubbleUnit = !empty($job['price_unit']) ? '/' . $job['price_unit'] : null;
+                    } elseif (!empty($job['budget'])) {
+                        $budgetLower = strtolower($job['budget']);
+                        if (str_contains($budgetLower,'negotiable') || str_contains($budgetLower,'open') || str_contains($budgetLower,'discuss')) {
+                            $bubbleText = 'Negotiable';
+                        } else {
+                            $bubbleText = mb_substr($job['budget'], 0, 12);
+                            $bubbleUnit = !empty($job['price_unit']) ? '/' . $job['price_unit'] : null;
+                        }
+                    }
+                ?>
+                <a href="request_detail.php?id=<?php echo (int)$job['id']; ?>" class="cm-job-card">
+                    <div class="cm-job-cat-row">
+                        <div class="cm-job-cat-chips">
+                            <?php if ($job['category']): ?><span class="cm-job-cat"><?php echo sanitize($job['category']); ?></span><?php endif; ?>
+                            <?php
+                            $pMode   = $job['payment_mode']   ?? 'direct';
+                            $pStatus = $job['payment_status'] ?? 'unpaid';
+                            if ($pMode === 'escrow' && $pStatus === 'paid'):
+                            ?><span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#d1fae5;color:#065f46;white-space:nowrap;">🔒 Escrow Paid</span>
+                            <?php elseif ($pMode === 'escrow' && $pStatus !== 'paid'): ?>
+                            <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#fef3c7;color:#92400e;white-space:nowrap;">🔒 Escrow</span>
+                            <?php elseif ($pStatus === 'paid'): ?>
+                            <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:#dbeafe;color:#1e40af;white-space:nowrap;">✓ Paid</span>
+                            <?php else: ?>
+                            <span style="font-size:.63rem;font-weight:800;padding:2px 7px;border-radius:20px;background:rgba(255,255,255,.85);color:#6b5c47;white-space:nowrap;">Unpaid</span>
+                            <?php endif; ?>
+                        </div>
+                        <?php if ($job['category']): ?><div class="cm-job-cat-icon"><?php echo category_icon($job['category']); ?></div><?php endif; ?>
+                    </div>
+                    <div class="cm-job-title"><?php echo sanitize($job['title']); ?></div>
+                    <?php if (!empty($job['description'])): ?>
+                    <div style="font-size:.78rem;color:#5c4d3a;line-height:1.5;margin-bottom:10px;
+                                display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
+                        <?php echo sanitize(strip_tags($job['description'])); ?>
+                    </div>
                     <?php endif; ?>
-                </div>
-                <div class="cm-job-title"><?php echo sanitize($job['title']); ?></div>
-                <?php if (!empty($job['description'])): ?>
-                <div style="font-size:.78rem;color:var(--muted,#6b7280);line-height:1.5;margin-bottom:10px;
-                            display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">
-                    <?php echo sanitize(strip_tags($job['description'])); ?>
-                </div>
+                    <div class="cm-job-footer">
+                        <div>
+                            <?php if ($job['location']): ?><div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($job['location'],0,36)); ?></div><?php endif; ?>
+                            <div class="cm-job-meta">📅 <?php echo date('d M Y', strtotime($job['created_at'])); ?></div>
+                        </div>
+                    </div>
+                    <?php if ($bubbleText): ?>
+                    <div class="cm-job-bubble">
+                        <div class="cm-job-bubble-amount"><?php echo sanitize($bubbleText); ?></div>
+                        <?php if ($bubbleUnit): ?><div class="cm-job-bubble-unit"><?php echo sanitize($bubbleUnit); ?></div><?php endif; ?>
+                    </div>
+                    <?php endif; ?>
+                </a>
+                <?php endforeach; ?>
+            </div>
+            <div class="cm-job-actions">
+                <?php if ($user): ?>
+                <a href="jobs.php"    class="button button-secondary">📋 Browse Jobs</a>
+                <a href="request.php" class="button button-primary">➕ Post a Job</a>
+                <?php else: ?>
+                <a href="browse_jobs.php" class="button button-secondary">📋 Browse Jobs</a>
+                <a href="register.php"    class="button button-primary">Sign up to Post a Job</a>
                 <?php endif; ?>
-                <div class="cm-job-footer">
-                    <div>
-                        <?php if ($job['location']): ?><div class="cm-job-meta">📍 <?php echo sanitize(mb_substr($job['location'],0,36)); ?></div><?php endif; ?>
-                        <div class="cm-job-meta">🕐 <?php echo date('d M Y', strtotime($job['created_at'])); ?></div>
-                    </div>
-                    <div style="text-align:right;flex-shrink:0;">
-                        <?php if ($job['budget_amount']): ?>
-                        <div class="cm-job-budget">GH₵ <?php echo number_format((float)$job['budget_amount'],2); ?><?php if (!empty($job['price_unit'])): ?> / <?php echo sanitize($job['price_unit']); ?><?php endif; ?></div>
-                        <?php elseif (!empty($job['budget'])): ?>
-                        <div class="cm-job-budget" style="font-size:.8rem;"><?php echo sanitize(mb_substr($job['budget'],0,24)); ?><?php if (!empty($job['price_unit'])): ?> / <?php echo sanitize($job['price_unit']); ?><?php endif; ?></div>
-                        <?php endif; ?>
-                        <?php
-                        $budgetLower = strtolower($job['budget'] ?? '');
-                        if (str_contains($budgetLower,'negotiable') || str_contains($budgetLower,'open') || str_contains($budgetLower,'discuss')):
-                        ?>
-                        <div style="font-size:.67rem;font-weight:700;color:var(--muted,#6b7280);margin-top:1px;">Negotiable</div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </a>
-            <?php endforeach; ?>
-        </div>
-        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
-            <?php if ($user): ?>
-            <a href="jobs.php"    class="button button-secondary">📋 Browse Jobs</a>
-            <a href="request.php" class="button button-primary">➕ Post a Job</a>
+            </div>
             <?php else: ?>
-            <a href="browse_jobs.php" class="button button-secondary">📋 Browse Jobs</a>
-            <a href="register.php"    class="button button-primary">Sign up to Post a Job</a>
+            <div class="cm-empty" style="background:rgba(255,255,255,.6);border-color:rgba(255,255,255,.8);">
+                No open jobs right now.
+                <?php if ($user): ?>
+                <a href="request.php" style="color:var(--primary,#2f8f5b);font-weight:700;">Be the first to post →</a>
+                <?php else: ?>
+                <a href="register.php" style="color:var(--primary,#2f8f5b);font-weight:700;">Sign up &amp; post a job →</a>
+                <?php endif; ?>
+            </div>
             <?php endif; ?>
         </div>
-        <?php else: ?>
-        <div class="cm-empty">
-            No open jobs right now.
-            <?php if ($user): ?>
-            <a href="request.php" style="color:var(--primary,#0f766e);font-weight:700;">Be the first to post →</a>
-            <?php else: ?>
-            <a href="register.php" style="color:var(--primary,#0f766e);font-weight:700;">Sign up &amp; post a job →</a>
-            <?php endif; ?>
-        </div>
-        <?php endif; ?>
     </div>
     <?php endif; ?>
 
@@ -674,6 +809,44 @@ try {
                         <div class="cm-news-meta"><?php echo $n['published_at'] ? date('d M Y', strtotime($n['published_at'])) : ''; ?></div>
                         <span class="cm-news-read">Read →</span>
                     </div>
+                </div>
+            </a>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Quick Services -->
+    <?php if (module_enabled('quick_services') && $quickServices): ?>
+    <?php
+    $qsPalette = [
+        ['#eef1f5', '#d9dee6'],
+        ['#f6dcc4', '#e8a06a'],
+        ['#e4e8ee', '#c9d1dc'],
+        ['#e6e2f5', '#c9c0e8'],
+        ['#dfe6ea', '#b9c6cf'],
+    ];
+    ?>
+    <div class="cm-section cm-qs-section">
+        <div class="cm-section-head">
+            <h2>⚡ Quick Services</h2>
+            <a href="quick_services.php">View all →</a>
+        </div>
+        <div class="cm-qs-row">
+            <?php foreach ($quickServices as $i => $qs): $grad = $qsPalette[$i % count($qsPalette)]; ?>
+            <a href="quick_service.php?slug=<?php echo urlencode($qs['slug']); ?>" class="cm-qs-card">
+                <div class="cm-qs-visual" style="background:linear-gradient(160deg, <?php echo $grad[0]; ?>, <?php echo $grad[1]; ?>);">
+                    <div class="cm-qs-icon-disc">
+                        <?php if (!empty($qs['image_path'])): ?>
+                        <img src="<?php echo sanitize($qs['image_path']); ?>" alt="">
+                        <?php else: ?>
+                        <span class="cm-qs-icon"><?php echo sanitize($qs['icon']) ?: '⚡'; ?></span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div class="cm-qs-body">
+                    <div class="cm-qs-title"><?php echo sanitize($qs['name']); ?></div>
+                    <?php if ($qs['description']): ?><div class="cm-qs-desc"><?php echo sanitize($qs['description']); ?></div><?php endif; ?>
                 </div>
             </a>
             <?php endforeach; ?>

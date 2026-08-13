@@ -2874,3 +2874,118 @@ ALTER TABLE markets ADD COLUMN IF NOT EXISTS color VARCHAR(7) NULL AFTER pickup_
 -- pickup_fee/delivery fees, which stay per-market.
 -- ═══════════════════════════════════════════════════════════════════════════
 ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS system_charge DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER delivery_fee;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v069  Quick Services — a lightweight, reusable "digital service desk"
+-- module, separate from the Jobs & Services (worker-hiring) module, which
+-- already owns the `service_requests`/`service_categories` table names —
+-- hence the `quick_service*` prefix here to avoid any collision. A user
+-- picks a service (Airtime, ECG, BECE results, etc.), fills a short form
+-- whose fields are fully admin-configurable (quick_services.form_fields,
+-- JSON — no developer involvement needed to add a new service), pays, and
+-- a delegated manager (quick_service_managers, same per-record assignment
+-- pattern as market_managers/user_can_manage_market()) manually processes
+-- it and replies with a result. Pricing separates the underlying service
+-- cost (fixed, e.g. BECE = GHS 20, or user-entered, e.g. an ECG top-up
+-- amount) from AkuapemConnect's own service fee (flat or %), so both are
+-- always shown to the buyer as distinct line items. Seeded services start
+-- 'inactive' — an admin must review the fee and assign a manager before
+-- switching each one on.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS quick_services (
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name              VARCHAR(120) NOT NULL,
+    slug              VARCHAR(120) NOT NULL UNIQUE,
+    icon              VARCHAR(20) DEFAULT NULL,
+    description       VARCHAR(255) DEFAULT NULL,
+    instructions      TEXT,
+    form_fields       JSON NOT NULL,
+    pricing_mode      ENUM('fixed','user_entered') NOT NULL DEFAULT 'fixed',
+    base_cost         DECIMAL(10,2) NOT NULL DEFAULT 0,
+    amount_field_key  VARCHAR(60) NULL,
+    service_fee_type  ENUM('flat','percent') NOT NULL DEFAULT 'flat',
+    service_fee_value DECIMAL(10,2) NOT NULL DEFAULT 0,
+    status            ENUM('active','inactive') NOT NULL DEFAULT 'inactive',
+    display_order     INT NOT NULL DEFAULT 0,
+    created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS quick_service_managers (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    service_id  INT UNSIGNED NOT NULL,
+    user_id     INT UNSIGNED NOT NULL,
+    granted_by  INT UNSIGNED NOT NULL,
+    granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_qsm (service_id, user_id),
+    FOREIGN KEY (service_id) REFERENCES quick_services(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
+    'featured_job','featured_worker','verification','job_post','worker_service',
+    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
+    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
+    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
+    'delivery_commission','worker_premium','sponsor','quick_service'
+) NOT NULL;
+
+CREATE TABLE IF NOT EXISTS quick_service_requests (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id              INT UNSIGNED NOT NULL,
+    service_id           INT UNSIGNED NOT NULL,
+    request_data         JSON NOT NULL,
+    service_amount       DECIMAL(10,2) NOT NULL DEFAULT 0,
+    service_fee          DECIMAL(10,2) NOT NULL DEFAULT 0,
+    total_amount         DECIMAL(10,2) NOT NULL DEFAULT 0,
+    payment_status       ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
+    platform_payment_id  INT UNSIGNED NULL,
+    status               ENUM('pending_payment','paid','processing','completed','unable_to_process','cancelled') NOT NULL DEFAULT 'pending_payment',
+    manager_response     TEXT NULL,
+    response_file_path   VARCHAR(255) NULL,
+    processed_by         INT UNSIGNED NULL,
+    processed_at         DATETIME NULL,
+    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (service_id) REFERENCES quick_services(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO quick_services (name, slug, icon, description, instructions, form_fields, pricing_mode, base_cost, amount_field_key, service_fee_type, service_fee_value, status, display_order) VALUES
+('Airtime & Data', 'airtime-data', '📱', 'Top up airtime or data on any network', 'Tell us the network, the phone number to top up, and the amount — we will process it and confirm once done.',
+ '[{"key":"network","label":"Network","type":"select","required":true,"options":["MTN","Vodafone","AirtelTigo","Telecel"]},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"amount","label":"Amount (GHS)","type":"number","required":true,"placeholder":"e.g. 20"}]',
+ 'user_entered', 0, 'amount', 'flat', 2.00, 'inactive', 1),
+('ECG Prepaid', 'ecg-prepaid', '⚡', 'Buy ECG prepaid electricity units', 'Enter your meter number, the phone number for the token, and the amount to top up.',
+ '[{"key":"meter_number","label":"Meter Number","type":"text","required":true,"placeholder":"e.g. 0300XXXXXXXX"},{"key":"amount","label":"Amount (GHS)","type":"number","required":true,"placeholder":"e.g. 50"},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
+ 'user_entered', 0, 'amount', 'flat', 2.00, 'inactive', 2),
+('BECE Results Checker', 'bece-results', '📄', 'Check BECE results with a checker PIN', 'Provide your candidate number and exam year — we will get your results checker PIN sorted.',
+ '[{"key":"candidate_number","label":"Candidate Number","type":"text","required":true},{"key":"exam_year","label":"Exam Year","type":"select","required":true,"options":["2023","2024","2025","2026"]},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
+ 'fixed', 20.00, NULL, 'flat', 5.00, 'inactive', 3),
+('WASSCE Results Checker', 'wassce-results', '📄', 'Check WASSCE results with a checker PIN', 'Provide your candidate/index number and exam year — we will get your results checker PIN sorted.',
+ '[{"key":"candidate_number","label":"Candidate/Index Number","type":"text","required":true},{"key":"exam_year","label":"Exam Year","type":"select","required":true,"options":["2023","2024","2025","2026"]},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
+ 'fixed', 20.00, NULL, 'flat', 5.00, 'inactive', 4),
+('TV Subscription', 'tv-subscription', '📺', 'Renew DStv, GOtv or StarTimes subscriptions', 'Tell us your provider, smartcard/IUC number, and the amount to load.',
+ '[{"key":"provider","label":"Provider","type":"select","required":true,"options":["DStv","GOtv","StarTimes"]},{"key":"smartcard_number","label":"Smartcard/IUC Number","type":"text","required":true},{"key":"amount","label":"Amount (GHS)","type":"number","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
+ 'user_entered', 0, 'amount', 'flat', 2.00, 'inactive', 5),
+('Passport Assistance', 'passport-assistance', '🛂', 'Help with Ghana passport applications', 'Share your details and our team will guide you through the passport application process.',
+ '[{"key":"full_name","label":"Full Name","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"ghana_card_number","label":"Ghana Card Number","type":"text","required":true},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
+ 'fixed', 0, NULL, 'flat', 10.00, 'inactive', 6),
+('Ghana Card Assistance', 'ghana-card-assistance', '🪪', 'Help with Ghana Card registration or update', 'Share your details and our team will guide you through the process.',
+ '[{"key":"full_name","label":"Full Name","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
+ 'fixed', 0, NULL, 'flat', 10.00, 'inactive', 7),
+('Printing & Documents', 'printing-documents', '🖨️', 'Printing, scanning & document assistance', 'Tell us what you need printed or prepared and how many copies.',
+ '[{"key":"document_type","label":"Document Type","type":"text","required":true},{"key":"copies","label":"Number of Copies","type":"number","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
+ 'fixed', 0, NULL, 'flat', 5.00, 'inactive', 8),
+('School Application Assistance', 'school-application', '🎓', 'Help applying to schools', 'Share the student and school details and our team will assist with the application.',
+ '[{"key":"student_name","label":"Student Name","type":"text","required":true},{"key":"school_level","label":"School/Level","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
+ 'fixed', 0, NULL, 'flat', 10.00, 'inactive', 9),
+('Business Registration Assistance', 'business-registration', '🏢', 'Help registering a business with the RGD', 'Share your business details and our team will guide you through registration.',
+ '[{"key":"business_name","label":"Business Name","type":"text","required":true},{"key":"business_type","label":"Business Type","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
+ 'fixed', 0, NULL, 'flat', 15.00, 'inactive', 10);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v070  Quick Services — optional admin-uploaded custom image per service,
+-- shown instead of the emoji icon on service cards when set (falls back to
+-- the emoji icon everywhere it's still NULL).
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE quick_services ADD COLUMN IF NOT EXISTS image_path VARCHAR(255) NULL AFTER icon;

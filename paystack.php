@@ -443,6 +443,40 @@ function activatePurchasedFeature(array $payment): void {
             );
             break;
 
+        case 'quick_service':
+            $reqId = (int)$payment['reference_id'];
+            $pdo->prepare("UPDATE quick_service_requests
+                SET payment_status='paid', status='paid', platform_payment_id=?, updated_at=NOW()
+                WHERE id=? AND status='pending_payment'")
+                ->execute([$payment['id'], $reqId]);
+
+            $svcRow = $pdo->prepare("SELECT qs.id AS service_id, qs.name FROM quick_service_requests qsr
+                JOIN quick_services qs ON qs.id = qsr.service_id WHERE qsr.id = ?");
+            $svcRow->execute([$reqId]);
+            $svc = $svcRow->fetch();
+            $svcName = $svc ? $svc['name'] : 'your service request';
+            $ref = qs_reference($reqId);
+
+            notify_user($payment['user_id'], '✅ Payment confirmed',
+                "Your payment for \"{$svcName}\" (Ref {$ref}) was received. Our team will process it shortly.", 'success');
+
+            if ($svc) {
+                $mgrStmt = $pdo->prepare('SELECT user_id FROM quick_service_managers WHERE service_id = ?');
+                $mgrStmt->execute([$svc['service_id']]);
+                $managerIds = $mgrStmt->fetchAll(PDO::FETCH_COLUMN);
+                if ($managerIds) {
+                    foreach ($managerIds as $mgrId) {
+                        notify_user((int)$mgrId, 'New Quick Service Request 📥',
+                            "\"{$svcName}\" — Ref {$ref} was paid and needs processing.", 'info',
+                            'admin/quick_service_requests.php');
+                    }
+                } else {
+                    notify_admins_and_managers('New Quick Service Request (unassigned)',
+                        "\"{$svcName}\" — Ref {$ref} was paid but has no assigned manager. Assign one in Admin → Quick Services.", 'warning');
+                }
+            }
+            break;
+
         case 'mp_order':
             // reference_id is just the first order created at checkout; the full
             // set (usually one per shop in the cart) is looked up by payment id.

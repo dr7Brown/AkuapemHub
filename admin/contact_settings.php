@@ -155,5 +155,6 @@ foreach (array_keys($fields) as $key) {
             </ul>
         </div>
     </main>
+    <script src="../assets/js/rich-editor.js" defer></script>
 </body>
 </html>
