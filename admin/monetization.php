@@ -250,6 +250,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare("INSERT INTO $table (name, description, duration_days, price, status) VALUES (?, ?, ?, ?, ?)")
                         ->execute([$pkgName, $pkgDesc, $pkgDays, $pkgPrice, $pkgStatus]);
                 }
+            } elseif ($pkgType === 'sponsor') {
+                // Benefits comes from the shared rich-editor.js component — it's
+                // admin-authored HTML, rendered back out via render_rich().
+                $pkgBenefits = trim($_POST['pkg_benefits'] ?? '') ?: null;
+                if ($pkgId > 0) {
+                    $pdo->prepare("UPDATE $table SET name = ?, duration_days = ?, price = ?, status = ?, benefits = ? WHERE id = ?")
+                        ->execute([$pkgName, $pkgDays, $pkgPrice, $pkgStatus, $pkgBenefits, $pkgId]);
+                } else {
+                    $pdo->prepare("INSERT INTO $table (name, duration_days, price, status, benefits) VALUES (?, ?, ?, ?, ?)")
+                        ->execute([$pkgName, $pkgDays, $pkgPrice, $pkgStatus, $pkgBenefits]);
+                }
             } else {
                 if ($pkgId > 0) {
                     $pdo->prepare("UPDATE $table SET name = ?, duration_days = ?, price = ?, status = ? WHERE id = ?")
@@ -580,7 +591,7 @@ $moduleToggles = [
     'news'     => ['label' => 'News & Updates',        'desc' => 'Articles & platform news'],
     'funerals' => ['label' => 'Funeral Announcements', 'desc' => 'Memorial notices'],
     'delivery' => ['label' => 'Delivery Services',      'desc' => 'Send & receive parcels'],
-    'markets'  => ['label' => 'Periodic Markets',        'desc' => 'Ofie Market, Nkurakan Market & other scheduled markets'],
+    'markets'  => ['label' => 'Nearby Markets',        'desc' => 'Ofie Market, Nkurakan Market & other scheduled markets'],
     'quick_services' => ['label' => 'Quick Services',    'desc' => 'Airtime, ECG, exam results & other paid service requests'],
 ];
 foreach ($moduleToggles as $modKey => &$modInfo) {
@@ -1621,10 +1632,10 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
             <section class="panel" style="margin-bottom:20px;">
                 <h2 style="margin-top:0;"><?php echo $sec['icon']; ?> <?php echo $sec['label']; ?></h2>
                 <table class="pkg-table">
-                    <thead><tr><th>Name</th><th>Duration</th><th>Price (GH₵)</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Duration</th><th>Price (GH₵)</th><th>Status</th><?php if ($sec['type'] === 'sponsor'): ?><th>Benefits</th><?php endif; ?><th>Actions</th></tr></thead>
                     <tbody>
                         <?php if (empty($sec['packages'])): ?>
-                        <tr><td colspan="5" style="text-align:center;color:var(--muted,#6b7280);padding:18px;">No packages yet — add one below.</td></tr>
+                        <tr><td colspan="<?php echo $sec['type'] === 'sponsor' ? 6 : 5; ?>" style="text-align:center;color:var(--muted,#6b7280);padding:18px;">No packages yet — add one below.</td></tr>
                         <?php endif; ?>
                         <?php foreach ($sec['packages'] as $pkg): ?>
                         <tr>
@@ -1632,8 +1643,11 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                             <td><?php echo (int)$pkg['duration_days']; ?> days</td>
                             <td><?php echo number_format((float)$pkg['price'], 2); ?></td>
                             <td><span class="status status-<?php echo $pkg['status'] === 'active' ? 'open' : 'cancelled'; ?>"><?php echo strtoupper($pkg['status']); ?></span></td>
+                            <?php if ($sec['type'] === 'sponsor'): ?>
+                            <td style="font-size:.8rem;color:var(--muted,#6b7280);"><?php echo !empty($pkg['benefits']) ? '✓ set' : '—'; ?></td>
+                            <?php endif; ?>
                             <td>
-                                <button class="button button-small button-secondary" onclick="editCommPkg('<?php echo $sec['type']; ?>', <?php echo $pkg['id']; ?>, '<?php echo addslashes(sanitize($pkg['name'])); ?>', <?php echo (int)$pkg['duration_days']; ?>, <?php echo (float)$pkg['price']; ?>, '<?php echo $pkg['status']; ?>')">Edit</button>
+                                <button class="button button-small button-secondary" onclick="editCommPkg('<?php echo $sec['type']; ?>', <?php echo $pkg['id']; ?>, '<?php echo addslashes(sanitize($pkg['name'])); ?>', <?php echo (int)$pkg['duration_days']; ?>, <?php echo (float)$pkg['price']; ?>, '<?php echo $pkg['status']; ?>', '<?php echo htmlspecialchars(addslashes($pkg['benefits'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>')">Edit</button>
                                 <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
                                     <input type="hidden" name="action" value="delete_package">
                                     <input type="hidden" name="pkg_type" value="<?php echo $sec['type']; ?>">
@@ -1661,6 +1675,10 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
                     </select>
+                    <?php if ($sec['type'] === 'sponsor'): ?>
+                    <label>Benefits <span style="font-weight:400;color:var(--muted,#6b7280);">(shown on become_sponsor.php — format as a bullet list, add bold, links, etc.)</span></label>
+                    <textarea name="pkg_benefits" id="sponsor_benefits" class="rich-editor" rows="8" placeholder="⭐ Premium Gold Sponsor badge&#10;🏆 Recognition on the homepage&#10;..."></textarea>
+                    <?php endif; ?>
                     <div style="display:flex;gap:8px;margin-top:8px;">
                         <button type="submit" class="button button-primary">Save package</button>
                         <button type="button" class="button button-secondary" onclick="resetCommPkg('<?php echo $sec['type']; ?>')">Clear</button>
@@ -1670,12 +1688,29 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
             <?php endforeach; ?>
 
             <script>
-            function editCommPkg(type, id, name, days, price, status) {
+            /** Pushes new content into a rich-editor.js field, whether or not
+             *  it has finished wrapping the textarea yet (RichEditor exposes
+             *  itself as `ta._rte`, with `.ed` the visible editable div and
+             *  `._sync()` to push that back into the real textarea value —
+             *  see assets/js/rich-editor.js). Falls back to a plain .value
+             *  set if the field isn't a rich-editor (or hasn't init'd yet). */
+            function setRichEditorValue(id, html) {
+                var ta = document.getElementById(id);
+                if (!ta) return;
+                if (ta._rte) {
+                    ta._rte.ed.innerHTML = html || '<p><br></p>';
+                    ta._rte._sync();
+                } else {
+                    ta.value = html || '';
+                }
+            }
+            function editCommPkg(type, id, name, days, price, status, benefits) {
                 document.getElementById(type+'_id').value   = id;
                 document.getElementById(type+'_name').value = name;
                 document.getElementById(type+'_days').value = days;
                 document.getElementById(type+'_price').value = price;
                 document.getElementById(type+'_status').value = status;
+                if (type === 'sponsor') setRichEditorValue('sponsor_benefits', benefits);
                 document.getElementById('form-'+type).scrollIntoView({behavior:'smooth',block:'center'});
             }
             function resetCommPkg(type) {
@@ -1684,6 +1719,7 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                 document.getElementById(type+'_days').value  = 7;
                 document.getElementById(type+'_price').value = 0;
                 document.getElementById(type+'_status').value = 'active';
+                if (type === 'sponsor') setRichEditorValue('sponsor_benefits', '');
             }
             </script>
         </div>
@@ -2262,5 +2298,6 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
             document.getElementById('form-verification').reset();
         }
     </script>
+    <script src="../assets/js/rich-editor.js" defer></script>
 </body>
 </html>

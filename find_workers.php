@@ -350,6 +350,7 @@ if (!empty($_GET['ajax'])) {
             <?php endif; ?>
         </section>
     </main>
+    <?php require __DIR__ . '/partials/site_footer.php'; ?>
     <?php if ($user): ?>
         <?php $activeNav = 'workers'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <?php endif; ?>

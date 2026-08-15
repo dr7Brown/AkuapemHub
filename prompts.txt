@@ -1037,6 +1037,57 @@ Wednesday, 12 August" in market_view
 same card. user is allowed to make orders though time pass, fix it 
 3. make time timer area a bit wide. to draw much forcus
 
+NEXT:
+1. add this section "Other quick services" to "quick_service.php" to show random 5 other quick services cards and a view all services button below , on "quick_service.php" after all the content of a opened/selected service. i hope you understand. 
+
+NEXT: 
+1. "Instructions (shown on the service's page)" field on "quick_services.php" should be reachtext field. 
+2. "other quick services" section on "quick_service.php?slug" to go down small, too close to the submission button 
+3. allow admin to edit sponsor info 
+4. AFTER i set the benefit in sponsor package, i am the edit button does not work anymore.
+4. promo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

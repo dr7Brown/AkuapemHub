@@ -147,7 +147,7 @@ if ($orders) {
     <div class="md-empty">
         <div style="font-size:2.5rem;opacity:.35;margin-bottom:10px;">🏬</div>
         <p style="margin:0;font-weight:700;">You're not assigned to manage any market yet</p>
-        <p style="margin:6px 0 0;font-size:.85rem;">Ask an admin to assign you via <a href="markets.php">Periodic Markets</a>.</p>
+        <p style="margin:6px 0 0;font-size:.85rem;">Ask an admin to assign you via <a href="markets.php">Nearby Markets</a>.</p>
     </div>
     <?php else: ?>
 

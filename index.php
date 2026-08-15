@@ -19,7 +19,7 @@ $recentFunerals = $pdo->query(
 
 $latestNews = $pdo->query(
     "SELECT * FROM news WHERE status='published'
-     ORDER BY published_at DESC LIMIT 3"
+     ORDER BY published_at DESC LIMIT 10"
 )->fetchAll();
 
 $openJobs = $pdo->query(
@@ -39,11 +39,12 @@ $sponsors = $pdo->query(
      ORDER BY sp.price DESC, s.created_at DESC LIMIT 12"
 )->fetchAll();
 
-// Quick Services — small icon grid, only the top few active services
+// Quick Services — every active service; the strip scrolls horizontally so
+// all of them are reachable straight from the home screen.
 $quickServices = [];
 try {
     $quickServices = $pdo->query(
-        "SELECT id, slug, icon, image_path, name, description FROM quick_services WHERE status='active' ORDER BY display_order, name LIMIT 6"
+        "SELECT id, slug, icon, image_path, name, description FROM quick_services WHERE status='active' ORDER BY display_order, name"
     )->fetchAll();
 } catch (Exception $e) {}
 
@@ -241,6 +242,9 @@ try {
         .cm-fa-meta { font-size:.73rem; color:var(--muted,#6b7280); line-height:1.55; }
 
         /* ── News cards ── */
+        /* Small-screen "2 independent scrolling rows" variant is hidden on
+           wide screens, which use the single auto-fill grid below instead. */
+        .cm-news-rows-stacked { display:none; }
         .cm-news-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:14px; }
         .cm-news-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .2s,transform .2s; }
         .cm-news-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-3px); }
@@ -259,7 +263,19 @@ try {
             background:#fff; color:var(--text,#1f2937); padding:7px 16px; border-radius:20px; font-size:.78rem;
             border:1px solid var(--border,#e5e7eb); box-shadow:0 4px 14px rgba(0,0,0,.06);
         }
-        .cm-qs-row  { display:grid; grid-template-columns:repeat(6, 1fr); gap:16px; }
+        /* Small-screen "2 independent scrolling rows" variant is hidden on
+           wide screens, which use the single 4-per-screen row below instead. */
+        .cm-qs-rows-stacked { display:none; }
+        /* Wide screens: 4 cards per screen, single row, horizontal scroll —
+           so any number of services stay reachable without a "View all"
+           click. */
+        .cm-qs-row {
+            display:flex; flex-wrap:nowrap; overflow-x:auto; gap:16px;
+            scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+            padding-bottom:4px;
+        }
+        .cm-qs-row::-webkit-scrollbar { display:none; }
+        .cm-qs-card { flex:0 0 calc(25% - 12px); scroll-snap-align:start; }
         .cm-qs-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:20px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; box-shadow:0 2px 10px rgba(0,0,0,.05); transition:box-shadow .2s,transform .2s; }
         .cm-qs-card:hover { box-shadow:0 12px 30px rgba(0,0,0,.12); transform:translateY(-4px); }
         .cm-qs-visual {
@@ -370,9 +386,7 @@ try {
             .cm-job-row,
             .cm-ev-row,
             .cm-fa-row,
-            .cm-news-row,
-            .cm-mp-row,
-            .cm-qs-row {
+            .cm-mp-row {
                 display:flex;
                 flex-wrap:nowrap;
                 overflow-x:auto;
@@ -385,33 +399,61 @@ try {
             .cm-job-row::-webkit-scrollbar,
             .cm-ev-row::-webkit-scrollbar,
             .cm-fa-row::-webkit-scrollbar,
-            .cm-news-row::-webkit-scrollbar,
-            .cm-mp-row::-webkit-scrollbar,
-            .cm-qs-row::-webkit-scrollbar { display:none; }
+            .cm-mp-row::-webkit-scrollbar { display:none; }
 
             /* ── Card widths: exactly 3 per screen ── */
             .cm-job-card,
             .cm-ev-card,
             .cm-fa-card,
-            .cm-news-card,
-            .cm-mp-card,
-            .cm-qs-card {
+            .cm-mp-card {
                 flex:0 0 calc(33.333vw - 14px);
                 min-width:96px;
                 scroll-snap-align:start;
             }
 
-            /* ── Quick Services mobile tweaks (still 3 per screen, via the
-                   shared rule above) — the icon disc scales fluidly with
-                   viewport width (2.5x the old 44px baseline on a typical
-                   phone) while staying safely inside the card so it never
-                   gets clipped by .cm-qs-card's overflow:hidden. ── */
+            /* ── Quick Services: 2 cards per row, 2 rows per screen — each
+                   row is its own independent horizontally-scrolling strip
+                   (its own overflow-x container), so swiping one row never
+                   moves the other. The "wide" single-row variant (used on
+                   desktop) is swapped out for the "stacked" 2-row variant. ── */
+            .cm-qs-wide { display:none; }
+            .cm-qs-rows-stacked { display:flex; flex-direction:column; gap:10px; }
+            .cm-qs-rows-stacked .cm-qs-row {
+                display:flex;
+                flex-wrap:nowrap;
+                overflow-x:auto;
+                gap:10px;
+                padding:0 16px 4px;
+                scroll-snap-type:x mandatory;
+                scrollbar-width:none;
+                -webkit-overflow-scrolling:touch;
+            }
+            .cm-qs-rows-stacked .cm-qs-row::-webkit-scrollbar { display:none; }
+            .cm-qs-rows-stacked .cm-qs-card { flex:0 0 calc(50vw - 21px); scroll-snap-align:start; }
             .cm-qs-visual { padding:14px 6px; }
-            .cm-qs-icon-disc { width:clamp(70px, 26vw, 110px); height:clamp(70px, 26vw, 110px); }
-            .cm-qs-icon  { font-size:clamp(1.9rem, 8vw, 3rem); }
+            .cm-qs-icon-disc { width:clamp(80px, 34vw, 130px); height:clamp(80px, 34vw, 130px); }
+            .cm-qs-icon  { font-size:clamp(2.1rem, 10vw, 3.4rem); }
             .cm-qs-body  { padding:8px 8px 10px; }
-            .cm-qs-title { font-size:.72rem; line-height:1.25; }
-            .cm-qs-desc  { font-size:.64rem; line-height:1.3; -webkit-line-clamp:2; }
+            .cm-qs-title { font-size:.76rem; line-height:1.25; }
+            .cm-qs-desc  { font-size:.66rem; line-height:1.3; -webkit-line-clamp:2; }
+
+            /* ── News: same independent-2-row pattern as Quick Services —
+                   up to 10 latest articles reachable across the two rows,
+                   each swiped through on its own. ── */
+            .cm-news-wide { display:none; }
+            .cm-news-rows-stacked { display:flex; flex-direction:column; gap:10px; }
+            .cm-news-rows-stacked .cm-news-row {
+                display:flex;
+                flex-wrap:nowrap;
+                overflow-x:auto;
+                gap:10px;
+                padding:0 16px 4px;
+                scroll-snap-type:x mandatory;
+                scrollbar-width:none;
+                -webkit-overflow-scrolling:touch;
+            }
+            .cm-news-rows-stacked .cm-news-row::-webkit-scrollbar { display:none; }
+            .cm-news-rows-stacked .cm-news-card { flex:0 0 calc(50vw - 21px); scroll-snap-align:start; }
 
             /* ── Job card mobile tweaks (shared base — also used as-is by
                    "Open Delivery Requests") ── */
@@ -485,7 +527,6 @@ try {
             .cm-job-card,
             .cm-ev-card,
             .cm-fa-card,
-            .cm-news-card,
             .cm-mp-card {
                 flex:0 0 calc(33.333vw - 12px);
                 min-width:140px;
@@ -540,7 +581,7 @@ try {
     <?php if (module_enabled('quick_services')): ?><a href="quick_services.php" class="cm-mod"><div class="cm-mod-icon">⚡</div><div class="cm-mod-title">Quick Services</div><div class="cm-mod-desc">Airtime, ECG, results &amp; more</div></a><?php endif; ?>
     <?php if (module_enabled('delivery')): ?><a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a><?php endif; ?>
     <?php if (module_enabled('mp')): ?><a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a><?php endif; ?>
-    <?php if (module_enabled('markets')): ?><a href="markets.php" class="cm-mod"><div class="cm-mod-icon">🏬</div><div class="cm-mod-title">Periodic Markets</div><div class="cm-mod-desc">Ofie Market, Nkurakan &amp; more</div></a><?php endif; ?>
+    <?php if (module_enabled('markets')): ?><a href="markets.php" class="cm-mod"><div class="cm-mod-icon">🏬</div><div class="cm-mod-title">Nearby Markets</div><div class="cm-mod-desc">Ofie Market, Nkurakan &amp; more</div></a><?php endif; ?>
 </div>
 
 <div class="cm-shell">
@@ -786,32 +827,50 @@ try {
 
     <!-- Latest News -->
     <?php if ($latestNews && module_enabled('news')): ?>
+    <?php
+    $newsCard = function ($n) {
+        ?>
+        <a href="news_article.php?slug=<?php echo urlencode($n['slug']); ?>" class="cm-news-card">
+            <div class="cm-news-img">
+                <?php if ($n['featured_image']): ?>
+                    <img src="<?php echo sanitize($n['featured_image']); ?>" alt="">
+                <?php else: ?>
+                    <span class="cm-news-img-icon">📰</span>
+                <?php endif; ?>
+            </div>
+            <div class="cm-news-body">
+                <div class="cm-news-title"><?php echo sanitize($n['title']); ?></div>
+                <?php $excerpt = mb_substr(strip_tags($n['content'] ?? ''), 0, 120); ?>
+                <?php if ($excerpt): ?><p class="cm-news-excerpt"><?php echo sanitize($excerpt); ?></p><?php endif; ?>
+                <div class="cm-news-footer">
+                    <div class="cm-news-meta"><?php echo $n['published_at'] ? date('d M Y', strtotime($n['published_at'])) : ''; ?></div>
+                    <span class="cm-news-read">Read →</span>
+                </div>
+            </div>
+        </a>
+        <?php
+    };
+    ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Latest News</h2>
             <a href="news.php">View all →</a>
         </div>
-        <div class="cm-news-row">
-            <?php foreach ($latestNews as $n): ?>
-            <a href="news_article.php?slug=<?php echo urlencode($n['slug']); ?>" class="cm-news-card">
-                <div class="cm-news-img">
-                    <?php if ($n['featured_image']): ?>
-                        <img src="<?php echo sanitize($n['featured_image']); ?>" alt="">
-                    <?php else: ?>
-                        <span class="cm-news-img-icon">📰</span>
-                    <?php endif; ?>
-                </div>
-                <div class="cm-news-body">
-                    <div class="cm-news-title"><?php echo sanitize($n['title']); ?></div>
-                    <?php $excerpt = mb_substr(strip_tags($n['content'] ?? ''), 0, 120); ?>
-                    <?php if ($excerpt): ?><p class="cm-news-excerpt"><?php echo sanitize($excerpt); ?></p><?php endif; ?>
-                    <div class="cm-news-footer">
-                        <div class="cm-news-meta"><?php echo $n['published_at'] ? date('d M Y', strtotime($n['published_at'])) : ''; ?></div>
-                        <span class="cm-news-read">Read →</span>
-                    </div>
-                </div>
-            </a>
-            <?php endforeach; ?>
+        <!-- Wide screens: every article in one horizontally-scrolling row -->
+        <div class="cm-news-wide">
+            <div class="cm-news-row">
+                <?php foreach ($latestNews as $n) $newsCard($n); ?>
+            </div>
+        </div>
+        <!-- Small screens: 2 independent horizontally-scrolling rows, each
+             swipeable on its own, same pattern as Quick Services. -->
+        <div class="cm-news-rows-stacked">
+            <div class="cm-news-row">
+                <?php foreach ($latestNews as $i => $n) { if ($i % 2 === 0) $newsCard($n); } ?>
+            </div>
+            <div class="cm-news-row">
+                <?php foreach ($latestNews as $i => $n) { if ($i % 2 === 1) $newsCard($n); } ?>
+            </div>
         </div>
     </div>
     <?php endif; ?>
@@ -826,30 +885,48 @@ try {
         ['#e6e2f5', '#c9c0e8'],
         ['#dfe6ea', '#b9c6cf'],
     ];
+    $qsCard = function ($qs, $i) use ($qsPalette) {
+        $grad = $qsPalette[$i % count($qsPalette)];
+        ?>
+        <a href="quick_service.php?slug=<?php echo urlencode($qs['slug']); ?>" class="cm-qs-card">
+            <div class="cm-qs-visual" style="background:linear-gradient(160deg, <?php echo $grad[0]; ?>, <?php echo $grad[1]; ?>);">
+                <div class="cm-qs-icon-disc">
+                    <?php if (!empty($qs['image_path'])): ?>
+                    <img src="<?php echo sanitize($qs['image_path']); ?>" alt="">
+                    <?php else: ?>
+                    <span class="cm-qs-icon"><?php echo sanitize($qs['icon']) ?: '⚡'; ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="cm-qs-body">
+                <div class="cm-qs-title"><?php echo sanitize($qs['name']); ?></div>
+                <?php if ($qs['description']): ?><div class="cm-qs-desc"><?php echo sanitize($qs['description']); ?></div><?php endif; ?>
+            </div>
+        </a>
+        <?php
+    };
     ?>
     <div class="cm-section cm-qs-section">
         <div class="cm-section-head">
             <h2>⚡ Quick Services</h2>
             <a href="quick_services.php">View all →</a>
         </div>
-        <div class="cm-qs-row">
-            <?php foreach ($quickServices as $i => $qs): $grad = $qsPalette[$i % count($qsPalette)]; ?>
-            <a href="quick_service.php?slug=<?php echo urlencode($qs['slug']); ?>" class="cm-qs-card">
-                <div class="cm-qs-visual" style="background:linear-gradient(160deg, <?php echo $grad[0]; ?>, <?php echo $grad[1]; ?>);">
-                    <div class="cm-qs-icon-disc">
-                        <?php if (!empty($qs['image_path'])): ?>
-                        <img src="<?php echo sanitize($qs['image_path']); ?>" alt="">
-                        <?php else: ?>
-                        <span class="cm-qs-icon"><?php echo sanitize($qs['icon']) ?: '⚡'; ?></span>
-                        <?php endif; ?>
-                    </div>
-                </div>
-                <div class="cm-qs-body">
-                    <div class="cm-qs-title"><?php echo sanitize($qs['name']); ?></div>
-                    <?php if ($qs['description']): ?><div class="cm-qs-desc"><?php echo sanitize($qs['description']); ?></div><?php endif; ?>
-                </div>
-            </a>
-            <?php endforeach; ?>
+        <!-- Wide screens: every service in one horizontally-scrolling row -->
+        <div class="cm-qs-wide">
+            <div class="cm-qs-row">
+                <?php foreach ($quickServices as $i => $qs) $qsCard($qs, $i); ?>
+            </div>
+        </div>
+        <!-- Small screens: 2 independent horizontally-scrolling rows, so
+             each row can be swiped through on its own instead of both
+             rows moving together. -->
+        <div class="cm-qs-rows-stacked">
+            <div class="cm-qs-row">
+                <?php foreach ($quickServices as $i => $qs) { if ($i % 2 === 0) $qsCard($qs, $i); } ?>
+            </div>
+            <div class="cm-qs-row">
+                <?php foreach ($quickServices as $i => $qs) { if ($i % 2 === 1) $qsCard($qs, $i); } ?>
+            </div>
         </div>
     </div>
     <?php endif; ?>

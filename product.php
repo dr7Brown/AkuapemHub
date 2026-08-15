@@ -457,6 +457,7 @@ if ($product['category_id']) {
 
 </main>
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 
 <script>

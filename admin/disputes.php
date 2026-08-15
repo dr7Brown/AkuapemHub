@@ -134,11 +134,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && !empty(
 
 $statusFilter = $_GET['status'] ?? 'open';
 
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 30;
+$offset  = ($page - 1) * $perPage;
+
 if ($type === 'jobs') {
-    $stmt = $pdo->prepare('SELECT d.*, u1.name AS reported_by_name, u2.name AS reported_user_name, sr.title AS request_title FROM disputes d JOIN users u1 ON d.reported_by = u1.id JOIN users u2 ON d.reported_user_id = u2.id JOIN service_requests sr ON d.request_id = sr.id WHERE d.status = ? ORDER BY d.created_at DESC');
+    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM disputes WHERE status = ?');
+    $countStmt->execute([$statusFilter]);
+    $disputesTotal = (int)$countStmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT d.*, u1.name AS reported_by_name, u2.name AS reported_user_name, sr.title AS request_title
+         FROM disputes d JOIN users u1 ON d.reported_by = u1.id JOIN users u2 ON d.reported_user_id = u2.id JOIN service_requests sr ON d.request_id = sr.id
+         WHERE d.status = ? ORDER BY d.created_at DESC, d.id DESC LIMIT $perPage OFFSET $offset");
     $stmt->execute([$statusFilter]);
     $disputes = $stmt->fetchAll();
 } else {
+    $countStmt = $pdo->prepare('SELECT COUNT(*) FROM delivery_disputes WHERE status = ?');
+    $countStmt->execute([$statusFilter]);
+    $disputesTotal = (int)$countStmt->fetchColumn();
+
     $stmt = $pdo->prepare(
         "SELECT dd.*, u1.name AS reported_by_name, u2.name AS reported_user_name,
                 dr.item_description, dr.pickup_location, dr.dropoff_location
@@ -146,11 +160,12 @@ if ($type === 'jobs') {
          JOIN users u1 ON dd.reported_by = u1.id
          JOIN users u2 ON dd.reported_user_id = u2.id
          JOIN delivery_requests dr ON dd.delivery_request_id = dr.id
-         WHERE dd.status = ? ORDER BY dd.created_at DESC"
+         WHERE dd.status = ? ORDER BY dd.created_at DESC, dd.id DESC LIMIT $perPage OFFSET $offset"
     );
     $stmt->execute([$statusFilter]);
     $disputes = $stmt->fetchAll();
 }
+$disputesTotalPages = max(1, (int)ceil($disputesTotal / $perPage));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -271,6 +286,15 @@ if ($type === 'jobs') {
                         </div>
                     </article>
                 <?php endforeach; ?>
+            <?php endif; ?>
+
+            <?php if ($disputesTotalPages > 1): ?>
+            <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap;">
+                <?php for ($p = 1; $p <= $disputesTotalPages; $p++): ?>
+                <a href="disputes.php?type=<?php echo $type; ?>&status=<?php echo urlencode($statusFilter); ?>&page=<?php echo $p; ?>"
+                   class="button button-small <?php echo $p === $page ? 'button-primary' : 'button-secondary'; ?>"><?php echo $p; ?></a>
+                <?php endfor; ?>
+            </div>
             <?php endif; ?>
         </section>
     </main>

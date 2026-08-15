@@ -10,7 +10,7 @@ $user = current_user();
 $reqId = (int)($_GET['id'] ?? 0);
 if (!$reqId) { header('Location: my_quick_services.php'); exit; }
 
-$stmt = $pdo->prepare("SELECT qsr.*, qs.name AS service_name, qs.icon, qs.image_path
+$stmt = $pdo->prepare("SELECT qsr.*, qs.name AS service_name, qs.icon, qs.image_path, qs.form_fields
     FROM quick_service_requests qsr
     JOIN quick_services qs ON qs.id = qsr.service_id
     WHERE qsr.id = ? AND qsr.user_id = ? LIMIT 1");
@@ -21,6 +21,8 @@ if (!$request) {
     flash('Request not found.', 'error');
     header('Location: my_quick_services.php'); exit;
 }
+
+$requestDataRows = qs_request_data_rows($request, json_decode($request['request_data'], true) ?: []);
 
 if ($request['status'] !== 'pending_payment') {
     flash('This request is not awaiting payment.', 'info');
@@ -81,6 +83,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <?php echo sanitize($request['service_name']); ?>
             </h2>
             <p style="color:var(--muted);font-size:.9rem;">Ref: <?php echo qs_reference((int)$request['id']); ?></p>
+
+            <?php if ($requestDataRows): ?>
+            <div style="padding:12px;background:var(--surface);border-radius:8px;margin-bottom:12px;border:1px solid var(--border);font-size:.86rem;">
+                <p style="margin:0 0 6px;font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);">Please review before paying</p>
+                <?php foreach ($requestDataRows as $row): ?>
+                <div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;"><span><?php echo sanitize($row['label']); ?></span><span style="font-weight:600;text-align:right;"><?php echo sanitize($row['value']); ?></span></div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
 
             <div style="padding:12px;background:var(--surface);border-radius:8px;margin-bottom:20px;border:1px solid var(--border);font-size:.86rem;">
                 <div style="display:flex;justify-content:space-between;padding:3px 0;"><span>Service Cost</span><span>GH₵ <?php echo number_format((float)$request['service_amount'], 2); ?></span></div>

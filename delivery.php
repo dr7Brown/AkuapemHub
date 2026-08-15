@@ -324,6 +324,7 @@ $activeNav = 'community';
 
 </div><!-- /max-width shell -->
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 </body>
 </html>

@@ -52,7 +52,7 @@ $deliveryTownsCount  = (int)$pdo->query('SELECT COUNT(*) FROM market_delivery_to
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Periodic Market Settings — Admin</title>
+    <title>Nearby Market Settings — Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css">
     <style>
         .ms-shell { max-width: 720px; margin: 0 auto; padding: 18px 16px 60px; }
@@ -65,8 +65,8 @@ $deliveryTownsCount  = (int)$pdo->query('SELECT COUNT(*) FROM market_delivery_to
 <body>
 
 <header class="topbar">
-    <a href="markets.php" class="button button-secondary button-small">← Periodic Markets</a>
-    <h1 style="margin:0;font-size:1rem;font-weight:800;">⚙️ Periodic Market Settings</h1>
+    <a href="markets.php" class="button button-secondary button-small">← Nearby Markets</a>
+    <h1 style="margin:0;font-size:1rem;font-weight:800;">⚙️ Nearby Market Settings</h1>
 </header>
 
 <main class="ms-shell">
@@ -85,7 +85,7 @@ $deliveryTownsCount  = (int)$pdo->query('SELECT COUNT(*) FROM market_delivery_to
     <div class="ms-card">
         <h2 style="margin-top:0;font-size:1rem;">Payouts &amp; Charges</h2>
         <p style="font-size:.84rem;color:var(--text-muted,#6b7280);margin-top:-8px;">
-            These settings apply to every periodic market, and are intentionally separate from the
+            These settings apply to every nearby market, and are intentionally separate from the
             regular Marketplace's own settings (<a href="marketplace.php?tab=settings">Marketplace → Settings</a>).
         </p>
         <form method="post">
@@ -120,7 +120,7 @@ $deliveryTownsCount  = (int)$pdo->query('SELECT COUNT(*) FROM market_delivery_to
         <p style="font-size:.84rem;color:var(--text-muted,#6b7280);margin-bottom:0;">
             Schedule (weekly/monthly recurrence &amp; order window), storehouse pickup fee,
             per-town home-delivery pricing, and assigned managers are all set per market — open a
-            market's <strong>Manage</strong> panel from the <a href="markets.php">Periodic Markets</a>
+            market's <strong>Manage</strong> panel from the <a href="markets.php">Nearby Markets</a>
             list to edit those.
         </p>
     </div>

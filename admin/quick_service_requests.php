@@ -78,8 +78,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $backParams = [];
     if (!empty($_GET['service'])) $backParams[] = 'service=' . (int)$_GET['service'];
     if (!empty($_GET['view']))    $backParams[] = 'view=' . urlencode($_GET['view']);
+    if (!empty($_GET['page']))    $backParams[] = 'page=' . (int)$_GET['page'];
     header('Location: quick_service_requests.php' . ($backParams ? '?' . implode('&', $backParams) : ''));
     exit;
+}
+
+/** Builds a quick_service_requests.php URL preserving the current view/service filters. */
+function qr_page_url(int $page, string $view, int $serviceId): string {
+    $params = ['view' => $view, 'page' => $page];
+    if ($serviceId) $params['service'] = $serviceId;
+    return 'quick_service_requests.php?' . http_build_query($params);
 }
 
 $filterServiceId = (int)($_GET['service'] ?? 0);
@@ -94,9 +102,14 @@ $viewTabs = [
 $view = $_GET['view'] ?? 'active';
 if (!isset($viewTabs[$view])) $view = 'active';
 
-$services = [];
-$requests = [];
-$revenue  = ['count' => 0, 'service_amount' => 0, 'service_fee' => 0, 'total' => 0];
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 30;
+
+$services   = [];
+$requests   = [];
+$total      = 0;
+$totalPages = 1;
+$revenue    = ['count' => 0, 'service_amount' => 0, 'service_fee' => 0, 'total' => 0];
 if (!$noServicesAssigned) {
     $services = $pdo->query(
         'SELECT id, name FROM quick_services WHERE id IN (' . implode(',', array_map('intval', $managedServiceIds)) . ') ORDER BY name'
@@ -106,14 +119,22 @@ if (!$noServicesAssigned) {
     if ($viewTabs[$view]) $where[] = $viewTabs[$view];
     $params = [];
     if ($filterServiceId) { $where[] = 'qsr.service_id = ?'; $params[] = $filterServiceId; }
+    $whereSql = implode(' AND ', $where);
+
+    $countStmt = $pdo->prepare("SELECT COUNT(*) FROM quick_service_requests qsr WHERE {$whereSql}");
+    $countStmt->execute($params);
+    $total      = (int)$countStmt->fetchColumn();
+    $totalPages = max(1, (int)ceil($total / $perPage));
+    $offset     = ($page - 1) * $perPage;
 
     $requests = $pdo->prepare(
-        "SELECT qsr.*, qs.name AS service_name, qs.icon, qs.image_path, u.name AS buyer_name, u.phone AS buyer_phone
+        "SELECT qsr.*, qs.name AS service_name, qs.icon, qs.image_path, qs.form_fields, u.name AS buyer_name, u.phone AS buyer_phone
          FROM quick_service_requests qsr
          JOIN quick_services qs ON qsr.service_id = qs.id
          JOIN users u ON qsr.user_id = u.id
-         WHERE " . implode(' AND ', $where) . "
-         ORDER BY FIELD(qsr.status,'paid','processing'), qsr.created_at DESC"
+         WHERE {$whereSql}
+         ORDER BY FIELD(qsr.status,'paid','processing'), qsr.created_at DESC, qsr.id DESC
+         LIMIT {$perPage} OFFSET {$offset}"
     );
     $requests->execute($params);
     $requests = $requests->fetchAll();
@@ -164,6 +185,11 @@ if (!$noServicesAssigned) {
         .qr-tabs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
         .qr-tab { padding:6px 12px; border-radius:20px; font-size:.8rem; font-weight:700; text-decoration:none; color:var(--text-muted,#6b7280); background:var(--surface-muted,#f3f4f6); }
         .qr-tab.active { background:var(--primary,#0f766e); color:#fff; }
+        .qr-pagination { display:flex; gap:4px; flex-wrap:wrap; align-items:center; margin-top:14px; }
+        .qr-pagination a, .qr-pagination .current { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
+        .qr-pagination a:hover { background:var(--surface-muted,#f9fafb); }
+        .qr-pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
+        .qr-page-total { font-size:.78rem; color:var(--text-muted,#6b7280); margin-left:4px; }
         .hidden-form { display:none; }
     </style>
 </head>
@@ -230,7 +256,7 @@ if (!$noServicesAssigned) {
         <p style="margin:0;font-weight:700;">No requests in this view</p>
     </div>
     <?php else: ?>
-    <?php foreach ($requests as $r): $data = json_decode($r['request_data'], true) ?: []; $isActive = in_array($r['status'], ['paid', 'processing'], true); ?>
+    <?php foreach ($requests as $r): $dataRows = qs_request_data_rows($r, json_decode($r['request_data'], true) ?: []); $isActive = in_array($r['status'], ['paid', 'processing'], true); ?>
     <div class="qr-card">
         <div class="qr-head">
             <div>
@@ -253,8 +279,8 @@ if (!$noServicesAssigned) {
         </div>
 
         <div class="qr-data">
-            <?php foreach ($data as $key => $val): ?>
-            <div class="qr-data-row"><span><?php echo sanitize(ucwords(str_replace('_', ' ', $key))); ?></span><span><strong><?php echo sanitize($val); ?></strong></span></div>
+            <?php foreach ($dataRows as $row): ?>
+            <div class="qr-data-row"><span><?php echo sanitize($row['label']); ?></span><span><strong><?php echo sanitize($row['value']); ?></strong></span></div>
             <?php endforeach; ?>
             <div class="qr-data-row"><span>Service Cost</span><span>GH₵ <?php echo number_format((float)$r['service_amount'], 2); ?></span></div>
             <div class="qr-data-row"><span>Service Fee</span><span>GH₵ <?php echo number_format((float)$r['service_fee'], 2); ?></span></div>
@@ -307,6 +333,18 @@ if (!$noServicesAssigned) {
         <?php endif; ?>
     </div>
     <?php endforeach; ?>
+    <?php if ($totalPages > 1): ?>
+    <div class="qr-pagination">
+        <?php if ($page > 1): ?><a href="<?php echo sanitize(qr_page_url($page - 1, $view, $filterServiceId)); ?>">‹ Prev</a><?php endif; ?>
+        <?php for ($p = max(1, $page - 3); $p <= min($totalPages, $page + 3); $p++): ?>
+            <?php if ($p === $page): ?><span class="current"><?php echo $p; ?></span>
+            <?php else: ?><a href="<?php echo sanitize(qr_page_url($p, $view, $filterServiceId)); ?>"><?php echo $p; ?></a>
+            <?php endif; ?>
+        <?php endfor; ?>
+        <?php if ($page < $totalPages): ?><a href="<?php echo sanitize(qr_page_url($page + 1, $view, $filterServiceId)); ?>">Next ›</a><?php endif; ?>
+        <span class="qr-page-total">Page <?php echo $page; ?> of <?php echo $totalPages; ?> (<?php echo $total; ?> total)</span>
+    </div>
+    <?php endif; ?>
     <?php endif; ?>
 
     <?php endif; ?>

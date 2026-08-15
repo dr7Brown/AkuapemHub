@@ -140,27 +140,57 @@ if ($editRequestId) {
     $editRequest = $erStmt->fetch() ?: null;
 }
 
+// Count per status — a lightweight aggregate, unfiltered by search, so the
+// tab badges always reflect the full inventory regardless of what's typed
+// in the search box or which tab is currently active.
+$statusCounts = $pdo->query("SELECT status, COUNT(*) AS n FROM service_requests GROUP BY status")
+    ->fetchAll(PDO::FETCH_KEY_PAIR);
+$allRequestsCount = array_sum($statusCounts);
+
+$searchQ = trim($_GET['q'] ?? '');
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 30;
+$offset  = ($page - 1) * $perPage;
+
+$where  = ['1=1'];
+$params = [];
+if ($filterStatus) { $where[] = 'sr.status = ?'; $params[] = $filterStatus; }
+if ($searchQ !== '') {
+    $where[] = '(sr.title LIKE ? OR u.name LIKE ?)';
+    $like = '%' . $searchQ . '%';
+    $params[] = $like; $params[] = $like;
+}
+$whereSql = implode(' AND ', $where);
+
+$countStmt = $pdo->prepare("SELECT COUNT(*) FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE $whereSql");
+$countStmt->execute($params);
+$requestsTotal = (int)$countStmt->fetchColumn();
+$requestsTotalPages = max(1, (int)ceil($requestsTotal / $perPage));
+
 // Pending-first sort so items needing action bubble to top
-$stmt = $pdo->query("
+$stmt = $pdo->prepare("
     SELECT sr.*, sr.posting_fee_status, sr.workers_needed, sr.workers_approved,
            u.name AS customer_name, c.name AS category_name
     FROM service_requests sr
     JOIN users u ON sr.customer_id = u.id
     JOIN service_categories c ON sr.category_id = c.id
+    WHERE $whereSql
     ORDER BY
         FIELD(sr.status,'pending','pending_payment','open','partially_staffed','in_progress','fully_staffed','completed','cancelled'),
-        sr.created_at DESC
+        sr.created_at DESC, sr.id DESC
+    LIMIT $perPage OFFSET $offset
 ");
-$allRequests = $stmt->fetchAll();
+$stmt->execute($params);
+$requests = $stmt->fetchAll();
 
-// Count per status
-$statusCounts = [];
-foreach ($allRequests as $r) { $statusCounts[$r['status']] = ($statusCounts[$r['status']] ?? 0) + 1; }
-
-// Apply filter
-$requests = $filterStatus
-    ? array_values(array_filter($allRequests, fn($r) => $r['status'] === $filterStatus))
-    : $allRequests;
+function rq_qstr(array $overrides = []): string {
+    $base = [];
+    foreach (['status', 'q', 'page'] as $k) {
+        if (isset($_GET[$k]) && $_GET[$k] !== '') $base[$k] = $_GET[$k];
+    }
+    $merged = array_filter(array_merge($base, $overrides), fn($v) => $v !== null && $v !== '');
+    return 'requests.php?' . http_build_query($merged);
+}
 
 // Summary stats
 $rpt = $pdo->query("
@@ -360,13 +390,13 @@ $statusMeta = [
 
         <!-- Status filter tabs -->
         <div class="status-tabs">
-            <a href="requests.php" class="status-tab <?php echo !$filterStatus ? 'active' : ''; ?>" style="color:#374151;">
+            <a href="<?php echo sanitize(rq_qstr(['status' => null, 'page' => null])); ?>" class="status-tab <?php echo !$filterStatus ? 'active' : ''; ?>" style="color:#374151;">
                 All
-                <span class="tab-count" style="background:#374151;color:#fff;"><?php echo count($allRequests); ?></span>
+                <span class="tab-count" style="background:#374151;color:#fff;"><?php echo $allRequestsCount; ?></span>
             </a>
             <?php foreach ($statusMeta as $st => $sm): ?>
                 <?php $cnt = $statusCounts[$st] ?? 0; if (!$cnt) continue; ?>
-                <a href="requests.php?status=<?php echo urlencode($st); ?>"
+                <a href="<?php echo sanitize(rq_qstr(['status' => $st, 'page' => null])); ?>"
                    class="status-tab <?php echo $filterStatus === $st ? 'active' : ''; ?>"
                    style="color:<?php echo $sm['color']; ?>;">
                     <?php echo $sm['label']; ?>
@@ -389,12 +419,17 @@ $statusMeta = [
                     <input type="checkbox" id="select-all" /> Select all
                 </label>
             </form>
-            <input type="search" id="rq-search" placeholder="Search title or customer…" />
-            <span class="rq-count-note" id="rq-count"><?php echo count($requests); ?> job<?php echo count($requests) !== 1 ? 's' : ''; ?></span>
+            <form method="get" action="requests.php" style="display:flex;gap:6px;align-items:center;">
+                <?php if ($filterStatus): ?><input type="hidden" name="status" value="<?php echo sanitize($filterStatus); ?>"><?php endif; ?>
+                <input type="search" id="rq-search" name="q" value="<?php echo sanitize($searchQ); ?>" placeholder="Search title or customer…">
+                <button type="submit" class="button button-secondary button-small">Search</button>
+                <?php if ($searchQ !== ''): ?><a href="<?php echo sanitize(rq_qstr(['q' => null, 'page' => null])); ?>" class="button button-secondary button-small">Clear</a><?php endif; ?>
+            </form>
+            <span class="rq-count-note"><?php echo $requestsTotal; ?> job<?php echo $requestsTotal !== 1 ? 's' : ''; ?></span>
         </div>
 
         <?php if (!$requests): ?>
-            <div class="empty-state">No requests found<?php echo $filterStatus ? ' for this status' : ''; ?>.</div>
+            <div class="empty-state">No requests found<?php echo $filterStatus || $searchQ !== '' ? ' matching your filters' : ''; ?>.</div>
         <?php else: ?>
         <div class="rq-list" id="rq-list">
             <?php foreach ($requests as $request): ?>
@@ -408,10 +443,8 @@ $statusMeta = [
                     $rowClass     = 'rq-row'
                         . ($feeStatus === 'pending' ? ' rq-fee-pending' : '')
                         . ($riskSignals            ? ' rq-has-risk'    : '');
-                    $searchKey = strtolower($request['title'] . ' ' . $request['customer_name'] . ' ' . $request['location']);
                 ?>
                 <div class="<?php echo $rowClass; ?>"
-                     data-search="<?php echo htmlspecialchars($searchKey, ENT_QUOTES); ?>"
                      data-status="<?php echo sanitize($request['status']); ?>">
 
                     <!-- compact strip -->
@@ -547,6 +580,17 @@ $statusMeta = [
                 </div>
             <?php endforeach; ?>
         </div>
+        <?php if ($requestsTotalPages > 1): ?>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap;">
+            <?php if ($page > 1): ?><a href="<?php echo sanitize(rq_qstr(['page' => $page - 1])); ?>" class="button button-small button-secondary">‹ Prev</a><?php endif; ?>
+            <?php for ($p = max(1, $page - 3); $p <= min($requestsTotalPages, $page + 3); $p++): ?>
+            <a href="<?php echo sanitize(rq_qstr(['page' => $p])); ?>"
+               class="button button-small <?php echo $p === $page ? 'button-primary' : 'button-secondary'; ?>"><?php echo $p; ?></a>
+            <?php endfor; ?>
+            <?php if ($page < $requestsTotalPages): ?><a href="<?php echo sanitize(rq_qstr(['page' => $page + 1])); ?>" class="button button-small button-secondary">Next ›</a><?php endif; ?>
+            <span style="align-self:center;font-size:.8rem;color:#6b7280;">Page <?php echo $page; ?> of <?php echo $requestsTotalPages; ?> (<?php echo $requestsTotal; ?> total)</span>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
 
         <!-- Reject modal: must stay inside <main> — the admin AJAX loader
@@ -633,23 +677,6 @@ $statusMeta = [
         var row = btn.closest('.rq-row');
         var open = row.classList.toggle('is-open');
         btn.textContent = open ? 'details ▴' : 'details ▾';
-    }
-
-    // Live search
-    var searchEl = document.getElementById('rq-search');
-    var countEl  = document.getElementById('rq-count');
-    if (searchEl) {
-        searchEl.addEventListener('input', function () {
-            var q = this.value.toLowerCase().trim();
-            var rows = document.querySelectorAll('.rq-row');
-            var visible = 0;
-            rows.forEach(function (row) {
-                var match = !q || (row.dataset.search || '').includes(q);
-                row.style.display = match ? '' : 'none';
-                if (match) visible++;
-            });
-            if (countEl) countEl.textContent = visible + ' job' + (visible !== 1 ? 's' : '');
-        });
     }
 
     // Select all checkbox

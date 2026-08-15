@@ -809,6 +809,7 @@ if ($user) {
 
 
     </main>
+    <?php require __DIR__ . '/partials/site_footer.php'; ?>
     <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <script>
         var toggleCategories = document.getElementById('toggle-categories');

@@ -254,6 +254,7 @@ if ($user && $canReviewShop && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST[
 
 </main>
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 </body>
 </html>

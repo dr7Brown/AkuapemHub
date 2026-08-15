@@ -131,16 +131,30 @@ $featPkgs        = $pdo->query("SELECT * FROM featured_news_packages ORDER BY du
 $featRevenue     = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type='featured_news' AND status='paid'")->fetchColumn();
 $featActiveCount = (int)$pdo->query("SELECT COUNT(*) FROM news WHERE featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())")->fetchColumn();
 
+// Lightweight aggregate for the stat strip — avoids loading every article
+// just to count/sum them.
+$newsStats  = $pdo->query("
+    SELECT COUNT(*) AS total,
+           SUM(status='published') AS published,
+           SUM(status='rejected') AS rejected,
+           COALESCE(SUM(view_count),0) AS total_views
+    FROM news")->fetch();
+$total      = (int)$newsStats['total'];
+$published  = (int)$newsStats['published'];
+$rejected   = (int)$newsStats['rejected'];
+$drafts     = $total - $published - $rejected;
+$totalViews = (int)$newsStats['total_views'];
+
+$page       = max(1, (int)($_GET['page'] ?? 1));
+$perPage    = 30;
+$offset     = ($page - 1) * $perPage;
+
 $articles = $pdo->query("
     SELECT n.id, n.title, n.slug, n.status, n.view_count, n.published_at, n.created_at, n.user_id,
            n.rejection_reason, u.name AS submitter_name
     FROM news n LEFT JOIN users u ON u.id = n.user_id
-    ORDER BY n.created_at DESC")->fetchAll();
-$total      = count($articles);
-$published  = count(array_filter($articles, fn($a) => $a['status'] === 'published'));
-$rejected   = count(array_filter($articles, fn($a) => $a['status'] === 'rejected'));
-$drafts     = $total - $published - $rejected;
-$totalViews = array_sum(array_column($articles, 'view_count'));
+    ORDER BY n.created_at DESC
+    LIMIT $perPage OFFSET $offset")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -370,6 +384,14 @@ $totalViews = array_sum(array_column($articles, 'view_count'));
                 </tbody>
             </table>
         </div>
+        <?php if ($total > $perPage): ?>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap;">
+            <?php for ($p = 1; $p <= ceil($total / $perPage); $p++): ?>
+            <a href="news.php?page=<?php echo $p; ?>"
+               class="button button-small <?php echo $p === $page ? 'button-primary' : 'button-secondary'; ?>"><?php echo $p; ?></a>
+            <?php endfor; ?>
+        </div>
+        <?php endif; ?>
         <?php endif; ?>
 
         <!-- Reject modal: must stay inside <main> — the admin AJAX loader

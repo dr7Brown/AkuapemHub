@@ -428,5 +428,6 @@ $totalWorkers = (int)$pdo->query("SELECT COUNT(*) FROM worker_profiles")->fetchC
     </div>
 </div>
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 </body>
 </html>

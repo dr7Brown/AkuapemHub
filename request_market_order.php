@@ -11,7 +11,7 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/marketplace_functions.php';
 
-require_module_enabled('markets', 'Periodic Markets');
+require_module_enabled('markets', 'Nearby Markets');
 require_login();
 
 $user     = current_user();

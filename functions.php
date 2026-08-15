@@ -629,14 +629,30 @@ function qs_reference(int $id): string {
  * request given its configured pricing and the submitted form data.
  * - pricing_mode='fixed': service_amount = $service['base_cost']
  * - pricing_mode='user_entered': service_amount = the numeric value of the
- *   form field named $service['amount_field_key']
+ *   form field named $service['amount_field_key'] — UNLESS that field is a
+ *   priced select (see qs_field_is_priced_select()), in which case the
+ *   amount is looked up from the chosen option's price rather than trusted
+ *   as a raw typed number. A priced select can be standalone (e.g. a "TV
+ *   Package" dropdown where each package has its own price) or dependent
+ *   on another field (e.g. Network → Data Package, where the package list
+ *   itself changes per network) — both resolve through the same lookup.
  * The AkuapemConnect service fee is always computed on top, separately,
  * as either a flat GHS amount or a percentage of the service amount.
  */
 function qs_compute_pricing(array $service, array $submittedData): array {
     if ($service['pricing_mode'] === 'user_entered') {
         $key = $service['amount_field_key'] ?? '';
-        $serviceAmount = $key !== '' ? (float)($submittedData[$key] ?? 0) : 0;
+        $field = null;
+        if ($key !== '') {
+            foreach (json_decode($service['form_fields'] ?? '[]', true) ?: [] as $f) {
+                if (($f['key'] ?? null) === $key) { $field = $f; break; }
+            }
+        }
+        if ($field && qs_field_is_priced_select($field)) {
+            $serviceAmount = qs_priced_option_price($field, $submittedData);
+        } else {
+            $serviceAmount = $key !== '' ? (float)($submittedData[$key] ?? 0) : 0;
+        }
     } else {
         $serviceAmount = (float)$service['base_cost'];
     }
@@ -651,6 +667,64 @@ function qs_compute_pricing(array $service, array $submittedData): array {
         'service_fee'    => $serviceFee,
         'total'          => round($serviceAmount + $serviceFee, 2),
     ];
+}
+
+/**
+ * Whether $field is a select field whose options each carry their own
+ * price — either standalone ('options' => flat [{label,price}, ...], no
+ * parent) or dependent ('options' => {parentValue: [{label,price}, ...]}).
+ * A plain select (flat array of strings) or any non-select field is not.
+ */
+function qs_field_is_priced_select(array $field): bool {
+    if (($field['type'] ?? '') !== 'select') return false;
+    $options = $field['options'] ?? null;
+    if (!is_array($options) || !$options) return false;
+    if (!empty($field['depends_on'])) return true; // nested-by-parent shape, always priced
+    $first = reset($options);
+    return is_array($first) && array_key_exists('price', $first);
+}
+
+/**
+ * Resolves the price for a priced-select field from the submitted form
+ * data — standalone (options is the flat priced list itself) or dependent
+ * on another field (options is keyed by that field's submitted value).
+ * Never trusts a raw submitted price, so a buyer can't manipulate the
+ * amount by tampering with the POST body; an unmatched selection simply
+ * resolves to 0 (caught by the caller's total>0 validation).
+ */
+function qs_priced_option_price(array $field, array $submittedData): float {
+    $submittedLabel = $submittedData[$field['key']] ?? '';
+    if (!empty($field['depends_on'])) {
+        $parentVal = $submittedData[$field['depends_on']] ?? '';
+        $bucket = $field['options'][$parentVal] ?? [];
+    } else {
+        $bucket = $field['options'] ?? [];
+    }
+    foreach ($bucket as $opt) {
+        if (($opt['label'] ?? null) === $submittedLabel) {
+            return (float)($opt['price'] ?? 0);
+        }
+    }
+    return 0.0;
+}
+
+/**
+ * Pairs a Quick Service request's raw submitted data (request_data) with
+ * each field's real admin-configured label, for display on the payment
+ * review page, My Services, and the manager dashboard. Iterates the
+ * submitted data itself (not the service's current form_fields) so a
+ * request still shows everything the buyer submitted even if the admin
+ * later renamed/removed a field — the label just falls back to a
+ * key-derived guess for anything that no longer matches.
+ */
+function qs_request_data_rows(array $service, array $requestData): array {
+    $fields = json_decode($service['form_fields'] ?? '[]', true) ?: [];
+    $labelsByKey = array_column($fields, 'label', 'key');
+    $rows = [];
+    foreach ($requestData as $key => $val) {
+        $rows[] = ['label' => $labelsByKey[$key] ?? ucwords(str_replace('_', ' ', $key)), 'value' => $val];
+    }
+    return $rows;
 }
 
 /**
@@ -2283,7 +2357,7 @@ function all_mod_permissions(): array {
             'manage_towns'          => 'Manage the Akuapem towns list',
             'manage_media_settings' => 'Configure image upload sizes & quality',
         ],
-        'Periodic Markets' => [
+        'Nearby Markets' => [
             'manage_markets'            => 'Create markets, open/close them, and assign storehouse managers',
             'manage_market_deliveries'  => 'Manage storehouse handoffs for assigned markets',
         ],

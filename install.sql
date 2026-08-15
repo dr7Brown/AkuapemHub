@@ -2989,3 +2989,11 @@ INSERT IGNORE INTO quick_services (name, slug, icon, description, instructions, 
 -- the emoji icon everywhere it's still NULL).
 -- ═══════════════════════════════════════════════════════════════════════════
 ALTER TABLE quick_services ADD COLUMN IF NOT EXISTS image_path VARCHAR(255) NULL AFTER icon;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v071  Sponsor Packages — optional rich-text "Benefits" field, edited via
+-- the shared rich-editor.js component (admin/monetization.php, Community
+-- Packages tab), shown on become_sponsor.php under each package. Content
+-- is admin-authored HTML, rendered back out through render_rich().
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE sponsor_packages ADD COLUMN IF NOT EXISTS benefits TEXT NULL AFTER status;

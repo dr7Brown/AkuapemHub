@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
     header('Location: my_quick_services.php'); exit;
 }
 
-$stmt = $pdo->prepare("SELECT qsr.*, qs.name AS service_name, qs.icon, qs.image_path
+$stmt = $pdo->prepare("SELECT qsr.*, qs.name AS service_name, qs.icon, qs.image_path, qs.form_fields
     FROM quick_service_requests qsr
     JOIN quick_services qs ON qs.id = qsr.service_id
     WHERE qsr.user_id = ?
@@ -61,6 +61,11 @@ function qsBadge(string $status): array {
         .myqs-badge.cancelled  { background:#f3f4f6; color:#6b7280; }
         .myqs-response { background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:8px 11px; margin-top:8px; font-size:.8rem; line-height:1.55; width:100%; }
         .myqs-response strong { color:#1d4ed8; }
+        .myqs-details { width:100%; margin-top:6px; font-size:.8rem; }
+        .myqs-details summary { cursor:pointer; color:var(--primary,#0f766e); font-weight:600; font-size:.78rem; }
+        .myqs-details-body { background:var(--surface-muted,#f8fafc); border-radius:8px; padding:8px 10px; margin-top:6px; }
+        .myqs-details-row { display:flex; justify-content:space-between; gap:10px; padding:2px 0; color:var(--muted,#6b7280); }
+        .myqs-details-row strong { color:var(--text,#1f2937); font-weight:600; text-align:right; }
     </style>
 </head>
 <body class="has-bottom-nav">
@@ -95,6 +100,17 @@ function qsBadge(string $status): array {
                 </h3>
                 <p class="meta">Ref: <?php echo qs_reference((int)$r['id']); ?> · <?php echo date('d M Y', strtotime($r['created_at'])); ?></p>
                 <p class="meta">GH₵ <?php echo number_format((float)$r['total_amount'], 2); ?></p>
+                <?php $detailRows = qs_request_data_rows($r, json_decode($r['request_data'], true) ?: []); ?>
+                <?php if ($detailRows): ?>
+                <details class="myqs-details">
+                    <summary>View what you submitted</summary>
+                    <div class="myqs-details-body">
+                        <?php foreach ($detailRows as $row): ?>
+                        <div class="myqs-details-row"><span><?php echo sanitize($row['label']); ?></span><strong><?php echo sanitize($row['value']); ?></strong></div>
+                        <?php endforeach; ?>
+                    </div>
+                </details>
+                <?php endif; ?>
                 <?php if ($r['manager_response']): ?>
                 <div class="myqs-response">
                     <strong><?php echo $r['status'] === 'unable_to_process' ? 'Note from our team:' : 'Response:'; ?></strong>

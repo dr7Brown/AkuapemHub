@@ -266,7 +266,7 @@ if ($manageMarket) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Periodic Markets — Admin</title>
+    <title>Nearby Markets — Admin</title>
     <link rel="stylesheet" href="../assets/css/style.css">
     <style>
         .mk-shell { max-width: 980px; margin: 0 auto; padding: 18px 16px 60px; }
@@ -289,7 +289,7 @@ if ($manageMarket) {
 
 <header class="topbar">
     <a href="index.php" class="button button-secondary button-small">← Dashboard</a>
-    <h1 style="margin:0;font-size:1rem;font-weight:800;">🏬 Periodic Markets</h1>
+    <h1 style="margin:0;font-size:1rem;font-weight:800;">🏬 Nearby Markets</h1>
     <a href="market_orders.php" class="button button-primary button-small">📝 Custom Orders</a>
     <a href="market_deliveries.php" class="button button-primary button-small">📦 Storehouse Deliveries</a>
     <a href="market_settings.php" class="button button-secondary button-small">⚙️ Settings</a>

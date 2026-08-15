@@ -64,6 +64,7 @@ $services = $pdo->query("SELECT * FROM quick_services WHERE status='active' ORDE
     <?php endif; ?>
 </main>
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php if ($user) { require __DIR__ . '/partials/bottom_nav.php'; } ?>
 </body>
 </html>

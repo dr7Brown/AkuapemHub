@@ -2,7 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 
-require_module_enabled('markets', 'Periodic Markets');
+require_module_enabled('markets', 'Nearby Markets');
 
 $user = current_user();
 
@@ -36,8 +36,8 @@ foreach ($marketSchedules as $s) { if ($s['is_payment_open']) $openNowCount++; }
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <?php echo seo_meta([
-        'title'       => 'Periodic Markets — Ofie, Nkurakan & More | ' . APP_NAME,
-        'description' => 'Browse scheduled periodic markets across the Akuapem area — Ofie Market, Nkurakan Market and more. Order ahead, collect from the storehouse on market day.',
+        'title'       => 'Nearby Markets — Ofie, Nkurakan & More | ' . APP_NAME,
+        'description' => 'Browse scheduled nearby markets across the Akuapem area — Ofie Market, Nkurakan Market and more. Order ahead, collect from the storehouse on market day.',
         'url'         => rtrim(BASE_URL, '/') . '/markets.php',
     ]); ?>
     <link rel="stylesheet" href="assets/css/style.css">
@@ -136,14 +136,14 @@ foreach ($marketSchedules as $s) { if ($s['is_payment_open']) $openNowCount++; }
 
 <header class="mkt-topbar">
     <a href="index.php" class="mkt-back">← Back Home</a>
-    <span class="mkt-title">🏬 Periodic Markets</span>
+    <span class="mkt-title">🏬 Nearby Markets</span>
     <a href="marketplace.php" class="button button-secondary button-small">🛍️ Regular Marketplace</a>
 </header>
 
 <main class="mkt-shell">
 
     <div class="mkt-hero">
-        <h1>🏬 Periodic Markets</h1>
+        <h1>🏬 Nearby Markets</h1>
         <p>Scheduled market days across the Akuapem area. Enter a market to send a shopping list for the
         items you need — an agent prices it, and once you pay, it's picked up from the storehouse or
         delivered to your town. Some markets open orders a few days ahead of market day.</p>
@@ -307,6 +307,7 @@ if (document.querySelector('.mkt-countdown')) {
 }
 </script>
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php if ($user) { require __DIR__ . '/partials/bottom_nav.php'; } ?>
 </body>
 </html>

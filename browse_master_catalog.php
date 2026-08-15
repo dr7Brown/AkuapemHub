@@ -183,6 +183,7 @@ function bc_qstr(array $overrides = []): string {
     <?php endif; ?>
 </div>
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php require_once __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

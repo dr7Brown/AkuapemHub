@@ -233,6 +233,7 @@ function shops_page_url(int $page): string {
 
 </main>
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 </body>
 </html>

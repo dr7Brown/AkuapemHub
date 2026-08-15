@@ -169,7 +169,7 @@ if (!isset($activeNav)) {
         </a>
         <?php if (module_enabled('markets')): ?>
         <a href="markets.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-            <span>🏬</span> Periodic Markets
+            <span>🏬</span> Nearby Markets
         </a>
         <?php endif; ?>
         <?php if (module_enabled('quick_services')): ?>

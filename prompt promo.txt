@@ -1,0 +1,397 @@
+Use this prompt. It keeps the module **simple, lightweight and independent**, so it doesn't unnecessarily add load to AkuapemConnect.
+
+```text
+Add a lightweight "Promotions / Promo Packages" module to the existing AkuapemConnect platform.
+
+IMPORTANT:
+- Keep this module SIMPLE and lightweight.
+- Do NOT redesign or modify existing modules.
+- Do NOT introduce unnecessary dependencies, background jobs, complex campaign engines, or heavy database queries.
+- Reuse the platform's existing user, notification, package/subscription and payment structures where appropriate.
+- The module must not noticeably slow down the homepage, user dashboard, admin dashboard, or other existing functionality.
+- Follow the existing coding style, UI design, authentication, authorization and database conventions.
+- Make the feature modular so it can be disabled without affecting the rest of the platform.
+
+==================================================
+1. ADMIN PROMOTION MANAGEMENT
+==================================================
+
+Add a new Admin section:
+
+Admin → Promotions
+
+Admin should be able to:
+
+- Create promotion
+- Edit promotion
+- Activate/deactivate promotion
+- Delete promotion
+- View promotion details
+- View users who have claimed a promotion
+
+Promotion fields:
+
+- Promotion Name
+- Short Description
+- Promotion Type
+- Applicable Package/Service
+- Number of Free Days
+- Start Date
+- End Date (optional; calculate automatically when appropriate)
+- Maximum Number of Users/Claims (optional)
+- Status: Draft / Active / Expired / Disabled
+- Promo Code (optional)
+- Notification Message
+
+Example:
+
+Promotion Name:
+"Free 30-Day Business Package"
+
+Promotion Type:
+"Free Package"
+
+Package:
+"Standard Business Package"
+
+Free Duration:
+30 days
+
+Maximum Claims:
+100
+
+Status:
+Active
+
+==================================================
+2. PROMOTION TYPES
+==================================================
+
+Keep the first version simple. Support only:
+
+- Free Package
+- Free Listing
+- Free Featured Listing
+- Discount
+- Free Service
+
+Allow the admin to select the applicable existing package/service.
+
+Do NOT create separate package systems for promotions.
+
+==================================================
+3. USER PROMOTION EXPERIENCE
+==================================================
+
+Add a small "Promotions" or "Special Offers" section to the user dashboard.
+
+Users should see only promotions they are eligible for.
+
+Example:
+
+🎁 Free 30-Day Business Package
+
+Get the Standard Business Package FREE for 30 days.
+
+[Claim Offer]
+
+After claiming:
+
+✅ Promotion Activated
+
+Your promotion is active until [DATE].
+
+Do not force users to browse a complicated promotion marketplace.
+
+==================================================
+4. PROMO CODE
+==================================================
+
+Promo codes should be optional.
+
+If a promotion has a promo code, allow users to enter the code and apply it.
+
+Example:
+
+Promo Code: AKUAPEM2026
+
+The system should validate:
+
+- Code exists
+- Promotion is active
+- User is eligible
+- Promotion has not expired
+- Maximum claims have not been reached
+- User has not already claimed the same promotion
+
+==================================================
+5. USER NOTIFICATIONS
+==================================================
+
+When an admin activates a promotion, eligible users should receive an in-app notification.
+
+Example:
+
+🎁 SPECIAL OFFER
+
+You have received a FREE 30-day Standard Business Package on AkuapemConnect.
+
+[View Offer]
+
+IMPORTANT PERFORMANCE REQUIREMENT:
+
+Do not send notifications by looping through thousands of users during the admin's request.
+
+Use the existing notification system if one already exists.
+
+If the platform does not have a background queue system, use a lightweight approach that does not block the admin request.
+
+Do not introduce a complicated notification infrastructure just for this module.
+
+==================================================
+6. CLAIM PROCESS
+==================================================
+
+When a user claims a promotion:
+
+1. Verify eligibility.
+2. Verify promotion is active.
+3. Verify the promotion has not expired.
+4. Verify maximum claims have not been reached.
+5. Verify the user has not already claimed it.
+6. Create a simple promotion claim/entitlement record.
+7. Apply the promotion to the selected package/service.
+8. Set activation date and expiry date.
+9. Notify the user.
+10. Show confirmation.
+
+Example:
+
+Promotion:
+Free Standard Package
+
+Duration:
+30 days
+
+Claimed:
+15 August 2026
+
+Expires:
+14 September 2026
+
+==================================================
+7. DATABASE
+==================================================
+
+Keep the database design minimal.
+
+Prefer two simple tables:
+
+promotions
+
+- id
+- name
+- description
+- type
+- package_id/service_id
+- duration_days
+- promo_code
+- max_claims
+- start_date
+- end_date
+- status
+- created_by
+- created_at
+- updated_at
+
+promotion_claims
+
+- id
+- promotion_id
+- user_id
+- start_date
+- expiry_date
+- status
+- created_at
+
+Add appropriate indexes on:
+
+- promotion_id
+- user_id
+- promo_code
+- status
+
+Prevent duplicate claims using database constraints where appropriate.
+
+Do not store unnecessary duplicated user or package information.
+
+==================================================
+8. ADMIN DASHBOARD
+==================================================
+
+Create a simple promotion list:
+
+Promotion | Type | Duration | Claims | Status | Actions
+
+Example:
+
+Free Business Package | Free Package | 30 Days | 35/100 | Active
+
+Actions:
+
+- View
+- Edit
+- Activate/Deactivate
+- Delete
+
+Add a simple summary:
+
+Active Promotions: 3
+Total Claims: 125
+
+Do not create complicated analytics or charts for this module.
+
+==================================================
+9. PERFORMANCE
+==================================================
+
+This is VERY IMPORTANT.
+
+The promotion system must not slow down AkuapemConnect.
+
+Requirements:
+
+- Do not load all promotions on every page.
+- Only query active promotions where needed.
+- Cache active promotion data if the existing system supports caching.
+- Use pagination in the admin promotion list.
+- Use database indexes.
+- Avoid N+1 queries.
+- Do not perform expensive calculations on the homepage.
+- Do not repeatedly query promotions for every component.
+- Load promotional information only when the relevant section is displayed.
+- Do not add large JavaScript libraries.
+- Do not add unnecessary API calls.
+- Do not run constant polling.
+- Do not create unnecessary cron jobs.
+- Use the existing authentication and database connection.
+- Keep the homepage promotion query extremely small.
+
+==================================================
+10. SECURITY
+==================================================
+
+Only authorized admins can:
+
+- Create promotions
+- Edit promotions
+- Delete promotions
+- Activate/deactivate promotions
+- View all claims
+
+Users can only:
+
+- View promotions they are eligible for
+- Claim eligible promotions
+- View their own claimed promotions
+
+Validate all inputs server-side.
+
+Prevent:
+
+- Duplicate claims
+- Unauthorized package access
+- Manipulation of duration
+- Manipulation of discount amount
+- Claiming expired promotions
+- Claiming disabled promotions
+- Exceeding maximum claim limits
+
+Never trust the duration, package ID, price or discount values sent by the browser.
+
+==================================================
+11. UI
+==================================================
+
+Follow the existing AkuapemConnect design.
+
+Keep the UI clean and simple.
+
+Homepage:
+
+Add only a small "Special Offers" section/card if there is an active promotion.
+
+Example:
+
+🎁 SPECIAL OFFER
+
+FREE 30 DAYS
+
+Get the Standard Business Package FREE for 30 days.
+
+[Claim Offer]
+
+Do not make promotions dominate the homepage.
+
+==================================================
+12. EXPIRY
+==================================================
+
+Promotions and claims should automatically be considered expired based on their dates.
+
+Do not require a heavy background process just to mark expired promotions.
+
+Where possible, determine expiry from the date when displaying or validating the promotion.
+
+For example:
+
+if current_date > expiry_date:
+    status = expired
+
+Avoid running a continuous process solely for expiry.
+
+==================================================
+13. IMPORTANT BUSINESS RULE
+==================================================
+
+A promotion must NOT overwrite or corrupt a user's existing paid subscription.
+
+If a user already has a paid package, handle the promotion according to the existing subscription rules.
+
+Prefer creating a separate promotion entitlement/claim rather than modifying historical payment or subscription records.
+
+The promotion system must remain independent from normal billing records.
+
+==================================================
+14. DELIVERABLE
+==================================================
+
+Implement the complete lightweight module:
+
+Admin:
+- Promotions menu
+- Create promotion
+- Edit promotion
+- Activate/deactivate
+- Delete
+- View claims
+
+User:
+- Special Offers section
+- Promotion details
+- Claim promotion
+- Promo code support
+- My Promotions
+- In-app notification
+
+Backend:
+- Efficient database queries
+- Required indexes
+
+Before implementation, inspect the existing AkuapemConnect architecture and REUSE existing components wherever possible.
+
+Do not duplicate functionality that already exists.
+
+Most importantly:
+BUILD THIS AS A SMALL, LIGHTWEIGHT FEATURE, NOT A LARGE PROMOTIONAL CAMPAIGN SYSTEM.
+```

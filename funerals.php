@@ -466,6 +466,7 @@ if ($isAjax) {
 </div><!-- /fa-layout -->
 </div><!-- /fa-shell -->
 
+<?php require __DIR__ . '/partials/site_footer.php'; ?>
 <?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 
 <script>

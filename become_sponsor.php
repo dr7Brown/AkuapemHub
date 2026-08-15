@@ -79,10 +79,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Become a Sponsor — <?php echo APP_NAME; ?></title>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .bs-shell { max-width:600px; margin:0 auto; padding:20px 16px 60px; }
-        .bs-pkg { display:flex; align-items:center; gap:12px; padding:14px; border:2px solid var(--border,#e5e7eb); border-radius:10px; margin-bottom:10px; cursor:pointer; }
+        .bs-shell { max-width:620px; margin:0 auto; padding:20px 16px 60px; }
+        .bs-pkg { display:block; padding:14px; border:2px solid var(--border,#e5e7eb); border-radius:10px; margin-bottom:10px; cursor:pointer; }
+        .bs-pkg-row { display:flex; align-items:center; gap:12px; }
         .bs-pkg input:checked ~ span { color: var(--primary,#0f766e); }
         label.bs-pkg:has(input:checked) { border-color: var(--primary,#0f766e); background: var(--primary-soft,#d1fae5); }
+        .bs-pkg-benefits { margin:10px 0 0; font-size:.82rem; }
         .form-group { margin-bottom:14px; }
         label:not(.bs-pkg) { font-weight:600; font-size:.86rem; display:block; margin-bottom:4px; }
     </style>
@@ -125,12 +127,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p class="pf-section-title" style="text-transform:uppercase;font-size:.74rem;font-weight:800;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:0 0 10px;">Choose a package</p>
             <?php foreach ($packages as $pkg): ?>
             <label class="bs-pkg">
-                <input type="radio" name="package_id" value="<?php echo $pkg['id']; ?>" required <?php echo (($_POST['package_id'] ?? '') == $pkg['id']) ? 'checked' : ''; ?> />
-                <span>
-                    <strong><?php echo sanitize($pkg['name']); ?></strong>
-                    <span style="color:var(--muted,#6b7280);font-size:.82rem;"> — <?php echo (int)$pkg['duration_days']; ?> days</span><br>
-                    <strong style="color:var(--primary,#0f766e);">GH₵ <?php echo number_format($pkg['price'], 2); ?></strong>
-                </span>
+                <div class="bs-pkg-row">
+                    <input type="radio" name="package_id" value="<?php echo $pkg['id']; ?>" required <?php echo (($_POST['package_id'] ?? '') == $pkg['id']) ? 'checked' : ''; ?> />
+                    <span>
+                        <strong><?php echo sanitize($pkg['name']); ?></strong>
+                        <span style="color:var(--muted,#6b7280);font-size:.82rem;"> — <?php echo (int)$pkg['duration_days']; ?> days</span><br>
+                        <strong style="color:var(--primary,#0f766e);">GH₵ <?php echo number_format($pkg['price'], 2); ?></strong>
+                    </span>
+                </div>
+                <?php if (!empty($pkg['benefits'])): ?>
+                <div class="bs-pkg-benefits rich-content"><?php echo render_rich($pkg['benefits']); ?></div>
+                <?php endif; ?>
             </label>
             <?php endforeach; ?>
 

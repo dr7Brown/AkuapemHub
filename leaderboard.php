@@ -85,6 +85,7 @@ $trendingCategories = get_trending_categories(5, 30);
             <?php endif; ?>
         </section>
     </main>
+    <?php require __DIR__ . '/partials/site_footer.php'; ?>
     <?php if ($user): ?>
         <?php $activeNav = 'home'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <?php endif; ?>

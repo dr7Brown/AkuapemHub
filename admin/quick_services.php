@@ -11,7 +11,29 @@ $adminUser = current_user();
 $flash     = get_flash();
 $error     = '';
 
-/** Validates + normalizes the JSON field-builder payload posted from the form. */
+/** Tolerates a stray currency prefix ("GHS 5.00", "GH₵ 5") in case an admin
+ *  pastes it into a price column by mistake. */
+function qs_parse_price(string $raw): float {
+    return (float)preg_replace('/[^0-9.]/', '', $raw);
+}
+
+/**
+ * Validates + normalizes the JSON field-builder payload posted from the form.
+ * Select fields come in three shapes, auto-detected from content — there's
+ * no separate "priced" toggle to get out of sync with what was actually
+ * typed:
+ *  - dependent ("Depends on" set): admin supplies pipe-delimited
+ *    "ParentValue | Label | Price" lines; normalized into
+ *    'options' => { parentValue: [{label,price}, ...], ... } plus
+ *    'depends_on' => '<parent field key>'. Only one level of dependency is
+ *    supported — a field can depend only on an independent select that was
+ *    defined earlier in the same form, never on another dependent field.
+ *  - independent, priced: no "Depends on", and the admin's options text
+ *    contains at least one "|" — parsed as one "Label | Price" per line;
+ *    normalized into 'options' => flat [{label,price}, ...].
+ *  - independent, plain: no "Depends on", no "|" anywhere — parsed as the
+ *    original comma-separated flat list of strings, unpriced.
+ */
 function qs_parse_form_fields(string $raw): ?array {
     $decoded = json_decode($raw, true);
     if (!is_array($decoded)) return null;
@@ -32,13 +54,105 @@ function qs_parse_form_fields(string $raw): ?array {
             'required' => !empty($f['required']),
         ];
         if (!empty($f['placeholder'])) $field['placeholder'] = mb_substr(trim($f['placeholder']), 0, 150);
+
+        // "Show only if" — available on every field type (not just select),
+        // so any field can be hidden/shown based on another select field's
+        // answer, independent of the select-options-cascading mechanism.
+        $showIfField = trim((string)($f['show_if_field'] ?? ''));
+        if ($showIfField !== '') {
+            $values = array_values(array_filter(array_map('trim', explode(',', (string)($f['show_if_values'] ?? '')))));
+            if ($values) {
+                $field['show_if'] = [
+                    'field'  => $showIfField,
+                    'values' => array_map(fn($v) => mb_substr($v, 0, 80), $values),
+                ];
+            }
+        }
+
         if ($type === 'select') {
-            $opts = array_values(array_filter(array_map('trim', explode(',', (string)($f['options'] ?? '')))));
-            if ($opts) $field['options'] = array_map(fn($o) => mb_substr($o, 0, 80), $opts);
+            $dependsOn  = trim((string)($f['depends_on'] ?? ''));
+            $rawOptions = (string)($f['options'] ?? '');
+            if ($dependsOn !== '') {
+                $byParent = [];
+                foreach (preg_split('/\r\n|\r|\n/', (string)($f['priced_options'] ?? '')) as $line) {
+                    $parts = array_map('trim', explode('|', $line));
+                    if (count($parts) < 3 || $parts[0] === '' || $parts[1] === '') continue;
+                    $price = qs_parse_price($parts[2]);
+                    if ($price < 0) continue;
+                    $byParent[mb_substr($parts[0], 0, 80)][] = [
+                        'label' => mb_substr($parts[1], 0, 100),
+                        'price' => round($price, 2),
+                    ];
+                }
+                if ($byParent) {
+                    $field['depends_on'] = $dependsOn;
+                    $field['options']    = $byParent;
+                }
+            } elseif (strpos($rawOptions, '|') !== false) {
+                $opts = [];
+                foreach (preg_split('/\r\n|\r|\n/', $rawOptions) as $line) {
+                    $line = trim($line);
+                    if ($line === '') continue;
+                    $parts = array_map('trim', explode('|', $line, 2));
+                    if ($parts[0] === '') continue;
+                    $price = qs_parse_price($parts[1] ?? '');
+                    if ($price < 0) continue;
+                    $opts[] = ['label' => mb_substr($parts[0], 0, 100), 'price' => round($price, 2)];
+                }
+                if ($opts) $field['options'] = $opts;
+            } else {
+                $opts = array_values(array_filter(array_map('trim', explode(',', $rawOptions))));
+                if ($opts) $field['options'] = array_map(fn($o) => mb_substr($o, 0, 80), $opts);
+            }
         }
         $out[] = $field;
     }
     return $out;
+}
+
+/**
+ * Checks every "Depends on" (select options-cascading) and "Show only if"
+ * (field visibility) reference resolves to a real select field defined
+ * earlier in the same form. Returns a human-readable error naming the
+ * broken field, or null if all references are valid — deliberately a hard
+ * validation failure (not a silent strip), so an admin who deletes a
+ * "Network" field while "Package" still depends on it (or "Payment Type"
+ * while "Prepaid PIN" is only shown for it) gets told exactly what to fix
+ * instead of publishing a broken/unreachable field.
+ */
+function qs_validate_field_dependencies(array $formFields): ?string {
+    $validParents = [];
+    foreach ($formFields as $f) {
+        if (($f['type'] ?? '') === 'select' && empty($f['depends_on'])) $validParents[$f['key']] = true;
+    }
+    foreach ($formFields as $f) {
+        if (empty($f['depends_on'])) continue;
+        if (!isset($validParents[$f['depends_on']])) {
+            return '"' . $f['label'] . '" depends on a field ("' . $f['depends_on'] . '") that no longer exists as an independent Select field earlier in this form. Fix or remove that "Depends on" setting.';
+        }
+    }
+
+    // "Show only if" may reference any select field (independent or
+    // dependent) defined earlier — a looser rule than "Depends on" since
+    // it only gates visibility, not option/price resolution.
+    $seenSelects = [];
+    foreach ($formFields as $f) {
+        if (!empty($f['show_if']['field'])) {
+            if (!isset($seenSelects[$f['show_if']['field']])) {
+                return '"' . $f['label'] . '" is set to show only for a field ("' . $f['show_if']['field'] . '") that no longer exists as a Select field earlier in this form. Fix or remove that "Show only if" setting.';
+            }
+        }
+        if (($f['type'] ?? '') === 'select') $seenSelects[$f['key']] = true;
+    }
+
+    return null;
+}
+
+/** Whether $field is a valid "amount" source: a plain number input, or a
+ *  priced select (standalone or dependent) whose chosen option carries its
+ *  own price. */
+function qs_field_can_hold_amount(array $field): bool {
+    return $field['type'] === 'number' || qs_field_is_priced_select($field);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -59,13 +173,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $displayOrder     = (int)($_POST['display_order'] ?? 0);
         $formFields       = qs_parse_form_fields($_POST['form_fields'] ?? '[]');
 
-        $fieldTypesByKey = $formFields ? array_column($formFields, 'type', 'key') : [];
+        $fieldsByKey = $formFields ? array_column($formFields, null, 'key') : [];
+
+        // A field with priced options configured but never wired up as the
+        // Amount Field is a near-certain admin mistake — the Fixed Cost
+        // stays in effect and every priced option silently does nothing at
+        // checkout. Catch it at save time instead of leaving it to be
+        // discovered by a confused buyer.
+        $orphanedPricedField = null;
+        if ($formFields) {
+            foreach ($formFields as $f) {
+                if (qs_field_is_priced_select($f) && !($pricingMode === 'user_entered' && $amountFieldKey === $f['key'])) {
+                    $orphanedPricedField = $f;
+                    break;
+                }
+            }
+        }
 
         if ($name === '') $error = 'Service name is required.';
         elseif ($formFields === null || !$formFields) $error = 'Add at least one valid form field.';
+        elseif ($formFields && ($depError = qs_validate_field_dependencies($formFields))) $error = $depError;
         elseif ($pricingMode === 'user_entered' && $amountFieldKey === '') $error = 'Set which field key holds the amount when pricing is "User-entered amount".';
-        elseif ($pricingMode === 'user_entered' && !isset($fieldTypesByKey[$amountFieldKey])) $error = 'Amount Field Key must exactly match one of the field keys above.';
-        elseif ($pricingMode === 'user_entered' && $fieldTypesByKey[$amountFieldKey] !== 'number') $error = 'Amount Field Key must point to a field of type "number" — otherwise the amount the buyer types can\'t be reliably read as a price.';
+        elseif ($pricingMode === 'user_entered' && !isset($fieldsByKey[$amountFieldKey])) $error = 'Amount Field Key must exactly match one of the field keys above.';
+        elseif ($pricingMode === 'user_entered' && !qs_field_can_hold_amount($fieldsByKey[$amountFieldKey])) $error = 'Amount Field Key must point to a "number" field, or a select field whose options include prices ("Label | Price" per line) — otherwise the amount can\'t be reliably read as a price.';
+        elseif ($orphanedPricedField) $error = 'You configured priced options on "' . $orphanedPricedField['label'] . '" but it isn\'t set as the Amount Field, so its prices will never be charged at checkout. Set Pricing Mode to "User-entered amount" and pick "' . $orphanedPricedField['label'] . '" as the Amount Field — or remove its priced options if that wasn\'t intended.';
 
         // Keep the existing image unless a new one is uploaded.
         $imagePath = null;
@@ -204,10 +335,29 @@ if ($manageServiceId) {
         .qsa-badge.inactive { background:#fee2e2; color:#c0392b; }
         .qsa-mgr-chip { display:inline-flex; align-items:center; gap:5px; background:var(--surface-muted,#f3f4f6); border-radius:14px; padding:2px 8px 2px 10px; font-size:.76rem; margin:2px 3px 2px 0; }
         .qsa-mgr-chip button { border:none; background:none; color:#c0392b; cursor:pointer; font-weight:800; padding:0 2px; }
-        .qsa-field-row { display:grid; grid-template-columns: 1.2fr .9fr .8fr auto auto 1fr auto; gap:6px; align-items:center; margin-bottom:8px; padding-bottom:8px; border-bottom:1px solid var(--border,#f1f5f9); }
-        .qsa-field-row input, .qsa-field-row select { width:100%; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:.8rem; box-sizing:border-box; }
+        .qsa-field-row { margin-bottom:10px; padding-bottom:10px; border-bottom:1px solid var(--border,#f1f5f9); }
+        .qsa-field-row input, .qsa-field-row select, .qsa-field-row textarea { padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:.8rem; box-sizing:border-box; }
         .qsa-field-row .fr-remove { background:none; border:none; color:#c0392b; font-size:1rem; cursor:pointer; }
-        @media (max-width:760px) { .qsa-field-row { grid-template-columns:1fr 1fr; } }
+        .qsa-field-row .fr-move { background:none; border:none; color:var(--text-muted,#6b7280); font-size:.9rem; cursor:pointer; padding:0 3px; }
+        .qsa-field-row .fr-move:disabled { opacity:.25; cursor:default; }
+        .fr-move-group { display:flex; flex-direction:column; line-height:1; }
+        .fr-line1 { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:6px; }
+        .fr-line1 .fr-label { flex:1.3 1 140px; }
+        .fr-line1 .fr-key   { flex:1 1 90px; }
+        .fr-line1 .fr-type  { flex:0 0 112px; }
+        .fr-line2 { display:flex; gap:6px; flex-wrap:wrap; align-items:flex-start; }
+        .fr-line2 .fr-placeholder { flex:1 1 140px; }
+        .fr-select-only { display:none; flex:2 1 220px; gap:6px; flex-wrap:wrap; }
+        .fr-select-only.active { display:flex; }
+        .fr-depends-on { flex:0 0 170px; }
+        .fr-options { flex:1 1 100%; min-height:56px; font-family:monospace; font-size:.76rem; resize:vertical; }
+        .fr-priced-options { flex:1 1 100%; min-height:56px; font-family:monospace; font-size:.76rem; resize:vertical; }
+        .fr-options-hint { flex:1 1 100%; font-size:.7rem; color:var(--text-muted,#6b7280); margin:0; }
+        .fr-line3 { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px; padding-top:6px; border-top:1px dashed var(--border,#f1f5f9); }
+        .fr-showif-label { flex:0 0 auto; font-size:.76rem; font-weight:600; color:var(--text-muted,#6b7280); }
+        .fr-show-if-field { flex:0 0 170px; }
+        .fr-show-if-values { flex:1 1 200px; }
+        @media (max-width:600px) { .fr-line1 .fr-label, .fr-line1 .fr-key, .fr-line1 .fr-type { flex:1 1 100%; } }
     </style>
 </head>
 <body>
@@ -334,8 +484,11 @@ if ($manageServiceId) {
                     <input type="number" id="f_base_cost" name="base_cost" min="0" step="0.01" value="0">
                 </div>
                 <div id="f_amount_key_panel" style="display:none;">
-                    <label>Amount Field Key</label>
-                    <input type="text" id="f_amount_field_key" name="amount_field_key" placeholder="must match a field key below, e.g. amount">
+                    <label>Amount Field</label>
+                    <select id="f_amount_field_key" name="amount_field_key">
+                        <option value="">— Select field —</option>
+                    </select>
+                    <p class="form-hint" style="margin:2px 0 0;">Only fields that can hold a price appear here: a "Number" field, or any Select field whose options include prices (standalone, or a "Depends on" field).</p>
                 </div>
                 <div>
                     <label>AkuapemConnect Fee Type</label>
@@ -437,22 +590,215 @@ function qsaFieldRow(f) {
     f = f || {};
     var div = document.createElement('div');
     div.className = 'qsa-field-row';
+    var isDependent = !!f.depends_on;
+    var isPriced = !isDependent && Array.isArray(f.options) && f.options.length > 0 && typeof f.options[0] === 'object';
+    var independentOptionsText = '';
+    if (!isDependent) {
+        if (isPriced) {
+            independentOptionsText = f.options.map(function (opt) { return opt.label + ' | ' + opt.price; }).join('\n');
+        } else if (Array.isArray(f.options)) {
+            independentOptionsText = f.options.join(', ');
+        }
+    }
+    var pricedLines = '';
+    if (isDependent && f.options && typeof f.options === 'object') {
+        var lines = [];
+        Object.keys(f.options).forEach(function (parentVal) {
+            (f.options[parentVal] || []).forEach(function (opt) {
+                lines.push(parentVal + ' | ' + opt.label + ' | ' + opt.price);
+            });
+        });
+        pricedLines = lines.join('\n');
+    }
     div.innerHTML =
-        '<input type="text" class="fr-label" placeholder="Label, e.g. Meter Number" value="' + (f.label || '').replace(/"/g,'&quot;') + '" oninput="qsaAutoKey(this)">' +
-        '<input type="text" class="fr-key" placeholder="key" value="' + (f.key || '').replace(/"/g,'&quot;') + '">' +
-        '<select class="fr-type">' +
-            ['text','number','tel','password','textarea','select'].map(function(t) {
-                return '<option value="' + t + '"' + (f.type === t ? ' selected' : '') + '>' + t + '</option>';
-            }).join('') +
-        '</select>' +
-        '<label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:.78rem;"><input type="checkbox" class="fr-required"' + (f.required ? ' checked' : '') + '> Required</label>' +
-        '<input type="text" class="fr-placeholder" placeholder="Placeholder" value="' + (f.placeholder || '').replace(/"/g,'&quot;') + '">' +
-        '<input type="text" class="fr-options" placeholder="Options (comma-separated, for Select)" value="' + ((f.options || []).join(', ')).replace(/"/g,'&quot;') + '">' +
-        '<button type="button" class="fr-remove" onclick="this.closest(\'.qsa-field-row\').remove()" title="Remove">✕</button>';
+        '<div class="fr-line1">' +
+            '<input type="text" class="fr-label" placeholder="Label, e.g. Meter Number" value="' + (f.label || '').replace(/"/g,'&quot;') + '" oninput="qsaAutoKey(this)">' +
+            '<input type="text" class="fr-key" placeholder="key" value="' + (f.key || '').replace(/"/g,'&quot;') + '">' +
+            '<select class="fr-type">' +
+                ['text','number','tel','password','textarea','select'].map(function(t) {
+                    return '<option value="' + t + '"' + (f.type === t ? ' selected' : '') + '>' + t + '</option>';
+                }).join('') +
+            '</select>' +
+            '<label style="display:flex;align-items:center;gap:4px;font-weight:400;font-size:.78rem;"><input type="checkbox" class="fr-required"' + (f.required ? ' checked' : '') + '> Required</label>' +
+            '<span class="fr-move-group">' +
+                '<button type="button" class="fr-move fr-move-up" onclick="qsaMoveField(this,-1)" title="Move up">▲</button>' +
+                '<button type="button" class="fr-move fr-move-down" onclick="qsaMoveField(this,1)" title="Move down">▼</button>' +
+            '</span>' +
+            '<button type="button" class="fr-remove" onclick="qsaRemoveField(this)" title="Remove">✕</button>' +
+        '</div>' +
+        '<div class="fr-line2">' +
+            '<input type="text" class="fr-placeholder" placeholder="Placeholder" value="' + (f.placeholder || '').replace(/"/g,'&quot;') + '">' +
+            '<div class="fr-select-only">' +
+                '<select class="fr-depends-on"><option value="">— Independent —</option></select>' +
+                '<textarea class="fr-options">' + independentOptionsText.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</textarea>' +
+                '<textarea class="fr-priced-options" style="display:none;">' + pricedLines.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</textarea>' +
+                '<p class="fr-options-hint" style="display:none;"></p>' +
+            '</div>' +
+        '</div>' +
+        '<div class="fr-line3">' +
+            '<label class="fr-showif-label">Show only if</label>' +
+            '<select class="fr-show-if-field"><option value="">Always show</option></select>' +
+            '<input type="text" class="fr-show-if-values" placeholder="Values (comma-separated), e.g. Prepaid" style="display:none;" value="' + ((f.show_if && f.show_if.values) ? f.show_if.values.join(', ') : '').replace(/"/g,'&quot;') + '">' +
+        '</div>';
+
+    var typeSelect    = div.querySelector('.fr-type');
+    var dependsOn     = div.querySelector('.fr-depends-on');
+    var selectOnly    = div.querySelector('.fr-select-only');
+    var optionsIn     = div.querySelector('.fr-options');
+    var pricedArea    = div.querySelector('.fr-priced-options');
+    var optionsHint   = div.querySelector('.fr-options-hint');
+    var showIfField   = div.querySelector('.fr-show-if-field');
+    var showIfValues  = div.querySelector('.fr-show-if-values');
+
+    function refreshVisibility() {
+        var isSelect = typeSelect.value === 'select';
+        selectOnly.classList.toggle('active', isSelect);
+        var dependent = isSelect && dependsOn.value !== '';
+        optionsIn.style.display  = (isSelect && !dependent) ? '' : 'none';
+        pricedArea.style.display = dependent ? '' : 'none';
+        optionsHint.style.display = isSelect ? '' : 'none';
+        if (dependent) {
+            pricedArea.placeholder = 'Parent value | Option label | Price — one per line, e.g.\nMTN | 1GB - GHS 5.00 | 5.00';
+            optionsHint.textContent = 'Each option belongs to one value of the parent field above, and sets its own price.';
+        } else if (isSelect) {
+            optionsIn.placeholder = 'Comma-separated, e.g. Prepaid, Postpaid — or one "Label | Price" per line to add pricing, e.g.\nDStv Compact - GHS 60.00 | 60.00';
+            optionsHint.textContent = 'Add " | Price" after each option (one per line) to make this a priced field, then pick it as the Amount Field above.';
+        }
+        showIfValues.style.display = showIfField.value !== '' ? '' : 'none';
+    }
+    typeSelect.addEventListener('change', refreshVisibility);
+    dependsOn.addEventListener('change', refreshVisibility);
+    showIfField.addEventListener('change', refreshVisibility);
+    refreshVisibility();
+    if (isDependent) dependsOn.dataset.pendingValue = f.depends_on;
+    if (f.show_if && f.show_if.field) showIfField.dataset.pendingValue = f.show_if.field;
+
     return div;
 }
 function qsaAddField(f) {
     document.getElementById('qsa-fields').appendChild(qsaFieldRow(f));
+    qsaRefreshAll();
+}
+function qsaRemoveField(btn) {
+    btn.closest('.qsa-field-row').remove();
+    qsaRefreshAll();
+}
+/** Moves a field row up (-1) or down (+1) in the form-fields list, changing
+ *  the order the buyer sees fields on the service's request form. */
+function qsaMoveField(btn, dir) {
+    var row = btn.closest('.qsa-field-row');
+    var sibling = dir < 0 ? row.previousElementSibling : row.nextElementSibling;
+    if (!sibling) return;
+    if (dir < 0) row.parentNode.insertBefore(row, sibling);
+    else row.parentNode.insertBefore(sibling, row);
+    qsaRefreshAll();
+}
+/** Disables the "move up" button on the first row and "move down" on the
+ *  last row, so the edges of the list can't be reordered past themselves. */
+function qsaRefreshMoveButtons() {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#qsa-fields .qsa-field-row'));
+    rows.forEach(function (row, i) {
+        row.querySelector('.fr-move-up').disabled = (i === 0);
+        row.querySelector('.fr-move-down').disabled = (i === rows.length - 1);
+    });
+}
+function qsaRefreshAll() {
+    qsaRefreshDependsOnOptions();
+    qsaRefreshShowIfOptions();
+    qsaRefreshAmountFieldOptions();
+    qsaRefreshMoveButtons();
+}
+/** Keeps every row's "Depends on" dropdown in sync with the current set of
+ *  independent select fields defined elsewhere in the form (a field can't
+ *  depend on itself, and multi-level chaining isn't supported — the server
+ *  silently drops anything else). */
+function qsaRefreshDependsOnOptions() {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#qsa-fields .qsa-field-row'));
+    var independents = [];
+    rows.forEach(function (row) {
+        var type = row.querySelector('.fr-type').value;
+        var key  = row.querySelector('.fr-key').value.trim();
+        var label = row.querySelector('.fr-label').value.trim();
+        var dependsOnVal = row.querySelector('.fr-depends-on').value;
+        if (type === 'select' && key && !dependsOnVal) independents.push({ key: key, label: label || key });
+    });
+    rows.forEach(function (row) {
+        var sel = row.querySelector('.fr-depends-on');
+        var ownKey = row.querySelector('.fr-key').value.trim();
+        var current = sel.dataset.pendingValue || sel.value;
+        var stillValid = current && independents.some(function (o) { return o.key === current; });
+        sel.innerHTML = '<option value="">— Independent —</option>' +
+            independents.filter(function (o) { return o.key !== ownKey; }).map(function (o) {
+                return '<option value="' + o.key + '">' + o.label + ' (' + o.key + ')</option>';
+            }).join('');
+        if (stillValid) {
+            sel.value = current;
+            delete sel.dataset.pendingValue;
+        }
+        // Re-sync the row's visible state (options input vs priced-options
+        // textarea) to whatever the dropdown actually ends up holding —
+        // including the "reset to Independent" case, when the field this
+        // row depended on was just deleted or renamed out from under it.
+        sel.dispatchEvent(new Event('change'));
+    });
+}
+/** Keeps every row's "Show only if" dropdown in sync with the current set
+ *  of select fields defined elsewhere in the form (any select — dependent
+ *  or independent — can gate another field's visibility). */
+function qsaRefreshShowIfOptions() {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#qsa-fields .qsa-field-row'));
+    var selects = [];
+    rows.forEach(function (row) {
+        var type = row.querySelector('.fr-type').value;
+        var key   = row.querySelector('.fr-key').value.trim();
+        var label = row.querySelector('.fr-label').value.trim();
+        if (type === 'select' && key) selects.push({ key: key, label: label || key });
+    });
+    rows.forEach(function (row) {
+        var sel = row.querySelector('.fr-show-if-field');
+        var ownKey = row.querySelector('.fr-key').value.trim();
+        var current = sel.dataset.pendingValue || sel.value;
+        var options = selects.filter(function (o) { return o.key !== ownKey; });
+        var stillValid = current && options.some(function (o) { return o.key === current; });
+        sel.innerHTML = '<option value="">Always show</option>' +
+            options.map(function (o) { return '<option value="' + o.key + '">' + o.label + ' (' + o.key + ')</option>'; }).join('');
+        if (stillValid) {
+            sel.value = current;
+            delete sel.dataset.pendingValue;
+        }
+        sel.dispatchEvent(new Event('change'));
+    });
+}
+/** Keeps the "Amount Field" dropdown limited to fields that can actually
+ *  hold a price: a Number field, or any Select whose options include
+ *  prices (standalone, detected by a "|" in the options text, or any
+ *  "Depends on" field, which is always priced). */
+function qsaRefreshAmountFieldOptions() {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#qsa-fields .qsa-field-row'));
+    var eligible = [];
+    rows.forEach(function (row) {
+        var type = row.querySelector('.fr-type').value;
+        var key   = row.querySelector('.fr-key').value.trim();
+        var label = row.querySelector('.fr-label').value.trim();
+        if (!key) return;
+        if (type === 'number') {
+            eligible.push({ key: key, label: label || key });
+        } else if (type === 'select') {
+            var dependsOnVal = row.querySelector('.fr-depends-on').value;
+            var optionsText = row.querySelector('.fr-options').value;
+            var pricedIndependent = !dependsOnVal && optionsText.indexOf('|') !== -1;
+            if (dependsOnVal || pricedIndependent) eligible.push({ key: key, label: label || key });
+        }
+    });
+    var sel = document.getElementById('f_amount_field_key');
+    var current = sel.dataset.pendingValue || sel.value;
+    var stillValid = current && eligible.some(function (o) { return o.key === current; });
+    sel.innerHTML = '<option value="">— Select field —</option>' +
+        eligible.map(function (o) { return '<option value="' + o.key + '">' + o.label + ' (' + o.key + ')</option>'; }).join('');
+    if (stillValid) {
+        sel.value = current;
+        delete sel.dataset.pendingValue;
+    }
 }
 function qsaAutoKey(labelInput) {
     var row = labelInput.closest('.qsa-field-row');
@@ -462,7 +808,12 @@ function qsaAutoKey(labelInput) {
     }
 }
 document.addEventListener('input', function (e) {
-    if (e.target.classList.contains('fr-key')) e.target.dataset.touched = '1';
+    if (e.target.classList.contains('fr-key')) { e.target.dataset.touched = '1'; qsaRefreshAll(); }
+    if (e.target.classList.contains('fr-label')) qsaRefreshAll();
+    if (e.target.classList.contains('fr-options')) qsaRefreshAmountFieldOptions();
+});
+document.addEventListener('change', function (e) {
+    if (e.target.classList.contains('fr-type') || e.target.classList.contains('fr-depends-on')) qsaRefreshAll();
 });
 function qsaSerializeFields() {
     var rows = document.querySelectorAll('#qsa-fields .qsa-field-row');
@@ -471,14 +822,26 @@ function qsaSerializeFields() {
         var label = row.querySelector('.fr-label').value.trim();
         var key = row.querySelector('.fr-key').value.trim();
         if (!label || !key) return;
-        fields.push({
+        var field = {
             label: label,
             key: key,
             type: row.querySelector('.fr-type').value,
             required: row.querySelector('.fr-required').checked,
-            placeholder: row.querySelector('.fr-placeholder').value.trim(),
-            options: row.querySelector('.fr-options').value.trim()
-        });
+            placeholder: row.querySelector('.fr-placeholder').value.trim()
+        };
+        var dependsOnVal = row.querySelector('.fr-depends-on').value;
+        if (field.type === 'select' && dependsOnVal) {
+            field.depends_on = dependsOnVal;
+            field.priced_options = row.querySelector('.fr-priced-options').value;
+        } else {
+            field.options = row.querySelector('.fr-options').value.trim();
+        }
+        var showIfFieldVal = row.querySelector('.fr-show-if-field').value;
+        if (showIfFieldVal) {
+            field.show_if_field = showIfFieldVal;
+            field.show_if_values = row.querySelector('.fr-show-if-values').value.trim();
+        }
+        fields.push(field);
     });
     document.getElementById('f_form_fields').value = JSON.stringify(fields);
     return true;
@@ -498,7 +861,7 @@ function editService(s) {
     document.getElementById('f_instructions').value = s.instructions || '';
     document.getElementById('f_pricing_mode').value = s.pricing_mode || 'fixed';
     document.getElementById('f_base_cost').value = s.base_cost || 0;
-    document.getElementById('f_amount_field_key').value = s.amount_field_key || '';
+    document.getElementById('f_amount_field_key').dataset.pendingValue = s.amount_field_key || '';
     document.getElementById('f_fee_type').value = s.service_fee_type || 'flat';
     document.getElementById('f_fee_value').value = s.service_fee_value || 0;
     updatePricingUI();
@@ -520,6 +883,7 @@ function editService(s) {
         row.querySelector('.fr-key').dataset.touched = '1';
         document.getElementById('qsa-fields').appendChild(row);
     });
+    qsaRefreshAll();
 
     document.getElementById('qsa-form').scrollIntoView({ behavior: 'smooth' });
 }
@@ -529,6 +893,7 @@ function resetForm() {
     document.getElementById('qsa-form-heading').textContent = 'Add Service';
     document.getElementById('qsa-fields').innerHTML = '';
     document.getElementById('f_image_preview').style.display = 'none';
+    delete document.getElementById('f_amount_field_key').dataset.pendingValue;
     qsaAddField();
     updatePricingUI();
 }

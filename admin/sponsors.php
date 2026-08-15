@@ -93,11 +93,21 @@ $params = [];
 if ($statusFilter) { $where .= " AND s.status=?"; $params[] = $statusFilter; }
 if ($search)       { $where .= " AND s.name LIKE ?"; $params[] = "%$search%"; }
 
+$page    = max(1, (int)($_GET['page'] ?? 1));
+$perPage = 30;
+$offset  = ($page - 1) * $perPage;
+
+$countStmt = $pdo->prepare("SELECT COUNT(*) FROM sponsors s WHERE $where");
+$countStmt->execute($params);
+$sponsorsTotal      = (int)$countStmt->fetchColumn();
+$sponsorsTotalPages = max(1, (int)ceil($sponsorsTotal / $perPage));
+
 $stmt = $pdo->prepare(
     "SELECT s.*, sp.name AS package_name FROM sponsors s
      LEFT JOIN sponsor_packages sp ON s.package_id = sp.id
      WHERE $where
-     ORDER BY FIELD(s.status,'pending_approval','pending_payment','active','rejected','expired'), s.created_at DESC"
+     ORDER BY FIELD(s.status,'pending_approval','pending_payment','active','rejected','expired'), s.created_at DESC, s.id DESC
+     LIMIT $perPage OFFSET $offset"
 );
 $stmt->execute($params);
 $rows = $stmt->fetchAll();
@@ -275,6 +285,14 @@ $sponsorPackages = $pdo->query("SELECT * FROM sponsor_packages WHERE status='act
                 </tbody>
             </table>
         </div>
+        <?php if ($sponsorsTotalPages > 1): ?>
+        <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap;">
+            <?php for ($p = 1; $p <= $sponsorsTotalPages; $p++): ?>
+            <a href="sponsors.php?page=<?php echo $p; ?><?php echo $statusFilter ? '&status='.urlencode($statusFilter) : ''; ?><?php echo $search ? '&q='.urlencode($search) : ''; ?>"
+               class="button button-small <?php echo $p === $page ? 'button-primary' : 'button-secondary'; ?>"><?php echo $p; ?></a>
+            <?php endfor; ?>
+        </div>
+        <?php endif; ?>
     </div>
 
     <!-- Reject modal -->
