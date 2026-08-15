@@ -411,7 +411,7 @@ if ($manageServiceId) {
                 <td><span class="qsa-badge <?php echo $s['status']; ?>"><?php echo ucfirst($s['status']); ?></span></td>
                 <td style="text-align:right;white-space:nowrap;">
                     <a href="quick_services.php?manage=<?php echo (int)$s['id']; ?>#mgr-panel" class="button button-secondary button-small">Manage</a>
-                    <button type="button" class="button button-secondary button-small" onclick='editService(<?php echo json_encode($s); ?>)'>Edit</button>
+                    <button type="button" class="button button-secondary button-small" onclick='editService(<?php echo htmlspecialchars(json_encode($s, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8"); ?>)'>Edit</button>
                     <form method="post" style="display:inline;">
                         <?php echo csrf_field(); ?>
                         <input type="hidden" name="action" value="toggle_status">
@@ -468,7 +468,7 @@ if ($manageServiceId) {
 
             <div class="form-group" style="margin-top:10px;">
                 <label style="font-weight:600;font-size:.82rem;">Instructions (shown on the service's page)</label>
-                <textarea id="f_instructions" name="instructions" rows="2" placeholder="What the customer should know before requesting"></textarea>
+                <textarea id="f_instructions" name="instructions" class="rich-editor" rows="3" placeholder="What the customer should know before requesting"></textarea>
             </div>
 
             <div class="qsa-form-grid" style="margin-top:12px;">
@@ -851,6 +851,18 @@ function updatePricingUI() {
     document.getElementById('f_base_cost_panel').style.display = mode === 'fixed' ? '' : 'none';
     document.getElementById('f_amount_key_panel').style.display = mode === 'user_entered' ? '' : 'none';
 }
+/** Pushes new content into a rich-editor.js field, whether or not it has
+ *  finished wrapping the textarea yet — see assets/js/rich-editor.js. */
+function setRichEditorValue(id, html) {
+    var ta = document.getElementById(id);
+    if (!ta) return;
+    if (ta._rte) {
+        ta._rte.ed.innerHTML = html || '<p><br></p>';
+        ta._rte._sync();
+    } else {
+        ta.value = html || '';
+    }
+}
 function editService(s) {
     document.getElementById('qsa-form-heading').textContent = 'Edit Service — ' + s.name;
     document.getElementById('f_id').value = s.id;
@@ -858,7 +870,7 @@ function editService(s) {
     document.getElementById('f_icon').value = s.icon || '';
     document.getElementById('f_display_order').value = s.display_order || 0;
     document.getElementById('f_description').value = s.description || '';
-    document.getElementById('f_instructions').value = s.instructions || '';
+    setRichEditorValue('f_instructions', s.instructions || '');
     document.getElementById('f_pricing_mode').value = s.pricing_mode || 'fixed';
     document.getElementById('f_base_cost').value = s.base_cost || 0;
     document.getElementById('f_amount_field_key').dataset.pendingValue = s.amount_field_key || '';
@@ -894,12 +906,14 @@ function resetForm() {
     document.getElementById('qsa-fields').innerHTML = '';
     document.getElementById('f_image_preview').style.display = 'none';
     delete document.getElementById('f_amount_field_key').dataset.pendingValue;
+    setRichEditorValue('f_instructions', '');
     qsaAddField();
     updatePricingUI();
 }
 qsaAddField();
 updatePricingUI();
 </script>
+<script src="../assets/js/rich-editor.js" defer></script>
 
 </body>
 </html>

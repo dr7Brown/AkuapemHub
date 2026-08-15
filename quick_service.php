@@ -148,7 +148,7 @@ $otherServices = $otherServicesStmt->fetchAll();
         <div class="qs-hero-icon"><?php if (!empty($service['image_path'])): ?><img src="<?php echo sanitize($service['image_path']); ?>" alt=""><?php else: ?><?php echo sanitize($service['icon']) ?: '⚡'; ?><?php endif; ?></div>
         <h2 style="margin:0 0 6px;"><?php echo sanitize($service['name']); ?></h2>
         <?php if ($service['instructions']): ?>
-        <p style="margin:0;color:var(--text-muted,#6b7280);font-size:.88rem;"><?php echo sanitize($service['instructions']); ?></p>
+        <div class="rich-content" style="text-align:left;color:var(--text-muted,#6b7280);font-size:.88rem;"><?php echo render_rich($service['instructions']); ?></div>
         <?php endif; ?>
     </div>
 
@@ -225,7 +225,7 @@ $otherServices = $otherServicesStmt->fetchAll();
     </form>
 
     <?php if ($otherServices): ?>
-    <div class="qs-card">
+    <div class="qs-card" style="margin-top:28px;">
         <p class="qs-section-title">⚡ Other Quick Services</p>
         <div class="qs-other-grid">
             <?php foreach ($otherServices as $os): ?>

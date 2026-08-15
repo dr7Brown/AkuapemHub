@@ -1646,8 +1646,9 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                             <?php if ($sec['type'] === 'sponsor'): ?>
                             <td style="font-size:.8rem;color:var(--muted,#6b7280);"><?php echo !empty($pkg['benefits']) ? '✓ set' : '—'; ?></td>
                             <?php endif; ?>
+                            <?php $pkgJson = htmlspecialchars(json_encode($pkg, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8'); ?>
                             <td>
-                                <button class="button button-small button-secondary" onclick="editCommPkg('<?php echo $sec['type']; ?>', <?php echo $pkg['id']; ?>, '<?php echo addslashes(sanitize($pkg['name'])); ?>', <?php echo (int)$pkg['duration_days']; ?>, <?php echo (float)$pkg['price']; ?>, '<?php echo $pkg['status']; ?>', '<?php echo htmlspecialchars(addslashes($pkg['benefits'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>')">Edit</button>
+                                <button class="button button-small button-secondary" onclick='editCommPkg("<?php echo $sec['type']; ?>", <?php echo $pkgJson; ?>)'>Edit</button>
                                 <form method="post" class="inline-form" onsubmit="return confirm('Delete this package?')">
                                     <input type="hidden" name="action" value="delete_package">
                                     <input type="hidden" name="pkg_type" value="<?php echo $sec['type']; ?>">
@@ -1704,13 +1705,13 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     ta.value = html || '';
                 }
             }
-            function editCommPkg(type, id, name, days, price, status, benefits) {
-                document.getElementById(type+'_id').value   = id;
-                document.getElementById(type+'_name').value = name;
-                document.getElementById(type+'_days').value = days;
-                document.getElementById(type+'_price').value = price;
-                document.getElementById(type+'_status').value = status;
-                if (type === 'sponsor') setRichEditorValue('sponsor_benefits', benefits);
+            function editCommPkg(type, pkg) {
+                document.getElementById(type+'_id').value   = pkg.id;
+                document.getElementById(type+'_name').value = pkg.name;
+                document.getElementById(type+'_days').value = pkg.duration_days;
+                document.getElementById(type+'_price').value = pkg.price;
+                document.getElementById(type+'_status').value = pkg.status;
+                if (type === 'sponsor') setRichEditorValue('sponsor_benefits', pkg.benefits);
                 document.getElementById('form-'+type).scrollIntoView({behavior:'smooth',block:'center'});
             }
             function resetCommPkg(type) {

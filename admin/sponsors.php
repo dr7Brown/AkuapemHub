@@ -85,6 +85,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_sponsor'])) {
     header('Location: sponsors.php'); exit;
 }
 
+// Edit an existing sponsor's info — name, package, links, contact details,
+// end date, and optionally a replacement logo (kept unchanged if none is
+// uploaded, same as the manual-add form above).
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_sponsor') {
+    csrf_check();
+    $sid = (int)($_POST['id'] ?? 0);
+    $row = $pdo->prepare("SELECT * FROM sponsors WHERE id=? LIMIT 1");
+    $row->execute([$sid]);
+    $sp = $row->fetch();
+
+    if (!$sp) {
+        flash('Sponsor not found.', 'error');
+        header('Location: sponsors.php'); exit;
+    }
+
+    $name         = trim($_POST['name'] ?? '');
+    $packageId    = (int)($_POST['package_id'] ?? 0) ?: null;
+    $websiteUrl   = trim($_POST['website_url'] ?? '') ?: null;
+    $description  = trim($_POST['description'] ?? '') ?: null;
+    $contactEmail = trim($_POST['contact_email'] ?? '') ?: null;
+    $contactPhone = trim($_POST['contact_phone'] ?? '') ?: null;
+    $endDate      = trim($_POST['end_date'] ?? '') ?: null;
+
+    if ($name === '') {
+        flash('Sponsor name is required.', 'error');
+    } elseif (!empty($_FILES['logo']['name']) && !is_valid_image_upload($_FILES['logo'])) {
+        flash('Logo must be a JPEG, PNG, or WEBP image under 5MB.', 'error');
+    } else {
+        $logoPath = $sp['logo_path'];
+        if (!empty($_FILES['logo']['name'])) {
+            $uploaded = save_uploaded_image($_FILES['logo'], 'uploads/sponsors/' . $sid, 600);
+            if ($uploaded) {
+                $logoPath = $uploaded;
+            } else {
+                flash('Could not save the new logo — kept the existing one.', 'error');
+            }
+        }
+        $pdo->prepare("UPDATE sponsors SET name=?, package_id=?, logo_path=?, website_url=?, description=?, contact_email=?, contact_phone=?, end_date=?, updated_at=NOW() WHERE id=?")
+            ->execute([$name, $packageId, $logoPath, $websiteUrl, $description, $contactEmail, $contactPhone, $endDate, $sid]);
+        log_audit_action($user['id'], 'sponsor_edit', "Edited sponsor #{$sid}: {$name}");
+        flash('Sponsor updated.', 'success');
+    }
+    header('Location: sponsors.php'); exit;
+}
+
 $statusFilter = in_array($_GET['status'] ?? '', ['pending_payment','pending_approval','active','rejected','expired']) ? $_GET['status'] : '';
 $search       = trim($_GET['q'] ?? '');
 
@@ -251,7 +296,7 @@ $sponsorPackages = $pdo->query("SELECT * FROM sponsor_packages WHERE status='act
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($rows as $sp): ?>
+                    <?php foreach ($rows as $sp): $spJson = htmlspecialchars(json_encode($sp, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8'); ?>
                     <tr>
                         <td>
                             <?php if ($sp['logo_path']): ?>
@@ -274,6 +319,7 @@ $sponsorPackages = $pdo->query("SELECT * FROM sponsor_packages WHERE status='act
                                 <?php if ($sp['status'] === 'active'): ?>
                                 <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="openRejectModal(<?php echo (int)$sp['id']; ?>)">Remove</button>
                                 <?php endif; ?>
+                                <button type="button" class="button button-small button-secondary" onclick='openEditSponsorModal(<?php echo $spJson; ?>)'>Edit</button>
                                 <form method="post" action="sponsors.php" onsubmit="return confirm('Delete this sponsor submission?')"><input type="hidden" name="id" value="<?php echo (int)$sp['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
                             </div>
                         </td>
@@ -323,6 +369,90 @@ $sponsorPackages = $pdo->query("SELECT * FROM sponsor_packages WHERE status='act
     }
     function closeRejectModal() {
         document.getElementById('reject-modal').style.display = 'none';
+    }
+    </script>
+
+    <!-- Edit Sponsor modal -->
+    <div id="edit-sponsor-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9900;align-items:center;justify-content:center;padding:16px;overflow-y:auto;" onclick="if(event.target===this)closeEditSponsorModal()">
+        <div style="background:#fff;border-radius:14px;padding:24px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);margin:20px 0;">
+            <h3 id="edit-sponsor-title" style="margin:0 0 14px;font-size:1rem;">Edit Sponsor</h3>
+            <form method="post" action="sponsors.php" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:10px;">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="edit_sponsor">
+                <input type="hidden" name="id" id="es_id" value="">
+                <div>
+                    <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Sponsor / business name</label>
+                    <input type="text" name="name" id="es_name" required style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+                </div>
+                <div>
+                    <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Logo <span style="font-weight:400;color:var(--text-muted,#6b7280);">(leave blank to keep the current logo)</span></label>
+                    <img id="es_logo_preview" src="" alt="" style="width:56px;height:56px;object-fit:contain;background:#f8fafc;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;display:none;">
+                    <input type="file" name="logo" accept="image/jpeg,image/png,image/webp">
+                </div>
+                <div>
+                    <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Website URL <span style="font-weight:400;color:var(--text-muted,#6b7280);">(optional)</span></label>
+                    <input type="url" name="website_url" id="es_website_url" placeholder="https://" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+                </div>
+                <div>
+                    <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Description <span style="font-weight:400;color:var(--text-muted,#6b7280);">(optional)</span></label>
+                    <textarea name="description" id="es_description" rows="2" maxlength="500" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></textarea>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <div style="flex:1;">
+                        <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Contact email <span style="font-weight:400;color:var(--text-muted,#6b7280);">(optional)</span></label>
+                        <input type="email" name="contact_email" id="es_contact_email" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Contact phone <span style="font-weight:400;color:var(--text-muted,#6b7280);">(optional)</span></label>
+                        <input type="text" name="contact_phone" id="es_contact_phone" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                    <div style="flex:1;">
+                        <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Package</label>
+                        <select name="package_id" id="es_package_id" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+                            <option value="">— None —</option>
+                            <?php foreach ($sponsorPackages as $pkg): ?>
+                            <option value="<?php echo $pkg['id']; ?>"><?php echo sanitize($pkg['name']); ?> (<?php echo (int)$pkg['duration_days']; ?>d)</option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div style="flex:1;">
+                        <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:3px;">Ends on <span style="font-weight:400;color:var(--text-muted,#6b7280);">(blank = never)</span></label>
+                        <input type="date" name="end_date" id="es_end_date" style="width:100%;box-sizing:border-box;padding:7px 10px;border:1px solid var(--border);border-radius:8px;">
+                    </div>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:4px;">
+                    <button type="submit" class="button button-primary">Save Changes</button>
+                    <button type="button" class="button button-secondary" onclick="closeEditSponsorModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+    function openEditSponsorModal(sp) {
+        document.getElementById('es_id').value = sp.id;
+        document.getElementById('es_name').value = sp.name || '';
+        document.getElementById('es_website_url').value = sp.website_url || '';
+        document.getElementById('es_description').value = sp.description || '';
+        document.getElementById('es_contact_email').value = sp.contact_email || '';
+        document.getElementById('es_contact_phone').value = sp.contact_phone || '';
+        document.getElementById('es_package_id').value = sp.package_id || '';
+        document.getElementById('es_end_date').value = sp.end_date || '';
+        document.getElementById('edit-sponsor-title').textContent = 'Edit Sponsor — ' + sp.name;
+        var preview = document.getElementById('es_logo_preview');
+        if (sp.logo_path) {
+            preview.src = '../' + sp.logo_path;
+            preview.style.display = '';
+        } else {
+            preview.style.display = 'none';
+        }
+        var m = document.getElementById('edit-sponsor-modal');
+        m.style.display = 'flex';
+        m.querySelector('form').querySelector('input[name="logo"]').value = '';
+    }
+    function closeEditSponsorModal() {
+        document.getElementById('edit-sponsor-modal').style.display = 'none';
     }
     </script>
 </body>
