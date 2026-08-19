@@ -66,6 +66,22 @@ function initializePayment(
         return ['error' => 'Payment gateway is not configured. Please contact the administrator.'];
     }
 
+    // Promotions module: an active, unexpired discount claim for this exact
+    // payment_type shaves its percentage off the amount before it's ever
+    // charged. Every paid flow creates its Paystack session through this one
+    // function, so this single lookup covers all of them — see
+    // functions.php claim_promotion() / feature_key_to_payment_type().
+    $discStmt = $pdo->prepare(
+        "SELECT discount_percent FROM promotion_claims
+         WHERE user_id = ? AND payment_type = ? AND status = 'active'
+           AND expiry_date >= CURDATE() AND discount_percent IS NOT NULL
+         LIMIT 1"
+    );
+    $discStmt->execute([$userId, $paymentType]);
+    if ($pct = $discStmt->fetchColumn()) {
+        $amount = round($amount * (1 - (int)$pct / 100), 2);
+    }
+
     // Unique reference: AH-TYPE-TIMESTAMP-RANDOM6
     $ref = 'AH-' . strtoupper(str_replace('_', '', $paymentType)) . '-'
          . time() . '-' . strtoupper(bin2hex(random_bytes(3)));
@@ -551,6 +567,11 @@ function activatePurchasedFeature(array $payment): void {
         case 'mp_subscription':
             require_once __DIR__ . '/marketplace_functions.php';
             mp_activate_subscription((int)$payment['reference_id'], (int)$payment['id']);
+            $subShopSt = $pdo->prepare('SELECT shop_id FROM mp_seller_subscriptions WHERE id=?');
+            $subShopSt->execute([(int)$payment['reference_id']]);
+            if ($subShopId = $subShopSt->fetchColumn()) {
+                mp_publish_pending_draft((int)$subShopId);
+            }
             break;
 
         case 'featured_news':

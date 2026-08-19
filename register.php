@@ -170,6 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </main>
     <script src="assets/js/image-compress.js"></script>
     <script src="assets/js/password-toggle.js"></script>
+    <script src="assets/js/username-input.js"></script>
     <script>
         setupImageInput(document.querySelector('input[name="profile_photo"]'), 800, 800, 0.82);
     </script>

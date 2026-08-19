@@ -2997,3 +2997,54 @@ ALTER TABLE quick_services ADD COLUMN IF NOT EXISTS image_path VARCHAR(255) NULL
 -- is admin-authored HTML, rendered back out through render_rich().
 -- ═══════════════════════════════════════════════════════════════════════════
 ALTER TABLE sponsor_packages ADD COLUMN IF NOT EXISTS benefits TEXT NULL AFTER status;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v072  Promotions / Special Offers — lightweight, admin-defined time-limited
+-- free-access (or discount) campaigns, redeemable by claim or promo code.
+-- Reuses the existing complimentary-access gate (user_has_complimentary_access()
+-- in functions.php) as the free-access enforcement point, and initializePayment()
+-- (paystack.php) as the discount enforcement point — no new package system,
+-- no cron. Expiry is computed on read (expiry_date comparisons); status
+-- columns are only lazily refreshed for display, never trusted for gating.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS promotions (
+    id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name             VARCHAR(160) NOT NULL,
+    description      VARCHAR(500) NULL,
+    type             ENUM('free_package','free_listing','free_featured_listing','discount','free_service') NOT NULL,
+    feature_key      VARCHAR(64) NOT NULL,
+    duration_days    SMALLINT UNSIGNED NOT NULL DEFAULT 30,
+    discount_percent TINYINT UNSIGNED NULL,
+    promo_code       VARCHAR(32) NULL,
+    starts_at        DATE NOT NULL,
+    ends_at          DATE NULL,
+    max_claims       INT UNSIGNED NULL,
+    claims_count     INT UNSIGNED NOT NULL DEFAULT 0,
+    status           ENUM('draft','active','expired','disabled') NOT NULL DEFAULT 'draft',
+    notify_message   VARCHAR(500) NULL,
+    notified_at      DATETIME NULL,
+    created_by       INT UNSIGNED NULL,
+    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_promo_code (promo_code),
+    INDEX idx_promotions_status_dates (status, starts_at, ends_at),
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS promotion_claims (
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    promotion_id      INT UNSIGNED NOT NULL,
+    user_id           INT UNSIGNED NOT NULL,
+    feature_key       VARCHAR(64) NOT NULL,
+    payment_type      VARCHAR(32) NULL,
+    discount_percent  TINYINT UNSIGNED NULL,
+    status            ENUM('active','expired','revoked') NOT NULL DEFAULT 'active',
+    claimed_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expiry_date       DATE NOT NULL,
+    UNIQUE KEY uq_user_promotion (user_id, promotion_id),
+    INDEX idx_claims_gate (user_id, feature_key, status, expiry_date),
+    INDEX idx_claims_discount (user_id, payment_type, status, expiry_date),
+    INDEX idx_claims_promotion (promotion_id),
+    FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

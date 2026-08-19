@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tab = 'settings';
 
     } elseif ($action === 'save_module_toggles') {
-        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'quick_services'] as $modKey) {
+        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'quick_services', 'promotions'] as $modKey) {
             set_platform_setting("{$modKey}_enabled", isset($_POST["{$modKey}_enabled"]) ? '1' : '0');
         }
         log_audit_action($user['id'], 'module_toggles_updated', 'Updated platform module availability');
@@ -593,6 +593,7 @@ $moduleToggles = [
     'delivery' => ['label' => 'Delivery Services',      'desc' => 'Send & receive parcels'],
     'markets'  => ['label' => 'Nearby Markets',        'desc' => 'Ofie Market, Nkurakan Market & other scheduled markets'],
     'quick_services' => ['label' => 'Quick Services',    'desc' => 'Airtime, ECG, exam results & other paid service requests'],
+    'promotions'      => ['label' => 'Promotions',        'desc' => 'Time-limited free-access & discount offers'],
 ];
 foreach ($moduleToggles as $modKey => &$modInfo) {
     $modInfo['enabled'] = module_enabled($modKey);

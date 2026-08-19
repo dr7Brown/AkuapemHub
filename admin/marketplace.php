@@ -99,6 +99,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: marketplace.php?tab=shops'); exit;
     }
 
+    // Delete shop — hard delete (cascades to its products, orders, reviews,
+    // subscriptions, etc. per FK ON DELETE CASCADE). Full admins only, since
+    // this is irreversible and removes financial history along with it.
+    // Blocked while the shop still has an unpaid wallet balance so a payout
+    // owed to the seller can never simply vanish.
+    if ($postAction === 'delete_shop' && !empty($_POST['shop_id']) && is_admin()) {
+        $sid     = (int)$_POST['shop_id'];
+        $shopRow = $pdo->prepare('SELECT * FROM mp_shops WHERE id=?');
+        $shopRow->execute([$sid]);
+        $shop = $shopRow->fetch();
+        if ($shop) {
+            $owed = (float)$shop['available_balance'] + (float)$shop['pending_balance'];
+            if ($owed > 0) {
+                flash('Cannot delete — this shop still has GH₵ ' . number_format($owed, 2) . ' in its wallet. Resolve payouts first.', 'error');
+            } else {
+                $pdo->prepare('DELETE FROM mp_shops WHERE id=?')->execute([$sid]);
+                notify_user((int)$shop['user_id'], 'Shop Removed', 'Your shop "' . $shop['shop_name'] . '" has been removed from ' . APP_NAME . ' by an administrator.', 'warning');
+                log_audit_action($adminUser['id'], 'mp_shop_delete', 'Deleted shop #' . $sid . ': ' . $shop['shop_name']);
+                flash('Shop deleted.', 'success');
+            }
+        }
+        header('Location: marketplace.php?tab=shops'); exit;
+    }
+
     // Activate boost order
     if ($postAction === 'activate_boost' && !empty($_POST['boost_id'])) {
         $bid = (int)$_POST['boost_id'];
@@ -136,11 +160,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // in Admin → Monetization → Settings → Module Availability, since a
         // form that doesn't render that checkbox would otherwise force it
         // off on every save.
-        $keys = ['mp_featured_product_7day_price','mp_featured_product_30day_price',
-                 'mp_featured_shop_7day_price','mp_featured_shop_30day_price','mp_seller_subscription_price','mp_verified_seller_fee'];
-        foreach ($keys as $k) {
-            if (isset($_POST[$k])) set_platform_setting($k, trim($_POST[$k]));
-        }
         set_platform_setting('mp_require_product_approval', isset($_POST['mp_require_product_approval']) ? '1' : '0');
         set_platform_setting('mp_quotes_enabled', isset($_POST['mp_quotes_enabled']) ? '1' : '0');
         set_platform_setting('mp_quote_response_days', (string)max(1, (int)($_POST['mp_quote_response_days'] ?? 2)));
@@ -324,8 +343,7 @@ function mkt_render_pagination(int $page, int $totalPages, int $total): void {
 // Settings
 $cfg = [];
 if ($tab === 'settings') {
-    foreach (['mp_enabled','mp_require_product_approval','mp_featured_product_7day_price','mp_featured_product_30day_price',
-              'mp_featured_shop_7day_price','mp_featured_shop_30day_price','mp_seller_subscription_price','mp_verified_seller_fee',
+    foreach (['mp_enabled','mp_require_product_approval',
               'mp_quotes_enabled','mp_quote_response_days','mp_quote_eligible_shops','mp_default_sort'] as $k) {
         $cfg[$k] = get_platform_setting($k, '');
     }
@@ -515,6 +533,9 @@ if ($tab === 'settings') {
             <?php elseif ($s['status'] === 'suspended'): ?>
             <form method="post" style="margin:0;" onsubmit="return confirm('Unsuspend this shop?');"><?php echo csrf_field(); ?><input type="hidden" name="action" value="unsuspend_shop"><input type="hidden" name="shop_id" value="<?php echo $s['id']; ?>"><button type="submit" class="button button-small" style="background:#22a06b;color:#fff;border-color:transparent;">&#10003; Unsuspend</button></form>
             <?php endif; ?>
+            <?php if (is_admin()): ?>
+            <form method="post" style="margin:0;" onsubmit="return confirm('Permanently delete &quot;<?php echo sanitize(addslashes($s['shop_name'])); ?>&quot;? This removes the shop, all its products, orders, and reviews. This cannot be undone.');"><?php echo csrf_field(); ?><input type="hidden" name="action" value="delete_shop"><input type="hidden" name="shop_id" value="<?php echo $s['id']; ?>"><button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;">&#128465; Delete</button></form>
+            <?php endif; ?>
         </div>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No shops found.</div><?php endif; ?>
@@ -684,7 +705,7 @@ if ($tab === 'settings') {
 
         <div class="adm-set-section">
             <p class="adm-set-title">Module</p>
-            <p class="meta" style="font-size:.78rem;margin-bottom:8px;">Turning the whole module on/off has moved to <a href="monetization.php?tab=settings">Admin → Monetization → Settings</a>.</p>
+            <p class="meta" style="font-size:.78rem;margin-bottom:8px;">Turning the whole module on/off has moved to <a href="monetization.php?tab=settings">Admin → Monetization → Settings</a>, and boost/featured/subscription package pricing has moved to <a href="monetization.php?tab=marketplace">Admin → Monetization → Marketplace</a>.</p>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                 <input type="checkbox" name="mp_require_product_approval" value="1" <?php echo ($cfg['mp_require_product_approval']??'1')==='1'?'checked':''; ?>>
                 Require admin to approve products before listing
@@ -709,23 +730,6 @@ if ($tab === 'settings') {
                     <?php endforeach; ?>
                 </select>
                 <p class="meta" style="margin-top:4px;">Applies whenever a visitor hasn't picked a sort themselves — they can still override it with the sort dropdown on the Marketplace page.</p>
-            </div>
-        </div>
-
-        <div class="adm-set-section">
-            <p class="adm-set-title">Monetization Prices (GHS)</p>
-            <div class="adm-grid2">
-                <?php $priceFields = [
-                    'mp_featured_product_7day_price'=>'Featured Product 7 days',
-                    'mp_featured_product_30day_price'=>'Featured Product 30 days',
-                    'mp_featured_shop_7day_price'=>'Featured Shop 7 days',
-                    'mp_featured_shop_30day_price'=>'Featured Shop 30 days',
-                    'mp_seller_subscription_price'=>'Premium Seller (monthly)',
-                    'mp_verified_seller_fee'=>'Verified Seller badge fee (0=free)',
-                ]; ?>
-                <?php foreach ($priceFields as $k=>$l): ?>
-                <div class="form-group"><label><?php echo $l; ?></label><input type="number" name="<?php echo $k; ?>" min="0" step="0.01" value="<?php echo sanitize($cfg[$k]??'0.00'); ?>"></div>
-                <?php endforeach; ?>
             </div>
         </div>
 

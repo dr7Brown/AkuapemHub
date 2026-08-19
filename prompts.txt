@@ -1047,6 +1047,10 @@ NEXT:
 4. AFTER i set the benefit in sponsor package, i am the edit button does not work anymore.
 4. promo
 
+NEXT;
+1. dont allow spaces in username input field
+dont allow user to type space in that field.
+
 
 
 

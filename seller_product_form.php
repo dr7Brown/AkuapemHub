@@ -91,20 +91,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Please verify your email address before listing a product.';
     } elseif (!$editId && is_banned_from_feature((int)$user['id'], 'mp')) {
         $error = 'You have been restricted from the Marketplace. Contact support if you believe this is an error.';
-    } elseif ($status === 'pending_approval' && (!$editId || $product['status'] === 'rejected')) {
-        // A brand-new listing, or a rejected one being resubmitted, is about to
-        // newly occupy a slot — re-check the limit. An already-approved/pending
-        // product being edited in place never needs a new slot.
+    }
+
+    // A brand-new listing, or a rejected one being resubmitted, is about to
+    // newly occupy a slot — re-check the limit. An already-approved/pending
+    // product being edited in place never needs a new slot.
+    $needsSubscriptionFirst = false;
+    if (!$error && $status === 'pending_approval' && (!$editId || $product['status'] === 'rejected')) {
         $listCheck = mp_shop_can_list_product((int)$shop['id']);
         if (!$listCheck['allowed']) {
             if ($listCheck['no_subscription']) {
-                // Send them straight to checkout with the reason, rather than
-                // just showing the message on a form they can't submit anyway.
-                flash('You need an active marketplace subscription before you can list products. Subscribe to a package to continue.', 'error');
-                header('Location: pay_mp_subscription.php');
-                exit;
+                // Don't discard everything the seller just filled in — save it as
+                // a draft now, same as clicking "Save as Draft", and remember it so
+                // it can be auto-submitted the moment their subscription activates
+                // (see mp_publish_pending_draft(), called from pay_mp_subscription.php
+                // and paystack.php's mp_subscription case).
+                $status = 'draft';
+                $needsSubscriptionFirst = true;
+            } else {
+                $error = 'You have reached your monthly product limit. Upgrade your subscription or remove existing listings.';
             }
-            $error = 'You have reached your monthly product limit. Upgrade your subscription or remove existing listings.';
         }
     }
 
@@ -173,6 +179,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 : 'New Product Pending Approval';
             $notifBody  = $shop['shop_name'] . ' submitted "' . $name . '" for review. Check Admin → Marketplace.';
             notify_moderators('approve_products', $notifTitle, $notifBody);
+        }
+
+        if ($needsSubscriptionFirst) {
+            $_SESSION['mp_pending_publish_product_id'] = $editId;
+            flash('Your product was saved — choose a subscription package below to publish it.', 'info');
+            header('Location: pay_mp_subscription.php');
+            exit;
         }
 
         $successMsg = $status === 'pending_approval'

@@ -2236,13 +2236,26 @@ function user_has_complimentary_access(?int $userId = null, ?string $featureKey 
     global $pdo;
     $userId = $userId ?? (current_user()['id'] ?? null);
     if (!$userId) return false;
+
     $stmt = $pdo->prepare('SELECT is_complimentary FROM users WHERE id=?');
     $stmt->execute([$userId]);
-    if (!$stmt->fetchColumn()) return false;
-    if ($featureKey === null) return true;
-    $g = $pdo->prepare("SELECT 1 FROM complimentary_grants WHERE user_id=? AND feature_key IN ('full', ?) LIMIT 1");
-    $g->execute([$userId, $featureKey]);
-    return (bool)$g->fetchColumn();
+    if ($stmt->fetchColumn()) {
+        if ($featureKey === null) return true;
+        $g = $pdo->prepare("SELECT 1 FROM complimentary_grants WHERE user_id=? AND feature_key IN ('full', ?) LIMIT 1");
+        $g->execute([$userId, $featureKey]);
+        if ($g->fetchColumn()) return true;
+    }
+
+    // Promotions module (functions.php claim_promotion()): an active, unexpired
+    // promo claim grants the same free access as an admin complimentary grant,
+    // without needing a separate is_complimentary flag on the user.
+    if ($featureKey !== null) {
+        $p = $pdo->prepare("SELECT 1 FROM promotion_claims WHERE user_id=? AND feature_key=? AND status='active' AND expiry_date >= CURDATE() LIMIT 1");
+        $p->execute([$userId, $featureKey]);
+        if ($p->fetchColumn()) return true;
+    }
+
+    return false;
 }
 
 /**
@@ -2285,6 +2298,134 @@ function is_feature_paid($featureKey) {
     if ($mode === 'free') return false;
     if ($mode === 'paid') return true;
     return (bool)get_platform_setting($featureKey, 0);
+}
+
+// ── Promotions / Special Offers ─────────────────────────────────────────────
+
+/**
+ * Maps a complimentary/promotion feature_key (all_complimentary_features())
+ * to the platform_payments/initializePayment() payment_type that charges
+ * for the same real-world feature. Both name the same feature but are
+ * different string namespaces already in use elsewhere in this codebase —
+ * this bridges them, needed only once, at promotion-claim time.
+ */
+function feature_key_to_payment_type(string $featureKey): ?string {
+    return [
+        'enable_paid_job_posting'         => 'job_post',
+        'enable_paid_worker_service'      => 'worker_service',
+        'enable_paid_featured_jobs'       => 'featured_job',
+        'enable_paid_featured_workers'    => 'featured_worker',
+        'enable_paid_verification_badges' => 'verification',
+        'enable_paid_worker_premium'      => 'worker_premium',
+        'enable_paid_featured_news'       => 'featured_news',
+        'enable_paid_featured_events'     => 'featured_event',
+        'enable_paid_featured_funerals'   => 'featured_funeral',
+        'news_fee'                        => 'news_post',
+        'event_fee'                       => 'event_post',
+        'funeral_fee'                     => 'funeral_post',
+        'mp_subscription'                 => 'mp_subscription',
+        'mp_boost'                        => 'mp_boost',
+        'delivery_premium'                => 'delivery_subscription',
+        'delivery_sponsored'              => 'delivery_sponsored',
+        'delivery_verification'           => 'delivery_verification',
+    ][$featureKey] ?? null;
+}
+
+/**
+ * Claims $promotionId for $userId — the single entry point for both the
+ * "Claim Offer" button and promo-code redemption. Never trusts any
+ * client-submitted duration/discount/feature data; everything is re-read
+ * fresh from the promotions row inside one transaction. Duplicate claims
+ * are blocked by the promotion_claims.uq_user_promotion DB constraint;
+ * max_claims is enforced with an atomic guarded UPDATE (no check-then-act
+ * race).
+ *
+ * @return array{ok:bool, error:?string, claim:?array}
+ */
+function claim_promotion(int $userId, int $promotionId): array {
+    global $pdo;
+
+    $stmt = $pdo->prepare('SELECT * FROM promotions WHERE id=? LIMIT 1');
+    $stmt->execute([$promotionId]);
+    $promo = $stmt->fetch();
+    if (!$promo) return ['ok' => false, 'error' => 'That promotion no longer exists.', 'claim' => null];
+    if ($promo['status'] !== 'active') return ['ok' => false, 'error' => 'That promotion is not currently active.', 'claim' => null];
+
+    $already = $pdo->prepare('SELECT 1 FROM promotion_claims WHERE user_id=? AND promotion_id=? LIMIT 1');
+    $already->execute([$userId, $promotionId]);
+    if ($already->fetchColumn()) return ['ok' => false, 'error' => "You've already claimed this promotion.", 'claim' => null];
+
+    $pdo->beginTransaction();
+    try {
+        $upd = $pdo->prepare(
+            "UPDATE promotions SET claims_count = claims_count + 1
+             WHERE id = ? AND status = 'active' AND CURDATE() >= starts_at
+               AND (ends_at IS NULL OR CURDATE() <= ends_at)
+               AND (max_claims IS NULL OR claims_count < max_claims)"
+        );
+        $upd->execute([$promotionId]);
+
+        if ($upd->rowCount() !== 1) {
+            $pdo->rollBack();
+            // Re-check to report a specific reason.
+            $fresh = $pdo->prepare('SELECT * FROM promotions WHERE id=?');
+            $fresh->execute([$promotionId]);
+            $fresh = $fresh->fetch();
+            if (!$fresh || $fresh['status'] !== 'active') {
+                return ['ok' => false, 'error' => 'That promotion is not currently active.', 'claim' => null];
+            }
+            if ($fresh['starts_at'] > date('Y-m-d')) {
+                return ['ok' => false, 'error' => 'That promotion has not started yet.', 'claim' => null];
+            }
+            if ($fresh['ends_at'] && $fresh['ends_at'] < date('Y-m-d')) {
+                return ['ok' => false, 'error' => 'That promotion has expired.', 'claim' => null];
+            }
+            return ['ok' => false, 'error' => 'That promotion has reached its maximum number of claims.', 'claim' => null];
+        }
+
+        $expiryDate = date('Y-m-d', strtotime('+' . (int)$promo['duration_days'] . ' days'));
+        $paymentType = $promo['type'] === 'discount' ? feature_key_to_payment_type($promo['feature_key']) : null;
+        $discountPercent = $promo['type'] === 'discount' ? $promo['discount_percent'] : null;
+
+        $ins = $pdo->prepare(
+            'INSERT INTO promotion_claims (promotion_id, user_id, feature_key, payment_type, discount_percent, status, expiry_date)
+             VALUES (?, ?, ?, ?, ?, \'active\', ?)'
+        );
+        $ins->execute([$promotionId, $userId, $promo['feature_key'], $paymentType, $discountPercent, $expiryDate]);
+        $claimId = (int)$pdo->lastInsertId();
+
+        $pdo->commit();
+
+        return ['ok' => true, 'error' => null, 'claim' => [
+            'id' => $claimId, 'promotion_id' => $promotionId, 'expiry_date' => $expiryDate,
+        ]];
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        // A concurrent claim for the same user racing past the earlier
+        // "already claimed" check hits uq_user_promotion here instead.
+        return ['ok' => false, 'error' => "You've already claimed this promotion.", 'claim' => null];
+    }
+}
+
+/**
+ * Promotions currently eligible for $userId — active, in date range, under
+ * max_claims, and not already claimed by this user. Computed live (no
+ * reliance on a lazily-refreshed status column) so it's always correct
+ * even between admin visits. Cheap, indexed, capped by $limit — safe to
+ * call from the homepage.
+ */
+function eligible_promotions_for_user(int $userId, int $limit = 6): array {
+    global $pdo;
+    $stmt = $pdo->prepare(
+        "SELECT * FROM promotions
+         WHERE status = 'active' AND CURDATE() >= starts_at
+           AND (ends_at IS NULL OR CURDATE() <= ends_at)
+           AND (max_claims IS NULL OR claims_count < max_claims)
+           AND NOT EXISTS (SELECT 1 FROM promotion_claims WHERE user_id = ? AND promotion_id = promotions.id)
+         ORDER BY created_at DESC LIMIT " . (int)$limit
+    );
+    $stmt->execute([$userId]);
+    return $stmt->fetchAll();
 }
 
 // ── Login rate-limiting (5 failures per IP in 15 min → lockout) ─────────────
@@ -2364,6 +2505,9 @@ function all_mod_permissions(): array {
         'Quick Services' => [
             'manage_quick_services'          => 'Create/edit services, set fees, and assign managers',
             'manage_quick_service_requests'  => 'Process requests for assigned services',
+        ],
+        'Promotions' => [
+            'manage_promotions' => 'Create, edit, and manage promotional offers',
         ],
     ];
 }

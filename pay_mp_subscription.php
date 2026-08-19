@@ -88,6 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($charge <= 0) {
             // Free plan, or a fully-credited upgrade — activate immediately, no Paystack step.
             mp_activate_subscription($subId, null);
+            mp_publish_pending_draft((int)$shop['id']);
             flash($isDowngrade ? 'Downgrade scheduled — it takes effect on ' . date('d M Y', strtotime($start)) . '.' : 'Subscription activated!', 'success');
             header('Location: seller_dashboard.php'); exit;
         }

@@ -295,6 +295,34 @@ function mp_cancel_subscription(int $subscriptionId): bool {
     return true;
 }
 
+/**
+ * If seller_product_form.php had to save a first-time listing as a draft
+ * because the shop had no active subscription yet (see its $needsSubscriptionFirst
+ * branch), this publishes that draft the moment a subscription for the same
+ * shop actually activates — free/instant activation in pay_mp_subscription.php,
+ * or a paid one confirmed via paystack.php's 'mp_subscription' case. No-op if
+ * there's no pending draft in session, or it's since changed shop/status.
+ */
+function mp_publish_pending_draft(int $shopId): void {
+    if (empty($_SESSION['mp_pending_publish_product_id'])) return;
+    global $pdo;
+    $productId = (int)$_SESSION['mp_pending_publish_product_id'];
+    unset($_SESSION['mp_pending_publish_product_id']);
+
+    $st = $pdo->prepare("SELECT id, name FROM mp_products WHERE id=? AND shop_id=? AND status='draft'");
+    $st->execute([$productId, $shopId]);
+    $product = $st->fetch();
+    if (!$product) return;
+
+    $pdo->prepare("UPDATE mp_products SET status='pending_approval', updated_at=NOW() WHERE id=?")->execute([$productId]);
+
+    $shopSt = $pdo->prepare('SELECT shop_name FROM mp_shops WHERE id=?');
+    $shopSt->execute([$shopId]);
+    $shopName = $shopSt->fetchColumn();
+    notify_moderators('approve_products', 'New Product Pending Approval',
+        $shopName . ' submitted "' . $product['name'] . '" for review. Check Admin → Marketplace.');
+}
+
 function get_product(int $id): ?array {
     global $pdo;
     $st = $pdo->prepare(

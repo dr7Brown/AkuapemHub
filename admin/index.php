@@ -784,6 +784,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             ['market_settings.php',  '⚙️', 'Market Settings', 'Global nearby market settings',   null],
             ['quick_services.php',   '⚡', 'Quick Services', 'Manage services, fees & managers', 'manage_quick_services'],
             ['quick_service_requests.php', '📥', 'Service Requests', 'Process assigned service requests', 'manage_quick_service_requests'],
+            ['promotions.php',       '🎁', 'Promotions',   'Special offers & free-access campaigns', 'manage_promotions'],
             ['moderators.php',       '🛡️', 'Moderators',   'Roles & access control',      null],
             ['mod_performance.php',  '🏆', 'Performance',  'Points, leaderboard & rewards',null],
             ['analytics.php',        '📊', 'Analytics',    'Stats & growth trends',       'view_reports'],

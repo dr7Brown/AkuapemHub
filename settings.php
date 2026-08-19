@@ -992,6 +992,7 @@ if (!$isAjax): ?>
 
     <?php $activeNav = 'settings'; require __DIR__ . '/partials/bottom_nav.php'; ?>
     <script src="assets/js/image-compress.js"></script>
+    <script src="assets/js/username-input.js"></script>
     <script>
     (function() {
         function runInjectedScripts(container) {

@@ -724,5 +724,6 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
     </div><!-- /layout -->
 </main>
 <script src="../assets/js/rich-editor.js" defer></script>
+<script src="../assets/js/username-input.js"></script>
 </body>
 </html>

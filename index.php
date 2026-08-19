@@ -931,6 +931,10 @@ try {
     </div>
     <?php endif; ?>
 
+    <!-- Special Offers -->
+    <?php if ($user && module_enabled('promotions')): $promoWidgetLimit = 1; require __DIR__ . '/partials/promotion_widget.php'; ?>
+    <?php endif; ?>
+
     <!-- Community CTAs -->
     <div class="cm-cta-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="cm-cta" style="background:linear-gradient(135deg,#1e3a5f,#0f2040);">
