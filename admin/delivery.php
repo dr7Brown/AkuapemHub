@@ -437,6 +437,13 @@ function del_render_pagination(int $page, int $totalPages, int $total): void {
 
 <main class="adm-shell">
 
+    <?php if (is_admin()): ?>
+    <div style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:14px;">
+        <a href="?export=agents&csrf_token=<?php echo urlencode(csrf_token()); ?>" class="button button-secondary button-small">&#8595; Agents CSV</a>
+        <a href="?export=requests&csrf_token=<?php echo urlencode(csrf_token()); ?>" class="button button-secondary button-small">&#8595; Requests CSV</a>
+    </div>
+    <?php endif; ?>
+
     <?php if ($flash): ?>
     <div class="alert alert-<?php echo sanitize($flash['type']); ?>"><?php echo sanitize($flash['message']); ?></div>
     <?php endif; ?>
@@ -589,7 +596,7 @@ function del_render_pagination(int $page, int $totalPages, int $total): void {
     <form method="get" action="delivery.php" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
         <input type="hidden" name="tab" value="requests"><input type="hidden" name="req_status" value="<?php echo sanitize($rf); ?>">
         <input type="text" name="q" value="<?php echo sanitize($qs); ?>" placeholder="Search customer, description…" style="flex:1;max-width:340px;">
-        <select name="rsort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <select name="rsort" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
             <option value="newest" <?php echo $reqSort==='newest'?'selected':''; ?>>Newest First</option>
             <option value="oldest" <?php echo $reqSort==='oldest'?'selected':''; ?>>Oldest First</option>
             <option value="fee_high" <?php echo $reqSort==='fee_high'?'selected':''; ?>>Highest Fee</option>
@@ -784,7 +791,7 @@ function del_render_pagination(int $page, int $totalPages, int $total): void {
 
         <div class="adm-set-section">
             <p class="adm-set-title">Module &amp; Approval</p>
-            <p class="meta" style="font-size:.78rem;margin-bottom:8px;">Turning the whole module on/off has moved to <a href="monetization.php?tab=settings">Admin → Monetization → Settings</a>.</p>
+            <p class="meta" style="font-size:.78rem;margin-bottom:8px;">Turning the whole module on/off has moved to <a href="monetization.php?tab=settings">Admin → Monetization → Settings</a>. Premium/Verification/Sponsored pricing below is also editable from <a href="monetization.php?tab=delivery">Admin → Monetization → Delivery</a>.</p>
             <div class="form-group">
                 <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
                     <input type="checkbox" name="delivery_require_approval" value="1" <?php echo ($cfg['delivery_require_approval']??'1')==='1'?'checked':''; ?>>

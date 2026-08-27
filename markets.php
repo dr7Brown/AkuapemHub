@@ -5,6 +5,7 @@ require_once __DIR__ . '/functions.php';
 require_module_enabled('markets', 'Nearby Markets');
 
 $user = current_user();
+$mktAd = get_ads_for_placement('markets', ['banner', 'video'], 1)[0] ?? null;
 
 $markets = $pdo->query("SELECT * FROM markets ORDER BY name")->fetchAll();
 
@@ -154,6 +155,13 @@ foreach ($marketSchedules as $s) { if ($s['is_payment_open']) $openNowCount++; }
         </div>
         <?php endif; ?>
     </div>
+
+    <!-- Ad -->
+    <?php if ($mktAd): ?>
+    <div style="max-width:600px;margin:0 auto 16px;">
+        <?php render_ad_unit($mktAd); ?>
+    </div>
+    <?php endif; ?>
 
     <?php if (!$markets): ?>
     <div class="mkt-empty">

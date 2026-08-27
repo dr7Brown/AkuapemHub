@@ -10,21 +10,21 @@ if (!is_admin()) {
 
 $themeKeys = [
     // Core brand
-    'theme_primary'        => ['label' => 'Primary',              'default' => '#2f8f5b', 'desc' => 'Buttons, links, active nav'],
-    'theme_primary_dark'   => ['label' => 'Primary dark',         'default' => '#246b45', 'desc' => 'Hover states, headings'],
-    'theme_primary_soft'   => ['label' => 'Primary tint',         'default' => '#e4f4ea', 'desc' => 'Badge backgrounds, selected rows'],
-    'theme_secondary'      => ['label' => 'Secondary / Accent',   'default' => '#f97316', 'desc' => 'Featured badges, highlights'],
-    'theme_secondary_soft' => ['label' => 'Secondary tint',       'default' => '#ffedd9', 'desc' => 'Secondary badge backgrounds'],
+    'theme_primary'        => ['label' => 'Primary',              'default' => '#2f8f5b', 'dark_default' => '#4ade80', 'desc' => 'Buttons, links, active nav'],
+    'theme_primary_dark'   => ['label' => 'Primary dark',         'default' => '#246b45', 'dark_default' => '#22c55e', 'desc' => 'Hover states, headings'],
+    'theme_primary_soft'   => ['label' => 'Primary tint',         'default' => '#e4f4ea', 'dark_default' => '#123120', 'desc' => 'Badge backgrounds, selected rows'],
+    'theme_secondary'      => ['label' => 'Secondary / Accent',   'default' => '#f97316', 'dark_default' => '#fb923c', 'desc' => 'Featured badges, highlights'],
+    'theme_secondary_soft' => ['label' => 'Secondary tint',       'default' => '#ffedd9', 'dark_default' => '#3a2410', 'desc' => 'Secondary badge backgrounds'],
     // Surfaces & background
-    'theme_bg'             => ['label' => 'Page background',      'default' => '#f5f8f6', 'desc' => 'Overall page background'],
-    'theme_surface'        => ['label' => 'Card surface',         'default' => '#ffffff',  'desc' => 'Cards, modals, panels'],
-    'theme_surface_muted'  => ['label' => 'Muted surface',        'default' => '#f1f7f3', 'desc' => 'Table rows, muted sections'],
+    'theme_bg'             => ['label' => 'Page background',      'default' => '#f5f8f6', 'dark_default' => '#0f1512', 'desc' => 'Overall page background'],
+    'theme_surface'        => ['label' => 'Card surface',         'default' => '#ffffff', 'dark_default' => '#1a211d', 'desc' => 'Cards, modals, panels'],
+    'theme_surface_muted'  => ['label' => 'Muted surface',        'default' => '#f1f7f3', 'dark_default' => '#232b26', 'desc' => 'Table rows, muted sections'],
     // Text
-    'theme_text'           => ['label' => 'Body text',            'default' => '#1a2230', 'desc' => 'Primary text colour'],
-    'theme_muted'          => ['label' => 'Muted text',           'default' => '#5b6472', 'desc' => 'Labels, placeholders, subtitles'],
+    'theme_text'           => ['label' => 'Body text',            'default' => '#1a2230', 'dark_default' => '#e7ebe8', 'desc' => 'Primary text colour'],
+    'theme_muted'          => ['label' => 'Muted text',           'default' => '#5b6472', 'dark_default' => '#9aa5a0', 'desc' => 'Labels, placeholders, subtitles'],
     // Borders
-    'theme_border'         => ['label' => 'Border',               'default' => '#e2e6ed', 'desc' => 'Panel and card borders'],
-    'theme_border_strong'  => ['label' => 'Border strong',        'default' => '#cbd3df', 'desc' => 'Input focus outlines, dividers'],
+    'theme_border'         => ['label' => 'Border',               'default' => '#e2e6ed', 'dark_default' => '#2c352f', 'desc' => 'Panel and card borders'],
+    'theme_border_strong'  => ['label' => 'Border strong',        'default' => '#cbd3df', 'dark_default' => '#3d4941', 'desc' => 'Input focus outlines, dividers'],
 ];
 
 $saved = false;
@@ -35,6 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!empty($_POST['reset_theme'])) {
         foreach (array_keys($themeKeys) as $key) {
             $pdo->prepare("DELETE FROM platform_settings WHERE setting_key = ?")->execute([$key]);
+            $pdo->prepare("DELETE FROM platform_settings WHERE setting_key = ?")->execute(['theme_dark_' . substr($key, 6)]);
         }
         $reset = true;
     } else {
@@ -43,7 +44,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (preg_match('/^#[0-9a-f]{3,6}$/i', $val)) {
                 set_platform_setting($key, strtolower($val));
             }
+            $darkKey = 'theme_dark_' . substr($key, 6);
+            $darkVal = trim($_POST[$darkKey] ?? '');
+            if (preg_match('/^#[0-9a-f]{3,6}$/i', $darkVal)) {
+                set_platform_setting($darkKey, strtolower($darkVal));
+            }
         }
+        set_platform_setting('dark_mode_enabled', isset($_POST['dark_mode_enabled']) ? '1' : '0');
         $saved = true;
     }
     header('Location: theme.php' . ($reset ? '?reset=1' : '?saved=1'));
@@ -51,9 +58,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $current = [];
+$currentDark = [];
 foreach (array_keys($themeKeys) as $key) {
-    $current[$key] = get_platform_setting($key) ?: $themeKeys[$key]['default'];
+    $current[$key]     = get_platform_setting($key) ?: $themeKeys[$key]['default'];
+    $darkKey            = 'theme_dark_' . substr($key, 6);
+    $currentDark[$key] = get_platform_setting($darkKey) ?: $themeKeys[$key]['dark_default'];
 }
+$darkModeEnabled = get_platform_setting('dark_mode_enabled', '0') === '1';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -127,6 +138,10 @@ foreach (array_keys($themeKeys) as $key) {
             <h2 style="margin:0;font-size:1rem;">Live preview</h2>
             <span style="font-size:.78rem;color:var(--muted);">Updates instantly as you pick colours — save to apply to all users.</span>
         </div>
+        <div style="display:flex;gap:6px;margin-bottom:14px;">
+            <button type="button" id="preview-mode-light" class="button button-small button-primary" onclick="setPreviewMode('light')">☀️ Light</button>
+            <button type="button" id="preview-mode-dark" class="button button-small button-secondary" onclick="setPreviewMode('dark')">🌙 Dark</button>
+        </div>
         <!-- Swatch row -->
         <div class="preview-box" id="preview-swatches" style="margin-bottom:16px;">
             <?php foreach ($themeKeys as $key => $meta): ?>
@@ -163,10 +178,21 @@ foreach (array_keys($themeKeys) as $key) {
         </div>
     </div>
 
-    <form method="post" class="panel">
+    <div class="card" style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div>
+            <strong style="font-size:.95rem;">🌙 Dark Mode</strong>
+            <p class="meta" style="margin:2px 0 0;">When on, the site follows each visitor's device preference automatically, with the dark colours below — no separate toggle needed on their end. Applies to the shared design system (buttons, nav, cards, forms); pages with their own custom colours may not fully adapt.</p>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-weight:700;white-space:nowrap;">
+            <input type="checkbox" form="theme-form" name="dark_mode_enabled" value="1" style="width:auto;" <?php echo $darkModeEnabled ? 'checked' : ''; ?>>
+            Enabled
+        </label>
+    </div>
+
+    <form method="post" class="panel" id="theme-form">
         <?php echo csrf_field(); ?>
         <h2 style="margin-top:0;">Colour settings</h2>
-        <p class="meta">Pick a colour or type a hex value. Changes are live for all users once saved.</p>
+        <p class="meta">Pick a colour or type a hex value for both light and dark. Changes are live for all users once saved.</p>
 
         <?php
         $groups = [
@@ -181,15 +207,24 @@ foreach (array_keys($themeKeys) as $key) {
         <?php foreach ($keys as $key):
             if (!isset($themeKeys[$key])) continue;
             $meta = $themeKeys[$key];
+            $darkKey = 'theme_dark_' . substr($key, 6);
         ?>
             <div class="colour-row">
+                <div class="colour-label" style="min-width:150px;"><?php echo htmlspecialchars($meta['label']); ?></div>
+                <span style="font-size:.7rem;font-weight:800;color:var(--muted);">☀️</span>
                 <input type="color" id="cp-<?php echo $key; ?>" value="<?php echo htmlspecialchars($current[$key]); ?>"
                        oninput="syncHex('<?php echo $key; ?>', this.value)">
-                <div class="colour-label"><?php echo htmlspecialchars($meta['label']); ?></div>
                 <input type="text" name="<?php echo $key; ?>" id="hex-<?php echo $key; ?>"
                        value="<?php echo htmlspecialchars($current[$key]); ?>"
                        maxlength="7" placeholder="#000000"
                        oninput="syncPicker('<?php echo $key; ?>', this.value)">
+                <span style="font-size:.7rem;font-weight:800;color:var(--muted);margin-left:8px;">🌙</span>
+                <input type="color" id="cp-<?php echo $darkKey; ?>" value="<?php echo htmlspecialchars($currentDark[$key]); ?>"
+                       oninput="syncHex('<?php echo $darkKey; ?>', this.value)">
+                <input type="text" name="<?php echo $darkKey; ?>" id="hex-<?php echo $darkKey; ?>"
+                       value="<?php echo htmlspecialchars($currentDark[$key]); ?>"
+                       maxlength="7" placeholder="#000000"
+                       oninput="syncPicker('<?php echo $darkKey; ?>', this.value)">
                 <span class="colour-desc"><?php echo htmlspecialchars($meta['desc']); ?></span>
             </div>
         <?php endforeach; endforeach; ?>
@@ -202,42 +237,70 @@ foreach (array_keys($themeKeys) as $key) {
     </form>
 </main>
 <script>
-// Map theme key → CSS variable name (mirrors db.php propMap)
+// Suffix (shared between theme_X and theme_dark_X) → CSS variable name
+// (mirrors db.php's propMap).
 var propMap = {
-    theme_primary:       '--primary',
-    theme_primary_dark:  '--primary-dark',
-    theme_primary_soft:  '--primary-soft',
-    theme_secondary:     '--secondary',
-    theme_secondary_soft:'--secondary-soft',
-    theme_bg:            '--bg',
-    theme_surface:       '--surface',
-    theme_surface_muted: '--surface-muted',
-    theme_border:        '--border',
-    theme_border_strong: '--border-strong',
-    theme_text:          '--text',
-    theme_muted:         '--muted',
+    primary:        '--primary',
+    primary_dark:   '--primary-dark',
+    primary_soft:   '--primary-soft',
+    secondary:      '--secondary',
+    secondary_soft: '--secondary-soft',
+    bg:             '--bg',
+    surface:        '--surface',
+    surface_muted:  '--surface-muted',
+    border:         '--border',
+    border_strong:  '--border-strong',
+    text:           '--text',
+    muted:          '--muted',
 };
 
-function syncHex(key, val) {
-    var hex = document.getElementById('hex-' + key);
-    if (hex) hex.value = val;
-    applyLive(key, val);
+var previewMode = 'light';
+
+// 'theme_primary' -> {mode:'light', suffix:'primary'}; 'theme_dark_primary' -> {mode:'dark', suffix:'primary'}
+function keyParts(fullKey) {
+    if (fullKey.indexOf('theme_dark_') === 0) return { mode: 'dark', suffix: fullKey.slice(11) };
+    return { mode: 'light', suffix: fullKey.slice(6) };
 }
-function syncPicker(key, val) {
+
+function syncHex(fullKey, val) {
+    var hex = document.getElementById('hex-' + fullKey);
+    if (hex) hex.value = val;
+    applyLive(fullKey, val);
+}
+function syncPicker(fullKey, val) {
     if (/^#[0-9a-f]{3,6}$/i.test(val)) {
-        var cp = document.getElementById('cp-' + key);
+        var cp = document.getElementById('cp-' + fullKey);
         if (cp) cp.value = val;
-        applyLive(key, val);
+        applyLive(fullKey, val);
     }
 }
-function applyLive(key, val) {
+function applyLive(fullKey, val) {
     if (!/^#[0-9a-f]{3,6}$/i.test(val)) return;
-    // Update swatch
-    var sw = document.getElementById('swatch-' + key);
+    var parts = keyParts(fullKey);
+    if (parts.mode !== previewMode) return; // editing the mode that isn't currently previewed
+    var sw = document.getElementById('swatch-theme_' + parts.suffix);
     if (sw) sw.style.background = val;
-    // Update CSS variable on :root so the page preview reacts
-    var prop = propMap[key];
+    var prop = propMap[parts.suffix];
     if (prop) document.documentElement.style.setProperty(prop, val);
+}
+
+// Switches the live preview (swatches + mock UI) between the light and dark
+// colour sets — doesn't change which mode actually ships to visitors, that's
+// governed by the "Dark Mode" checkbox + each visitor's own device setting.
+function setPreviewMode(mode) {
+    previewMode = mode;
+    document.getElementById('preview-mode-light').className = 'button button-small ' + (mode === 'light' ? 'button-primary' : 'button-secondary');
+    document.getElementById('preview-mode-dark').className  = 'button button-small ' + (mode === 'dark'  ? 'button-primary' : 'button-secondary');
+    Object.keys(propMap).forEach(function (suffix) {
+        var fullKey = (mode === 'dark' ? 'theme_dark_' : 'theme_') + suffix;
+        var hex = document.getElementById('hex-' + fullKey);
+        var val = hex ? hex.value : null;
+        if (val && /^#[0-9a-f]{3,6}$/i.test(val)) {
+            var sw = document.getElementById('swatch-theme_' + suffix);
+            if (sw) sw.style.background = val;
+            document.documentElement.style.setProperty(propMap[suffix], val);
+        }
+    });
 }
 </script>
 </body>

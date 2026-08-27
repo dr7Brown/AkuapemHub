@@ -47,7 +47,7 @@ $sidebarFeatured->execute([$today]);
 $sidebarFeatured = $sidebarFeatured->fetchAll();
 $sidebarNews     = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 5")->fetchAll();
 $sidebarFunerals = $pdo->query("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' ORDER BY created_at DESC LIMIT 4")->fetchAll();
-$sidebarAd       = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$sidebarAd       = get_ads_for_placement('events', ['banner', 'video'], 1)[0] ?? null;
 
 if ($isAjax) {
     foreach ($events as $ev): ?>
@@ -382,14 +382,7 @@ if ($isAjax) {
     <?php if ($sidebarAd): ?>
     <div class="nsb-widget">
         <div class="nsb-ad">
-            <div class="nsb-ad-label">Advertisement</div>
-            <a href="ad_click.php?id=<?php echo (int)$sidebarAd['id']; ?>" target="_blank" rel="noopener sponsored">
-                <?php if ($sidebarAd['image']): ?>
-                    <img src="<?php echo sanitize($sidebarAd['image']); ?>" alt="<?php echo sanitize($sidebarAd['title']); ?>">
-                <?php else: ?>
-                    <p style="font-size:.82rem;font-weight:600;color:var(--muted,#6b7280);margin:0;"><?php echo sanitize($sidebarAd['title']); ?></p>
-                <?php endif; ?>
-            </a>
+            <?php render_ad_unit($sidebarAd); ?>
         </div>
     </div>
     <?php endif; ?>

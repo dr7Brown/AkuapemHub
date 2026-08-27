@@ -266,12 +266,20 @@ if ($view === 'quotes') {
                 <a href="<?php echo sanitize($order['delivery_maps_link']); ?>" target="_blank" rel="noopener"
                    style="margin-left:8px;font-size:.76rem;font-weight:700;color:var(--primary,#0f766e);text-decoration:none;white-space:nowrap;">🗺 Map ↗</a>
                 <?php endif; ?>
+                <?php if (($order['delivery_mode'] ?? 'platform') === 'self_arranged'): ?>
+                <div style="margin-top:2px;">🤝 You chose to arrange your own pickup for this order.</div>
+                <?php endif; ?>
             </div>
             <a href="payment_receipt.php?type=marketplace_order&id=<?php echo $order['id']; ?>" class="button button-secondary button-small" style="flex-shrink:0;">🧾 Receipt</a>
             <?php if (!empty($order['delivery_request_id'])): ?>
             <a href="delivery_detail.php?id=<?php echo $order['delivery_request_id']; ?>" class="button button-secondary button-small" style="flex-shrink:0;">🚚 Track Delivery</a>
             <?php endif; ?>
-            <div style="font-weight:900;color:var(--primary,#0f766e);">Total: GH&#8373; <?php echo number_format((float)$order['total_amount'],2); ?></div>
+            <div style="font-weight:900;color:var(--primary,#0f766e);">
+                Total: GH&#8373; <?php echo number_format((float)$order['total_amount'] + (float)($order['system_charge'] ?? 0),2); ?>
+                <?php if (!empty($order['system_charge']) && (float)$order['system_charge'] > 0): ?>
+                <div style="font-size:.68rem;font-weight:400;color:var(--text-muted,#6b7280);text-align:right;">incl. GH&#8373;<?php echo number_format((float)$order['system_charge'],2); ?> service charge</div>
+                <?php endif; ?>
+            </div>
         </div>
 
         <?php if (in_array($order['status'], ['delivered']) && !empty($orderItems[$order['id']])): ?>

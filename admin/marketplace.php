@@ -19,7 +19,7 @@ if (!$hasProductsPerm && !$hasQuotesPerm) {
 
 $adminUser = current_user();
 $tab       = $_GET['tab'] ?? ($hasProductsPerm ? 'products' : 'quotes');
-if (($tab === 'quotes' && !$hasQuotesPerm) || ($tab !== 'quotes' && !$hasProductsPerm)) {
+if (($tab === 'quotes' && !$hasQuotesPerm) || ($tab === 'categories' && !is_admin()) || (!in_array($tab, ['quotes','categories'], true) && !$hasProductsPerm)) {
     header('Location: marketplace.php?tab=' . ($hasQuotesPerm ? 'quotes' : 'products'));
     exit;
 }
@@ -123,6 +123,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: marketplace.php?tab=shops'); exit;
     }
 
+    // Cancel order — reuses the exact same functions the abandoned-checkout
+    // sweep and the admin refund flows (transaction_detail.php, disputes.php)
+    // already use, so the money-handling logic isn't duplicated a third time:
+    // unpaid orders just restore stock, paid orders go through the real
+    // refund path (restores stock + reverses the seller's wallet credit).
+    if ($postAction === 'cancel_order' && !empty($_POST['order_id'])) {
+        $oid = (int)$_POST['order_id'];
+        $reason = trim($_POST['cancel_reason'] ?? '') ?: 'Cancelled by admin';
+        $orderRow = $pdo->prepare('SELECT * FROM mp_orders WHERE id=?');
+        $orderRow->execute([$oid]);
+        $order = $orderRow->fetch();
+        if ($order && !in_array($order['status'], ['delivered', 'cancelled', 'refunded'], true)) {
+            if ($order['payment_status'] === 'paid') {
+                mp_refund_order($order, $reason);
+            } else {
+                mp_cancel_order_and_restore_stock([$oid], $reason);
+            }
+            notify_user((int)$order['customer_id'], 'Order Cancelled',
+                'Your order #' . $oid . ' was cancelled by an administrator. Reason: ' . $reason
+                . ($order['payment_status'] === 'paid' ? ' Your payment has been refunded.' : ''),
+                'warning', 'orders.php');
+            log_audit_action($adminUser['id'], 'mp_order_cancel', "Cancelled order #{$oid}. Reason: {$reason}");
+            flash('Order #' . $oid . ' cancelled.', 'success');
+        } else {
+            flash('Order not found, already delivered, or already cancelled/refunded.', 'error');
+        }
+        header('Location: marketplace.php?tab=orders'); exit;
+    }
+
     // Activate boost order
     if ($postAction === 'activate_boost' && !empty($_POST['boost_id'])) {
         $bid = (int)$_POST['boost_id'];
@@ -152,6 +181,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('Boost activated.', 'success');
         }
         header('Location: marketplace.php?tab=boosts'); exit;
+    }
+
+    // Category CRUD — taxonomy shared by every shop, so full admins only.
+    if ($postAction === 'save_category' && is_admin()) {
+        $catId   = (int)($_POST['category_id'] ?? 0);
+        $catName = trim($_POST['name'] ?? '');
+        $catIcon = trim($_POST['icon'] ?? '');
+        $catSort = max(0, (int)($_POST['sort_order'] ?? 0));
+        $catShowCondition = isset($_POST['show_condition']) ? 1 : 0;
+        if ($catName === '') {
+            flash('Category name is required.', 'error');
+        } else {
+            $catSlug = mp_unique_slug($catName, 'mp_categories', 'slug', $pdo, $catId);
+            if ($catId > 0) {
+                $pdo->prepare('UPDATE mp_categories SET name=?, slug=?, icon=?, sort_order=?, show_condition=? WHERE id=?')->execute([$catName, $catSlug, $catIcon ?: null, $catSort, $catShowCondition, $catId]);
+                log_audit_action($adminUser['id'], 'mp_category_update', "Updated category #{$catId}: {$catName}");
+                flash('Category updated.', 'success');
+            } else {
+                $pdo->prepare('INSERT INTO mp_categories (name, slug, icon, sort_order, show_condition) VALUES (?,?,?,?,?)')->execute([$catName, $catSlug, $catIcon ?: null, $catSort, $catShowCondition]);
+                log_audit_action($adminUser['id'], 'mp_category_create', "Created category: {$catName}");
+                flash('Category added.', 'success');
+            }
+        }
+        header('Location: marketplace.php?tab=categories'); exit;
+    }
+    if ($postAction === 'delete_category' && is_admin()) {
+        $catId   = (int)($_POST['category_id'] ?? 0);
+        $countSt = $pdo->prepare('SELECT COUNT(*) FROM mp_products WHERE category_id=?');
+        $countSt->execute([$catId]);
+        $inUse = (int)$countSt->fetchColumn();
+        if ($inUse > 0) {
+            flash("Can't delete — {$inUse} product(s) still use this category. Reassign or remove them first.", 'error');
+        } else {
+            $pdo->prepare('DELETE FROM mp_categories WHERE id=?')->execute([$catId]);
+            log_audit_action($adminUser['id'], 'mp_category_delete', "Deleted category #{$catId}");
+            flash('Category deleted.', 'success');
+        }
+        header('Location: marketplace.php?tab=categories'); exit;
     }
 
     // Save settings
@@ -263,6 +330,15 @@ if ($tab === 'boosts') {
          LEFT JOIN mp_products mp ON mb.product_id = mp.id
          WHERE mb.status = 'pending'
          ORDER BY mb.created_at ASC LIMIT $mktPerPage OFFSET $mktOffset"
+    )->fetchAll();
+}
+
+// Categories
+$categories = [];
+if ($tab === 'categories') {
+    $categories = $pdo->query(
+        'SELECT mc.*, (SELECT COUNT(*) FROM mp_products WHERE category_id = mc.id) AS product_count
+         FROM mp_categories mc ORDER BY mc.sort_order, mc.name'
     )->fetchAll();
 }
 
@@ -427,6 +503,7 @@ if ($tab === 'settings') {
         <?php if ($hasQuotesPerm): ?>
         <a href="?tab=quotes" class="adm-tab <?php echo $tab==='quotes'?'active':''; ?>">📝 Quote Requests</a>
         <?php endif; ?>
+        <?php if (is_admin()): ?><a href="?tab=categories" class="adm-tab <?php echo $tab==='categories'?'active':''; ?>">🏷️ Categories</a><?php endif; ?>
         <?php if (is_admin()): ?><a href="?tab=settings" class="adm-tab <?php echo $tab==='settings'?'active':''; ?>">&#9881; Settings</a><?php endif; ?>
     </div>
 
@@ -552,7 +629,7 @@ if ($tab === 'settings') {
     </div>
     <form method="get" action="marketplace.php" style="margin-bottom:12px;">
         <input type="hidden" name="tab" value="orders"><input type="hidden" name="of" value="<?php echo sanitize($of); ?>">
-        <select name="osort" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <select name="osort" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
             <option value="newest" <?php echo $ordSort==='newest'?'selected':''; ?>>Newest First</option>
             <option value="oldest" <?php echo $ordSort==='oldest'?'selected':''; ?>>Oldest First</option>
             <option value="amt_high" <?php echo $ordSort==='amt_high'?'selected':''; ?>>Highest Amount</option>
@@ -574,6 +651,15 @@ if ($tab === 'settings') {
             </div>
         </div>
         <div style="font-size:.78rem;color:var(--text-muted,#6b7280);">&#128205; <?php echo sanitize(mb_substr($o['delivery_address']??'',0,60)); ?></div>
+        <?php if (!in_array($o['status'], ['delivered','cancelled','refunded'], true)): ?>
+        <form method="post" action="marketplace.php?tab=orders" class="inline-form" style="margin-top:8px;display:flex;gap:6px;align-items:center;" onsubmit="return confirm('Cancel order #<?php echo $o['id']; ?>?<?php echo $o['payment_status']==='paid' ? ' This will refund the customer and reverse the seller\'s wallet credit.' : ''; ?>');">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="cancel_order">
+            <input type="hidden" name="order_id" value="<?php echo $o['id']; ?>">
+            <input type="text" name="cancel_reason" placeholder="Reason (optional)" style="font-size:.76rem;padding:4px 8px;flex:1;max-width:220px;">
+            <button type="submit" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Cancel Order<?php echo $o['payment_status']==='paid' ? ' & Refund' : ''; ?></button>
+        </form>
+        <?php endif; ?>
     </div>
     <?php endforeach; else: ?><div class="empty-state">No orders found.</div><?php endif; ?>
     <?php mkt_render_pagination($mktPage, $mktTotalPages, $mktTotal); ?>
@@ -627,7 +713,7 @@ if ($tab === 'settings') {
 
     <form method="get" class="adm-filter" style="flex-wrap:wrap;">
         <input type="hidden" name="tab" value="quotes">
-        <select name="status" onchange="this.form.submit()" style="padding:5px 9px;border:1px solid var(--border);border-radius:8px;font-size:.78rem;background:var(--surface);">
+        <select name="status" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" style="padding:5px 9px;border:1px solid var(--border);border-radius:8px;font-size:.78rem;background:var(--surface);">
             <option value="all" <?php echo $qStatusFilter==='all'?'selected':''; ?>>All Statuses</option>
             <?php foreach ($qValidStatuses as $vs): ?>
             <option value="<?php echo $vs; ?>" <?php echo $qStatusFilter===$vs?'selected':''; ?>><?php echo ucfirst($vs); ?></option>
@@ -695,6 +781,65 @@ if ($tab === 'settings') {
     <?php endforeach; ?>
     <?php endif; ?>
     <?php mkt_render_pagination($mktPage, $mktTotalPages, $mktTotal); ?>
+    <?php endif; ?>
+
+    <!-- ═══ CATEGORIES ═══ -->
+    <?php if ($tab === 'categories' && is_admin()): ?>
+    <?php if ($categories): foreach ($categories as $c): $cJson = htmlspecialchars(json_encode($c), ENT_QUOTES, 'UTF-8'); ?>
+    <div class="adm-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:1.4rem;"><?php echo $c['icon'] ?: '🏷️'; ?></span>
+            <div>
+                <div style="font-weight:800;"><?php echo sanitize($c['name']); ?></div>
+                <div style="font-size:.75rem;color:var(--text-muted,#6b7280);">
+                    <?php echo $c['product_count']; ?> product<?php echo $c['product_count']==1?'':'s'; ?> &nbsp;·&nbsp; sort <?php echo (int)$c['sort_order']; ?>
+                    &nbsp;·&nbsp; Condition strip: <?php echo $c['show_condition'] ? '<span style="color:#065f46;">On</span>' : '<span style="color:#991b1b;">Off</span>'; ?>
+                </div>
+            </div>
+        </div>
+        <div style="display:flex;gap:6px;">
+            <button type="button" class="button button-secondary button-small" onclick='mktEditCategory(<?php echo $cJson; ?>)'>Edit</button>
+            <form method="post" class="inline-form" onsubmit="return confirm('Delete this category?');"><?php echo csrf_field(); ?><input type="hidden" name="action" value="delete_category"><input type="hidden" name="category_id" value="<?php echo $c['id']; ?>"><button type="submit" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
+        </div>
+    </div>
+    <?php endforeach; else: ?><div class="empty-state">No categories yet.</div><?php endif; ?>
+
+    <div class="adm-set-section" style="margin-top:16px;">
+        <h3 id="cat-form-title" style="margin:0 0 14px;">Add Category</h3>
+        <form method="post" action="marketplace.php?tab=categories" class="adm-grid2">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="save_category">
+            <input type="hidden" name="category_id" id="cat_id" value="0">
+            <div class="form-group"><label>Name</label><input type="text" name="name" id="cat_name" required></div>
+            <div class="form-group"><label>Icon (emoji)</label><input type="text" name="icon" id="cat_icon" maxlength="10"></div>
+            <div class="form-group"><label>Sort Order</label><input type="number" name="sort_order" id="cat_sort_order" min="0" value="0"></div>
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                    <input type="checkbox" name="show_condition" id="cat_show_condition" value="1" checked>
+                    Show Condition strip (New/Used/Refurbished)
+                </label>
+            </div>
+            <div class="form-group" style="align-self:end;"><button type="submit" class="button button-primary">Save</button> <button type="button" class="button button-secondary" onclick="mktResetCategoryForm()">Clear</button></div>
+        </form>
+    </div>
+    <script>
+    function mktEditCategory(c) {
+        document.getElementById('cat_id').value = c.id;
+        document.getElementById('cat_name').value = c.name;
+        document.getElementById('cat_icon').value = c.icon || '';
+        document.getElementById('cat_sort_order').value = c.sort_order;
+        document.getElementById('cat_show_condition').checked = !!parseInt(c.show_condition, 10);
+        document.getElementById('cat-form-title').textContent = 'Edit Category — ' + c.name;
+    }
+    function mktResetCategoryForm() {
+        document.getElementById('cat_id').value = 0;
+        document.getElementById('cat_name').value = '';
+        document.getElementById('cat_icon').value = '';
+        document.getElementById('cat_sort_order').value = 0;
+        document.getElementById('cat_show_condition').checked = true;
+        document.getElementById('cat-form-title').textContent = 'Add Category';
+    }
+    </script>
     <?php endif; ?>
 
     <!-- ═══ SETTINGS ═══ -->

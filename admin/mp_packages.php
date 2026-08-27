@@ -304,7 +304,7 @@ function mpp_qstr(array $overrides = []): string {
     <?php if ($tab === 'subscribers'): ?>
     <form method="get" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
         <input type="hidden" name="tab" value="subscribers">
-        <select name="sstatus" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <select name="sstatus" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
             <?php foreach (['all'=>'All Statuses','active'=>'Active','pending'=>'Pending','expired'=>'Expired','cancelled'=>'Cancelled','suspended'=>'Suspended','pending_renewal'=>'Pending Renewal (scheduled downgrade)'] as $sv=>$sl): ?>
             <option value="<?php echo $sv; ?>" <?php echo $subStatusFilter===$sv?'selected':''; ?>><?php echo $sl; ?></option>
             <?php endforeach; ?>

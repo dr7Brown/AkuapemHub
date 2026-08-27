@@ -8,6 +8,7 @@ require_once __DIR__ . '/functions.php';
 require_module_enabled('quick_services', 'Quick Services');
 
 $user = current_user();
+$qsAd = get_ads_for_placement('quick_services', ['banner', 'video'], 1)[0] ?? null;
 
 $services = $pdo->query("SELECT * FROM quick_services WHERE status='active' ORDER BY display_order, name")->fetchAll();
 ?>
@@ -46,6 +47,13 @@ $services = $pdo->query("SELECT * FROM quick_services WHERE status='active' ORDE
     <?php endforeach; ?>
 
     <p style="color:var(--muted,#6b7280);font-size:.9rem;margin:0 0 16px;">Pick a service, fill a short form, pay — our team handles the rest and gets back to you.</p>
+
+    <!-- Ad -->
+    <?php if ($qsAd): ?>
+    <div style="max-width:600px;margin:0 auto 16px;">
+        <?php render_ad_unit($qsAd); ?>
+    </div>
+    <?php endif; ?>
 
     <?php if (!$services): ?>
     <div class="card" style="text-align:center;padding:40px 20px;">

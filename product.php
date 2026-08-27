@@ -7,7 +7,7 @@ require_once __DIR__ . '/delivery_functions.php'; // render_stars() for the revi
 require_module_enabled('mp', 'Marketplace');
 
 $id = (int)($_GET['id'] ?? 0);
-if (!$id) { header('Location: marketplace.php'); exit; }
+if (!$id) { render_not_found('marketplace.php', 'Browse Marketplace', 'Product not found.'); }
 
 $product = get_product($id);
 $user    = current_user();
@@ -19,8 +19,7 @@ $isAdminViewer = is_admin_or_manager();
 $publicStatuses = ['approved', 'out_of_stock'];
 
 if (!$product || ((!in_array($product['status'], $publicStatuses, true) || $product['shop_owner_banned']) && !$isAdminViewer && !$isShopOwner)) {
-    header('Location: marketplace.php');
-    exit;
+    render_not_found('marketplace.php', 'Browse Marketplace', 'This product is no longer available.');
 }
 $flash     = get_flash();
 $cartCount = $user ? mp_get_cart_count((int)$user['id']) : 0;
@@ -100,6 +99,54 @@ if ($product['category_id']) {
     );
     $relSt->execute([$product['category_id'], $id]);
     $related = $relSt->fetchAll();
+}
+
+// "Keep browsing" feed — platform-wide products, most-viewed first, excluding
+// this product and whatever's already shown in Related Products above so the
+// feed never repeats a card the visitor just saw. Loaded a page at a time via
+// infinite scroll (IntersectionObserver, below) instead of all at once —
+// mirrors funerals.php's own ?ajax=1&page=N "load more" pattern, just
+// triggered by scroll position instead of a button click.
+$moreExcludeIds = array_merge([$id], array_column($related, 'id'));
+$morePerPage    = 12;
+$morePage       = max(1, (int)($_GET['page'] ?? 1));
+$moreOffset     = ($morePage - 1) * $morePerPage;
+$isMoreAjax     = isset($_GET['ajax']);
+
+$moreExPlaceholders = implode(',', array_fill(0, count($moreExcludeIds), '?'));
+$moreSt = $pdo->prepare(
+    "SELECT mp.id, mp.name, mp.price, mp.discount_price, mp.condition_type,
+            mc.icon AS cat_icon,
+            mpi.image_path AS primary_image
+     FROM mp_products mp
+     JOIN mp_shops ms ON mp.shop_id = ms.id
+     LEFT JOIN mp_categories mc ON mp.category_id = mc.id
+     LEFT JOIN mp_product_images mpi ON mpi.product_id = mp.id AND mpi.is_primary = 1
+     WHERE mp.status = 'approved' AND ms.status = 'active' AND ms.market_id IS NULL
+       AND ms.user_id NOT IN (SELECT id FROM users WHERE banned=1)
+       AND mp.id NOT IN ($moreExPlaceholders)
+     ORDER BY mp.view_count DESC, mp.id DESC
+     LIMIT $morePerPage OFFSET $moreOffset"
+);
+$moreSt->execute($moreExcludeIds);
+$moreProducts = $moreSt->fetchAll();
+
+$renderMoreCard = function (array $p): void { ?>
+    <a href="product.php?id=<?php echo $p['id']; ?>" class="mp-card">
+        <div class="mp-card-img">
+            <?php if ($p['primary_image']): ?><img src="<?php echo sanitize($p['primary_image']); ?>" alt="<?php echo sanitize($p['name']); ?>">
+            <?php else: ?><span style="font-size:2rem;opacity:.3;"><?php echo $p['cat_icon'] ?? '📦'; ?></span><?php endif; ?>
+        </div>
+        <div class="mp-card-body">
+            <div class="mp-card-name"><?php echo sanitize($p['name']); ?></div>
+            <div class="mp-card-price">GH&#8373; <?php echo number_format(mp_effective_price($p),2); ?></div>
+        </div>
+    </a>
+<?php };
+
+if ($isMoreAjax) {
+    foreach ($moreProducts as $p) { $renderMoreCard($p); }
+    exit;
 }
 ?>
 <!DOCTYPE html>
@@ -308,9 +355,11 @@ if ($product['category_id']) {
             </div>
 
             <div class="pd-meta">
+                <?php if ($product['category_show_condition']): ?>
                 <span class="pd-meta-item">
                     <span style="background:<?php echo ['new'=>'#d1fae5','used'=>'#fef3c7','refurbished'=>'#dbeafe'][$product['condition_type']]??'#f3f4f6'; ?>;color:<?php echo mp_condition_color($product['condition_type']); ?>;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:800;"><?php echo mp_condition_label($product['condition_type']); ?></span>
                 </span>
+                <?php endif; ?>
                 <span class="pd-meta-item">
                     <span class="pd-stock" style="color:<?php echo $product['stock_quantity'] > 0 ? '#10b981' : '#ef4444'; ?>">
                         <?php echo $product['stock_quantity'] > 0 ? $product['stock_quantity'] . ' in stock' : 'Out of stock'; ?>
@@ -455,6 +504,17 @@ if ($product['category_id']) {
     </div>
     <?php endif; ?>
 
+    <!-- Keep browsing: platform-wide, most-viewed first, infinite scroll -->
+    <?php if ($moreProducts): ?>
+    <p style="font-size:.76rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted,#6b7280);margin:24px 0 8px;">Keep Browsing</p>
+    <div class="pd-related-grid" id="pd-more-grid">
+        <?php foreach ($moreProducts as $p) { $renderMoreCard($p); } ?>
+    </div>
+    <div id="pd-more-sentinel" data-next-page="<?php echo $morePage + 1; ?>" data-product-id="<?php echo $id; ?>" style="padding:16px 0;text-align:center;font-size:.78rem;color:var(--text-muted,#6b7280);">
+        <?php echo count($moreProducts) === $morePerPage ? 'Loading more…' : ''; ?>
+    </div>
+    <?php endif; ?>
+
 </main>
 
 <?php require __DIR__ . '/partials/site_footer.php'; ?>
@@ -471,6 +531,42 @@ function adjustQty(delta) {
     var v  = parseInt(el.value) + delta;
     el.value = Math.max(1, Math.min(parseInt(el.max), v));
 }
+
+(function () {
+    var sentinel = document.getElementById('pd-more-sentinel');
+    if (!sentinel || !sentinel.textContent.trim()) return; // nothing more to load
+
+    var grid    = document.getElementById('pd-more-grid');
+    var pid     = sentinel.dataset.productId;
+    var loading = false;
+
+    var observer = new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting) loadMore();
+    }, { rootMargin: '400px' });
+    observer.observe(sentinel);
+
+    function loadMore() {
+        if (loading) return;
+        loading = true;
+        var page = sentinel.dataset.nextPage;
+        fetch('product.php?id=' + pid + '&ajax=1&page=' + page)
+            .then(function (r) { return r.text(); })
+            .then(function (html) {
+                var tmp = document.createElement('div');
+                tmp.innerHTML = html;
+                var cards = tmp.querySelectorAll('.mp-card');
+                cards.forEach(function (c) { grid.appendChild(c); });
+                if (!cards.length) {
+                    observer.disconnect();
+                    sentinel.textContent = '';
+                } else {
+                    sentinel.dataset.nextPage = parseInt(page, 10) + 1;
+                    loading = false;
+                }
+            })
+            .catch(function () { loading = false; });
+    }
+})();
 </script>
 </body>
 </html>

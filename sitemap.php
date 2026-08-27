@@ -15,20 +15,22 @@ $urls = [];
 $urls[] = ['loc' => $base . '/', 'changefreq' => 'daily', 'priority' => '1.0'];
 
 $staticPages = [
-    'browse_jobs.php'    => ['daily',   '0.9'],
-    'find_workers.php'   => ['daily',   '0.9'],
-    'news.php'           => ['daily',   '0.8'],
-    'events.php'         => ['daily',   '0.8'],
-    'funerals.php'       => ['daily',   '0.7'],
-    'marketplace.php'    => ['daily',   '0.8'],
-    'shops.php'          => ['daily',   '0.7'],
-    'markets.php'        => ['daily',   '0.7'],
-    'quick_services.php' => ['weekly',  '0.6'],
-    'about.php'          => ['monthly', '0.4'],
-    'contact.php'        => ['monthly', '0.4'],
-    'support.php'        => ['monthly', '0.3'],
-    'terms.php'          => ['yearly',  '0.2'],
-    'privacy.php'        => ['yearly',  '0.2'],
+    'browse_jobs.php'            => ['daily',   '0.9'],
+    'find_workers.php'           => ['daily',   '0.9'],
+    'news.php'                   => ['daily',   '0.8'],
+    'events.php'                 => ['daily',   '0.8'],
+    'funerals.php'               => ['daily',   '0.7'],
+    'marketplace.php'            => ['daily',   '0.8'],
+    'shops.php'                  => ['daily',   '0.7'],
+    'markets.php'                => ['daily',   '0.7'],
+    'quick_services.php'         => ['weekly',  '0.6'],
+    'accommodation.php'          => ['weekly',  '0.7'],
+    'accommodation_listings.php' => ['daily',   '0.7'],
+    'about.php'                  => ['monthly', '0.4'],
+    'contact.php'                => ['monthly', '0.4'],
+    'support.php'                => ['monthly', '0.3'],
+    'terms.php'                  => ['yearly',  '0.2'],
+    'privacy.php'                => ['yearly',  '0.2'],
 ];
 foreach ($staticPages as $page => [$freq, $prio]) {
     $urls[] = ['loc' => $base . '/' . $page, 'changefreq' => $freq, 'priority' => $prio];
@@ -163,6 +165,24 @@ try {
 // requires login to view a specific service, so an individual service page
 // would just hand Google a login redirect. quick_services.php is already
 // covered via $staticPages above.
+
+// Accommodation: approved listings only, and never a banned owner's —
+// accommodation_detail.php redirects both cases away, same reasoning as the
+// marketplace product query above.
+try {
+    $stmt = $pdo->query(
+        "SELECT id, updated_at FROM accommodation_listings
+         WHERE status='approved' AND user_id NOT IN (SELECT id FROM users WHERE banned=1)
+         ORDER BY created_at DESC LIMIT 2000"
+    );
+    foreach ($stmt->fetchAll() as $row) {
+        $urls[] = [
+            'loc' => $base . '/accommodation_detail.php?id=' . (int)$row['id'],
+            'lastmod' => date('Y-m-d', strtotime($row['updated_at'])),
+            'changefreq' => 'weekly', 'priority' => '0.6',
+        ];
+    }
+} catch (Throwable $e) {}
 
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
 echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";

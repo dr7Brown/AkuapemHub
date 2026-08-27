@@ -25,6 +25,8 @@ function _ref_event_meta(): array {
         'leave_review'            => [5,  false, 10],
         'complete_job'            => [10, false, 20],
         'five_star_rating'        => [5,  false, 10],
+        'news_approved'           => [10, false, 30],
+        'event_approved'          => [10, false, 30],
     ];
 }
 
@@ -74,6 +76,16 @@ function award_points(int $userId, string $event, ?int $relatedId = null): bool 
         if ($chk->fetch()) return false;
     }
 
+    // Per-item deduplication — when a specific related record is given, never
+    // award the same event twice for that exact record (e.g. an admin
+    // toggling a news article published → draft → published again shouldn't
+    // pay out a second time for the same article).
+    if ($relatedId !== null) {
+        $chk = $pdo->prepare("SELECT 1 FROM points_transactions WHERE user_id=? AND event=? AND related_id=? LIMIT 1");
+        $chk->execute([$userId, $event, $relatedId]);
+        if ($chk->fetch()) return false;
+    }
+
     // Daily cap check
     $cap = $cfg[$event]['cap'];
     if ($cap > 0) {
@@ -96,6 +108,25 @@ function award_points(int $userId, string $event, ?int $relatedId = null): bool 
         VALUES (?,?,?,NOW())
         ON DUPLICATE KEY UPDATE balance=balance+VALUES(balance), total_earned=total_earned+VALUES(total_earned), updated_at=NOW()")
         ->execute([$userId, $pts, $pts]);
+
+    // Optional hook: if the Milestone Reward module (modules/rewards) is
+    // installed, let it check whether this award just pushed the user over
+    // a new milestone threshold, so it can push a "🎉 Milestone Reached!"
+    // notification. Guarded by file_exists() so award_points() itself has
+    // zero dependency on that module and behaves identically whether or not
+    // it's present — none of the earning logic above is affected either way.
+    // Wrapped in try/catch so a problem in that optional add-on (e.g. its
+    // tables not yet migrated) can never fail a real points award — the
+    // award above has already committed by this point regardless.
+    try {
+        $rewardsService = __DIR__ . '/../rewards/service.php';
+        if (file_exists($rewardsService)) {
+            require_once $rewardsService;
+            if (function_exists('rewards_check_new_milestones')) rewards_check_new_milestones($userId);
+        }
+    } catch (Exception $e) {
+        // Swallow — the points award itself already succeeded and must not be undone.
+    }
 
     return true;
 }

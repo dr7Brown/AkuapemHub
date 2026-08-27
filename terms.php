@@ -2,7 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 $user = current_user();
-$lastUpdated = '17 June 2025';
+$lastUpdated = '24 August 2026';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -43,6 +43,10 @@ $lastUpdated = '17 June 2025';
                 <li><a href="#applications">Applications and hiring</a></li>
                 <li><a href="#payments">Payments and fees</a></li>
                 <li><a href="#escrow">Escrow</a></li>
+                <li><a href="#marketplace">Marketplace</a></li>
+                <li><a href="#delivery">Delivery services</a></li>
+                <li><a href="#accommodation">Accommodation listings</a></li>
+                <li><a href="#promotions">Special offers and promotions</a></li>
                 <li><a href="#verification">Worker verification</a></li>
                 <li><a href="#disputes">Disputes</a></li>
                 <li><a href="#prohibited">Prohibited activities</a></li>
@@ -62,6 +66,7 @@ $lastUpdated = '17 June 2025';
             <li>You must be at least 18 years old to use the Platform.</li>
             <li>You must provide accurate, current, and complete information when registering.</li>
             <li>Each person may hold only one account. Creating duplicate accounts may result in permanent suspension.</li>
+            <li>You may register directly, or sign in with a Google account. If you sign in with Google, we receive your name, email address, and profile photo from Google to create your account, and you'll be asked to supply the remaining details (username, phone number, location) the Platform needs before you can use it.</li>
             <li>You are responsible for maintaining the security of your account credentials. We are not liable for losses resulting from unauthorised access due to your failure to protect your credentials.</li>
             <li>Accounts are personal and non-transferable.</li>
         </ul>
@@ -71,6 +76,8 @@ $lastUpdated = '17 June 2025';
         <p>Customers are individuals or businesses who post service requests and hire workers. Customers are responsible for providing accurate job descriptions, paying agreed amounts, and treating workers with respect.</p>
         <h3>Workers</h3>
         <p>Workers are individuals who offer services, apply for jobs, and complete tasks. Workers are responsible for the accuracy of their profiles, the quality of their work, and their conduct toward customers and other users.</p>
+        <h3>Sellers, Delivery Agents, and Property Hosts</h3>
+        <p>The same account can also open a Marketplace shop, register as a Delivery Agent, or list a property on Accommodation. Each of these roles carries the same baseline responsibility for accurate listings and honest dealing as Customers and Workers do, with the additional rules set out in the Marketplace, Delivery Services, and Accommodation Listings sections below.</p>
         <h3>Managers and Admins</h3>
         <p>Managers and Admins are Platform staff responsible for approving job postings, managing disputes, verifying identities, and maintaining platform integrity. Their decisions on disputes and verifications are final.</p>
 
@@ -134,12 +141,13 @@ $lastUpdated = '17 June 2025';
         <ul>
             <li><strong>Job posting fee:</strong> a one-time fee to submit a job for admin review, deducted at the time of posting.</li>
             <li><strong>Worker service listing fee:</strong> a periodic fee for workers to appear in the "Find Workers" directory.</li>
-            <li><strong>Featured listing:</strong> optional fee to boost the visibility of a job or worker profile.</li>
+            <li><strong>Featured listing:</strong> optional fee to boost the visibility of a job, worker profile, marketplace product/shop, or accommodation listing.</li>
             <li><strong>Identity verification fee:</strong> a one-time fee to initiate admin review of your verification documents.</li>
+            <li><strong>Accommodation listing subscription:</strong> a periodic fee, where the Platform requires one, for the right to keep one or more accommodation listings live.</li>
         </ul>
         <p>All fees are displayed before payment and are charged in Ghana Cedis (GH₵) via Paystack. Fees are subject to change with 7 days' notice.</p>
         <h3>Platform commission</h3>
-        <p>When escrow is used, the Platform deducts a commission from the total amount paid by the customer before releasing funds to the worker. The commission rate is set by the admin and displayed clearly on the escrow checkout page.</p>
+        <p>When escrow is used, the Platform deducts a commission from the total amount paid by the customer before releasing funds to the worker. The commission rate is set by the admin and displayed clearly on the escrow checkout page. Marketplace orders work the same way, with their own commission rate and payout timing — see Marketplace below.</p>
 
         <h2 id="escrow">7. Escrow</h2>
         <div class="highlight-box">
@@ -153,7 +161,49 @@ $lastUpdated = '17 June 2025';
             <li>Escrow payments are non-refundable except where the job is cancelled before a worker begins work and both parties agree to a refund, or where required by Ghanaian consumer protection law.</li>
         </ul>
 
-        <h2 id="verification">8. Worker verification</h2>
+        <h2 id="marketplace">8. Marketplace</h2>
+        <p>The Marketplace lets Sellers open a shop and list products for Customers to buy, including through scheduled Nearby Markets and Quick Services (see below).</p>
+        <ul>
+            <li>Sellers are responsible for the accuracy of their product listings — description, price, stock, and condition — and for fulfilling orders they accept.</li>
+            <li>Products are subject to admin review before going live and may be rejected if they violate these Terms or are outside the scope of the Platform.</li>
+            <li>A buyer pays the full order total via Paystack at checkout, plus any customer checkout charge disclosed at checkout. The Platform deducts a commission, set by the admin and shown in seller reporting, from each paid order before crediting the seller.</li>
+            <li>A seller's share of a paid order is held as a <strong>pending balance</strong> and only becomes withdrawable after the order is marked delivered and a confirmation window (set by the admin) has passed, unless a delivery complaint pauses that window. Some sellers may opt in to <strong>Fast Payout</strong>, which settles their share directly to a linked payout account once the same confirmation window closes, instead of requiring a manual withdrawal — the buyer-protection timing is the same either way.</li>
+            <li><strong>Nearby Markets</strong> is a variant of the Marketplace for scheduled, periodic markets (e.g. Ofie Market, Nkurakan Market) — orders are placed ahead of the market day and collected from a storehouse; each market's own open/closed schedule governs when orders can be placed.</li>
+            <li><strong>Quick Services</strong> (airtime, utility bill payments, exam results checkers, document assistance, and similar) are fulfilled directly by the Platform's team rather than by a third-party seller — payment is made upfront and the request is processed once payment is confirmed.</li>
+            <li>At checkout, a buyer chooses between AkuapemConnect Delivery Riders (a delivery request is created automatically once the seller marks the order ready) or arranging their own pickup directly with the seller. Choosing to arrange your own pickup means the Delivery Services protections described below don't apply to that handoff — the Platform is not a party to it.</li>
+            <li>Refunds on a cancelled or disputed order are handled by the Platform, reversing the seller's held balance accordingly; a seller whose share has already been paid out is expected to cooperate with the Platform to return funds when a refund is due.</li>
+            <li>Disputes over marketplace orders are resolved by Platform admins in the same way as delivery and job disputes (see Disputes below).</li>
+        </ul>
+
+        <h2 id="delivery">9. Delivery services</h2>
+        <p>The Delivery Services feature connects Customers who need something delivered with independent Delivery Agents (riders).</p>
+        <ul>
+            <li>Customers create a delivery request describing the pickup and drop-off locations, item, and preferred date. Requests are subject to admin review (or automatic approval for trusted, established customers) before Delivery Agents can apply.</li>
+            <li>Delivery Agents register and are approved by an admin before accepting jobs, and may separately apply for a Verified Rider badge by submitting additional identity documents.</li>
+            <li>The delivery fee is agreed directly between the Customer and the selected Delivery Agent and is paid outside the Platform (cash, mobile money, etc.) unless a marketplace order's delivery fee is otherwise stated — the Platform does not hold or process delivery fees in escrow.</li>
+            <li>Delivery Agents are independent and are not employees, agents, or contractors of the Platform. The Platform is not a party to the delivery arrangement and does not guarantee the condition, timing, or successful completion of any delivery.</li>
+            <li>Delivery complaints (e.g. an item never arriving, arriving damaged, or the wrong item) can be filed through the Platform and are reviewed by admins, whose decision may pause or resume a linked marketplace order's payout release and may result in a refund.</li>
+        </ul>
+
+        <h2 id="accommodation">10. Accommodation listings</h2>
+        <p>The Accommodation feature lets Property Hosts list rooms, houses, hotels, and guest houses for rent or stay, and lets Customers browse listings and enquire directly with the Host.</p>
+        <ul>
+            <li>Hosts are responsible for the accuracy of their listing — location, price, availability, photos, and facilities — and for honouring any booking or viewing arrangement they agree to.</li>
+            <li>Listings are subject to admin review before going live, and publishing may require an active listing subscription, depending on the Platform's current settings.</li>
+            <li><strong>The Platform does not process bookings, stays, or accommodation payments.</strong> Enquiries (Contact Owner, Request Viewing, Send Booking Enquiry) are simply messages sent to the Host through the Platform's chat — any booking, deposit, rent, or payment arrangement is made directly between the Customer and the Host, off-Platform, and is not covered by Escrow or any Platform payment protection.</li>
+            <li>The Platform is not responsible for the condition of a listed property, the conduct of a Host or guest, or the outcome of any booking arrangement made off-Platform. Users are encouraged to view a property in person and agree terms clearly before making any payment to a Host.</li>
+            <li>Fraudulent listings (e.g. a property the Host does not own or is not authorised to list) are strictly prohibited and will result in listing removal and may result in account termination.</li>
+        </ul>
+
+        <h2 id="promotions">11. Special offers and promotions</h2>
+        <ul>
+            <li>From time to time, the Platform may run promotions offering a discount on a specific paid feature, complimentary access to a feature, or a redeemable promo code, each with its own eligibility rules and expiry date shown at the time of claiming.</li>
+            <li>A claimed promotion is personal to your account and may not be transferred, resold, or exchanged for cash.</li>
+            <li>The Platform may limit how many times a promotion can be claimed in total or per account, and may end or amend a promotion at any time before it is claimed.</li>
+            <li>Using multiple accounts, fraudulent referrals, or any other abusive method to claim a promotion multiple times is prohibited and may result in the promotion being revoked and the account(s) involved being suspended.</li>
+        </ul>
+
+        <h2 id="verification">12. Worker verification</h2>
         <ul>
             <li>Workers may submit identity documents (Ghana Card, passport, or other government-issued ID) to obtain a verified badge.</li>
             <li>Submission of a verification fee initiates admin review of your documents. Payment does not guarantee approval.</li>
@@ -161,7 +211,7 @@ $lastUpdated = '17 June 2025';
             <li>Providing false or fraudulent identity documents will result in immediate account termination and may be reported to relevant authorities.</li>
         </ul>
 
-        <h2 id="disputes">9. Disputes</h2>
+        <h2 id="disputes">13. Disputes</h2>
         <ul>
             <li>Disputes between customers and workers should first be attempted to be resolved directly through in-platform messaging.</li>
             <li>If a resolution cannot be reached, either party may file a formal dispute through the Platform's dispute resolution process.</li>
@@ -170,30 +220,32 @@ $lastUpdated = '17 June 2025';
             <li>The Platform acts as a neutral facilitator and does not guarantee outcomes in disputes.</li>
         </ul>
 
-        <h2 id="prohibited">10. Prohibited activities</h2>
+        <h2 id="prohibited">14. Prohibited activities</h2>
         <p>You may not use the Platform to:</p>
         <ul>
-            <li>Post false, misleading, or fraudulent job listings, profiles, events, announcements, or articles.</li>
+            <li>Post false, misleading, or fraudulent job listings, profiles, events, announcements, articles, marketplace products, or accommodation listings.</li>
             <li>Submit a funeral announcement for a person who has not died.</li>
             <li>Publish defamatory, hateful, obscene, or discriminatory content in any community section.</li>
             <li>Harass, threaten, or harm other users — including through the messaging system.</li>
-            <li>Circumvent Platform payments by taking transactions off-platform to avoid fees.</li>
+            <li>Circumvent Platform payments by taking a Marketplace order or Delivery arrangement off-platform to avoid fees. (This does not apply to Accommodation, where the booking and payment are intentionally arranged directly between Customer and Host, off-Platform, as described in Accommodation Listings above.)</li>
+            <li>Sell prohibited, counterfeit, stolen, or unsafe goods on the Marketplace, or misrepresent a product's condition, quantity, or authenticity.</li>
+            <li>List a property you do not own or are not authorised to list on Accommodation.</li>
             <li>Create multiple accounts or impersonate another person or organisation.</li>
-            <li>Upload harmful content (malware, viruses, illegal material) including in profile photos, event images, or article images.</li>
-            <li>Post or solicit illegal services.</li>
+            <li>Upload harmful content (malware, viruses, illegal material) including in profile photos, event images, article images, product photos, or listing photos.</li>
+            <li>Post or solicit illegal services or illegal goods.</li>
             <li>Violate any applicable law of Ghana or international law.</li>
             <li>Attempt to reverse-engineer, scrape, or interfere with the Platform's technical infrastructure.</li>
-            <li>Use the referral or points system in a fraudulent or abusive manner (e.g. creating fake accounts to earn referral rewards).</li>
+            <li>Use the referral, points, or promotions system in a fraudulent or abusive manner (e.g. creating fake accounts to earn referral rewards or claim a promotion multiple times).</li>
         </ul>
         <p>Violation of any of these prohibitions may result in immediate account suspension or permanent ban without refund.</p>
 
-        <h2 id="content">11. User content</h2>
+        <h2 id="content">15. User content</h2>
         <p>You retain ownership of content you post, including job descriptions, messages, profile photos, event details, funeral announcement information, and news articles. By posting content, you grant <?php echo sanitize(APP_NAME); ?> a non-exclusive, royalty-free licence to use, display, and reproduce that content solely for operating the Platform — for example, displaying your event or article publicly on the site. You are responsible for ensuring you have the right to post any content you submit, including images uploaded with events, funeral notices, or articles.</p>
 
-        <h2 id="ip">12. Intellectual property</h2>
+        <h2 id="ip">16. Intellectual property</h2>
         <p>All Platform code, design, trademarks, and branding are owned by <?php echo sanitize(APP_NAME); ?>. You may not copy, reproduce, or create derivative works from the Platform without written permission.</p>
 
-        <h2 id="liability">13. Limitation of liability</h2>
+        <h2 id="liability">17. Limitation of liability</h2>
         <p>To the maximum extent permitted by Ghanaian law:</p>
         <ul>
             <li><?php echo sanitize(APP_NAME); ?> provides the Platform "as is" without warranties of any kind, express or implied.</li>
@@ -202,19 +254,19 @@ $lastUpdated = '17 June 2025';
             <li>Our total liability to you for any claim arising from use of the Platform shall not exceed the total fees you paid to the Platform in the 3 months preceding the claim.</li>
         </ul>
 
-        <h2 id="indemnity">14. Indemnification</h2>
+        <h2 id="indemnity">18. Indemnification</h2>
         <p>You agree to indemnify and hold <?php echo sanitize(APP_NAME); ?>, its administrators, and staff harmless from any claims, damages, or expenses (including legal fees) arising from your violation of these Terms, your use of the Platform, or your interactions with other users.</p>
 
-        <h2 id="termination">15. Termination</h2>
+        <h2 id="termination">19. Termination</h2>
         <p>We reserve the right to suspend or terminate your account at any time for violation of these Terms, illegal activity, or for any reason we deem necessary to protect the Platform and its users. You may delete your account at any time via your account settings. Termination does not relieve you of obligations incurred prior to termination.</p>
 
-        <h2 id="law">16. Governing law</h2>
+        <h2 id="law">20. Governing law</h2>
         <p>These Terms are governed by and construed in accordance with the laws of the Republic of Ghana. Any disputes arising from these Terms that cannot be resolved through the Platform's dispute process shall be submitted to the courts of Ghana.</p>
 
-        <h2 id="changes">17. Changes to terms</h2>
+        <h2 id="changes">21. Changes to terms</h2>
         <p>We may update these Terms at any time. Material changes will be communicated via in-app notification or email at least 7 days before taking effect. Continued use of the Platform after changes take effect constitutes your acceptance of the updated Terms.</p>
 
-        <h2 id="contact-terms">18. Contact</h2>
+        <h2 id="contact-terms">22. Contact</h2>
         <p>Questions about these Terms? Contact us at:</p>
         <p>
             <strong><?php echo sanitize(APP_NAME); ?></strong><br>

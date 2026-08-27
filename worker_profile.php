@@ -110,6 +110,7 @@ $schedule = get_worker_schedule($profile['id']);
                 $wpRenewSoon  = !empty($profile['is_featured']) && !empty($wpFeatEnd) && $wpFeatEnd < date('Y-m-d', strtotime('+7 days'));
             ?>
             <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                <a href="worker_portfolio.php" class="button button-secondary button-small">🖼️ Manage Portfolio</a>
                 <?php if ($wpFeatActive && !$wpRenewSoon): ?>
                     <span class="badge" style="background:var(--primary);color:#fff;">⭐ Featured<?php echo $wpFeatEnd ? ' until ' . sanitize($wpFeatEnd) : ''; ?></span>
                 <?php elseif ($wpRenewSoon): ?>

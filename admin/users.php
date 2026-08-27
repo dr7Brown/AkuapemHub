@@ -260,20 +260,20 @@ function pageUrl(array $extra = []): string {
     <!-- Filters -->
     <form method="get" action="users.php" class="um-filters">
         <input type="text" name="q" value="<?php echo sanitize($q); ?>" placeholder="Search name, username, email, phone…">
-        <select name="role" onchange="this.form.submit()">
+        <select name="role" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
             <option value="">All Roles</option>
             <?php foreach (['customer'=>'Customer','worker'=>'Worker','manager'=>'Manager','admin'=>'Admin'] as $v=>$l): ?>
             <option value="<?php echo $v; ?>" <?php echo $role===$v?'selected':''; ?>><?php echo $l; ?></option>
             <?php endforeach; ?>
         </select>
-        <select name="status" onchange="this.form.submit()">
+        <select name="status" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
             <option value="">All Statuses</option>
             <option value="active"    <?php echo $status==='active'?'selected':''; ?>>Active</option>
             <option value="banned"    <?php echo $status==='banned'?'selected':''; ?>>Banned</option>
             <option value="verified"  <?php echo $status==='verified'?'selected':''; ?>>Email Verified</option>
             <option value="unverified"<?php echo $status==='unverified'?'selected':''; ?>>Email Unverified</option>
         </select>
-        <select name="sort" onchange="this.form.submit()">
+        <select name="sort" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
             <option value="newest" <?php echo $sort==='newest'?'selected':''; ?>>Newest First</option>
             <option value="oldest" <?php echo $sort==='oldest'?'selected':''; ?>>Oldest First</option>
             <option value="name"   <?php echo $sort==='name'?'selected':''; ?>>A–Z Name</option>

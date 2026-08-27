@@ -2,6 +2,7 @@
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/delivery_functions.php';
+require_once __DIR__ . '/accommodation_functions.php';
 
 $user  = current_user();
 $flash = get_flash();
@@ -31,6 +32,8 @@ $openJobs = $pdo->query(
      ORDER BY (sr.featured=1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date>=CURDATE())) DESC, sr.created_at DESC LIMIT 4"
 )->fetchAll();
 
+$homeAd = get_ads_for_placement('homepage', ['banner', 'video'], 1)[0] ?? null;
+
 $sponsors = $pdo->query(
     "SELECT s.id, s.name, s.logo_path, s.website_url, sp.name AS package_name, sp.price AS package_price
      FROM sponsors s
@@ -48,23 +51,55 @@ try {
     )->fetchAll();
 } catch (Exception $e) {}
 
+// Accommodation — latest approved listings per category, each its own
+// horizontally-scrolling strip. Capped at 10 so this stays a cheap, indexed
+// query even as the catalog grows (status+accommodation_type_id is indexed).
+$roomListings  = [];
+$hotelListings = [];
+if (module_enabled('accommodation')) {
+    try {
+        $acWhere = accommodation_public_where();
+        $acOrder = "(al.featured=1 AND (al.featured_end_date IS NULL OR al.featured_end_date>=CURDATE())) DESC, al.created_at DESC";
+        $roomListings = $pdo->query(
+            "SELECT al.id, al.title, al.price, al.price_period, al.featured, al.featured_end_date, al.area, al.room_class, at.icon AS type_icon,
+                    t.name AS town_name,
+                    (SELECT image_path FROM accommodation_images WHERE listing_id=al.id AND is_primary=1 LIMIT 1) AS primary_image
+             FROM accommodation_listings al JOIN accommodation_types at ON al.accommodation_type_id = at.id
+             LEFT JOIN towns t ON al.town_id = t.id
+             WHERE $acWhere AND at.category='room_house'
+             ORDER BY $acOrder LIMIT 10"
+        )->fetchAll();
+        $hotelListings = $pdo->query(
+            "SELECT al.id, al.title, al.price, al.price_period, al.featured, al.featured_end_date, al.area, al.room_class, at.icon AS type_icon,
+                    t.name AS town_name,
+                    (SELECT image_path FROM accommodation_images WHERE listing_id=al.id AND is_primary=1 LIMIT 1) AS primary_image
+             FROM accommodation_listings al JOIN accommodation_types at ON al.accommodation_type_id = at.id
+             LEFT JOIN towns t ON al.town_id = t.id
+             WHERE $acWhere AND at.category='hotel'
+             ORDER BY $acOrder LIMIT 10"
+        )->fetchAll();
+    } catch (Exception $e) {}
+}
+
 // Marketplace featured products
 $featuredProducts = [];
 try {
     $featuredProducts = $pdo->query(
         "SELECT mp.id, mp.name, mp.price, mp.discount_price, mp.condition_type, mp.is_sponsored, mp.sponsored_end, mp.is_featured, mp.featured_end,
-                ms.shop_name, ms.id AS shop_id,
+                ms.shop_name, ms.id AS shop_id, ms.region AS shop_venue,
                 mc.icon AS cat_icon,
+                t.name AS shop_town,
                 mpi.image_path AS primary_image
          FROM mp_products mp
          JOIN mp_shops ms ON mp.shop_id = ms.id
          LEFT JOIN mp_categories mc ON mp.category_id = mc.id
+         LEFT JOIN towns t ON ms.town_id = t.id
          LEFT JOIN mp_product_images mpi ON mpi.product_id = mp.id AND mpi.is_primary = 1
          WHERE mp.status = 'approved' AND ms.status = 'active'
          ORDER BY (mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE()) DESC,
                   (mp.is_featured=1 AND mp.featured_end>=CURDATE()) DESC,
                   mp.created_at DESC
-         LIMIT 4"
+         LIMIT 12"
     )->fetchAll();
 } catch (Exception $e) {}
 
@@ -156,7 +191,14 @@ try {
         .cm-section { margin-bottom:36px; }
         .cm-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
         .cm-section-head h2 { font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--muted,#6b7280); margin:0; }
-        .cm-section-head a  { font-size:.82rem; font-weight:700; color:var(--primary,#0f766e); text-decoration:none; }
+        .cm-section-head a {
+            font-size:.78rem; font-weight:700; color:var(--primary,#0f766e); text-decoration:none;
+            background:var(--surface,#fff); padding:7px 16px; border-radius:20px;
+            border:1px solid var(--border,#e5e7eb); box-shadow:0 2px 8px rgba(0,0,0,.06);
+            transition:box-shadow .15s ease, transform .15s ease, background-color .15s ease;
+            white-space:nowrap;
+        }
+        .cm-section-head a:hover { box-shadow:0 4px 14px rgba(0,0,0,.1); transform:translateY(-1px); background:var(--primary-soft,#d1fae5); text-decoration:none; }
 
         /* ── Jobs cards (shared base — also reused as-is by "Open Delivery
                Requests" below, so this stays exactly as it was) ── */
@@ -219,7 +261,14 @@ try {
         .cm-job-panel .cm-job-actions .button-primary   { color:var(--primary,#2f8f5b); font-weight:800; }
 
         /* ── Events cards ── */
-        .cm-ev-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; }
+        /* Same "grid on wide screens, 2 independent scrolling rows on small
+           screens" structure as News — see .cm-ev-wide / .cm-ev-rows-stacked
+           below and in the mobile media query. Desktop keeps its own fixed
+           4-per-row grid (not News's 280px column) so the row width doesn't
+           change; only the small-screen card size matches News
+           (calc(50vw - 21px), set in the mobile media query). */
+        .cm-ev-rows-stacked { display:none; }
+        .cm-ev-row  { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
         .cm-ev-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .2s,transform .2s; }
         .cm-ev-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-3px); }
         .cm-ev-img  { aspect-ratio:16/9; background:linear-gradient(135deg,#f0fdf4,#d1fae5); display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative; flex-shrink:0; }
@@ -231,7 +280,11 @@ try {
         .cm-ev-meta  { font-size:.73rem; color:var(--muted,#6b7280); line-height:1.55; }
 
         /* ── Funeral Announcement cards ── */
-        .cm-fa-row  { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
+        /* Same structure as News/Events — see .cm-fa-wide / .cm-fa-rows-stacked
+           below and in the mobile media query. Desktop keeps its own fixed
+           4-per-row grid; only the small-screen card size matches News. */
+        .cm-fa-rows-stacked { display:none; }
+        .cm-fa-row  { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
         .cm-fa-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:16px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .2s,transform .2s; }
         .cm-fa-card:hover { box-shadow:0 8px 28px rgba(0,0,0,.1); transform:translateY(-3px); }
         .cm-fa-img  { aspect-ratio:4/3; background:linear-gradient(135deg,#f5f0eb,#ede4d8); overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -296,6 +349,31 @@ try {
         .cm-qs-body  { padding:12px 12px 15px; text-align:center; background:var(--surface,#fff); }
         .cm-qs-title { font-weight:800; font-size:.86rem; margin-bottom:3px; }
         .cm-qs-desc  { font-size:.72rem; color:var(--muted,#6b7280); line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+
+        /* ── Accommodation strips — always horizontal scroll, same mechanics
+               as the Quick Services strip (.cm-qs-row), just card-shaped like
+               a marketplace product card instead of an icon disc. ── */
+        .cm-ac-row {
+            display:flex; flex-wrap:nowrap; overflow-x:auto; gap:14px;
+            scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+            padding-bottom:4px;
+        }
+        .cm-ac-row::-webkit-scrollbar { display:none; }
+        .cm-ac-card {
+            flex:0 0 200px; scroll-snap-align:start;
+            background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden;
+            text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .15s,transform .15s;
+        }
+        .cm-ac-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.1); transform:translateY(-2px); }
+        .cm-ac-card--featured { border:2px solid #f59e0b; }
+        .cm-ac-card-img { aspect-ratio:4/3; background:#f8fafc; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+        .cm-ac-card-img img { width:100%; height:100%; object-fit:cover; }
+        .cm-ac-card-body { padding:10px 12px 12px; }
+        .cm-ac-card-title { font-weight:700; font-size:.84rem; line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; margin-bottom:6px; }
+        .cm-ac-card-class { font-size:.7rem; font-weight:800; color:var(--primary,#0f766e); margin:-4px 0 4px; }
+        .cm-ac-card-loc { font-size:.7rem; color:var(--text-muted,#6b7280); margin-bottom:4px; }
+        .cm-ac-card-price { font-weight:900; color:var(--primary,#0f766e); font-size:.86rem; }
+        @media(max-width:480px){ .cm-ac-card { flex-basis:44vw; } }
 
         .cm-empty { text-align:center; color:var(--muted,#6b7280); font-size:.88rem; padding:24px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; }
 
@@ -382,10 +460,10 @@ try {
             .cm-section > div[style*="margin-top:14px"],
             .cm-section > div[style*="margin-top: 14px"] { padding:0 16px; }
 
-            /* Common scroll row rules applied to all row types */
+            /* Common scroll row rules applied to all row types. Events and
+               Funerals moved out of this shared single-row group — they now
+               use their own 2-row-stacked treatment (same as News) below. */
             .cm-job-row,
-            .cm-ev-row,
-            .cm-fa-row,
             .cm-mp-row {
                 display:flex;
                 flex-wrap:nowrap;
@@ -397,14 +475,10 @@ try {
                 -webkit-overflow-scrolling:touch;
             }
             .cm-job-row::-webkit-scrollbar,
-            .cm-ev-row::-webkit-scrollbar,
-            .cm-fa-row::-webkit-scrollbar,
             .cm-mp-row::-webkit-scrollbar { display:none; }
 
             /* ── Card widths: exactly 3 per screen ── */
             .cm-job-card,
-            .cm-ev-card,
-            .cm-fa-card,
             .cm-mp-card {
                 flex:0 0 calc(33.333vw - 14px);
                 min-width:96px;
@@ -436,6 +510,28 @@ try {
             .cm-qs-body  { padding:8px 8px 10px; }
             .cm-qs-title { font-size:.76rem; line-height:1.25; }
             .cm-qs-desc  { font-size:.66rem; line-height:1.3; -webkit-line-clamp:2; }
+
+            /* ── Events / Funerals: same independent-2-row pattern (and same
+                   card size) as News below — see the matching PHP wrapper
+                   divs (.cm-ev-wide/.cm-ev-rows-stacked,
+                   .cm-fa-wide/.cm-fa-rows-stacked). ── */
+            .cm-ev-wide, .cm-fa-wide { display:none; }
+            .cm-ev-rows-stacked, .cm-fa-rows-stacked { display:flex; flex-direction:column; gap:10px; }
+            .cm-ev-rows-stacked .cm-ev-row,
+            .cm-fa-rows-stacked .cm-fa-row {
+                display:flex;
+                flex-wrap:nowrap;
+                overflow-x:auto;
+                gap:10px;
+                padding:0 16px 4px;
+                scroll-snap-type:x mandatory;
+                scrollbar-width:none;
+                -webkit-overflow-scrolling:touch;
+            }
+            .cm-ev-rows-stacked .cm-ev-row::-webkit-scrollbar,
+            .cm-fa-rows-stacked .cm-fa-row::-webkit-scrollbar { display:none; }
+            .cm-ev-rows-stacked .cm-ev-card,
+            .cm-fa-rows-stacked .cm-fa-card { flex:0 0 calc(50vw - 21px); scroll-snap-align:start; }
 
             /* ── News: same independent-2-row pattern as Quick Services —
                    up to 10 latest articles reachable across the two rows,
@@ -525,8 +621,6 @@ try {
             }
             .cm-mod-desc { display:block; font-size:.66rem; }
             .cm-job-card,
-            .cm-ev-card,
-            .cm-fa-card,
             .cm-mp-card {
                 flex:0 0 calc(33.333vw - 12px);
                 min-width:140px;
@@ -582,6 +676,7 @@ try {
     <?php if (module_enabled('delivery')): ?><a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a><?php endif; ?>
     <?php if (module_enabled('mp')): ?><a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a><?php endif; ?>
     <?php if (module_enabled('markets')): ?><a href="markets.php" class="cm-mod"><div class="cm-mod-icon">🏬</div><div class="cm-mod-title">Nearby Markets</div><div class="cm-mod-desc">Ofie Market, Nkurakan &amp; more</div></a><?php endif; ?>
+    <?php if (module_enabled('accommodation')): ?><a href="accommodation.php" class="cm-mod"><div class="cm-mod-icon">🏠</div><div class="cm-mod-title">Accommodation</div><div class="cm-mod-desc">Rooms, houses, hotels &amp; guest houses</div></a><?php endif; ?>
 </div>
 
 <div class="cm-shell">
@@ -608,6 +703,9 @@ try {
                 <div style="padding:10px 12px 12px;">
                     <div style="font-weight:700;font-size:.84rem;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:4px;"><?php echo sanitize($fp['name']); ?></div>
                     <div style="font-size:.72rem;color:var(--muted,#6b7280);">🏪 <?php echo sanitize(mb_substr($fp['shop_name'],0,28)); ?></div>
+                    <?php $fpShopLoc = combine_location_parts($fp['shop_venue'], $fp['shop_town']); if ($fpShopLoc): ?>
+                    <div style="font-size:.72rem;color:var(--muted,#6b7280);">📍 <?php echo sanitize($fpShopLoc); ?></div>
+                    <?php endif; ?>
                     <div style="font-weight:900;color:var(--primary,#0f766e);font-size:.92rem;margin-top:6px;">
                         GH&#8373; <?php echo number_format($effP,2); ?>
                         <?php if ($disc>0): ?><span style="font-size:.76rem;color:var(--muted,#6b7280);font-weight:400;text-decoration:line-through;margin-left:4px;">GH&#8373; <?php echo number_format((float)$fp['price'],2); ?></span><?php endif; ?>
@@ -762,30 +860,48 @@ try {
 
     <!-- Upcoming Events -->
     <?php if (module_enabled('events')): ?>
+    <?php
+    $evCard = function ($ev) {
+        ?>
+        <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="cm-ev-card">
+            <div class="cm-ev-img">
+                <?php if ($ev['featured_image']): ?>
+                    <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="">
+                <?php else: ?>
+                    <span class="cm-ev-img-icon">📅</span>
+                <?php endif; ?>
+                <div class="cm-ev-date-badge"><?php echo date('d M', strtotime($ev['start_date'])); ?></div>
+            </div>
+            <div class="cm-ev-body">
+                <div class="cm-ev-title"><?php echo sanitize($ev['title']); ?></div>
+                <?php if ($ev['venue']): ?><div class="cm-ev-meta">📍 <?php echo sanitize(mb_substr($ev['venue'],0,40)); ?></div><?php endif; ?>
+                <?php if ($ev['start_time']): ?><div class="cm-ev-meta">🕐 <?php echo date('g:i A', strtotime($ev['start_time'])); ?></div><?php endif; ?>
+            </div>
+        </a>
+        <?php
+    };
+    ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Upcoming Events</h2>
             <a href="events.php">View all →</a>
         </div>
         <?php if ($upcomingEvents): ?>
-        <div class="cm-ev-row">
-            <?php foreach ($upcomingEvents as $ev): ?>
-            <a href="event.php?slug=<?php echo urlencode($ev['slug']); ?>" class="cm-ev-card">
-                <div class="cm-ev-img">
-                    <?php if ($ev['featured_image']): ?>
-                        <img src="<?php echo sanitize($ev['featured_image']); ?>" alt="">
-                    <?php else: ?>
-                        <span class="cm-ev-img-icon">📅</span>
-                    <?php endif; ?>
-                    <div class="cm-ev-date-badge"><?php echo date('d M', strtotime($ev['start_date'])); ?></div>
-                </div>
-                <div class="cm-ev-body">
-                    <div class="cm-ev-title"><?php echo sanitize($ev['title']); ?></div>
-                    <?php if ($ev['venue']): ?><div class="cm-ev-meta">📍 <?php echo sanitize(mb_substr($ev['venue'],0,40)); ?></div><?php endif; ?>
-                    <?php if ($ev['start_time']): ?><div class="cm-ev-meta">🕐 <?php echo date('g:i A', strtotime($ev['start_time'])); ?></div><?php endif; ?>
-                </div>
-            </a>
-            <?php endforeach; ?>
+        <!-- Wide screens: every event in one auto-fill grid -->
+        <div class="cm-ev-wide">
+            <div class="cm-ev-row">
+                <?php foreach ($upcomingEvents as $ev) $evCard($ev); ?>
+            </div>
+        </div>
+        <!-- Small screens: 2 independent horizontally-scrolling rows, same
+             pattern (and card size) as Latest News. -->
+        <div class="cm-ev-rows-stacked">
+            <div class="cm-ev-row">
+                <?php foreach ($upcomingEvents as $i => $ev) { if ($i % 2 === 0) $evCard($ev); } ?>
+            </div>
+            <div class="cm-ev-row">
+                <?php foreach ($upcomingEvents as $i => $ev) { if ($i % 2 === 1) $evCard($ev); } ?>
+            </div>
         </div>
         <?php else: ?>
         <div class="cm-empty">No upcoming events at the moment.</div>
@@ -795,29 +911,47 @@ try {
 
     <!-- Recent Funeral Announcements -->
     <?php if (module_enabled('funerals')): ?>
+    <?php
+    $faCard = function ($fa) {
+        ?>
+        <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="cm-fa-card">
+            <div class="cm-fa-img">
+                <?php if ($fa['photograph']): ?>
+                    <img src="<?php echo sanitize($fa['photograph']); ?>" alt="">
+                <?php else: ?>
+                    <span class="cm-fa-initials"><?php echo mb_strtoupper(mb_substr($fa['deceased_name'],0,2)); ?></span>
+                <?php endif; ?>
+            </div>
+            <div class="cm-fa-info">
+                <div class="cm-fa-name"><?php echo sanitize($fa['deceased_name']); ?></div>
+                <?php if ($fa['burial_date']): ?><div class="cm-fa-meta">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></div><?php endif; ?>
+                <?php if ($fa['venue']): ?><div class="cm-fa-meta">📍 <?php echo sanitize(mb_substr($fa['venue'],0,40)); ?></div><?php endif; ?>
+            </div>
+        </a>
+        <?php
+    };
+    ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>Funeral Announcements</h2>
             <a href="funerals.php">View all →</a>
         </div>
         <?php if ($recentFunerals): ?>
-        <div class="cm-fa-row">
-            <?php foreach ($recentFunerals as $fa): ?>
-            <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="cm-fa-card">
-                <div class="cm-fa-img">
-                    <?php if ($fa['photograph']): ?>
-                        <img src="<?php echo sanitize($fa['photograph']); ?>" alt="">
-                    <?php else: ?>
-                        <span class="cm-fa-initials"><?php echo mb_strtoupper(mb_substr($fa['deceased_name'],0,2)); ?></span>
-                    <?php endif; ?>
-                </div>
-                <div class="cm-fa-info">
-                    <div class="cm-fa-name"><?php echo sanitize($fa['deceased_name']); ?></div>
-                    <?php if ($fa['burial_date']): ?><div class="cm-fa-meta">⚰️ <?php echo date('d M Y', strtotime($fa['burial_date'])); ?></div><?php endif; ?>
-                    <?php if ($fa['venue']): ?><div class="cm-fa-meta">📍 <?php echo sanitize(mb_substr($fa['venue'],0,40)); ?></div><?php endif; ?>
-                </div>
-            </a>
-            <?php endforeach; ?>
+        <!-- Wide screens: every announcement in one auto-fill grid -->
+        <div class="cm-fa-wide">
+            <div class="cm-fa-row">
+                <?php foreach ($recentFunerals as $fa) $faCard($fa); ?>
+            </div>
+        </div>
+        <!-- Small screens: 2 independent horizontally-scrolling rows, same
+             pattern (and card size) as Latest News. -->
+        <div class="cm-fa-rows-stacked">
+            <div class="cm-fa-row">
+                <?php foreach ($recentFunerals as $i => $fa) { if ($i % 2 === 0) $faCard($fa); } ?>
+            </div>
+            <div class="cm-fa-row">
+                <?php foreach ($recentFunerals as $i => $fa) { if ($i % 2 === 1) $faCard($fa); } ?>
+            </div>
         </div>
         <?php else: ?>
         <div class="cm-empty">No funeral announcements yet.</div>
@@ -875,6 +1009,13 @@ try {
     </div>
     <?php endif; ?>
 
+    <!-- Ad -->
+    <?php if ($homeAd): ?>
+    <div class="cm-section" style="max-width:728px;margin-left:auto;margin-right:auto;">
+        <?php render_ad_unit($homeAd); ?>
+    </div>
+    <?php endif; ?>
+
     <!-- Quick Services -->
     <?php if (module_enabled('quick_services') && $quickServices): ?>
     <?php
@@ -927,6 +1068,57 @@ try {
             <div class="cm-qs-row">
                 <?php foreach ($quickServices as $i => $qs) { if ($i % 2 === 1) $qsCard($qs, $i); } ?>
             </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Accommodation -->
+    <?php
+    $acCard = function ($l) {
+        $isFeatured = !empty($l['featured']) && (empty($l['featured_end_date']) || $l['featured_end_date'] >= date('Y-m-d'));
+        ?>
+        <a href="accommodation_detail.php?id=<?php echo (int)$l['id']; ?>" class="cm-ac-card<?php echo $isFeatured?' cm-ac-card--featured':''; ?>">
+            <div class="cm-ac-card-img" style="position:relative;">
+                <?php if ($l['primary_image']): ?>
+                <img src="<?php echo sanitize($l['primary_image']); ?>" alt="<?php echo sanitize($l['title']); ?>">
+                <?php else: ?>
+                <span style="font-size:2.2rem;opacity:.3;"><?php echo $l['type_icon'] ?: '🏠'; ?></span>
+                <?php endif; ?>
+                <?php if ($isFeatured): ?><span style="position:absolute;top:5px;left:5px;background:#f59e0b;color:#fff;font-size:.58rem;font-weight:800;padding:2px 6px;border-radius:10px;">⭐</span><?php endif; ?>
+            </div>
+            <div class="cm-ac-card-body">
+                <div class="cm-ac-card-title"><?php echo sanitize($l['title']); ?></div>
+                <?php if (!empty($l['room_class'])): ?><div class="cm-ac-card-class"><?php echo sanitize($l['room_class']); ?></div><?php endif; ?>
+                <?php $acLoc = accommodation_location_label($l['area'], $l['town_name'] ?? null); if ($acLoc): ?><div class="cm-ac-card-loc">📍 <?php echo sanitize($acLoc); ?></div><?php endif; ?>
+                <div class="cm-ac-card-price">
+                    <?php if ($l['price']): ?>GH&#8373; <?php echo number_format((float)$l['price'],2); ?>
+                    <?php else: ?><?php echo ucfirst(accommodation_price_period_label($l['price_period'])); ?><?php endif; ?>
+                </div>
+            </div>
+        </a>
+        <?php
+    };
+    ?>
+    <?php if ($roomListings && module_enabled('accommodation')): ?>
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>🏡 Rooms &amp; Houses</h2>
+            <a href="accommodation_listings.php?category=room_house">View all →</a>
+        </div>
+        <div class="cm-ac-row">
+            <?php foreach ($roomListings as $l) $acCard($l); ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($hotelListings && module_enabled('accommodation')): ?>
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>🏨 Hotels &amp; Guest Houses</h2>
+            <a href="accommodation_listings.php?category=hotel">View all →</a>
+        </div>
+        <div class="cm-ac-row">
+            <?php foreach ($hotelListings as $l) $acCard($l); ?>
         </div>
     </div>
     <?php endif; ?>

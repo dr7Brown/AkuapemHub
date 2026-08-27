@@ -22,10 +22,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $title   = trim($_POST['title']           ?? '');
     $destUrl = trim($_POST['destination_url'] ?? '');
-    $adType  = in_array($_POST['ad_type'] ?? '', ['banner','sponsored']) ? $_POST['ad_type'] : 'banner';
+    $adType  = in_array($_POST['ad_type'] ?? '', ['banner','sponsored','video'], true) ? $_POST['ad_type'] : 'banner';
     $status  = in_array($_POST['status']  ?? '', ['active','inactive'])  ? $_POST['status']  : 'inactive';
     $startDate = trim($_POST['start_date'] ?? '') ?: null;
     $endDate   = trim($_POST['end_date']   ?? '') ?: null;
+    $weight    = max(1, min(10, (int)($_POST['weight'] ?? 1)));
+
+    $validPlacements = ['homepage','jobs','marketplace','accommodation','delivery','markets','quick_services','events','funerals','news'];
+    $chosenPlacements = array_values(array_intersect((array)($_POST['placements'] ?? []), $validPlacements));
+    $placements = $chosenPlacements ? implode(',', $chosenPlacements) : null;
 
     if (!$title)   $errors[] = 'Title is required.';
     if ($destUrl && !filter_var($destUrl, FILTER_VALIDATE_URL) && !preg_match('#^https?://#i', $destUrl)) {
@@ -42,14 +47,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
+    $videoPath = $ad['video'] ?? null;
+    if (!empty($_FILES['video']['name'])) {
+        $newVideoPath = save_uploaded_document($_FILES['video'], 'uploads/ads', ['video/mp4', 'video/webm'], 25 * 1024 * 1024);
+        if ($newVideoPath) {
+            $videoPath = $newVideoPath;
+        } else {
+            $errors[] = 'Video upload failed. Only MP4/WebM up to 25 MB are allowed.';
+        }
+    }
+    if ($adType === 'video' && !$videoPath) {
+        $errors[] = 'Upload a video file for a Video ad.';
+    }
+
     if (!$errors) {
         if ($id) {
-            $pdo->prepare("UPDATE advertisements SET title=?, image=?, destination_url=?, ad_type=?, status=?, start_date=?, end_date=?, updated_at=NOW() WHERE id=?")
-                ->execute([$title, $imagePath, $destUrl, $adType, $status, $startDate, $endDate, $id]);
+            $pdo->prepare("UPDATE advertisements SET title=?, image=?, video=?, destination_url=?, ad_type=?, status=?, placements=?, weight=?, start_date=?, end_date=?, updated_at=NOW() WHERE id=?")
+                ->execute([$title, $imagePath, $videoPath, $destUrl, $adType, $status, $placements, $weight, $startDate, $endDate, $id]);
             log_audit_action($user['id'], 'ad_edit', "Edited ad #$id: $title");
         } else {
-            $pdo->prepare("INSERT INTO advertisements (title, image, destination_url, ad_type, status, start_date, end_date) VALUES (?,?,?,?,?,?,?)")
-                ->execute([$title, $imagePath, $destUrl, $adType, $status, $startDate, $endDate]);
+            $pdo->prepare("INSERT INTO advertisements (title, image, video, destination_url, ad_type, status, placements, weight, start_date, end_date) VALUES (?,?,?,?,?,?,?,?,?,?)")
+                ->execute([$title, $imagePath, $videoPath, $destUrl, $adType, $status, $placements, $weight, $startDate, $endDate]);
             $id = (int)$pdo->lastInsertId();
             log_audit_action($user['id'], 'ad_create', "Created ad #$id: $title");
         }
@@ -57,15 +75,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
 
-    $ad = array_merge($ad ?? [], compact('title','destination_url','ad_type','status','start_date','end_date'));
+    $ad = array_merge($ad ?? [], compact('title','destination_url','ad_type','status','start_date','end_date','weight'));
     $ad['destination_url'] = $destUrl;
     $ad['ad_type']  = $adType;
     $ad['status']   = $status;
     $ad['start_date'] = $startDate;
     $ad['end_date']   = $endDate;
+    $ad['weight']     = $weight;
+    $ad['placements'] = $placements;
 }
 
 $isNew = !($ad['id'] ?? false);
+$adPlacementsSelected = array_filter(explode(',', $ad['placements'] ?? ''));
+$placementLabels = [
+    'homepage' => 'Homepage', 'jobs' => 'Jobs Dashboard', 'marketplace' => 'Marketplace',
+    'accommodation' => 'Accommodation', 'delivery' => 'Delivery Services', 'markets' => 'Nearby Markets',
+    'quick_services' => 'Quick Services', 'events' => 'Events', 'funerals' => 'Funeral Announcements', 'news' => 'News',
+];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -92,8 +118,14 @@ $isNew = !($ad['id'] ?? false);
     </header>
 
     <main class="ae-shell">
+        <?php if (!$isNew): ?>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border);">
+            <a href="ads_edit.php" class="button button-primary button-small">+ New Ad</a>
+        </div>
+        <?php endif; ?>
+
         <?php if (isset($_GET['saved'])): ?>
-            <div class="alert alert-success" style="margin-bottom:16px;">Advertisement saved.</div>
+            <div class="alert alert-success" style="margin-bottom:16px;">Advertisement saved. <a href="ads_edit.php">Create another →</a></div>
         <?php endif; ?>
         <?php foreach ($errors as $e): ?>
             <div class="alert alert-error" style="margin-bottom:10px;"><?php echo sanitize($e); ?></div>
@@ -108,12 +140,22 @@ $isNew = !($ad['id'] ?? false);
                        value="<?php echo sanitize($ad['title'] ?? ''); ?>" placeholder="Ad title (internal reference)">
             </div>
 
-            <div class="ae-field">
+            <div class="ae-field" id="ae-image-field">
                 <label for="ae-image">Ad Image</label>
                 <div class="desc">Banner: recommended 728×90 px. Sponsored: 600×400 px. JPEG/PNG/WebP · Max 5 MB.</div>
                 <input type="file" id="ae-image" name="image" accept="image/jpeg,image/png,image/webp">
                 <?php if (!empty($ad['image'])): ?>
                     <img src="../<?php echo sanitize($ad['image']); ?>" alt="Current image" class="ae-img-preview">
+                    <p style="font-size:.78rem;color:var(--text-muted);margin:4px 0 0;">Upload a new file to replace.</p>
+                <?php endif; ?>
+            </div>
+
+            <div class="ae-field" id="ae-video-field" style="display:none;">
+                <label for="ae-video">Ad Video</label>
+                <div class="desc">Shown muted, autoplay, looping. MP4/WebM · Max 25 MB.</div>
+                <input type="file" id="ae-video" name="video" accept="video/mp4,video/webm">
+                <?php if (!empty($ad['video'])): ?>
+                    <video src="../<?php echo sanitize($ad['video']); ?>" muted loop playsinline controls style="max-width:320px;border-radius:8px;margin-top:8px;display:block;"></video>
                     <p style="font-size:.78rem;color:var(--text-muted);margin:4px 0 0;">Upload a new file to replace.</p>
                 <?php endif; ?>
             </div>
@@ -128,9 +170,10 @@ $isNew = !($ad['id'] ?? false);
             <div class="ae-row">
                 <div class="ae-field">
                     <label for="ae-type">Ad Type</label>
-                    <select id="ae-type" name="ad_type" class="form-control">
+                    <select id="ae-type" name="ad_type" class="form-control" onchange="aeToggleMediaField(this.value)">
                         <option value="banner"    <?php echo ($ad['ad_type'] ?? 'banner') === 'banner'    ? 'selected' : ''; ?>>Banner (full-width strip)</option>
                         <option value="sponsored" <?php echo ($ad['ad_type'] ?? 'banner') === 'sponsored' ? 'selected' : ''; ?>>Sponsored Post (in feed)</option>
+                        <option value="video"     <?php echo ($ad['ad_type'] ?? 'banner') === 'video'     ? 'selected' : ''; ?>>Video (autoplay banner)</option>
                     </select>
                 </div>
                 <div class="ae-field">
@@ -139,6 +182,27 @@ $isNew = !($ad['id'] ?? false);
                         <option value="inactive" <?php echo ($ad['status'] ?? 'inactive') === 'inactive' ? 'selected' : ''; ?>>Inactive</option>
                         <option value="active"   <?php echo ($ad['status'] ?? 'inactive') === 'active'   ? 'selected' : ''; ?>>Active</option>
                     </select>
+                </div>
+            </div>
+
+            <div class="ae-field">
+                <label for="ae-weight">Priority Weight (1–10)</label>
+                <div class="desc">Higher weight rotates in more often. Delivery also self-balances against how many times each ad has already been shown, so a weight-1 ad still gets fair rotation over time — this just tilts the odds.</div>
+                <input type="number" id="ae-weight" name="weight" class="form-control" min="1" max="10" step="1"
+                       value="<?php echo sanitize($ad['weight'] ?? 1); ?>">
+            </div>
+
+            <div class="ae-field">
+                <label>Placements</label>
+                <div class="desc">Which pages this ad is eligible to appear on. Leave all unchecked to show on every page ads support.</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                    <?php foreach ($placementLabels as $key => $label): ?>
+                    <label style="font-weight:400;display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" name="placements[]" value="<?php echo $key; ?>" style="width:auto;"
+                               <?php echo in_array($key, $adPlacementsSelected, true) ? 'checked' : ''; ?>>
+                        <?php echo sanitize($label); ?>
+                    </label>
+                    <?php endforeach; ?>
                 </div>
             </div>
 
@@ -157,11 +221,25 @@ $isNew = !($ad['id'] ?? false);
                 </div>
             </div>
 
-            <?php if (!$isNew): ?>
+            <?php if (!$isNew):
+                $impressions = (int)($ad['impression_count'] ?? 0);
+                $clicks      = (int)($ad['click_count'] ?? 0);
+                $ctr         = $impressions > 0 ? round($clicks / $impressions * 100, 2) : null;
+            ?>
             <p style="font-size:.85rem;color:var(--text-muted);margin-bottom:16px;">
-                👆 <strong><?php echo number_format((int)($ad['click_count'] ?? 0)); ?></strong> total clicks tracked on this ad.
+                👁️ <strong><?php echo number_format($impressions); ?></strong> impressions ·
+                👆 <strong><?php echo number_format($clicks); ?></strong> clicks
+                <?php if ($ctr !== null): ?> · <strong><?php echo $ctr; ?>%</strong> CTR<?php endif; ?>
             </p>
             <?php endif; ?>
+
+            <script>
+            function aeToggleMediaField(type) {
+                document.getElementById('ae-image-field').style.display = type === 'video' ? 'none' : '';
+                document.getElementById('ae-video-field').style.display = type === 'video' ? '' : 'none';
+            }
+            aeToggleMediaField(document.getElementById('ae-type').value);
+            </script>
 
             <div style="display:flex;gap:10px;">
                 <button type="submit" class="button button-primary"><?php echo $isNew ? 'Create Ad' : 'Save Changes'; ?></button>

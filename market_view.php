@@ -17,7 +17,7 @@ if ($marketId) {
     $mStmt->execute([$marketId]);
     $market = $mStmt->fetch();
 }
-if (!$market) { header('Location: markets.php'); exit; }
+if (!$market) { render_not_found('markets.php', 'Browse Nearby Markets', 'This market is no longer available.'); }
 
 $flash  = get_flash();
 $sched  = get_market_schedule($market);

@@ -1,6 +1,10 @@
 {
   "permissions": {
     "allow": [
+      "Bash",
+      "Bash(*)",
+      "PowerShell",
+      "PowerShell(*)",
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:8080/AkuapemHub/migrate.php\" -UseBasicParsing -TimeoutSec 15; \"$\\($r.StatusCode\\)\"; \\($r.Content -replace '<[^>]+>', ' ' -replace '\\\\s+',' '\\).Substring\\(0,[Math]::Min\\(800,$r.Content.Length\\)\\) } catch { $_.Exception.Message })",
       "PowerShell($r = Invoke-WebRequest -Uri \"http://localhost:8080/AkuapemHub/migrate.php\" -UseBasicParsing -TimeoutSec 15; $text = \\($r.Content -replace '<[^>]+>', ' ' -replace '\\\\s+',' '\\); $text.Substring\\(0,[Math]::Min\\(1500,$text.Length\\)\\))",
       "PowerShell($r = Invoke-WebRequest -Uri \"http://localhost:8080/AkuapemHub/migrate.php\" -UseBasicParsing -TimeoutSec 30 -Method Post -Body @{action='migrate'}; $text = \\($r.Content -replace '<[^>]+>', ' ' -replace '\\\\s+',' '\\); $text.Substring\\(0,[Math]::Min\\(2000,$text.Length\\)\\))",

@@ -160,6 +160,11 @@ if (!isset($activeNav)) {
             <span>🏠</span> Dashboard
         </a>
         <?php endif; ?>
+        <?php if (is_admin_or_manager()): ?>
+        <a href="admin/index.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
+            <span>🛠️</span> Admin Dashboard
+        </a>
+        <?php endif; ?>
         <a href="settings.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
             <span>⚙️</span> Settings
         </a>

@@ -126,6 +126,8 @@ $myStatus = get_user_chat_status($user['id']);
                     <div class="conv-name"><?php echo sanitize($c['other_name']); ?></div>
                     <?php if ($c['job_id'] && $c['job_title']): ?>
                         <div class="conv-job-tag">Re: <?php echo sanitize($c['job_title']); ?></div>
+                    <?php elseif ($c['accommodation_listing_id'] && $c['accommodation_title']): ?>
+                        <div class="conv-job-tag">Re: <?php echo sanitize($c['accommodation_title']); ?></div>
                     <?php endif; ?>
                     <div class="conv-preview"><?php echo sanitize($preview); ?></div>
                 </div>
@@ -153,6 +155,10 @@ $myStatus = get_user_chat_status($user['id']);
                     <?php if ($activeConv && $activeConv['job_id'] && $activeConv['job_title']): ?>
                         <div style="font-size:0.75rem;margin-top:2px;">
                             Re: <a href="request_detail.php?id=<?php echo (int)$activeConv['job_id']; ?>" style="color:var(--primary);text-decoration:none;font-weight:500;"><?php echo sanitize($activeConv['job_title']); ?></a>
+                        </div>
+                    <?php elseif ($activeConv && $activeConv['accommodation_listing_id'] && $activeConv['accommodation_title']): ?>
+                        <div style="font-size:0.75rem;margin-top:2px;">
+                            Re: <a href="accommodation_detail.php?id=<?php echo (int)$activeConv['accommodation_listing_id']; ?>" style="color:var(--primary);text-decoration:none;font-weight:500;"><?php echo sanitize($activeConv['accommodation_title']); ?></a>
                         </div>
                     <?php endif; ?>
                 </div>

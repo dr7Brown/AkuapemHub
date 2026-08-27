@@ -202,7 +202,7 @@ if ($focusJobId) {
     }
 
     $appsStmt = $pdo->prepare("
-        SELECT a.*, u.name AS worker_name, u.email AS worker_email,
+        SELECT a.*, u.name AS worker_name, u.email AS worker_email, u.phone AS worker_phone,
                wp.is_verified, wp.is_featured, wp.bio, wp.location AS worker_location
         FROM applications a
         JOIN users u ON a.worker_id = u.id
@@ -241,7 +241,7 @@ if ($focusJobId) {
     if ($jobIds) {
         $pl = implode(',', array_fill(0, count($jobIds), '?'));
         $appsStmt = $pdo->prepare("
-            SELECT a.*, u.name AS worker_name, u.email AS worker_email,
+            SELECT a.*, u.name AS worker_name, u.email AS worker_email, u.phone AS worker_phone,
                    wp.is_verified, wp.is_featured, wp.bio, wp.location AS worker_location
             FROM applications a
             JOIN users u ON a.worker_id = u.id

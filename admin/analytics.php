@@ -49,7 +49,9 @@ $platformRevenue = $pdo->query("
         COALESCE(SUM(CASE WHEN payment_type = 'featured_worker' AND status = 'paid' THEN amount ELSE 0 END), 0) AS feat_worker,
         COALESCE(SUM(CASE WHEN payment_type = 'verification'    AND status = 'paid' THEN amount ELSE 0 END), 0) AS verification,
         COALESCE(SUM(CASE WHEN payment_type = 'job_post'        AND status = 'paid' THEN amount ELSE 0 END), 0) AS job_post,
-        COALESCE(SUM(CASE WHEN payment_type = 'worker_service'  AND status = 'paid' THEN amount ELSE 0 END), 0) AS worker_service
+        COALESCE(SUM(CASE WHEN payment_type = 'worker_service'  AND status = 'paid' THEN amount ELSE 0 END), 0) AS worker_service,
+        COALESCE(SUM(CASE WHEN payment_type = 'featured_accommodation' AND status = 'paid' THEN amount ELSE 0 END), 0) AS feat_accommodation,
+        COALESCE(SUM(CASE WHEN payment_type = 'accommodation_subscription' AND status = 'paid' THEN amount ELSE 0 END), 0) AS accommodation_subscription
     FROM platform_payments
 ")->fetch();
 
@@ -77,6 +79,27 @@ $verifiedWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_ve
 $activeListings  = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE service_fee_status = 'paid' AND (service_fee_expiry IS NULL OR service_fee_expiry >= CURDATE())")->fetchColumn();
 $featuredJobs    = $pdo->query("SELECT COUNT(*) FROM service_requests WHERE featured = 1 AND (featured_end_date IS NULL OR featured_end_date >= CURDATE())")->fetchColumn();
 $featuredWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_featured = 1 AND (featured_end_date IS NULL OR featured_end_date >= CURDATE())")->fetchColumn();
+
+// Accommodation — module gets its own section since it isn't a job/rating
+// concept like the rest of this legacy page.
+$accStats = ['total'=>0,'pending'=>0,'approved'=>0,'rejected'=>0,'reports_pending'=>0,'featured_active'=>0,'active_subscriptions'=>0];
+try {
+    $accStats['total']    = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_listings")->fetchColumn();
+    $accStats['pending']  = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_listings WHERE status='pending_approval'")->fetchColumn();
+    $accStats['approved'] = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_listings WHERE status='approved'")->fetchColumn();
+    $accStats['rejected'] = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_listings WHERE status='rejected'")->fetchColumn();
+    $accStats['reports_pending'] = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_reports WHERE status='pending'")->fetchColumn();
+    $accStats['featured_active'] = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_listings WHERE featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())")->fetchColumn();
+    $accStats['active_subscriptions'] = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_listing_subscriptions WHERE status='active' AND end_date>=CURDATE()")->fetchColumn();
+    $accRevenue = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type IN ('featured_accommodation','accommodation_subscription') AND status='paid'")->fetchColumn();
+    $accByType = $pdo->query(
+        "SELECT at.category, COUNT(*) AS c FROM accommodation_listings al
+         JOIN accommodation_types at ON al.accommodation_type_id=at.id
+         WHERE al.status='approved' GROUP BY at.category"
+    )->fetchAll();
+} catch (Exception $e) { $accRevenue = 0; $accByType = []; }
+$accRoomCount = 0; $accHotelCount = 0;
+foreach ($accByType as $r) { if ($r['category']==='hotel') $accHotelCount = (int)$r['c']; else $accRoomCount = (int)$r['c']; }
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -201,6 +224,8 @@ $featuredWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_fe
                         <tr><td>Verification Badges</td><td><?php echo number_format($platformRevenue['verification'], 2); ?></td></tr>
                         <tr><td>Job Posting Fees</td><td><?php echo number_format($platformRevenue['job_post'], 2); ?></td></tr>
                         <tr><td>Worker Service Listings</td><td><?php echo number_format($platformRevenue['worker_service'], 2); ?></td></tr>
+                        <tr><td>Featured Accommodation</td><td><?php echo number_format($platformRevenue['feat_accommodation'], 2); ?></td></tr>
+                        <tr><td>Accommodation Listing Packages</td><td><?php echo number_format($platformRevenue['accommodation_subscription'], 2); ?></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -256,6 +281,50 @@ $featuredWorkers = $pdo->query("SELECT COUNT(*) FROM worker_profiles WHERE is_fe
             <div class="stat-card">
                 <h2><?php echo (int)$featuredWorkers; ?></h2>
                 <p>Active featured workers</p>
+            </div>
+        </section>
+
+        <h2 style="margin: 32px 0 16px;">🏠 Accommodation</h2>
+        <section class="panel stats-grid">
+            <div class="stat-card">
+                <h2><?php echo $accStats['total']; ?></h2>
+                <p>Total listings</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accStats['pending']; ?></h2>
+                <p>Pending approval</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accStats['approved']; ?></h2>
+                <p>Approved (live)</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accStats['rejected']; ?></h2>
+                <p>Rejected</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accRoomCount; ?></h2>
+                <p>Rooms &amp; Houses (live)</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accHotelCount; ?></h2>
+                <p>Hotels &amp; Guest Houses (live)</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accStats['featured_active']; ?></h2>
+                <p>Active featured listings</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accStats['active_subscriptions']; ?></h2>
+                <p>Active listing packages</p>
+            </div>
+            <div class="stat-card">
+                <h2><?php echo $accStats['reports_pending']; ?></h2>
+                <p>Open reports</p>
+            </div>
+            <div class="stat-card">
+                <h2>GH₵ <?php echo number_format($accRevenue, 2); ?></h2>
+                <p>Total revenue</p>
             </div>
         </section>
 

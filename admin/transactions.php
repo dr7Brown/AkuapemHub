@@ -35,8 +35,15 @@ $where  = [];
 $params = [];
 
 if ($search !== '') {
-    $where[]    = '(u.name LIKE :q OR u.email LIKE :q OR pp.reference_code LIKE :q OR pp.paystack_reference LIKE :q)';
-    $params[':q'] = '%' . $search . '%';
+    // Four distinct named placeholders, not one reused — this app runs with
+    // PDO::ATTR_EMULATE_PREPARES=false (real server-side prepared statements),
+    // which can't bind one named parameter to more than one occurrence.
+    $where[] = '(u.name LIKE :q1 OR u.email LIKE :q2 OR pp.reference_code LIKE :q3 OR pp.paystack_reference LIKE :q4)';
+    $like = '%' . $search . '%';
+    $params[':q1'] = $like;
+    $params[':q2'] = $like;
+    $params[':q3'] = $like;
+    $params[':q4'] = $like;
 }
 if ($status !== '') {
     $where[]    = 'pp.status = :status';
@@ -188,6 +195,10 @@ function qstr(array $overrides = []): string {
         </div>
     </header>
     <main class="page-shell" style="padding-bottom:40px;">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+            <a href="transactions.php<?php echo qstr(['export'=>'csv','page'=>null]); ?>" class="button button-secondary button-small">Export CSV</a>
+        </div>
+
         <?php foreach (get_flashes() as $msg): ?>
             <div class="alert alert-<?php echo sanitize($msg['type']); ?>"><?php echo $msg['message']; ?></div>
         <?php endforeach; ?>

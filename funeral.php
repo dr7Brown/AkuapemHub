@@ -7,12 +7,16 @@ require_module_enabled('funerals', 'Funeral Announcements');
 $user = current_user();
 $slug = trim($_GET['slug'] ?? '');
 
-if (!$slug) { header('Location: funerals.php'); exit; }
+if (!$slug) { render_not_found('funerals.php', 'Browse Announcements', 'Announcement not found.'); }
 
-$stmt = $pdo->prepare("SELECT * FROM funeral_announcements WHERE slug=? AND status='approved' AND (user_id IS NULL OR user_id NOT IN (SELECT id FROM users WHERE banned=1)) LIMIT 1");
+$stmt = $pdo->prepare(
+    "SELECT fa.*, t.name AS town_name FROM funeral_announcements fa
+     LEFT JOIN towns t ON fa.town_id = t.id
+     WHERE fa.slug=? AND fa.status='approved' AND (fa.user_id IS NULL OR fa.user_id NOT IN (SELECT id FROM users WHERE banned=1)) LIMIT 1"
+);
 $stmt->execute([$slug]);
 $fa = $stmt->fetch();
-if (!$fa) { header('Location: funerals.php'); exit; }
+if (!$fa) { render_not_found('funerals.php', 'Browse Announcements', 'This announcement is no longer available.'); }
 
 // Track view (once per session)
 if (empty($_SESSION['viewed_funeral'][$fa['id']])) {
@@ -29,12 +33,16 @@ function fmt_date($d, $format = 'D, j M Y, g:i A') {
 
 // Sidebar data
 $today       = date('Y-m-d');
-$sbFunerals  = $pdo->prepare("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' AND id != ? ORDER BY created_at DESC LIMIT 4");
+$sbFunerals  = $pdo->prepare(
+    "SELECT fa.deceased_name, fa.slug, fa.burial_date, fa.venue, t.name AS town_name
+     FROM funeral_announcements fa LEFT JOIN towns t ON fa.town_id = t.id
+     WHERE fa.status='approved' AND fa.id != ? ORDER BY fa.created_at DESC LIMIT 4"
+);
 $sbFunerals->execute([$fa['id']]);
 $sbFunerals  = $sbFunerals->fetchAll();
 $sbEvents    = $pdo->query("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND start_date >= '$today' ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 5")->fetchAll();
 $sbNews      = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 4")->fetchAll();
-$sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$sbAd        = get_ads_for_placement('funerals', ['banner', 'video'], 1)[0] ?? null;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -180,8 +188,8 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
                 <?php if ($fa['date_of_birth']): ?> &nbsp;·&nbsp; Born <?php echo date('d M Y', strtotime($fa['date_of_birth'])); ?><?php endif; ?>
                 <?php if ($fa['date_of_death']): ?> &nbsp;·&nbsp; Died <?php echo date('d M Y', strtotime($fa['date_of_death'])); ?><?php endif; ?>
             </p>
-            <?php if ($fa['venue']): ?>
-            <p style="font-size:.88rem;color:var(--text-muted);margin:0;">📍 <?php echo sanitize($fa['venue']); ?></p>
+            <?php $faDetailLoc = combine_location_parts($fa['venue'], $fa['town_name'] ?? null); if ($faDetailLoc): ?>
+            <p style="font-size:.88rem;color:var(--text-muted);margin:0;">📍 <?php echo sanitize($faDetailLoc); ?></p>
             <?php endif; ?>
         </div>
     </div>
@@ -293,7 +301,7 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
                     <div class="nsb-funeral-name"><a href="funeral.php?slug=<?php echo urlencode($sf['slug']); ?>"><?php echo sanitize($sf['deceased_name']); ?></a></div>
                     <div class="nsb-funeral-meta">
                         <?php if ($sf['burial_date']): ?>Burial: <?php echo date('d M Y', strtotime($sf['burial_date'])); ?><?php endif; ?>
-                        <?php if ($sf['venue']): ?><br><?php echo sanitize($sf['venue']); ?><?php endif; ?>
+                        <?php $sfLoc = combine_location_parts($sf['venue'], $sf['town_name'] ?? null); if ($sfLoc): ?><br><?php echo sanitize($sfLoc); ?><?php endif; ?>
                     </div>
                 </div>
             </li>
@@ -344,18 +352,8 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
 
         <?php if ($sbAd): ?>
         <div class="nsb-widget">
-            <div class="nsb-head">Sponsored</div>
             <div class="nsb-ad">
-                <?php if ($sbAd['image']): ?>
-                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored">
-                    <img src="<?php echo sanitize($sbAd['image']); ?>" alt="<?php echo sanitize($sbAd['title']); ?>">
-                </a>
-                <?php else: ?>
-                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored"
-                   style="display:block;background:var(--primary,#0f766e);color:#fff;text-align:center;padding:20px 12px;border-radius:8px;font-weight:800;text-decoration:none;">
-                    <?php echo sanitize($sbAd['title']); ?>
-                </a>
-                <?php endif; ?>
+                <?php render_ad_unit($sbAd); ?>
             </div>
         </div>
         <?php endif; ?>

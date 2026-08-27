@@ -11,7 +11,7 @@ $flash = get_flash();
 sweep_expired_featured();
 
 // Banner ad + news teaser for dashboard
-$dashBannerAd  = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$dashBannerAd  = get_ads_for_placement('jobs', ['banner', 'video'], 1)[0] ?? null;
 $dashLatestNews = $pdo->query("SELECT title, slug, featured_image, published_at FROM news WHERE status='published' AND (published_at IS NULL OR published_at<=NOW()) ORDER BY COALESCE(published_at,created_at) DESC LIMIT 3")->fetchAll();
 $dashEvents    = $pdo->query("SELECT * FROM events WHERE status='published' AND start_date>=CURDATE() ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 3")->fetchAll();
 $dashFunerals  = $pdo->query("SELECT * FROM funeral_announcements WHERE status='approved' ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, created_at DESC LIMIT 3")->fetchAll();
@@ -137,7 +137,15 @@ if (is_worker()) {
     $myPostedStmt->execute([$user['id']]);
     $myPostedJobs = $myPostedStmt->fetchAll();
 
-} elseif (is_customer()) {
+} elseif (is_customer() || is_admin_or_manager()) {
+    // Admins/managers land here too — service_requests.customer_id is just a
+    // user id, not role-gated, so they can post/browse/track jobs exactly
+    // like a customer. Previously this branch only matched is_customer(),
+    // and anyone else fell into the redirect-to-admin-panel branch below —
+    // meaning jobs.php was completely unreachable for admin/manager
+    // accounts. Reaching the actual admin dashboard now has its own
+    // dedicated link (see partials/bottom_nav.php's avatar menu) instead of
+    // being smuggled through this page.
     // Drafts — shown separately above main job list
     $draftStmt = $pdo->prepare(
         "SELECT sr.*, sc.name AS category_name FROM service_requests sr
@@ -186,10 +194,6 @@ if (is_worker()) {
     );
     $browseStmt->execute([$user['id']]);
     $browseJobs = $browseStmt->fetchAll();
-
-} elseif ($user) {
-    header('Location: admin/index.php');
-    exit;
 }
 
 // Referral & points data (logged-in users only)
@@ -388,15 +392,8 @@ if ($user) {
         <?php endif; ?>
 
         <?php if ($dashBannerAd): ?>
-        <div style="text-align:center;margin:16px 0;">
-            <div style="font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#6b7280);margin-bottom:5px;">Advertisement</div>
-            <a href="ad_click.php?id=<?php echo (int)$dashBannerAd['id']; ?>" target="_blank" rel="noopener sponsored" style="display:inline-block;max-width:728px;width:100%;">
-                <?php if ($dashBannerAd['image']): ?>
-                    <img src="<?php echo sanitize($dashBannerAd['image']); ?>" alt="<?php echo sanitize($dashBannerAd['title']); ?>" style="width:100%;border-radius:10px;">
-                <?php else: ?>
-                    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;font-weight:600;color:var(--muted,#6b7280);"><?php echo sanitize($dashBannerAd['title']); ?></div>
-                <?php endif; ?>
-            </a>
+        <div style="max-width:728px;margin:16px auto;">
+            <?php render_ad_unit($dashBannerAd); ?>
         </div>
         <?php endif; ?>
 

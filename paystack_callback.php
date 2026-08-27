@@ -106,6 +106,8 @@ if ($result['success']) {
             'news_post'             => 'my_news.php',
             'event_post'            => 'my_events.php',
             'funeral_post'          => 'my_funerals.php',
+            'featured_accommodation'=> 'my_accommodation.php',
+            'accommodation_subscription' => 'my_accommodation.php',
             'featured_event'        => 'my_events.php',
             'featured_funeral'      => 'my_funerals.php',
             'featured_news'         => 'my_news.php',

@@ -7,13 +7,13 @@ require_once __DIR__ . '/delivery_functions.php'; // render_stars() for the revi
 require_module_enabled('mp', 'Marketplace');
 
 $id = (int)($_GET['id'] ?? 0);
-if (!$id) { header('Location: marketplace.php'); exit; }
+if (!$id) { render_not_found('marketplace.php', 'Browse Marketplace', 'Shop not found.'); }
 
 $shop = get_shop($id);
-if (!$shop || $shop['status'] !== 'active' || $shop['owner_banned']) { header('Location: marketplace.php'); exit; }
+if (!$shop || $shop['status'] !== 'active' || $shop['owner_banned']) { render_not_found('marketplace.php', 'Browse Marketplace', 'This shop is no longer available.'); }
 // A market's hidden "system shop" isn't a real storefront (no products,
 // never browsable) — it exists only as the FK anchor custom orders need.
-if (!empty($shop['market_id'])) { header('Location: markets.php'); exit; }
+if (!empty($shop['market_id'])) { render_not_found('markets.php', 'Browse Nearby Markets', 'This page isn\'t available.'); }
 
 $shareTitle = $shop['shop_name'];
 $shareUrl   = rtrim(BASE_URL, '/') . '/shop.php?id=' . $id;
@@ -154,16 +154,16 @@ if ($user && $canReviewShop && $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST[
                 <?php if ($shop['rating']>0): ?>⭐ <?php echo number_format((float)$shop['rating'],1); ?><?php endif; ?>
                 &nbsp;·&nbsp; <?php echo count($products); ?> products
                 &nbsp;·&nbsp; <?php echo number_format($shop['total_sales']); ?> sales
-                <?php if ($shop['region']): ?>&nbsp;·&nbsp; 📍 <?php echo sanitize($shop['region']); ?><?php endif; ?>
+                <?php $shopLocLine = combine_location_parts($shop['region'], $shop['town_name'] ?? null); if ($shopLocLine): ?>&nbsp;·&nbsp; 📍 <?php echo sanitize($shopLocLine); ?><?php endif; ?>
             </div>
         </div>
     </div>
     <?php if ($shop['description']): ?>
-    <p style="margin:0;font-size:.85rem;color:var(--text-muted,#6b7280);max-width:600px;"><?php echo sanitize(mb_substr($shop['description'],0,200)); ?></p>
+    <div class="rich-content" style="font-size:.85rem;color:var(--text-muted,#6b7280);max-width:600px;"><?php echo render_rich($shop['description']); ?></div>
     <?php endif; ?>
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
         <?php if ($user): ?>
-        <?php if ($shop['phone']): ?><a href="tel:<?php echo sanitize($shop['phone']); ?>" class="button button-secondary button-small">📞 Call</a><?php endif; ?>
+        <?php if ($shop['phone']): ?><a href="tel:<?php echo sanitize($shop['phone']); ?>" class="button button-secondary button-small">📞 <?php echo sanitize($shop['phone']); ?></a><?php endif; ?>
         <?php if ($shop['email']): ?><a href="mailto:<?php echo sanitize($shop['email']); ?>" class="button button-secondary button-small">✉ Email</a><?php endif; ?>
         <?php elseif ($shop['phone'] || $shop['email']): ?>
         <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">🔒 Sign in to contact</a>

@@ -77,6 +77,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo $error; /* may contain a safe resend link */ ?></div>
             <?php endif; ?>
+            <a href="google_auth.php<?php echo $redirectTo !== '' ? '?redirect=' . urlencode($redirectTo) : ''; ?>" class="button button-secondary" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;box-sizing:border-box;margin-bottom:14px;">
+                <?php require __DIR__ . '/partials/google_icon.php'; ?>
+                Continue with Google
+            </a>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;color:var(--text-muted,#6b7280);font-size:.8rem;">
+                <span style="flex:1;height:1px;background:var(--border,#e5e7eb);"></span>
+                or sign in with email
+                <span style="flex:1;height:1px;background:var(--border,#e5e7eb);"></span>
+            </div>
             <label>Email</label>
             <input type="email" name="email" required autocomplete="email" />
             <label>Password</label>
@@ -86,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               Show password
             </label>
             <label class="pw-show-label">
-              <input type="checkbox" name="remember_me" value="1" />
+              <input type="checkbox" name="remember_me" value="1" checked />
               Stay logged in
             </label>
             <button type="submit" class="button button-primary">Login</button>

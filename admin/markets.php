@@ -297,6 +297,12 @@ if ($manageMarket) {
 
 <main class="mk-shell">
 
+    <div style="display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+        <a href="market_orders.php" class="button button-primary button-small">📝 Custom Orders</a>
+        <a href="market_deliveries.php" class="button button-primary button-small">📦 Storehouse Deliveries</a>
+        <a href="market_settings.php" class="button button-secondary button-small">⚙️ Settings</a>
+    </div>
+
     <?php if ($flash): ?>
     <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin-bottom:14px;"><?php echo sanitize($flash['message']); ?></div>
     <?php endif; ?>

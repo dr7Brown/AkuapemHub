@@ -74,6 +74,11 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
         </div>
 
         <div class="faq-item">
+            <div class="faq-q">Can I sign in with Google? <span class="arrow">▼</span></div>
+            <div class="faq-a">Yes. Tap <strong>Continue with Google</strong> on the login or register page. If it's your first time, we'll ask you to quickly fill in your username, phone number, and location before you continue — everything else is filled in from your Google account.</div>
+        </div>
+
+        <div class="faq-item">
             <div class="faq-q">How do I delete my account? <span class="arrow">▼</span></div>
             <div class="faq-a">Go to <strong>Settings → Account</strong> and scroll to the bottom. You can close your account by entering your password and confirming. Your profile will be deactivated. Financial records are retained as required by Ghanaian law.</div>
         </div>
@@ -260,7 +265,7 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
 
         <div class="faq-item">
             <div class="faq-q">How are marketplace orders delivered? <span class="arrow">▼</span></div>
-            <div class="faq-a">Delivery is arranged between you and the seller. When a seller marks an order <em>Ready for Delivery</em>, a delivery request is automatically created on the Delivery Services platform and nearby riders are notified. Alternatively, a seller may arrange their own delivery or request the buyer to pick up in person — check the product listing or contact the seller to confirm.</div>
+            <div class="faq-a">You choose at checkout: <strong>AkuapemConnect Delivery Riders</strong> (once the seller marks your order <em>Ready for Delivery</em>, a delivery request is automatically created and nearby riders are notified), or <strong>I'll Arrange My Own Pickup</strong> (no delivery request is created — you coordinate pickup or delivery directly with the seller).</div>
         </div>
 
         <div class="faq-item">
@@ -276,6 +281,61 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
         <div class="faq-item">
             <div class="faq-q">Can I save products to look at later? <span class="arrow">▼</span></div>
             <div class="faq-a">Yes. On any product page, tap the ❤️ heart button to save it to your <strong>Saved Products</strong> list. Access your saved items from the profile menu → Saved Products at any time. You can add saved items directly to cart from the Saved Products page.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">What are Nearby Markets? <span class="arrow">▼</span></div>
+            <div class="faq-a">Nearby Markets is a version of the Marketplace for scheduled, periodic markets like Ofie Market and Nkurakan Market. Browse <a href="markets.php">Nearby Markets</a>, place your order ahead of market day while a market is open for orders, and collect from the market's storehouse on the day. Each market shows its own schedule and next open date.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">What are Quick Services? <span class="arrow">▼</span></div>
+            <div class="faq-a">Quick Services are everyday errands — airtime top-up, ECG/utility payments, exam results checkers, passport and Ghana Card assistance, and similar — that our team completes for you rather than a marketplace seller. Browse <a href="quick_services.php">Quick Services</a>, pick a service, pay, and our team processes your request.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">What is Fast Payout for sellers? <span class="arrow">▼</span></div>
+            <div class="faq-a">Fast Payout is an optional upgrade for eligible sellers: once an order clears the same confirmation window as the standard payout flow, your share settles straight to your linked bank or mobile money account automatically — no manual withdrawal request needed. It's opt-in and set up from <strong>Seller Dashboard → Wallet → Payout Accounts</strong>, and may need admin approval depending on current settings.</div>
+        </div>
+    </div>
+
+    <!-- Accommodation -->
+    <div class="sup-section">
+        <h2>Accommodation</h2>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I find a room, house, hotel, or guest house? <span class="arrow">▼</span></div>
+            <div class="faq-a">Go to <a href="accommodation.php">Accommodation</a> and choose <em>Find a Room/House</em> for long-term rentals or <em>Hotels &amp; Guest Houses</em> for short stays. Filter by town, price range, number of guests, and facilities. Open a listing and tap <strong>Contact Owner</strong>, <strong>Request Viewing</strong>, or <strong>Send Booking Enquiry</strong> to message the host directly.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">Does the Platform handle my booking or payment? <span class="arrow">▼</span></div>
+            <div class="faq-a">No. Accommodation enquiries open a chat with the host — any booking, deposit, or rent payment is arranged and paid directly between you and the host, outside the Platform. We recommend viewing a property in person and agreeing terms clearly before paying anything. This is different from Marketplace or Escrow, where payment goes through the Platform.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I list my property? <span class="arrow">▼</span></div>
+            <div class="faq-a">From <a href="accommodation.php">Accommodation</a>, go to <strong>My Listings</strong> and click <em>Add Listing</em>. Fill in the property type, location, price, facilities, and photos, then submit for admin approval. Depending on current platform settings, publishing a listing may require an active listing subscription.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">How do I report a suspicious accommodation listing? <span class="arrow">▼</span></div>
+            <div class="faq-a">Open the listing and use its <strong>Report</strong> option, or contact us via the <a href="contact.php">contact form</a> with the listing's link. We review reports and remove fraudulent listings promptly.</div>
+        </div>
+    </div>
+
+    <!-- Special Offers -->
+    <div class="sup-section">
+        <h2>Special Offers &amp; Promotions</h2>
+
+        <div class="faq-item">
+            <div class="faq-q">How do Special Offers work? <span class="arrow">▼</span></div>
+            <div class="faq-a">Go to <a href="promotions.php">Special Offers</a> to browse promotions you're eligible for — a discount on a paid feature, free access to a feature, or a redeemable promo code. Tap <strong>Claim</strong> and it activates immediately for its stated duration. See your active and past claims under <strong>My Promotions</strong>.</div>
+        </div>
+
+        <div class="faq-item">
+            <div class="faq-q">I have a promo code — where do I enter it? <span class="arrow">▼</span></div>
+            <div class="faq-a">On the <a href="promotions.php">Special Offers</a> page, use the <strong>Redeem a Code</strong> box to enter it. If it's valid and you're eligible, it's applied to your account right away.</div>
         </div>
     </div>
 

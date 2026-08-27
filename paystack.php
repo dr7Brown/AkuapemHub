@@ -38,6 +38,9 @@ function paystack_request(string $method, string $endpoint, array $body = []): ?
     if ($method === 'POST') {
         $opts[CURLOPT_POST]       = true;
         $opts[CURLOPT_POSTFIELDS] = json_encode($body);
+    } elseif ($method === 'PUT') {
+        $opts[CURLOPT_CUSTOMREQUEST] = 'PUT';
+        $opts[CURLOPT_POSTFIELDS]    = json_encode($body);
     }
     curl_setopt_array($ch, $opts);
     $response = curl_exec($ch);
@@ -58,7 +61,9 @@ function initializePayment(
     int $referenceId,
     int $packageId,
     float $amount,
-    array $meta = []
+    array $meta = [],
+    ?string $subaccountCode = null,
+    ?int $mainAccountSharePesewas = null
 ): array {
     global $pdo;
 
@@ -95,7 +100,7 @@ function initializePayment(
 
     $callbackUrl = rtrim(BASE_URL, '/') . '/paystack_callback.php';
 
-    $data = paystack_request('POST', '/transaction/initialize', [
+    $initPayload = [
         'email'        => $email,
         'amount'       => (int)round($amount * 100), // GHS pesewas
         'reference'    => $ref,
@@ -103,7 +108,25 @@ function initializePayment(
         'callback_url' => $callbackUrl,
         'metadata'     => array_merge(['payment_id' => $paymentId, 'payment_type' => $paymentType], $meta),
         'channels'     => ['card', 'mobile_money'],
-    ]);
+    ];
+
+    // Fast Payout: route the seller's cut straight into their Paystack
+    // subaccount via a transaction split, instead of the platform's own
+    // balance. bearer=account keeps Paystack's own transaction fee on the
+    // platform's side. transaction_charge (an explicit pesewas amount, set
+    // by the caller — see checkout.php) overrides the subaccount's stored
+    // percentage_charge for just this transaction, so charges that must stay
+    // 100% with the platform (e.g. the buyer-side checkout service fee)
+    // don't get proportionally skimmed into the seller's split.
+    if ($subaccountCode) {
+        $initPayload['subaccount'] = $subaccountCode;
+        $initPayload['bearer']     = 'account';
+        if ($mainAccountSharePesewas !== null) {
+            $initPayload['transaction_charge'] = $mainAccountSharePesewas;
+        }
+    }
+
+    $data = paystack_request('POST', '/transaction/initialize', $initPayload);
 
     if (!$data || !($data['status'] ?? false)) {
         // Roll back the insert so duplicate-check doesn't false-block next attempt
@@ -222,6 +245,49 @@ function paystack_initiate_transfer(int $payoutRequestId, string $recipientCode,
             'reference' => $ref, 'transfer_code' => $data['data']['transfer_code'] ?? null];
     }
     return ['success' => true, 'transfer_code' => $data['data']['transfer_code'] ?? null, 'reference' => $ref, 'status' => $status];
+}
+
+// ── Subaccounts (Fast Payout) ──────────────────────────────────────────────
+// Opt-in alternative to the Transfer-based payout flow above: instead of the
+// platform capturing 100% and later transferring a seller's cut out, a split
+// payment routes it directly into the seller's own Paystack subaccount. See
+// mp_enable_fast_payout() in marketplace_functions.php for the full flow.
+
+// Created with settlement_schedule='manual' so Paystack never auto-pays the
+// subaccount out on its own clock — only sweep_fast_payout_settlements() /
+// mp_ensure_fast_payout_locked() (functions.php / marketplace_functions.php)
+// flip that schedule, gated on the shop's confirmation-window state.
+function paystack_create_subaccount(string $businessName, string $bankCode, string $accountNumber, float $percentageCharge): array {
+    $data = paystack_request('POST', '/subaccount', [
+        'business_name'       => $businessName,
+        'bank_code'           => $bankCode,
+        'account_number'      => $accountNumber,
+        'percentage_charge'   => $percentageCharge,
+        'settlement_schedule' => 'manual',
+    ]);
+    if (!$data || !($data['status'] ?? false)) {
+        return ['success' => false, 'error' => $data['message'] ?? 'Could not create Paystack subaccount.'];
+    }
+    return ['success' => true, 'subaccount_code' => $data['data']['subaccount_code'] ?? null];
+}
+
+// General-purpose subaccount update — settlement_schedule, bank_code,
+// account_number, percentage_charge, etc. Both helpers below are thin
+// wrappers over this.
+function paystack_update_subaccount(string $subaccountCode, array $fields): array {
+    $data = paystack_request('PUT', '/subaccount/' . urlencode($subaccountCode), $fields);
+    if (!$data || !($data['status'] ?? false)) {
+        return ['success' => false, 'error' => $data['message'] ?? 'Could not update subaccount.'];
+    }
+    return ['success' => true];
+}
+
+// Flips a subaccount between 'manual' (held) and 'auto' (resumes Paystack's
+// normal settlement clock, paying the subaccount's balance to the seller's
+// bank on Paystack's next run). This is the only lever Fast Payout has over
+// timing — callers decide when it's safe to call this, not this function.
+function paystack_update_subaccount_schedule(string $subaccountCode, string $schedule): array {
+    return paystack_update_subaccount($subaccountCode, ['settlement_schedule' => $schedule]);
 }
 
 // Manual fallback for admins in case a transfer.success/failed webhook was missed.
@@ -572,6 +638,31 @@ function activatePurchasedFeature(array $payment): void {
             if ($subShopId = $subShopSt->fetchColumn()) {
                 mp_publish_pending_draft((int)$subShopId);
             }
+            break;
+
+        case 'accommodation_subscription':
+            require_once __DIR__ . '/accommodation_functions.php';
+            accommodation_activate_subscription((int)$payment['reference_id'], (int)$payment['id']);
+            $subUserSt = $pdo->prepare('SELECT user_id FROM accommodation_listing_subscriptions WHERE id=?');
+            $subUserSt->execute([(int)$payment['reference_id']]);
+            if ($subUserId = $subUserSt->fetchColumn()) {
+                accommodation_publish_pending_draft((int)$subUserId);
+            }
+            break;
+
+        case 'featured_accommodation':
+            $pkgA = $pdo->prepare("SELECT duration_days FROM featured_accommodation_packages WHERE id=?");
+            $pkgA->execute([$payment['package_id']]);
+            $pkgARow = $pkgA->fetch();
+            $days = (int)($pkgARow['duration_days'] ?? 30);
+            $alR = $pdo->prepare("SELECT title FROM accommodation_listings WHERE id=?");
+            $alR->execute([$payment['reference_id']]);
+            $alRow = $alR->fetch();
+            $alTitle = $alRow ? $alRow['title'] : "Listing #{$payment['reference_id']}";
+            $pdo->prepare("UPDATE accommodation_listings SET featured=1, featured_end_date=DATE_ADD(CURDATE(),INTERVAL ? DAY) WHERE id=?")
+                ->execute([$days, $payment['reference_id']]);
+            notify_user($payment['user_id'], '⭐ Listing is now featured!',
+                "\"{$alTitle}\" is featured for {$days} days. It will appear at the top of Accommodation search results.", 'success');
             break;
 
         case 'featured_news':

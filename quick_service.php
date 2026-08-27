@@ -80,6 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $submitted[$key] = mb_substr($val, 0, 500);
     }
 
+    if (!$error && requires_verified_email('quick_service') && !is_email_verified()) {
+        $error = 'Please verify your email address before requesting a service.';
+    }
+
     if (!$error) {
         $pricing = qs_compute_pricing($service, $submitted);
         if ($pricing['total'] <= 0) {

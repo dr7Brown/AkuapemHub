@@ -6,15 +6,13 @@ require_module_enabled('news', 'News');
 
 $user = current_user();
 $slug = trim($_GET['slug'] ?? '');
-if (!$slug) { header('Location: news.php'); exit; }
+if (!$slug) { render_not_found('news.php', 'Browse News', 'Article not found.'); }
 
 $stmt = $pdo->prepare("SELECT * FROM news WHERE slug=? AND status='published' AND (user_id IS NULL OR user_id NOT IN (SELECT id FROM users WHERE banned=1)) LIMIT 1");
 $stmt->execute([$slug]);
 $article = $stmt->fetch();
 if (!$article) {
-    http_response_code(404);
-    echo '<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px;text-align:center;"><h1>Article not found</h1><p><a href="news.php">← Back to News</a></p></body></html>';
-    exit;
+    render_not_found('news.php', 'Browse News', 'This article is no longer available.');
 }
 
 // Increment view count once per session
@@ -53,7 +51,7 @@ $cStmt->execute([$article['id']]);
 $comments = $cStmt->fetchAll();
 
 // Related/sidebar banner ad
-$bannerAd = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$bannerAd = get_ads_for_placement('news', ['banner', 'video'], 1)[0] ?? null;
 
 // Sidebar data
 $sidebarRelated = $pdo->prepare("SELECT id, title, slug, featured_image, view_count, published_at FROM news WHERE status='published' AND id != ? ORDER BY COALESCE(published_at,created_at) DESC LIMIT 5");
@@ -66,7 +64,7 @@ $sidebarPopular = $sidebarPopular->fetchAll();
 
 $sidebarEvents = $pdo->query("SELECT id, title, slug, start_date FROM events WHERE status='published' AND start_date >= CURDATE() ORDER BY start_date ASC LIMIT 3")->fetchAll();
 
-$sidebarAd2 = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$sidebarAd2 = get_ads_for_placement('news', ['banner', 'video'], 1)[0] ?? null;
 
 // Estimated read time
 $wordCount = str_word_count(strip_tags($article['content'] ?? ''));
@@ -312,14 +310,7 @@ $csrfField = csrf_field();
         <!-- Banner ad mid-article -->
         <?php if ($bannerAd): ?>
         <div class="na-banner-ad">
-            <div class="na-ad-label">Advertisement</div>
-            <a href="ad_click.php?id=<?php echo (int)$bannerAd['id']; ?>" target="_blank" rel="noopener sponsored">
-                <?php if ($bannerAd['image']): ?>
-                    <img src="<?php echo sanitize($bannerAd['image']); ?>" alt="<?php echo sanitize($bannerAd['title']); ?>">
-                <?php else: ?>
-                    <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;text-align:center;"><?php echo sanitize($bannerAd['title']); ?></div>
-                <?php endif; ?>
-            </a>
+            <?php render_ad_unit($bannerAd); ?>
         </div>
         <?php endif; ?>
 
@@ -432,14 +423,7 @@ $csrfField = csrf_field();
         <?php if ($sidebarAd2): ?>
         <div class="nsb-widget">
             <div class="nsb-ad">
-                <div class="nsb-ad-label">Advertisement</div>
-                <a href="ad_click.php?id=<?php echo (int)$sidebarAd2['id']; ?>" target="_blank" rel="noopener sponsored">
-                    <?php if ($sidebarAd2['image']): ?>
-                        <img src="<?php echo sanitize($sidebarAd2['image']); ?>" alt="<?php echo sanitize($sidebarAd2['title']); ?>">
-                    <?php else: ?>
-                        <p style="font-size:.82rem;font-weight:600;color:var(--text-muted);margin:0;"><?php echo sanitize($sidebarAd2['title']); ?></p>
-                    <?php endif; ?>
-                </a>
+                <?php render_ad_unit($sidebarAd2); ?>
             </div>
         </div>
         <?php endif; ?>

@@ -58,10 +58,12 @@ function get_shop(int $id): ?array {
     global $pdo;
     $st = $pdo->prepare(
         'SELECT ms.*, u.name AS owner_name, u.username AS owner_username, u.banned AS owner_banned,
-                mk.name AS market_name, mk.status AS market_status, mk.schedule_note AS market_schedule_note
+                mk.name AS market_name, mk.status AS market_status, mk.schedule_note AS market_schedule_note,
+                t.name AS town_name
          FROM mp_shops ms
          JOIN users u ON ms.user_id = u.id
          LEFT JOIN markets mk ON ms.market_id = mk.id
+         LEFT JOIN towns t ON ms.town_id = t.id
          WHERE ms.id = ?'
     );
     $st->execute([$id]);
@@ -331,7 +333,7 @@ function get_product(int $id): ?array {
                 ms.verification_status AS shop_verified, ms.market_id,
                 u.banned AS shop_owner_banned,
                 mc.name AS category_name, mc.slug AS category_slug,
-                mc.icon AS category_icon,
+                mc.icon AS category_icon, COALESCE(mc.show_condition,1) AS category_show_condition,
                 mk.name AS market_name, mk.status AS market_status, mk.schedule_note AS market_schedule_note
          FROM mp_products mp
          JOIN mp_shops ms ON mp.shop_id = ms.id
@@ -382,7 +384,7 @@ function mp_get_cart_count(int $userId): int {
 function mp_get_cart_items(int $userId): array {
     global $pdo;
     $st = $pdo->prepare(
-        'SELECT ci.*, mp.name, mp.price, mp.price_unit, mp.discount_price, mp.stock_quantity, mp.status,
+        'SELECT ci.*, mp.name, mp.price, mp.price_unit, mp.discount_price, mp.stock_quantity, mp.status, mp.delivery_available,
                 ms.shop_name, ms.id AS shop_id, ms.slug AS shop_slug, ms.market_id,
                 mpi.image_path AS primary_image
          FROM mp_cart c
@@ -548,11 +550,23 @@ function mp_refund_order(array $order, string $reason = ''): void {
     }
 
     if ($order['net_amount'] !== null) {
-        $balCol = $order['payout_released'] ? 'available_balance' : 'pending_balance';
-        $pdo->prepare("UPDATE mp_shops SET $balCol = $balCol - ? WHERE id=?")
-            ->execute([$order['net_amount'], $order['shop_id']]);
-        $pdo->prepare('INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())')
-            ->execute([$order['shop_id'], $order['id'], 'reversal', -$order['net_amount']]);
+        if (!empty($order['fast_payout']) && $order['payout_released']) {
+            // Fast Payout already routed this cut out of the platform's
+            // balance entirely (Paystack subaccount split) — there's no
+            // local pending/available balance left to reverse. Flag it for
+            // an admin to recover directly from the seller.
+            $pdo->prepare('INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())')
+                ->execute([$order['shop_id'], $order['id'], 'reversal', 0]);
+            notify_admins_and_managers('Fast Payout refund needs manual recovery',
+                'Order #' . $order['id'] . ' was refunded, but its GH₵ ' . number_format((float)$order['net_amount'], 2) . ' cut had already settled via Fast Payout — there is no local balance to reverse, recover it from the seller directly.',
+                'warning');
+        } else {
+            $balCol = $order['payout_released'] ? 'available_balance' : 'pending_balance';
+            $pdo->prepare("UPDATE mp_shops SET $balCol = $balCol - ? WHERE id=?")
+                ->execute([$order['net_amount'], $order['shop_id']]);
+            $pdo->prepare('INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())')
+                ->execute([$order['shop_id'], $order['id'], 'reversal', -$order['net_amount']]);
+        }
     }
 
     $pdo->prepare("UPDATE mp_orders SET status='refunded', payment_status='refunded', notes=CONCAT(COALESCE(notes,''), ?), updated_at=NOW() WHERE id=?")
@@ -775,4 +789,252 @@ function finalize_marketplace_payout_transfer(string $reference, string $event):
         ($shop['shop_name'] ?? 'A shop') . "'s withdrawal of GH₵ " . number_format((float)$req['amount'], 2) . " failed via webhook ({$event}). Review in Admin → Marketplace Payouts.",
         'error');
     log_audit_action(0, 'mp_payout_transfer_failed_webhook', "Payout #{$req['id']} failed via webhook: {$event}");
+}
+
+// ── Fast Payout (Paystack subaccounts) ────────────────────────────────────────
+// Opt-in alternative to the pending/available-balance + Transfer flow above.
+// See install.sql v078 for the full design rationale.
+
+/**
+ * Turns Fast Payout on for a shop: creates its Paystack subaccount (once —
+ * reused on re-enable) against the given saved payout account, and (re)locks
+ * it to settlement_schedule='manual'.
+ */
+function mp_enable_fast_payout(int $shopId, array $payoutAccount): array {
+    global $pdo;
+    require_once __DIR__ . '/paystack.php';
+
+    $shopStmt = $pdo->prepare('SELECT * FROM mp_shops WHERE id=?');
+    $shopStmt->execute([$shopId]);
+    $shop = $shopStmt->fetch();
+    if (!$shop) return ['success' => false, 'error' => 'Shop not found.'];
+
+    // Atomic claim — the actual mutex against a double-click submitting this
+    // twice, which would otherwise create two Paystack subaccounts for the
+    // same shop (the second UPDATE would silently orphan the first).
+    $claim = $pdo->prepare("UPDATE mp_shops SET fast_payout_enabled=1 WHERE id=? AND fast_payout_enabled=0");
+    $claim->execute([$shopId]);
+    if ($claim->rowCount() === 0) {
+        return ['success' => false, 'error' => 'Fast Payout is already enabled (or being enabled right now).'];
+    }
+
+    $subaccountCode = $shop['paystack_subaccount_code'];
+    if (!$subaccountCode) {
+        $commissionPct = (float)get_platform_setting('mp_commission_percent', '10');
+        $created = paystack_create_subaccount($shop['shop_name'], $payoutAccount['bank_code'], $payoutAccount['account_number'], $commissionPct);
+        if (!$created['success']) {
+            $pdo->prepare('UPDATE mp_shops SET fast_payout_enabled=0 WHERE id=?')->execute([$shopId]);
+            return ['success' => false, 'error' => $created['error']];
+        }
+        $subaccountCode = $created['subaccount_code'];
+        $pdo->prepare('UPDATE mp_shops SET paystack_subaccount_code=? WHERE id=?')->execute([$subaccountCode, $shopId]);
+    }
+
+    // Re-sync bank details + re-lock the schedule every time, whether the
+    // subaccount is brand new or being reused. A shop can disable, change
+    // their default payout account, then re-enable — without this, the
+    // reused subaccount would silently keep paying out to the OLD account.
+    $sync = paystack_update_subaccount($subaccountCode, [
+        'settlement_schedule' => 'manual',
+        'bank_code'           => $payoutAccount['bank_code'],
+        'account_number'      => $payoutAccount['account_number'],
+    ]);
+    if (!$sync['success']) {
+        $pdo->prepare('UPDATE mp_shops SET fast_payout_enabled=0 WHERE id=?')->execute([$shopId]);
+        return ['success' => false, 'error' => $sync['error']];
+    }
+
+    $pdo->prepare("UPDATE mp_shops SET subaccount_settlement_schedule='manual' WHERE id=?")->execute([$shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'enabled', ?)")
+        ->execute([$shopId, 'Subaccount ' . $subaccountCode . ' — bank details synced to ' . $payoutAccount['method'] . ' account']);
+    log_audit_action(0, 'mp_fast_payout_enabled', "Shop #{$shopId} enabled Fast Payout (subaccount {$subaccountCode})");
+
+    return ['success' => true];
+}
+
+/**
+ * Keeps an already-enabled shop's subaccount pointed at its current default
+ * payout account. Called from seller_payout_accounts.php whenever the
+ * seller edits the account that's marked default while Fast Payout is on —
+ * without this, changing banks mid-flight would silently leave Fast Payout
+ * paying out to the old, no-longer-current account.
+ */
+function mp_sync_fast_payout_bank_account(int $shopId, array $payoutAccount): array {
+    global $pdo;
+    require_once __DIR__ . '/paystack.php';
+
+    $shopStmt = $pdo->prepare('SELECT paystack_subaccount_code FROM mp_shops WHERE id=?');
+    $shopStmt->execute([$shopId]);
+    $subaccountCode = $shopStmt->fetchColumn();
+    if (!$subaccountCode) return ['success' => false, 'error' => 'No Fast Payout subaccount for this shop.'];
+
+    $r = paystack_update_subaccount($subaccountCode, [
+        'bank_code'      => $payoutAccount['bank_code'],
+        'account_number' => $payoutAccount['account_number'],
+    ]);
+    if ($r['success']) {
+        $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'bank_synced', ?)")
+            ->execute([$shopId, 'Re-synced to ' . $payoutAccount['method'] . ' account']);
+        log_audit_action(0, 'mp_fast_payout_bank_synced', "Shop #{$shopId} Fast Payout subaccount bank details re-synced");
+    }
+    return $r;
+}
+
+/**
+ * Turns Fast Payout off: stops new orders from being split to the
+ * subaccount. Deliberately leaves the subaccount code and any still-held
+ * orders alone — sweep_fast_payout_settlements() keeps managing the
+ * schedule for this shop (by subaccount presence, not the enabled flag)
+ * until its held balance clears, then flips to 'auto' as normal.
+ */
+function mp_disable_fast_payout(int $shopId): void {
+    global $pdo;
+    $pdo->prepare('UPDATE mp_shops SET fast_payout_enabled=0 WHERE id=?')->execute([$shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'disabled', NULL)")->execute([$shopId]);
+    log_audit_action(0, 'mp_fast_payout_disabled', "Shop #{$shopId} disabled Fast Payout");
+}
+
+/**
+ * Admin grants a shop access to see/use the Fast Payout section at all.
+ * This is the actual "who sees it" gate — independent of the module-wide
+ * kill switch and the approval-gate setting.
+ */
+function mp_grant_fast_payout_eligibility(int $shopId, int $adminId): void {
+    global $pdo;
+    $pdo->prepare('UPDATE mp_shops SET fast_payout_eligible=1 WHERE id=?')->execute([$shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'eligibility_granted', NULL)")->execute([$shopId]);
+    log_audit_action($adminId, 'mp_fast_payout_eligibility_granted', "Shop #{$shopId} granted Fast Payout eligibility");
+
+    $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+    $shopOwner->execute([$shopId]);
+    if ($uid = $shopOwner->fetchColumn()) {
+        notify_user((int)$uid, '⚡ Fast Payout Available',
+            'Your shop is now eligible for Fast Payout — set it up in Payout Accounts.',
+            'success', 'seller_payout_accounts.php');
+    }
+}
+
+/**
+ * Admin revokes eligibility. Also turns Fast Payout off if it was active or
+ * pending — a shop can't be "active" but no longer "eligible" at the same
+ * time. Any already-held balance still winds down normally (see
+ * mp_disable_fast_payout()'s own doc comment).
+ */
+function mp_revoke_fast_payout_eligibility(int $shopId, int $adminId): void {
+    global $pdo;
+    $enabledStmt = $pdo->prepare('SELECT fast_payout_enabled FROM mp_shops WHERE id=?');
+    $enabledStmt->execute([$shopId]);
+    if ((bool)$enabledStmt->fetchColumn()) mp_disable_fast_payout($shopId);
+
+    $pdo->prepare("UPDATE mp_shops SET fast_payout_eligible=0, fast_payout_requested_at=NULL WHERE id=?")->execute([$shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'eligibility_revoked', NULL)")->execute([$shopId]);
+    log_audit_action($adminId, 'mp_fast_payout_eligibility_revoked', "Shop #{$shopId} Fast Payout eligibility revoked");
+}
+
+/**
+ * Seller-side "Enable" click when mp_fast_payout_requires_approval is on —
+ * files a request instead of activating immediately. See
+ * mp_approve_fast_payout_request() / mp_reject_fast_payout_request() for
+ * the admin side.
+ */
+function mp_request_fast_payout(int $shopId): void {
+    global $pdo;
+    $pdo->prepare("UPDATE mp_shops SET fast_payout_requested_at=NOW(), fast_payout_rejected_reason=NULL WHERE id=?")->execute([$shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'requested', NULL)")->execute([$shopId]);
+    log_audit_action(0, 'mp_fast_payout_requested', "Shop #{$shopId} requested Fast Payout");
+
+    $shopRow = $pdo->prepare('SELECT shop_name FROM mp_shops WHERE id=?');
+    $shopRow->execute([$shopId]);
+    $shopName = $shopRow->fetchColumn() ?: "Shop #{$shopId}";
+    notify_admins_and_managers('Fast Payout Request',
+        "\"{$shopName}\" requested Fast Payout. Review in Admin → Seller Payouts → Fast Payout.",
+        'info');
+}
+
+/**
+ * Admin approves a pending request: activates Fast Payout against the
+ * shop's current default payout account (same entry point as the self-serve
+ * path in seller_payout_accounts.php — mp_enable_fast_payout() does the
+ * actual subaccount create/sync/lock).
+ */
+function mp_approve_fast_payout_request(int $shopId, int $adminId): array {
+    global $pdo;
+
+    $acctStmt = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE shop_id=? AND is_default=1');
+    $acctStmt->execute([$shopId]);
+    $account = $acctStmt->fetch();
+    if (!$account) {
+        $allStmt = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE shop_id=?');
+        $allStmt->execute([$shopId]);
+        $all = $allStmt->fetchAll();
+        if (count($all) === 1) $account = $all[0];
+    }
+    if (!$account) {
+        return ['success' => false, 'error' => 'This shop has no saved payout account to activate Fast Payout against.'];
+    }
+
+    $result = mp_enable_fast_payout($shopId, $account);
+    if (!$result['success']) return $result;
+
+    $pdo->prepare('UPDATE mp_shops SET fast_payout_requested_at=NULL WHERE id=?')->execute([$shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'approved', NULL)")->execute([$shopId]);
+    log_audit_action($adminId, 'mp_fast_payout_approved', "Shop #{$shopId} Fast Payout request approved");
+
+    $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+    $shopOwner->execute([$shopId]);
+    if ($uid = $shopOwner->fetchColumn()) {
+        notify_user((int)$uid, '⚡ Fast Payout Approved',
+            'Your Fast Payout request was approved and is now active.',
+            'success', 'seller_payout_accounts.php');
+    }
+
+    return ['success' => true];
+}
+
+/**
+ * Admin rejects a pending request, with an optional reason shown to the
+ * seller. They can request again any time.
+ */
+function mp_reject_fast_payout_request(int $shopId, int $adminId, string $reason = ''): void {
+    global $pdo;
+    $pdo->prepare('UPDATE mp_shops SET fast_payout_requested_at=NULL, fast_payout_rejected_reason=? WHERE id=?')
+        ->execute([$reason ?: null, $shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'rejected', ?)")->execute([$shopId, $reason ?: null]);
+    log_audit_action($adminId, 'mp_fast_payout_rejected', "Shop #{$shopId} Fast Payout request rejected" . ($reason ? ": {$reason}" : ''));
+
+    $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id=?');
+    $shopOwner->execute([$shopId]);
+    if ($uid = $shopOwner->fetchColumn()) {
+        notify_user((int)$uid, 'Fast Payout Request Rejected',
+            'Your Fast Payout request was not approved.' . ($reason ? ' Reason: ' . $reason : ''),
+            'error', 'seller_payout_accounts.php');
+    }
+}
+
+/**
+ * Called from checkout.php right before a Fast-Payout split charge is
+ * initialized. Guarantees the subaccount is on 'manual' before any new,
+ * unconfirmed money can land in it — closing the gap where a shop's
+ * schedule was already flipped to 'auto' (all prior orders cleared) but a
+ * brand-new order is about to be charged. Returns false (caller must NOT
+ * use the split) if the lock couldn't be confirmed.
+ */
+function mp_ensure_fast_payout_locked(int $shopId): bool {
+    global $pdo;
+    require_once __DIR__ . '/paystack.php';
+
+    $shopStmt = $pdo->prepare('SELECT paystack_subaccount_code, subaccount_settlement_schedule FROM mp_shops WHERE id=?');
+    $shopStmt->execute([$shopId]);
+    $shop = $shopStmt->fetch();
+    if (!$shop || !$shop['paystack_subaccount_code']) return false;
+
+    if ($shop['subaccount_settlement_schedule'] === 'manual') return true;
+
+    $r = paystack_update_subaccount_schedule($shop['paystack_subaccount_code'], 'manual');
+    if (!$r['success']) return false;
+
+    $pdo->prepare("UPDATE mp_shops SET subaccount_settlement_schedule='manual' WHERE id=?")->execute([$shopId]);
+    $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'schedule_manual', 'Re-locked before new order charge')")
+        ->execute([$shopId]);
+    return true;
 }

@@ -171,7 +171,12 @@ function _check_job_chat_permission(int $myId, int $theirId, int $jobId): array 
 
 // ── Conversation management ───────────────────────────────────────────────────
 
-function get_or_create_conversation(int $myId, int $theirId, string $type, ?int $jobId): int {
+/**
+ * @return array{id:int, created:bool} — 'created' is true only when a new
+ * conversation row was inserted, so callers (e.g. accommodation_enquiry.php)
+ * can send a "new enquiry" notification once and never again on repeat visits.
+ */
+function get_or_create_conversation_ex(int $myId, int $theirId, string $type, ?int $jobId, ?int $accommodationListingId = null): array {
     global $pdo;
     $sql = "
         SELECT c.id FROM conversations c
@@ -181,17 +186,22 @@ function get_or_create_conversation(int $myId, int $theirId, string $type, ?int 
     ";
     $params = [$myId, $theirId];
     if ($jobId) { $sql .= " AND c.job_id = ?"; $params[] = $jobId; }
+    if ($accommodationListingId) { $sql .= " AND c.accommodation_listing_id = ?"; $params[] = $accommodationListingId; }
     $sql .= " LIMIT 1";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
-    if ($row = $stmt->fetch()) return (int)$row['id'];
+    if ($row = $stmt->fetch()) return ['id' => (int)$row['id'], 'created' => false];
 
-    $pdo->prepare("INSERT INTO conversations (conversation_type, job_id, created_by, status, created_at) VALUES (?,?,?,'active',NOW())")
-        ->execute([$type, $jobId, $myId]);
+    $pdo->prepare("INSERT INTO conversations (conversation_type, job_id, accommodation_listing_id, created_by, status, created_at) VALUES (?,?,?,?,'active',NOW())")
+        ->execute([$type, $jobId, $accommodationListingId, $myId]);
     $convId = (int)$pdo->lastInsertId();
     $pdo->prepare("INSERT INTO conversation_participants (conversation_id, user_id, joined_at) VALUES (?,?,NOW()),(?,?,NOW())")
         ->execute([$convId, $myId, $convId, $theirId]);
-    return $convId;
+    return ['id' => $convId, 'created' => true];
+}
+
+function get_or_create_conversation(int $myId, int $theirId, string $type, ?int $jobId): int {
+    return get_or_create_conversation_ex($myId, $theirId, $type, $jobId)['id'];
 }
 
 function can_access_conversation(int $convId, int $userId): bool {
@@ -215,10 +225,11 @@ function get_other_participant(int $convId, int $myId): ?array {
 function get_user_conversations(int $userId, int $limit = 40): array {
     global $pdo;
     $stmt = $pdo->prepare("
-        SELECT c.id, c.conversation_type, c.job_id, c.status, c.created_at,
+        SELECT c.id, c.conversation_type, c.job_id, c.accommodation_listing_id, c.status, c.created_at,
                u2.id AS other_id, u2.name AS other_name, u2.username AS other_username,
                u2.role AS other_role, u2.profile_photo AS other_photo,
                sr.title AS job_title,
+               al.title AS accommodation_title,
                (SELECT cm2.message FROM chat_messages cm2
                 WHERE cm2.conversation_id = c.id ORDER BY cm2.id DESC LIMIT 1) AS last_message,
                (SELECT cm2.message_type FROM chat_messages cm2
@@ -233,6 +244,7 @@ function get_user_conversations(int $userId, int $limit = 40): array {
         JOIN conversation_participants cp2 ON c.id = cp2.conversation_id AND cp2.user_id != ?
         JOIN users u2 ON cp2.user_id = u2.id
         LEFT JOIN service_requests sr ON c.job_id = sr.id
+        LEFT JOIN accommodation_listings al ON c.accommodation_listing_id = al.id
         ORDER BY last_at DESC, c.created_at DESC
         LIMIT ?
     ");

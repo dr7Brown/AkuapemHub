@@ -16,6 +16,9 @@ Allow: /funeral.php
 Allow: /product.php
 Allow: /shop.php
 Allow: /worker_profile_public.php
+Allow: /accommodation.php
+Allow: /accommodation_listings.php
+Allow: /accommodation_detail.php
 Allow: /about.php
 Allow: /contact.php
 Allow: /terms.php
@@ -56,6 +59,10 @@ Disallow: /seller_dashboard.php
 Disallow: /seller_boost.php
 Disallow: /seller_product_form.php
 Disallow: /request_verification.php
+Disallow: /my_accommodation.php
+Disallow: /accommodation_form.php
+Disallow: /accommodation_enquiry.php
+Disallow: /report_accommodation.php
 
 # Cart, checkout, and payment flow — never index
 Disallow: /cart.php

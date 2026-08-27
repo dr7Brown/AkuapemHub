@@ -126,6 +126,10 @@ if ($q !== '') {
 
 <main class="cm-shell">
 
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <a href="monetization.php?tab=settings" class="button button-secondary button-small">Monetize Settings</a>
+    </div>
+
     <?php if ($flash): ?>
     <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin-bottom:14px;"><?php echo sanitize($flash['message']); ?></div>
     <?php endif; ?>

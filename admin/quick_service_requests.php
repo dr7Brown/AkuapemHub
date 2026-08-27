@@ -241,7 +241,7 @@ if (!$noServicesAssigned) {
     <form method="get" style="margin-bottom:14px;display:flex;gap:8px;align-items:center;">
         <input type="hidden" name="view" value="<?php echo sanitize($view); ?>">
         <label style="font-size:.82rem;font-weight:600;">Service:</label>
-        <select name="service" onchange="this.form.submit()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:.84rem;">
+        <select name="service" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:.84rem;">
             <option value="">All assigned services</option>
             <?php foreach ($services as $s): ?>
             <option value="<?php echo $s['id']; ?>" <?php echo $filterServiceId===(int)$s['id']?'selected':''; ?>><?php echo sanitize($s['name']); ?></option>

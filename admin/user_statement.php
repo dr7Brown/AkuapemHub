@@ -80,23 +80,28 @@ if ($service === 'all' || $service === 'platform') {
         'featured_event'        => 'Featured Event Listing',
         'featured_funeral'      => 'Featured Funeral Announcement',
         'featured_news'         => 'Featured News Article',
+        'featured_accommodation'=> 'Featured Accommodation Listing',
         'mp_subscription'       => 'Marketplace Seller Subscription',
         'worker_premium'        => 'Worker Premium Subscription',
+        'accommodation_subscription' => 'Accommodation Listing Subscription',
+        'quick_service'         => 'Quick Service Fee',
         'sponsor'               => 'Sponsorship',
     ];
-    // Whitelist (not blacklist) the types that belong in this catch-all bucket —
-    // escrow & mp_order have their own dedicated sources below. A whitelist means
-    // any stray/corrupted payment_type value can never slip through and duplicate
-    // another section's row, which a NOT-IN blacklist would silently allow.
-    $allowedTypes = array_keys($paymentTypeLabels);
-    $placeholders = implode(',', array_fill(0, count($allowedTypes), '?'));
+    // Blacklist (not whitelist) the few types that have their own richer,
+    // dedicated section below (escrow & mp_order) so they're never double
+    // counted. Every other payment_type — including any new one added by a
+    // future paid feature — automatically shows up here without this file
+    // needing to be updated again; $paymentTypeLabels above only supplies a
+    // pretty label and is never used to filter which rows are included.
+    $excludedTypes = ['escrow_payment', 'escrow_with_posting', 'mp_order', 'delivery_commission'];
+    $placeholders  = implode(',', array_fill(0, count($excludedTypes), '?'));
     $stmt = $pdo->prepare(
         "SELECT * FROM platform_payments
-         WHERE user_id=? AND status='paid' AND payment_type IN ($placeholders)
+         WHERE user_id=? AND status='paid' AND payment_type NOT IN ($placeholders)
            AND paid_at BETWEEN ? AND ?
          ORDER BY paid_at DESC"
     );
-    $stmt->execute([$targetId, ...$allowedTypes, $fromSql, $toSql]);
+    $stmt->execute([$targetId, ...$excludedTypes, $fromSql, $toSql]);
     foreach ($stmt->fetchAll() as $p) {
         $label = $paymentTypeLabels[$p['payment_type']] ?? ucwords(str_replace('_', ' ', $p['payment_type']));
         $rows[] = [
@@ -347,7 +352,7 @@ $qs = http_build_query(['id' => $targetId, 'service' => $service, 'period' => $p
             <input type="hidden" name="period" value="custom">
             <div class="fg">
                 <label>Service</label>
-                <select name="service" onchange="this.form.submit()">
+                <select name="service" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()">
                     <?php foreach ($serviceLabels as $sv => $sl): ?>
                     <option value="<?php echo $sv; ?>" <?php echo $service === $sv ? 'selected' : ''; ?>><?php echo $sl; ?></option>
                     <?php endforeach; ?>

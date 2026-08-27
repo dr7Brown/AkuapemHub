@@ -602,7 +602,7 @@ function save_uploaded_document(array $file, string $relativeDir, array $allowed
         return null;
     }
 
-    $extByMime = ['application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png'];
+    $extByMime = ['application/pdf' => 'pdf', 'image/jpeg' => 'jpg', 'image/png' => 'png', 'video/mp4' => 'mp4', 'video/webm' => 'webm'];
     $ext = $extByMime[$mimeType] ?? 'bin';
 
     $uploadDir = __DIR__ . '/' . $relativeDir;
@@ -617,6 +617,134 @@ function save_uploaded_document(array $file, string $relativeDir, array $allowed
         return $relativeDir . '/' . $fileName;
     }
     return null;
+}
+
+/**
+ * Sends a real 404 status and a small, friendly "not found" page pointing
+ * back to the relevant listing, then exits. Use this instead of a bare
+ * header('Location: ...') redirect for content that's genuinely gone
+ * (deleted, unapproved, or otherwise no longer publicly viewable) — a plain
+ * redirect returns 200/302 and tells Google "temporary, keep re-checking,"
+ * so a deleted product/job/article's dead URL sits in Search Console's
+ * "not indexed" report forever instead of aging out of the index. Don't use
+ * this for access-control redirects aimed at logged-in users (e.g. "you
+ * don't have permission") — those aren't an indexing signal, just keep
+ * using flash()+redirect for them.
+ */
+function render_not_found(string $backUrl, string $backLabel, string $message = 'This page is no longer available.'): void {
+    http_response_code(404);
+    ?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Not Found — <?php echo sanitize(APP_NAME); ?></title>
+    <link rel="stylesheet" href="<?php echo rtrim(BASE_URL, '/'); ?>/assets/css/style.css">
+</head>
+<body>
+    <div style="max-width:440px;margin:80px auto;padding:0 20px;text-align:center;">
+        <div style="font-size:3rem;margin-bottom:12px;">🔍</div>
+        <h1 style="font-size:1.25rem;margin:0 0 10px;"><?php echo sanitize($message); ?></h1>
+        <p style="color:var(--muted,#6b7280);margin:0 0 24px;">It may have been removed or is no longer publicly available.</p>
+        <a href="<?php echo sanitize(rtrim(BASE_URL, '/') . '/' . ltrim($backUrl, '/')); ?>" class="button button-primary"><?php echo sanitize($backLabel); ?></a>
+    </div>
+</body>
+</html>
+    <?php
+    exit;
+}
+
+// ── Advertisements ──────────────────────────────────────────────────────────
+// Every page that shows ads goes through get_ads_for_placement() +
+// render_ad_unit() instead of its own ad-hoc query — see install.sql v080
+// for why. Valid placement keys: homepage, jobs, marketplace, accommodation,
+// delivery, markets, quick_services, events, funerals, news.
+
+/**
+ * Selects up to $limit eligible, active ads of $adType for $placement, using
+ * weighted, impression-balanced rotation instead of plain RAND(): each ad's
+ * selection weight is its admin-set `weight` divided by (impression_count+1),
+ * so an ad that's already been shown a lot — relative to its priority — is
+ * progressively less likely to keep winning, and lower-weight/newer ads
+ * still get fair rotation. Increments impression_count for whatever gets
+ * selected (this IS the "shown" event — call this right before rendering).
+ */
+function get_ads_for_placement(string $placement, $adType, int $limit = 1): array {
+    global $pdo;
+
+    // Video ads occupy the same full-width-strip footprint as banner ads, so
+    // callers pass ['banner','video'] to let both rotate together in one
+    // pool (weighted fairly against each other) rather than video only ever
+    // appearing as a fallback when no banner ad exists.
+    $adTypes = (array)$adType;
+    $typePlaceholders = implode(',', array_fill(0, count($adTypes), '?'));
+
+    $stmt = $pdo->prepare(
+        "SELECT * FROM advertisements
+         WHERE status='active' AND ad_type IN ($typePlaceholders)
+           AND (start_date IS NULL OR start_date<=CURDATE())
+           AND (end_date IS NULL OR end_date>=CURDATE())
+           AND (placements IS NULL OR placements='' OR FIND_IN_SET(?, placements))"
+    );
+    $stmt->execute([...$adTypes, $placement]);
+    $pool = $stmt->fetchAll();
+    if (!$pool) return [];
+
+    $selected = [];
+    while ($limit > 0 && $pool) {
+        $weights = [];
+        $totalWeight = 0;
+        foreach ($pool as $idx => $ad) {
+            $w = max(0.01, (float)$ad['weight'] / ((int)$ad['impression_count'] + 1));
+            $weights[$idx] = $w;
+            $totalWeight  += $w;
+        }
+        $r = mt_rand() / mt_getrandmax() * $totalWeight;
+        $cum = 0;
+        $pickIdx = array_key_first($pool);
+        foreach ($weights as $idx => $w) {
+            $cum += $w;
+            if ($r <= $cum) { $pickIdx = $idx; break; }
+        }
+        $selected[] = $pool[$pickIdx];
+        unset($pool[$pickIdx]);
+        $limit--;
+    }
+
+    $ids = array_column($selected, 'id');
+    if ($ids) {
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $pdo->prepare("UPDATE advertisements SET impression_count = impression_count + 1 WHERE id IN ($placeholders)")
+            ->execute($ids);
+    }
+
+    return $selected;
+}
+
+/**
+ * Renders one ad unit — image, video, or a text fallback if no media was
+ * uploaded — wrapped in the click-tracking link (ad_click.php). Self-styled
+ * so it drops into any page without needing page-specific CSS; wrap it in
+ * whatever spacing/container div the calling page already uses.
+ */
+function render_ad_unit(array $ad): void {
+    $href = 'ad_click.php?id=' . (int)$ad['id'];
+    echo '<div style="text-align:center;">';
+    echo '<div style="font-size:.68rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted,#6b7280);margin-bottom:5px;">Advertisement</div>';
+    if ($ad['ad_type'] === 'video' && !empty($ad['video'])) {
+        echo '<a href="' . sanitize($href) . '" target="_blank" rel="noopener sponsored" style="display:inline-block;width:100%;">'
+           . '<video src="' . sanitize($ad['video']) . '" autoplay muted loop playsinline style="width:100%;border-radius:10px;display:block;"></video>'
+           . '</a>';
+    } elseif (!empty($ad['image'])) {
+        echo '<a href="' . sanitize($href) . '" target="_blank" rel="noopener sponsored" style="display:inline-block;width:100%;">'
+           . '<img src="' . sanitize($ad['image']) . '" alt="' . sanitize($ad['title']) . '" style="width:100%;border-radius:10px;display:block;">'
+           . '</a>';
+    } else {
+        echo '<a href="' . sanitize($href) . '" target="_blank" rel="noopener sponsored" style="display:block;background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:16px;font-weight:600;color:var(--muted,#6b7280);text-decoration:none;">'
+           . sanitize($ad['title']) . '</a>';
+    }
+    echo '</div>';
 }
 
 /** Human-readable Quick Service request reference, e.g. QS-000123. */
@@ -1630,6 +1758,12 @@ function get_towns_grouped_by_district() {
     return $grouped;
 }
 
+/** Joins two optional location fields (e.g. venue + town) as "A - B", skipping whichever is blank. */
+function combine_location_parts(?string $a, ?string $b): string {
+    $parts = array_filter([trim((string)$a), trim((string)$b)], fn($v) => $v !== '');
+    return implode(' - ', $parts);
+}
+
 function get_town_name($townId) {
     global $pdo;
     if (!$townId) {
@@ -1896,7 +2030,7 @@ function sweep_marketplace_payout_releases(): int {
     global $pdo;
 
     $due = $pdo->query("
-        SELECT id, shop_id, net_amount
+        SELECT id, shop_id, net_amount, fast_payout
         FROM mp_orders
         WHERE status = 'delivered'
           AND payment_status = 'paid'
@@ -1912,24 +2046,91 @@ function sweep_marketplace_payout_releases(): int {
         $upd->execute([$order['id']]);
         if ($upd->rowCount() === 0) continue;
 
-        $pdo->prepare("UPDATE mp_shops SET pending_balance = pending_balance - ?, available_balance = available_balance + ? WHERE id = ?")
-            ->execute([$order['net_amount'], $order['net_amount'], $order['shop_id']]);
-
-        $pdo->prepare("INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())")
-            ->execute([$order['shop_id'], $order['id'], 'released_to_available', $order['net_amount']]);
-
         $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id = ?');
         $shopOwner->execute([$order['shop_id']]);
-        if ($uid = $shopOwner->fetchColumn()) {
-            notify_user((int)$uid, '💰 Funds Available for Withdrawal',
-                'GH₵ ' . number_format($order['net_amount'], 2) . ' from order #' . $order['id'] .
-                ' has moved to your available balance and can now be withdrawn.',
-                'success', 'seller_dashboard.php?tab=wallet');
+        $uid = $shopOwner->fetchColumn();
+
+        if ($order['fast_payout']) {
+            // Fast Payout: the cut already sits in the seller's Paystack
+            // subaccount (routed there by the checkout split), not the
+            // platform's balance — there's nothing to move to
+            // available_balance. It only clears pending_balance here; the
+            // actual bank payout happens once sweep_fast_payout_settlements()
+            // flips the subaccount's schedule to 'auto'.
+            $pdo->prepare("UPDATE mp_shops SET pending_balance = pending_balance - ? WHERE id = ?")
+                ->execute([$order['net_amount'], $order['shop_id']]);
+            $pdo->prepare("INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())")
+                ->execute([$order['shop_id'], $order['id'], 'auto_settled', $order['net_amount']]);
+            if ($uid) {
+                notify_user((int)$uid, '⚡ Order Cleared — Fast Payout',
+                    'GH₵ ' . number_format($order['net_amount'], 2) . ' from order #' . $order['id'] .
+                    ' has cleared its confirmation window and is queued for Fast Payout. Once every held order for this shop has cleared, it settles straight to your bank automatically — no withdrawal needed.',
+                    'success', 'seller_dashboard.php?tab=wallet');
+            }
+        } else {
+            $pdo->prepare("UPDATE mp_shops SET pending_balance = pending_balance - ?, available_balance = available_balance + ? WHERE id = ?")
+                ->execute([$order['net_amount'], $order['net_amount'], $order['shop_id']]);
+
+            $pdo->prepare("INSERT INTO mp_wallet_transactions (shop_id, order_id, type, amount, created_at) VALUES (?,?,?,?,NOW())")
+                ->execute([$order['shop_id'], $order['id'], 'released_to_available', $order['net_amount']]);
+
+            if ($uid) {
+                notify_user((int)$uid, '💰 Funds Available for Withdrawal',
+                    'GH₵ ' . number_format($order['net_amount'], 2) . ' from order #' . $order['id'] .
+                    ' has moved to your available balance and can now be withdrawn.',
+                    'success', 'seller_dashboard.php?tab=wallet');
+            }
         }
 
         log_audit_action(0, 'mp_payout_released',
             "Order #" . $order['id'] . " released GH₵ " . number_format($order['net_amount'], 2) . " to shop #" . $order['shop_id']);
 
+        $count++;
+    }
+
+    return $count;
+}
+
+/**
+ * Fast Payout, second half: flips a shop's Paystack subaccount from 'manual'
+ * to 'auto' settlement — letting Paystack pay it out to the seller's bank on
+ * its own next settlement run — but ONLY once that shop has zero orders
+ * still awaiting release. This is what actually makes Fast Payout "fast":
+ * once the last held order clears, no seller-initiated withdrawal or
+ * platform-initiated transfer is needed. See install.sql v078 for the
+ * timing/safety rationale.
+ */
+function sweep_fast_payout_settlements(): int {
+    global $pdo;
+    require_once __DIR__ . '/paystack.php';
+
+    $shops = $pdo->query("
+        SELECT id, paystack_subaccount_code FROM mp_shops
+        WHERE paystack_subaccount_code IS NOT NULL AND subaccount_settlement_schedule = 'manual'
+    ")->fetchAll();
+
+    $count = 0;
+    foreach ($shops as $shop) {
+        $outstanding = $pdo->prepare("SELECT COUNT(*) FROM mp_orders WHERE shop_id=? AND fast_payout=1 AND payment_status='paid' AND payout_released=0");
+        $outstanding->execute([$shop['id']]);
+        if ((int)$outstanding->fetchColumn() > 0) continue; // still has held cuts — stay locked
+
+        $r = paystack_update_subaccount_schedule($shop['paystack_subaccount_code'], 'auto');
+        if (!$r['success']) continue;
+
+        $pdo->prepare("UPDATE mp_shops SET subaccount_settlement_schedule='auto' WHERE id=?")->execute([$shop['id']]);
+        $pdo->prepare("INSERT INTO mp_fast_payout_log (shop_id, event, detail) VALUES (?, 'schedule_auto', 'All held orders cleared')")
+            ->execute([$shop['id']]);
+
+        $shopOwner = $pdo->prepare('SELECT user_id FROM mp_shops WHERE id = ?');
+        $shopOwner->execute([$shop['id']]);
+        if ($uid = $shopOwner->fetchColumn()) {
+            notify_user((int)$uid, '⚡ Fast Payout Settling',
+                'All your confirmed orders have cleared — your Fast Payout balance is now settling directly to your bank on Paystack\'s next settlement run.',
+                'success', 'seller_dashboard.php?tab=wallet');
+        }
+
+        log_audit_action(0, 'mp_fast_payout_schedule_auto', "Shop #{$shop['id']} subaccount flipped to AUTO settlement — held orders cleared");
         $count++;
     }
 
@@ -2219,6 +2420,7 @@ function all_complimentary_features(): array {
         'delivery_premium'                => 'Delivery Premium Subscription',
         'delivery_sponsored'              => 'Delivery Sponsored Listing',
         'delivery_verification'           => 'Delivery Rider Verification Fee',
+        'enable_paid_accommodation_listing' => 'Accommodation Listing',
     ];
 }
 
@@ -2428,6 +2630,114 @@ function eligible_promotions_for_user(int $userId, int $limit = 6): array {
     return $stmt->fetchAll();
 }
 
+// ── Sign in with Google ──────────────────────────────────────────────────────
+
+/**
+ * BASE_URL as a scheme+host-qualified URL. In production config.php defines
+ * BASE_URL as an absolute URL already ('https://akuapemconnect.com'), but
+ * the local XAMPP config deliberately leaves it root-relative ('/Akuapemconnect')
+ * — fine for every internal header('Location: ...') redirect in this app,
+ * but Google's OAuth spec requires redirect_uri to be a fully-qualified URL,
+ * so this fills in the current request's scheme+host whenever BASE_URL
+ * itself isn't already absolute.
+ */
+function absolute_base_url(): string {
+    $base = rtrim(BASE_URL, '/');
+    if (preg_match('~^https?://~i', $base)) return $base;
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    return $scheme . '://' . $host . $base;
+}
+
+/** Client ID/secret + computed redirect URI — admin-configured via
+ *  platform_settings (Admin → Monetize → Settings), same pattern as
+ *  paystack_keys() in paystack.php. */
+function google_oauth_settings(): array {
+    return [
+        'client_id'     => get_platform_setting('google_client_id', ''),
+        'client_secret' => get_platform_setting('google_client_secret', ''),
+        'redirect_uri'  => absolute_base_url() . '/google_callback.php',
+    ];
+}
+
+/** Columns every current_user()-hydrating query selects — kept in one place
+ *  so google_find_or_create_user() stays in sync with login.php/register.php. */
+function user_session_columns(): string {
+    return 'id, name, username, email, email_verified, role, phone, town_id, custom_town,
+            latitude, longitude, profile_photo, email_notifications_enabled, banned';
+}
+
+/**
+ * Matches, links, or creates a users row from a Google-verified profile
+ * (google_callback.php's userinfo response). Never trusts $googleProfile for
+ * anything except sub/email/name — no password, no role, no admin fields.
+ *
+ * @param array $googleProfile ['sub'=>string, 'email'=>string, 'email_verified'=>bool, 'name'=>string]
+ * @return array{ok:bool, error:?string, user:?array, is_new:bool}
+ */
+function google_find_or_create_user(array $googleProfile): array {
+    global $pdo;
+    $cols = user_session_columns();
+
+    $googleId = trim((string)($googleProfile['sub'] ?? ''));
+    $email    = trim((string)($googleProfile['email'] ?? ''));
+    $name     = trim((string)($googleProfile['name'] ?? '')) ?: 'Google User';
+
+    if ($googleId === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        return ['ok' => false, 'error' => 'Google did not return a valid account.', 'user' => null, 'is_new' => false];
+    }
+    // Google itself must have verified this email — otherwise an unverified
+    // alias could impersonate someone else's existing local account via the
+    // email-match path below.
+    if (empty($googleProfile['email_verified'])) {
+        return ['ok' => false, 'error' => 'Your Google account email is not verified.', 'user' => null, 'is_new' => false];
+    }
+
+    // 1. Already linked to this Google account.
+    $stmt = $pdo->prepare("SELECT $cols FROM users WHERE google_id = ?");
+    $stmt->execute([$googleId]);
+    $user = $stmt->fetch();
+    if ($user) {
+        if ($user['banned']) return ['ok' => false, 'error' => 'Your account has been blocked. Please contact support for assistance.', 'user' => null, 'is_new' => false];
+        return ['ok' => true, 'error' => null, 'user' => $user, 'is_new' => false];
+    }
+
+    // 2. Existing local account with the same (Google-verified) email — link it.
+    $stmt = $pdo->prepare("SELECT $cols FROM users WHERE email = ?");
+    $stmt->execute([$email]);
+    $user = $stmt->fetch();
+    if ($user) {
+        if ($user['banned']) return ['ok' => false, 'error' => 'Your account has been blocked. Please contact support for assistance.', 'user' => null, 'is_new' => false];
+        $pdo->prepare('UPDATE users SET google_id = ?, email_verified = 1 WHERE id = ?')->execute([$googleId, $user['id']]);
+        $user['email_verified'] = 1;
+        return ['ok' => true, 'error' => null, 'user' => $user, 'is_new' => false];
+    }
+
+    // 3. Brand-new account. username/phone/town_id left NULL — collected by
+    // complete_profile.php right after this. password_hash is a random,
+    // unguessable placeholder: required NOT NULL at the DB level, but this
+    // account can only ever log in via Google (or later set a real password
+    // through the existing forgot-password flow).
+    $randomPasswordHash = password_hash(bin2hex(random_bytes(32)), PASSWORD_BCRYPT);
+    $pdo->prepare(
+        'INSERT INTO users (name, email, password_hash, role, google_id, auth_provider, email_verified, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 1, NOW())'
+    )->execute([$name, $email, $randomPasswordHash, 'customer', $googleId, 'google']);
+    $userId = (int)$pdo->lastInsertId();
+
+    $stmt = $pdo->prepare("SELECT $cols FROM users WHERE id = ?");
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+
+    return ['ok' => true, 'error' => null, 'user' => $user, 'is_new' => true];
+}
+
+/** Whether $user (the current_user()-shaped array) still needs the
+ *  post-Google-signup complete-profile step. */
+function needs_profile_completion(array $user): bool {
+    return empty($user['username']) || empty($user['phone']) || empty($user['town_id']);
+}
+
 // ── Login rate-limiting (5 failures per IP in 15 min → lockout) ─────────────
 
 function login_rate_limit_exceeded(string $ip): bool {
@@ -2489,6 +2799,7 @@ function all_mod_permissions(): array {
             'manage_users'     => 'View, ban, and manage user accounts',
             'manage_disputes'  => 'Mediate disputes between users',
             'manage_referrals' => 'View and manage the referral programme',
+            'manage_rewards'   => 'Manage milestone rewards and review reward claims',
         ],
         'Platform' => [
             'manage_ads'            => 'Create, edit, and delete advertisements',
@@ -2508,6 +2819,12 @@ function all_mod_permissions(): array {
         ],
         'Promotions' => [
             'manage_promotions' => 'Create, edit, and manage promotional offers',
+        ],
+        'Accommodation' => [
+            'manage_accommodation' => 'Approve/verify listings, manage types & facilities, and handle reports',
+        ],
+        'Marketplace' => [
+            'manage_mp_payouts' => 'Process marketplace seller payouts — moves real money via Paystack',
         ],
     ];
 }
@@ -2836,6 +3153,18 @@ function mkt_color_shades(?string $baseHex): array {
 function get_market_system_charge(float $itemTotal): float {
     $type  = get_platform_setting('market_system_charge_type', 'flat');
     $value = (float)get_platform_setting('market_system_charge_value', '0');
+    if ($value <= 0) return 0.0;
+    return $type === 'percent' ? round($itemTotal * $value / 100, 2) : round($value, 2);
+}
+
+/**
+ * Regular marketplace checkout charge, shown to the buyer at checkout.php on
+ * top of item totals — separate from mp_commission_percent (which is taken
+ * out of the seller's side). Same flat/percent shape as get_market_system_charge().
+ */
+function get_mp_customer_charge(float $itemTotal): float {
+    $type  = get_platform_setting('mp_customer_charge_type', 'flat');
+    $value = (float)get_platform_setting('mp_customer_charge_value', '0');
     if ($value <= 0) return 0.0;
     return $type === 'percent' ? round($itemTotal * $value / 100, 2) : round($value, 2);
 }
@@ -3237,6 +3566,7 @@ function get_record_owner_id(string $type, int $id): ?int {
             'shop'             => 'SELECT user_id      FROM mp_shops WHERE id=?',
             'delivery_request' => 'SELECT customer_id  FROM delivery_requests WHERE id=?',
             'delivery_agent'   => 'SELECT user_id      FROM delivery_agents WHERE id=?',
+            'accommodation_listing' => 'SELECT user_id FROM accommodation_listings WHERE id=?',
             default            => null,
         };
         if (!$q) return null;
@@ -3288,7 +3618,7 @@ function log_audit_action($adminId, $action, $description) {
 
 function get_active_packages($table) {
     global $pdo;
-    static $allowed = ['featured_job_packages', 'worker_promotion_packages', 'verification_packages', 'job_posting_packages', 'worker_service_packages', 'worker_premium_packages', 'featured_event_packages', 'featured_funeral_packages', 'featured_news_packages', 'sponsor_packages'];
+    static $allowed = ['featured_job_packages', 'worker_promotion_packages', 'verification_packages', 'job_posting_packages', 'worker_service_packages', 'worker_premium_packages', 'featured_event_packages', 'featured_funeral_packages', 'featured_news_packages', 'sponsor_packages', 'featured_accommodation_packages'];
     if (!in_array($table, $allowed, true)) return [];
     $stmt = $pdo->query("SELECT * FROM $table WHERE status = 'active' ORDER BY price ASC");
     return $stmt->fetchAll();

@@ -60,7 +60,22 @@ define('DEFAULT_COMMISSION', 10);
 ini_set('session.cookie_httponly', 1);
 ini_set('session.cookie_samesite', 'Lax');
 ini_set('session.use_strict_mode', 1);
-ini_set('session.gc_maxlifetime', 7200); // 2-hour idle timeout
+// The REAL idle-expiry policy is auth.php's require_login() sliding window,
+// admin-configurable per role (Admin → Monetize → Session Settings, 0–10080
+// minutes / up to 7 days — see get_session_timeout_minutes()). These two ini
+// settings are just the infrastructure ceiling underneath it, so they're set
+// to that same 7-day maximum rather than something shorter that would
+// silently cap an admin's own configured value:
+//  - gc_maxlifetime: how long PHP keeps a session file on disk before it's
+//    eligible for cleanup.
+//  - cookie_lifetime: how long the browser keeps the PHPSESSID cookie. Left
+//    at its default (0) this is a session-only cookie with no Expires/Max-Age
+//    at all — most browsers (and mobile OSes reclaiming a backgrounded tab)
+//    discard it on close, which is what actually caused "logged out too
+//    often": the server-side session was still perfectly valid, the browser
+//    just didn't keep the cookie pointing to it.
+ini_set('session.gc_maxlifetime', 604800);
+ini_set('session.cookie_lifetime', 604800);
 // Only set Secure when actually on HTTPS (not localhost HTTP)
 if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
     ini_set('session.cookie_secure', 1);

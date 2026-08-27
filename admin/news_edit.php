@@ -118,6 +118,12 @@ $pageTitle = $isNew ? 'New Article' : 'Edit: ' . sanitize($article['title'] ?? '
     </header>
 
     <main class="ne-shell">
+        <?php if (!$isNew): ?>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+            <a href="../news_article.php?slug=<?php echo urlencode($article['slug']); ?>" target="_blank" class="button button-small">Preview ↗</a>
+        </div>
+        <?php endif; ?>
+
         <?php if (isset($_GET['saved'])): ?>
             <div class="alert alert-success" style="margin-bottom:16px;">Article saved successfully.</div>
         <?php endif; ?>

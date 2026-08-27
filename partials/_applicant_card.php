@@ -63,6 +63,10 @@ if (!$isTerminal) {
     <div class="card-actions" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
         <a href="worker_profile_public.php?id=<?php echo $app['worker_id']; ?>" class="button button-secondary button-small">View Profile</a>
 
+        <?php if (!empty($app['worker_phone'])): ?>
+            <a href="tel:<?php echo sanitize($app['worker_phone']); ?>" class="button button-secondary button-small">📞 <?php echo sanitize($app['worker_phone']); ?></a>
+        <?php endif; ?>
+
         <?php if ($isApproved || $appStatus === 'hired'): ?>
             <a href="chat_start.php?user_id=<?php echo $app['worker_id']; ?>&job_id=<?php echo $returnId; ?>" class="button button-secondary button-small">💬 Message</a>
         <?php endif; ?>

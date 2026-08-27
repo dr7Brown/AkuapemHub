@@ -1755,9 +1755,8 @@ CREATE TABLE IF NOT EXISTS mp_seller_subscription_plans (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 INSERT IGNORE INTO mp_seller_subscription_plans (id, name, description, duration_days, price, product_limit, status) VALUES
-(1, 'Starter', 'Up to 10 active products, basic analytics',            30, 20.00,  10, 'active'),
-(2, 'Growth',  'Up to 50 products, priority in search, analytics',     30, 50.00,  50, 'active'),
-(3, 'Pro',     'Unlimited products, featured in homepage, analytics',  30, 100.00, -1, 'active');
+(1, 'Starter', 'Up to 10 active products, basic analytics',            30, 20.00,  10, 'active');
+
 
 CREATE TABLE IF NOT EXISTS mp_seller_subscriptions (
     id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -3048,3 +3047,595 @@ CREATE TABLE IF NOT EXISTS promotion_claims (
     FOREIGN KEY (promotion_id) REFERENCES promotions(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v073  Accommodation module — Rooms/Houses + Hotels/Guest Houses, one listing
+-- engine distinguished by accommodation_types.category. Verification/approval
+-- mirrors mp_shops.verification_status + mp_products.status exactly. Enquiries
+-- reuse the existing chat system (conversations widened with a new type +
+-- accommodation_listing_id, no separate messaging built) — see
+-- accommodation_enquiry.php / chat_functions.php.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS accommodation_types (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    category   ENUM('room_house','hotel') NOT NULL,
+    name       VARCHAR(80) NOT NULL,
+    slug       VARCHAR(80) NOT NULL UNIQUE,
+    icon       VARCHAR(10) NULL,
+    status     ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    sort_order SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_acc_types_category_status (category, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO accommodation_types (category, name, slug, icon, sort_order) VALUES
+('room_house', 'Single Room',            'single-room',            '🚪', 1),
+('room_house', 'Chamber & Hall',         'chamber-and-hall',       '🚪', 2),
+('room_house', 'Self-Contained',         'self-contained',         '🏠', 3),
+('room_house', 'Apartment',              'apartment',              '🏢', 4),
+('room_house', 'Shared Room',            'shared-room',            '🛏️', 5),
+('room_house', 'Hostel',                 'hostel-room',            '🏨', 6),
+('room_house', 'Student Accommodation',  'student-accommodation',  '🎓', 7),
+('room_house', 'House',                  'house',                  '🏡', 8),
+('room_house', "Boys' Quarters",         'boys-quarters',          '🏠', 9),
+('hotel',      'Hotel',                  'hotel',                  '🏨', 1),
+('hotel',      'Guest House',            'guest-house',            '🏘️', 2),
+('hotel',      'Lodge',                  'lodge',                  '🏕️', 3),
+('hotel',      'Short-Stay Apartment',   'short-stay-apartment',   '🏢', 4),
+('hotel',      'Bed & Breakfast',        'bed-and-breakfast',      '🥐', 5),
+('hotel',      'Hostel',                 'hostel',                 '🏨', 6);
+
+CREATE TABLE IF NOT EXISTS accommodation_facilities (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(60) NOT NULL,
+    slug       VARCHAR(60) NOT NULL UNIQUE,
+    icon       VARCHAR(10) NULL,
+    status     ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    sort_order SMALLINT UNSIGNED NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO accommodation_facilities (name, slug, icon, sort_order) VALUES
+('Wi-Fi',            'wifi',            '📶', 1),
+('Parking',          'parking',         '🅿️', 2),
+('Water',            'water',           '🚰', 3),
+('Electricity',      'electricity',     '💡', 4),
+('Air Conditioning', 'air-conditioning','❄️', 5),
+('TV',               'tv',              '📺', 6),
+('Kitchen',          'kitchen',         '🍳', 7),
+('Swimming Pool',    'swimming-pool',   '🏊', 8),
+('Security',         'security',        '🔒', 9),
+('Restaurant',       'restaurant',      '🍽️', 10),
+('Laundry',          'laundry',         '🧺', 11);
+
+CREATE TABLE IF NOT EXISTS accommodation_listings (
+    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id              INT UNSIGNED NOT NULL,
+    accommodation_type_id INT UNSIGNED NOT NULL,
+    title                VARCHAR(160) NOT NULL,
+    slug                 VARCHAR(180) NOT NULL UNIQUE,
+    description          TEXT NULL,
+    town_id              INT UNSIGNED NULL,
+    area                 VARCHAR(120) NULL,
+    price                DECIMAL(10,2) NULL,
+    price_period         ENUM('night','week','month','year','negotiable','on_request') NOT NULL DEFAULT 'month',
+    facilities           TEXT NULL COMMENT 'JSON array of accommodation_facilities.id',
+    bedrooms             TINYINT UNSIGNED NULL,
+    bathrooms            TINYINT UNSIGNED NULL,
+    furnished_status     ENUM('furnished','unfurnished','partly_furnished') NULL,
+    guests_capacity      SMALLINT UNSIGNED NULL,
+    checkin_info         VARCHAR(200) NULL,
+    checkout_info        VARCHAR(200) NULL,
+    availability_status  ENUM('available','unavailable','rented','temporarily_unavailable','fully_booked') NOT NULL DEFAULT 'available',
+    verification_status  ENUM('none','pending','approved','rejected') NOT NULL DEFAULT 'none',
+    status               ENUM('draft','pending_approval','approved','rejected','archived') NOT NULL DEFAULT 'draft',
+    rejection_reason     TEXT NULL,
+    view_count           INT UNSIGNED NOT NULL DEFAULT 0,
+    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_acc_listings_status_type (status, accommodation_type_id),
+    INDEX idx_acc_listings_town (town_id),
+    INDEX idx_acc_listings_availability (availability_status),
+    INDEX idx_acc_listings_user (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (accommodation_type_id) REFERENCES accommodation_types(id),
+    FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS accommodation_images (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    listing_id  INT UNSIGNED NOT NULL,
+    image_path  VARCHAR(255) NOT NULL,
+    is_primary  TINYINT(1) NOT NULL DEFAULT 0,
+    sort_order  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_acc_images_listing (listing_id),
+    FOREIGN KEY (listing_id) REFERENCES accommodation_listings(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS accommodation_reports (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    listing_id  INT UNSIGNED NOT NULL,
+    reporter_id INT UNSIGNED NOT NULL,
+    reason      ENUM('fake','wrong_info','already_rented','scam','inappropriate','other') NOT NULL,
+    details     TEXT NULL,
+    status      ENUM('pending','reviewed','dismissed') NOT NULL DEFAULT 'pending',
+    reviewed_by INT UNSIGNED NULL,
+    reviewed_at DATETIME NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_acc_reports_listing (listing_id),
+    INDEX idx_acc_reports_status (status),
+    FOREIGN KEY (listing_id) REFERENCES accommodation_listings(id) ON DELETE CASCADE,
+    FOREIGN KEY (reporter_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Widen the existing chat system for accommodation enquiries instead of
+-- building new messaging — see chat_functions.php get_or_create_conversation().
+ALTER TABLE conversations MODIFY COLUMN conversation_type
+    ENUM('job_application','job_hired','worker_direct','direct','admin_granted','accommodation_enquiry')
+    NOT NULL DEFAULT 'direct';
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS accommodation_listing_id INT UNSIGNED NULL;
+
+-- ADD INDEX IF NOT EXISTS isn't reliably portable on real MySQL 8 (see the
+-- v050 note above) — same information_schema-guarded pattern here.
+SET @acc_conv_idx_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'conversations' AND INDEX_NAME = 'idx_conv_accommodation_listing_id'
+);
+SET @acc_conv_add_idx_sql := IF(@acc_conv_idx_exists = 0,
+    'ALTER TABLE conversations ADD INDEX idx_conv_accommodation_listing_id (accommodation_listing_id)',
+    'DO 0'
+);
+PREPARE acc_conv_idx_stmt FROM @acc_conv_add_idx_sql;
+EXECUTE acc_conv_idx_stmt;
+DEALLOCATE PREPARE acc_conv_idx_stmt;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('accommodation_enabled', '1');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v074  Accommodation — Featured Listing packages, admin-managed exactly like
+-- Featured Event/Funeral/News packages (same table shape, same generic
+-- save_package/delete_package handler in admin/monetization.php's
+-- "Community Pkgs" tab — see $communityPackageSections there).
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE accommodation_listings ADD COLUMN IF NOT EXISTS featured          TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE accommodation_listings ADD COLUMN IF NOT EXISTS featured_end_date DATE DEFAULT NULL;
+
+CREATE TABLE IF NOT EXISTS featured_accommodation_packages (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(100) NOT NULL,
+    duration_days INT NOT NULL DEFAULT 30,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO featured_accommodation_packages (id, name, duration_days, price, status) VALUES
+(1, '7 Days',  7,  15.00, 'active'),
+(2, '14 Days', 14, 25.00, 'active'),
+(3, '30 Days', 30, 40.00, 'active');
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('enable_paid_featured_accommodation', '0');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v075  Accommodation — Listing Packages: a subscription-style package that
+-- gates the ability to publish a listing at all (separate from "Featured",
+-- which only boosts visibility of an already-listable owner). Mirrors
+-- mp_seller_subscription_plans / mp_seller_subscriptions, scoped down to the
+-- fields accommodation actually needs (no image limits/badges/etc. — those
+-- are marketplace-shop-specific perks that don't apply here). Subscriptions
+-- are keyed by user_id directly since accommodation listings belong to a
+-- user, not a shop entity.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Whether a listing package is required is governed by the platform's
+-- existing Free/Hybrid/Paid monetization_mode + is_feature_paid(), the same
+-- system every other paid feature uses — not a standalone toggle. See
+-- 'enable_paid_accommodation_listing' below and admin/monetization.php's
+-- Settings tab.
+CREATE TABLE IF NOT EXISTS accommodation_listing_packages (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(100) NOT NULL,
+    description   TEXT NULL,
+    duration_days INT NOT NULL DEFAULT 30,
+    price         DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    listing_limit INT NOT NULL DEFAULT -1,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS accommodation_listing_subscriptions (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT UNSIGNED NOT NULL,
+    package_id   INT UNSIGNED NOT NULL,
+    start_date   DATE NOT NULL,
+    end_date     DATE NOT NULL,
+    price_paid   DECIMAL(10,2) NOT NULL DEFAULT 0,
+    status       ENUM('pending','active','cancelled') NOT NULL DEFAULT 'pending',
+    payment_id   INT UNSIGNED NULL,
+    activated_at DATETIME NULL,
+    cancelled_at DATETIME NULL,
+    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_acc_sub_user_status (user_id, status),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (package_id) REFERENCES accommodation_listing_packages(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('enable_paid_accommodation_listing', '0');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v076  Sign in with Google — links a users row to a Google account. NULLs
+-- don't collide under a MySQL UNIQUE index, so this is safe for every
+-- existing local-password account (google_id stays NULL for all of them).
+-- auth_provider isn't load-bearing for login logic (a random password_hash
+-- already makes local password-login impossible for a Google-only account)
+-- but is cheap to have for UI/reporting later.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(64) NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider ENUM('local','google') NOT NULL DEFAULT 'local';
+
+-- ADD INDEX/UNIQUE IF NOT EXISTS isn't reliably portable on real MySQL 8 (see
+-- the v050 note earlier in this file) — same information_schema-guarded
+-- PREPARE/EXECUTE pattern here.
+SET @google_id_idx_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND INDEX_NAME = 'uq_users_google_id'
+);
+SET @google_id_add_idx_sql := IF(@google_id_idx_exists = 0,
+    'ALTER TABLE users ADD UNIQUE KEY uq_users_google_id (google_id)',
+    'DO 0'
+);
+PREPARE google_id_idx_stmt FROM @google_id_add_idx_sql;
+EXECUTE google_id_idx_stmt;
+DEALLOCATE PREPARE google_id_idx_stmt;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('google_client_id', ''),
+('google_client_secret', '');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v077: Marketplace customer-side checkout charge
+-- Mirrors the Markets module's market_system_charge_type/value pattern
+-- (see get_market_system_charge() in functions.php) — a flat-or-percent
+-- charge shown to the buyer at checkout.php, on top of item totals, kept
+-- separate from the existing seller-side mp_commission_percent. Defaults to
+-- 0 (free) so nothing changes for existing installs until an admin opts in.
+-- No new mp_orders column needed — it already has a system_charge column
+-- (added for the Nearby Markets custom-quote flow) which this now reuses.
+-- ═══════════════════════════════════════════════════════════════════════════
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+('mp_customer_charge_type', 'flat'),
+('mp_customer_charge_value', '0');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v078: Fast Payout — opt-in Paystack subaccounts for marketplace sellers
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Phase 1: the existing wallet/ledger payout system (pending_balance /
+-- available_balance + seller-initiated Transfer withdrawals) stays the
+-- default for every shop, unchanged. A seller can opt in to "Fast Payout" on
+-- seller_payout_accounts.php, which creates a Paystack subaccount for their
+-- shop. For single-shop checkouts only (a cart spanning multiple shops still
+-- uses the standard flow — a Paystack split targets one subaccount per
+-- transaction), the seller's net cut is routed directly into that subaccount
+-- at checkout time via a transaction split, instead of the platform's own
+-- balance.
+--
+-- The subaccount is created — and kept — on Paystack settlement_schedule =
+-- 'manual', so Paystack itself never auto-pays it out on its own clock. Our
+-- existing confirmation-window sweep (sweep_marketplace_payout_releases() in
+-- functions.php) still governs every order exactly as before, including
+-- dispute pausing. A second sweep, sweep_fast_payout_settlements(), flips a
+-- shop's subaccount schedule to 'auto' (letting Paystack settle it on its own
+-- next run) only once that shop has ZERO orders still awaiting release — so
+-- money can never move before its confirmation window closes, though an
+-- already-matured order can wait a little longer if a newer, still-
+-- unconfirmed order from the same seller is blocking the flip. Any new order
+-- for that shop re-locks the schedule to 'manual' before it's charged
+-- (mp_ensure_fast_payout_locked() in marketplace_functions.php, called from
+-- checkout.php) so a fresh order's money can never ride out on an
+-- already-AUTO schedule.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS fast_payout_enabled TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS paystack_subaccount_code VARCHAR(60) DEFAULT NULL;
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS subaccount_settlement_schedule ENUM('manual','auto') NOT NULL DEFAULT 'manual';
+
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS fast_payout TINYINT(1) NOT NULL DEFAULT 0;
+
+ALTER TABLE mp_wallet_transactions MODIFY COLUMN type ENUM('sale_pending','released_to_available','withdrawal','reversal','auto_settled') NOT NULL;
+
+CREATE TABLE IF NOT EXISTS mp_fast_payout_log (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    shop_id     INT UNSIGNED NOT NULL,
+    event       ENUM('enabled','disabled','schedule_manual','schedule_auto','bank_synced') NOT NULL,
+    detail      VARCHAR(255) DEFAULT NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_mfpl_shop (shop_id),
+    FOREIGN KEY (shop_id) REFERENCES mp_shops(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 'bank_synced' logs whenever an already-enabled shop's subaccount is
+-- re-pointed at a changed default payout account (see
+-- mp_sync_fast_payout_bank_account() in marketplace_functions.php) —
+-- defensive MODIFY in case this table already exists from an earlier run
+-- of this same v078 block, before this event value was added.
+ALTER TABLE mp_fast_payout_log MODIFY COLUMN event ENUM('enabled','disabled','schedule_manual','schedule_auto','bank_synced') NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v079: Fast Payout admin controls — eligibility allowlist + optional
+-- admin-approval gate before a seller's opt-in actually activates.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Two new admin levers, both cautious-by-default so nothing changes for
+-- existing installs until an admin acts:
+--   - mp_fast_payout_module_enabled ('0') — master switch. While off, the
+--     Fast Payout section is hidden from every seller's dashboard entirely,
+--     regardless of any shop's eligibility, and checkout.php won't route a
+--     split even for an already-active shop (its held orders still wind
+--     down normally either way — this only gates NEW routing).
+--   - mp_fast_payout_requires_approval ('1') — when on, a seller clicking
+--     "Enable" only files a request (fast_payout_requested_at set); the
+--     subaccount isn't created until an admin approves it from
+--     admin/mp_payouts.php. When off, Enable activates immediately as
+--     introduced in v078.
+-- Per-shop, mp_shops.fast_payout_eligible is the actual "who can see this"
+-- allowlist — an admin must explicitly grant it before a shop's seller even
+-- sees the section, independent of the approval-gate setting above.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
+    ('mp_fast_payout_module_enabled', '0', 'Master switch — show the Fast Payout opt-in to any seller at all'),
+    ('mp_fast_payout_requires_approval', '1', 'If on, a seller enabling Fast Payout only requests it — an admin must approve before it activates');
+
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS fast_payout_eligible TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS fast_payout_requested_at DATETIME DEFAULT NULL;
+ALTER TABLE mp_shops ADD COLUMN IF NOT EXISTS fast_payout_rejected_reason VARCHAR(255) DEFAULT NULL;
+
+ALTER TABLE mp_fast_payout_log MODIFY COLUMN event ENUM('enabled','disabled','schedule_manual','schedule_auto','bank_synced','eligibility_granted','eligibility_revoked','requested','approved','rejected') NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v080: Advertisements — placement targeting, weighted/impression-balanced
+-- rotation, video ads.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Every page that shows ads used to run its own ad-hoc `ORDER BY RAND()`
+-- query with no placement awareness (any banner ad could show on any of the
+-- handful of pages that happened to be wired up) and no rotation fairness
+-- (pure luck each page load). get_ads_for_placement() in functions.php is
+-- now the one shared entry point every page uses instead — see its doc
+-- comment for the selection algorithm.
+--
+--   - placements: comma-separated placement keys (e.g. "homepage,jobs") this
+--     ad is eligible for. NULL/empty means "eligible everywhere" — the
+--     default, so every ad created before this migration keeps showing
+--     exactly where it always did.
+--   - weight: admin-set priority (higher = shown more often), combined with
+--     impression_count so lower-weight/newer ads still get fair rotation
+--     instead of being drowned out.
+--   - impression_count: incremented each time an ad is actually selected to
+--     be shown, alongside the existing click_count, so admins can see CTR.
+--   - video: path to an uploaded MP4/WebM file for ad_type='video' — shown
+--     as a muted, autoplay, looping <video> in place of the image.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE advertisements MODIFY COLUMN ad_type ENUM('banner','sponsored','video') NOT NULL DEFAULT 'banner';
+ALTER TABLE advertisements ADD COLUMN IF NOT EXISTS video VARCHAR(255) DEFAULT NULL;
+ALTER TABLE advertisements ADD COLUMN IF NOT EXISTS placements VARCHAR(255) DEFAULT NULL;
+ALTER TABLE advertisements ADD COLUMN IF NOT EXISTS weight TINYINT UNSIGNED NOT NULL DEFAULT 1;
+ALTER TABLE advertisements ADD COLUMN IF NOT EXISTS impression_count INT UNSIGNED NOT NULL DEFAULT 0;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v081: Marketplace — buyer chooses delivery method at checkout.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Previously mp_create_delivery_for_order() (marketplace_functions.php) ran
+-- unconditionally the moment a seller marked an order ready_for_delivery —
+-- there was no way for a buyer who'd rather arrange their own pickup (or
+-- meet the seller directly) to opt out of a delivery_requests row being
+-- created and posted to every delivery agent. delivery_mode, chosen once per
+-- checkout in checkout.php and stored per order, now gates that: 'platform'
+-- (default — unchanged behavior) still auto-creates the delivery request;
+-- 'self_arranged' skips it entirely, and seller_dashboard.php shows the
+-- buyer's choice instead of the (inapplicable) "Retry Delivery Request"
+-- failure state.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS delivery_mode ENUM('platform','self_arranged') NOT NULL DEFAULT 'platform';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v082: Accommodation — admin-configurable max photos per accommodation type.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- accommodation_form.php used to hard-code a max of 10 photos for every
+-- listing regardless of type. max_images on accommodation_types lets an
+-- admin set that limit per type (e.g. fewer for a Single Room, more for a
+-- Hotel) from admin/accommodation.php's Types tab.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE accommodation_types ADD COLUMN IF NOT EXISTS max_images TINYINT UNSIGNED NOT NULL DEFAULT 10;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v083: Accommodation — per-listing contact phone + optional WhatsApp.
+-- ═══════════════════════════════════════════════════════════════════════════
+-- accommodation_detail.php used to show the listing owner's account phone
+-- (users.phone) for the Call button. These two columns let the lister give
+-- out a different phone number for this listing specifically (front desk,
+-- caretaker, etc.) plus an optional WhatsApp number, shown instead of the
+-- account phone.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE accommodation_listings ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(30) NULL;
+ALTER TABLE accommodation_listings ADD COLUMN IF NOT EXISTS contact_whatsapp VARCHAR(30) NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v084: Accommodation — optional room/class label (e.g. "Standard Room",
+-- "Deluxe Room", "Executive Suite"), shown on listing cards below the title.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE accommodation_listings ADD COLUMN IF NOT EXISTS room_class VARCHAR(60) NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v083b: CRITICAL FIX — platform_payments.payment_type is a strict ENUM that
+-- was never extended when the accommodation module's two payment types were
+-- introduced (pay_accommodation_subscription.php / feature_accommodation.php
+-- both call initializePayment() with these). In this DB's non-strict SQL
+-- mode, inserting a value outside the ENUM silently stores '' instead of
+-- erroring — so those two flows were charging users via Paystack without
+-- ever recording a matching payment_type, meaning
+-- activatePurchasedFeature()'s switch (paystack.php) could never match and
+-- activate the subscription/feature the user just paid for.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
+    'featured_job','featured_worker','verification','job_post','worker_service',
+    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
+    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
+    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
+    'delivery_commission','worker_premium','sponsor','quick_service',
+    'accommodation_subscription','featured_accommodation'
+) NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v085: Marketplace — per-category toggle for the Condition (New/Used/
+-- Refurbished) strip. Some categories (e.g. digital goods, services) never
+-- have a meaningful condition, so an admin can hide the badge/filter for
+-- just those categories instead of it always showing everywhere.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE mp_categories ADD COLUMN IF NOT EXISTS show_condition TINYINT(1) NOT NULL DEFAULT 1;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v086: Funeral announcements — optional town, shown combined with the venue
+-- on listing cards ("Venue - Town"), same pattern as accommodation's
+-- area/town combination.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+ALTER TABLE funeral_announcements ADD COLUMN IF NOT EXISTS town_id INT UNSIGNED NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v087  Worker Portfolio — lets a worker showcase past work/projects on their
+-- public profile, mirroring the marketplace's shop → products relationship
+-- (worker_profiles is the "shopfront", each portfolio item is a "listing"
+-- with its own photo gallery). Managed from worker_portfolio.php /
+-- worker_portfolio_form.php, displayed on worker_profile_public.php.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS worker_portfolio_items (
+    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    worker_profile_id INT UNSIGNED NOT NULL,
+    title             VARCHAR(160) NOT NULL,
+    description       TEXT NULL,
+    sort_order        SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_wpi_worker (worker_profile_id),
+    FOREIGN KEY (worker_profile_id) REFERENCES worker_profiles(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS worker_portfolio_images (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    item_id     INT UNSIGNED NOT NULL,
+    image_path  VARCHAR(255) NOT NULL,
+    is_primary  TINYINT(1) NOT NULL DEFAULT 0,
+    sort_order  SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_wpimg_item (item_id),
+    FOREIGN KEY (item_id) REFERENCES worker_portfolio_items(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v088  Milestone Reward Claim System — sits on top of the existing points
+-- module (points_wallets/points_transactions/award_points(), unchanged).
+-- Reaching a milestone only unlocks eligibility; the user must actively
+-- submit a claim, which locks the required points immediately (a real
+-- points_transactions debit, event='reward_claim_lock') so they can never be
+-- spent twice. Admin review moves the claim through pending → under_review →
+-- approved → processing → fulfilled, or rejects/cancels it, which credits
+-- the points back (event='reward_claim_release'). See
+-- modules/rewards/service.php for the full state machine.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS reward_milestones (
+    id                 INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    title              VARCHAR(160) NOT NULL,
+    description        TEXT NULL,
+    required_points    INT UNSIGNED NOT NULL,
+    reward_type        ENUM('cash','airtime','data','physical_item','discount','voucher','badge','other') NOT NULL,
+    reward_value       DECIMAL(10,2) NULL,
+    reward_description VARCHAR(255) NOT NULL,
+    claim_frequency    ENUM('one_time','repeatable') NOT NULL DEFAULT 'one_time',
+    max_claims         INT UNSIGNED NULL COMMENT 'NULL = unlimited',
+    claims_count       INT UNSIGNED NOT NULL DEFAULT 0 COMMENT 'Active (non-rejected/cancelled) claims — maintained transactionally alongside points locking',
+    start_date         DATE NULL,
+    end_date           DATE NULL,
+    active             TINYINT(1) NOT NULL DEFAULT 1,
+    created_by         INT UNSIGNED NOT NULL,
+    created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_rm_active (active),
+    INDEX idx_rm_points (required_points),
+    FOREIGN KEY (created_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS reward_claims (
+    id                    INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    reference_code        VARCHAR(24) NOT NULL,
+    user_id               INT UNSIGNED NOT NULL,
+    milestone_id          INT UNSIGNED NOT NULL,
+    points_locked         INT UNSIGNED NOT NULL,
+    reward_type           ENUM('cash','airtime','data','physical_item','discount','voucher','badge','other') NOT NULL,
+    reward_value          DECIMAL(10,2) NULL,
+    claim_details         JSON NULL COMMENT 'Dynamic form fields captured at claim time (momo number, network, delivery address, etc.)',
+    status                ENUM('pending','under_review','approved','processing','fulfilled','rejected','cancelled') NOT NULL DEFAULT 'pending',
+    rejection_reason      VARCHAR(255) NULL,
+    admin_note            TEXT NULL,
+    fulfillment_note      TEXT NULL,
+    fulfillment_reference VARCHAR(120) NULL,
+    approved_by           INT UNSIGNED NULL,
+    approved_at           DATETIME NULL,
+    processing_at         DATETIME NULL,
+    fulfilled_at          DATETIME NULL,
+    rejected_at           DATETIME NULL,
+    cancelled_at          DATETIME NULL,
+    created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_rc_ref (reference_code),
+    INDEX idx_rc_user (user_id),
+    INDEX idx_rc_milestone (milestone_id),
+    INDEX idx_rc_status (status),
+    INDEX idx_rc_created (created_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (milestone_id) REFERENCES reward_milestones(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
+    ('rewards_enabled', '1');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v089  Dedup table for the "🎉 Milestone Reached!" push notification —
+-- hooked into award_points() (modules/referrals/service.php) via a guarded,
+-- file_exists()-checked call so it's a no-op if this module is ever removed.
+-- INSERT IGNORE against the unique key is the atomic guard against notifying
+-- twice, even under concurrent point-earning requests.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS reward_milestone_notifications (
+    id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id      INT UNSIGNED NOT NULL,
+    milestone_id INT UNSIGNED NOT NULL,
+    notified_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_rmn_user_milestone (user_id, milestone_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (milestone_id) REFERENCES reward_milestones(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v090  Deletion approval — users can no longer directly delete their own
+-- events or news articles. Clicking "Delete" now flags a deletion_requested
+-- row instead of an immediate DELETE; a moderator with approve_events/
+-- approve_news must approve it (which performs the real delete) or reject it
+-- (which clears the flag and restores the item to normal). See
+-- my_events.php/my_news.php (request) and admin/mod_action.php
+-- (approve_delete_event/news, reject_delete_event/news).
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE events ADD COLUMN IF NOT EXISTS deletion_requested TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS deletion_requested_at DATETIME NULL;
+ALTER TABLE news   ADD COLUMN IF NOT EXISTS deletion_requested TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE news   ADD COLUMN IF NOT EXISTS deletion_requested_at DATETIME NULL;
+
+-- last updated ends here
+

@@ -69,6 +69,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
                 log_audit_action($user['id'], 'event_publish', "Published event #{$tid}: {$ev['title']}");
                 log_mod_activity($user['id'], 'events', 'approve_event', $tid);
                 if ($ev['user_id']) {
+                    require_once __DIR__ . '/../modules/referrals/service.php';
+                    award_points((int)$ev['user_id'], 'event_approved', $tid);
                     notify_user($ev['user_id'], 'Your event is now live!',
                         '"' . $ev['title'] . '" has been approved and published on the events page.', 'success');
                 }

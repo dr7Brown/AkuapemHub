@@ -41,8 +41,8 @@ $hasMore  = count($all) > $perPage;
 $articles = array_slice($all, 0, $perPage);
 
 // Active ads
-$bannerAds    = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 3")->fetchAll();
-$sponsoredAds = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='sponsored' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 2")->fetchAll();
+$bannerAds    = get_ads_for_placement('news', ['banner', 'video'], 3);
+$sponsoredAds = get_ads_for_placement('news', 'sponsored', 2);
 
 // Sidebar data
 $sidebarPopular = $pdo->query("SELECT id, title, slug, view_count, published_at FROM news WHERE status='published' ORDER BY view_count DESC, COALESCE(published_at,created_at) DESC LIMIT 6")->fetchAll();
@@ -316,14 +316,7 @@ $topAd     = $bannerAds[0] ?? null;
         <!-- Top banner ad -->
         <?php if ($topAd): ?>
         <div class="nc-banner-ad">
-            <div class="nc-ad-label">Advertisement</div>
-            <a href="ad_click.php?id=<?php echo (int)$topAd['id']; ?>" target="_blank" rel="noopener sponsored">
-                <?php if ($topAd['image']): ?>
-                    <img src="<?php echo sanitize($topAd['image']); ?>" alt="<?php echo sanitize($topAd['title']); ?>">
-                <?php else: ?>
-                    <div class="nc-ad-text-fallback"><?php echo sanitize($topAd['title']); ?></div>
-                <?php endif; ?>
-            </a>
+            <?php render_ad_unit($topAd); ?>
         </div>
         <?php endif; ?>
 
@@ -438,14 +431,7 @@ $topAd     = $bannerAds[0] ?? null;
             <?php if ($sidebarAd): ?>
             <div class="nsb-widget">
                 <div class="nsb-ad">
-                    <div class="nsb-ad-label">Advertisement</div>
-                    <a href="ad_click.php?id=<?php echo (int)$sidebarAd['id']; ?>" target="_blank" rel="noopener sponsored">
-                        <?php if ($sidebarAd['image']): ?>
-                            <img src="<?php echo sanitize($sidebarAd['image']); ?>" alt="<?php echo sanitize($sidebarAd['title']); ?>">
-                        <?php else: ?>
-                            <p style="font-size:.82rem;font-weight:600;color:var(--text-muted);margin:0;"><?php echo sanitize($sidebarAd['title']); ?></p>
-                        <?php endif; ?>
-                    </a>
+                    <?php render_ad_unit($sidebarAd); ?>
                 </div>
             </div>
             <?php endif; ?>

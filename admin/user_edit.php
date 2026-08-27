@@ -349,6 +349,12 @@ $roleColors = ['admin'=>['#7c3aed','#ede9fe'],'manager'=>['#0891b2','#cffafe'],'
 
 <main class="ue-shell">
 
+    <?php if (is_admin() || has_mod_permission('view_reports')): ?>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <a href="user_statement.php?id=<?php echo $targetId; ?>" class="button button-primary button-small">📄 Statement</a>
+    </div>
+    <?php endif; ?>
+
     <?php if ($flash): ?>
     <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin-bottom:14px;"><?php echo sanitize($flash['message']); ?></div>
     <?php endif; ?>

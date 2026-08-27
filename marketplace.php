@@ -8,6 +8,7 @@ require_module_enabled('mp', 'Marketplace');
 $user     = current_user();
 $flash    = get_flash();
 $cartCount= $user ? mp_get_cart_count((int)$user['id']) : 0;
+$mpAd     = get_ads_for_placement('marketplace', ['banner', 'video'], 1)[0] ?? null;
 
 // ── Filters ────────────────────────────────────────────────────────────────
 $q         = trim($_GET['q']         ?? '');
@@ -102,11 +103,13 @@ $fetchListing = function () use ($pdo, $whereClause, $params, $orderBy, $perPage
 
     $st = $pdo->prepare(
         "SELECT mp.*, ms.shop_name, ms.slug AS shop_slug, ms.id AS shop_id,
-                mc.name AS cat_name, mc.icon AS cat_icon,
+                mc.name AS cat_name, mc.icon AS cat_icon, COALESCE(mc.show_condition,1) AS cat_show_condition,
+                ms.region AS shop_venue, t.name AS shop_town,
                 mpi.image_path AS primary_image
          FROM mp_products mp
          JOIN mp_shops ms ON mp.shop_id = ms.id
          LEFT JOIN mp_categories mc ON mp.category_id = mc.id
+         LEFT JOIN towns t ON ms.town_id = t.id
          LEFT JOIN mp_product_images mpi ON mpi.product_id = mp.id AND mpi.is_primary = 1
          WHERE $whereClause
          ORDER BY $orderBy
@@ -185,7 +188,8 @@ function mp_page_url(int $page): string {
         .mp-card-badge { font-size:.6rem; font-weight:800; padding:2px 6px; border-radius:10px; }
         .mp-card-body { padding:10px 12px 12px; flex:1; display:flex; flex-direction:column; }
         .mp-card-name { font-weight:700; font-size:.86rem; line-height:1.4; margin:0 0 4px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-        .mp-card-shop { font-size:.72rem; color:var(--text-muted,#6b7280); margin-bottom:6px; }
+        .mp-card-shop { font-size:.72rem; color:var(--text-muted,#6b7280); margin-bottom:2px; }
+        .mp-card-loc  { font-size:.72rem; color:var(--text-muted,#6b7280); margin-bottom:6px; }
         .mp-card-price { font-weight:900; font-size:.95rem; color:var(--primary,#0f766e); margin-top:auto; }
         .mp-card-orig  { font-size:.76rem; color:var(--text-muted,#6b7280); text-decoration:line-through; margin-left:4px; }
         .mp-card-cond  { font-size:.68rem; font-weight:700; padding:2px 6px; border-radius:10px; display:inline-block; margin-bottom:4px; }
@@ -254,12 +258,14 @@ function mp_page_url(int $page): string {
         <?php if ($catSlug): ?><input type="hidden" name="cat" value="<?php echo sanitize($catSlug); ?>"><?php endif; ?>
         <?php if ($q): ?><input type="hidden" name="q" value="<?php echo sanitize($q); ?>"><?php endif; ?>
 
+        <?php if (!$activeCat || $activeCat['show_condition']): ?>
         <select name="condition" onchange="this.form.submit()">
             <option value="">All Conditions</option>
             <?php foreach (['new'=>'New','used'=>'Used','refurbished'=>'Refurbished'] as $v=>$l): ?>
             <option value="<?php echo $v; ?>" <?php echo $condition===$v?'selected':''; ?>><?php echo $l; ?></option>
             <?php endforeach; ?>
         </select>
+        <?php endif; ?>
 
         <input type="number" name="min" value="<?php echo $minPrice ?: ''; ?>" placeholder="Min GHS" min="0" step="0.01" style="width:90px;">
         <input type="number" name="max" value="<?php echo $maxPrice ?: ''; ?>" placeholder="Max GHS" min="0" step="0.01" style="width:90px;">
@@ -288,6 +294,13 @@ function mp_page_url(int $page): string {
         <?php endif; ?>
     </div>
 
+    <!-- Ad -->
+    <?php if ($mpAd): ?>
+    <div style="margin:0 0 16px;">
+        <?php render_ad_unit($mpAd); ?>
+    </div>
+    <?php endif; ?>
+
     <!-- Product grid -->
     <?php if ($products): ?>
     <div class="mp-grid">
@@ -311,9 +324,14 @@ function mp_page_url(int $page): string {
                 </div>
             </div>
             <div class="mp-card-body">
+                <?php if ($p['cat_show_condition']): ?>
                 <span class="mp-card-cond" style="background:<?php echo ['new'=>'#d1fae5','used'=>'#fef3c7','refurbished'=>'#dbeafe'][$p['condition_type']]??'#f3f4f6'; ?>;color:<?php echo mp_condition_color($p['condition_type']); ?>;"><?php echo mp_condition_label($p['condition_type']); ?></span>
+                <?php endif; ?>
                 <div class="mp-card-name"><?php echo sanitize($p['name']); ?></div>
                 <div class="mp-card-shop">🏪 <?php echo sanitize(mb_substr($p['shop_name'],0,30)); ?></div>
+                <?php $mpShopLoc = combine_location_parts($p['shop_venue'], $p['shop_town']); if ($mpShopLoc): ?>
+                <div class="mp-card-loc">📍 <?php echo sanitize($mpShopLoc); ?></div>
+                <?php endif; ?>
                 <div class="mp-card-price">
                     GH&#8373; <?php echo number_format($effPrice, 2); ?><?php if (!empty($p['price_unit'])): ?> <small>/ <?php echo sanitize($p['price_unit']); ?></small><?php endif; ?>
                     <?php if ($discPct > 0): ?><span class="mp-card-orig">GH&#8373; <?php echo number_format((float)$p['price'],2); ?></span><?php endif; ?>

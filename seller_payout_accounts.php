@@ -17,6 +17,64 @@ if (!$shop) {
 
 $formError = '';
 
+// Master switch + per-shop allowlist, both admin-controlled from
+// admin/mp_payouts.php → Fast Payout tab. Section is hidden entirely — not
+// just disabled — unless both are true.
+$fastPayoutModuleEnabled    = get_platform_setting('mp_fast_payout_module_enabled', '0') === '1';
+$fastPayoutRequiresApproval = get_platform_setting('mp_fast_payout_requires_approval', '1') === '1';
+$fastPayoutVisible          = $fastPayoutModuleEnabled && (bool)$shop['fast_payout_eligible'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['fast_payout_action'])) {
+    csrf_check();
+
+    if (!$fastPayoutVisible) {
+        flash('Fast Payout is not available for this shop.', 'error');
+        header('Location: seller_payout_accounts.php');
+        exit;
+    }
+
+    if ($_POST['fast_payout_action'] === 'enable') {
+        if ($shop['fast_payout_enabled']) {
+            flash('Fast Payout is already enabled.', 'info');
+        } elseif ($shop['fast_payout_requested_at']) {
+            flash('Your Fast Payout request is already pending admin approval.', 'info');
+        } else {
+            $acctStmt = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE shop_id=? AND is_default=1');
+            $acctStmt->execute([$shop['id']]);
+            $account = $acctStmt->fetch();
+            if (!$account) {
+                $allStmt = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE shop_id=?');
+                $allStmt->execute([$shop['id']]);
+                $all = $allStmt->fetchAll();
+                if (count($all) === 1) $account = $all[0];
+            }
+
+            if (!$account) {
+                flash('Save a payout account above and mark it as default before enabling Fast Payout.', 'error');
+            } elseif ($fastPayoutRequiresApproval) {
+                mp_request_fast_payout((int)$shop['id']);
+                flash('Fast Payout request submitted — an admin will review it shortly.', 'success');
+            } else {
+                $result = mp_enable_fast_payout((int)$shop['id'], $account);
+                if ($result['success']) {
+                    flash('⚡ Fast Payout enabled! Orders for this shop (when your cart is the only shop involved) will now split your cut straight to your Paystack subaccount.', 'success');
+                } else {
+                    flash('Could not enable Fast Payout: ' . $result['error'], 'error');
+                }
+            }
+        }
+    } elseif ($_POST['fast_payout_action'] === 'cancel_request') {
+        $pdo->prepare('UPDATE mp_shops SET fast_payout_requested_at=NULL WHERE id=?')->execute([$shop['id']]);
+        flash('Fast Payout request cancelled.', 'info');
+    } elseif ($_POST['fast_payout_action'] === 'disable') {
+        mp_disable_fast_payout((int)$shop['id']);
+        flash('Fast Payout disabled. New orders will use the standard payout flow. Any orders already routed through it will still clear normally.', 'info');
+    }
+
+    header('Location: seller_payout_accounts.php');
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
@@ -62,6 +120,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($makeDefault) {
                     $pdo->prepare('UPDATE mp_payout_accounts SET is_default=0 WHERE shop_id=? AND method<>?')
                         ->execute([$shop['id'], $method]);
+                }
+
+                // If this shop has a Fast Payout subaccount — enabled, or
+                // disabled but still winding down a held balance — and this
+                // save just (re)confirmed the default payout account, keep
+                // the subaccount pointed at it. Checked on subaccount
+                // presence rather than the enabled flag, since a disabled
+                // shop can still have an un-settled balance sitting on the
+                // OLD account details until it clears.
+                if ($shop['paystack_subaccount_code']) {
+                    $curDefaultStmt = $pdo->prepare('SELECT * FROM mp_payout_accounts WHERE shop_id=? AND is_default=1');
+                    $curDefaultStmt->execute([$shop['id']]);
+                    $curDefault = $curDefaultStmt->fetch();
+                    if ($curDefault && $curDefault['method'] === $method) {
+                        mp_sync_fast_payout_bank_account((int)$shop['id'], $curDefault);
+                    }
                 }
 
                 log_audit_action((int)$user['id'], 'mp_payout_account_saved', "Shop #{$shop['id']} saved a {$method} payout account");
@@ -192,6 +266,58 @@ foreach ($accountsStmt->fetchAll() as $a) {
         </form>
         <?php endif; ?>
     </div>
+
+    <!-- Fast Payout — hidden entirely unless the admin has both switched the
+         module on and granted this specific shop eligibility. -->
+    <?php if ($fastPayoutVisible): ?>
+    <div class="pf-section">
+        <p class="pf-section-title">⚡ Fast Payout <span style="text-transform:none;font-weight:600;">(Beta, opt-in)</span></p>
+
+        <?php if ($shop['fast_payout_enabled']): ?>
+        <div class="pa-current">
+            <strong>Fast Payout is ON</strong>
+            Once an order clears its confirmation window, your cut settles straight to your default payout account above — no withdrawal step, no transfer fee.
+        </div>
+        <form method="post" action="seller_payout_accounts.php">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="fast_payout_action" value="disable">
+            <button type="submit" class="button button-secondary">Disable Fast Payout</button>
+        </form>
+
+        <?php elseif ($shop['fast_payout_requested_at']): ?>
+        <div class="pa-current" style="background:#fef3c7;">
+            <strong>⏳ Pending admin approval</strong>
+            You requested Fast Payout on <?php echo date('d M Y', strtotime($shop['fast_payout_requested_at'])); ?>. An admin will review it shortly.
+        </div>
+        <form method="post" action="seller_payout_accounts.php">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="fast_payout_action" value="cancel_request">
+            <button type="submit" class="button button-secondary">Cancel Request</button>
+        </form>
+
+        <?php else: ?>
+        <?php if (!empty($shop['fast_payout_rejected_reason'])): ?>
+        <div class="pa-current" style="background:#fee2e2;">
+            <strong>Previous request not approved</strong>
+            <?php echo sanitize($shop['fast_payout_rejected_reason']); ?>
+        </div>
+        <?php endif; ?>
+        <p class="form-hint" style="margin-bottom:12px;">
+            Skip the manual withdrawal step. When you opt in, orders where your shop is the <em>only</em> shop in the buyer's cart route your cut directly to your default payout account (above) via a Paystack subaccount. It's still held until the same confirmation window used today has passed — same buyer protection, just no manual transfer once it clears.
+            Carts that mix your shop with others still use the standard wallet flow.
+            <?php if ($fastPayoutRequiresApproval): ?>Enabling here files a request — an admin approves it before it goes live.<?php endif; ?>
+        </p>
+        <form method="post" action="seller_payout_accounts.php">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="fast_payout_action" value="enable">
+            <button type="submit" class="button button-primary" <?php echo (!$momoAccount && !$bankAccount) ? 'disabled' : ''; ?>><?php echo $fastPayoutRequiresApproval ? 'Request Fast Payout' : 'Enable Fast Payout'; ?></button>
+        </form>
+        <?php if (!$momoAccount && !$bankAccount): ?>
+        <p class="form-hint" style="margin-top:8px;">Save a Mobile Money or Bank account above first, and mark it default.</p>
+        <?php endif; ?>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
 
 </main>
 

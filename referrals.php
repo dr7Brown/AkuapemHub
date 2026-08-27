@@ -91,6 +91,7 @@ $eventLabels = [
         <div class="ref-hero">
             <p class="pts"><?php echo number_format($balance); ?></p>
             <p class="lbl">Your points balance</p>
+            <a href="my_rewards.php" class="button" style="background:#fff;color:var(--primary-dark);font-weight:700;margin-top:8px;">🎁 View Rewards</a>
         </div>
 
         <!-- Stats row -->

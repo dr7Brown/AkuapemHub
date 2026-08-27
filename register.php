@@ -89,13 +89,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isset($profilePhotoPath) && $profilePhotoPath) {
                 award_points((int)$userId, 'profile_photo');
             }
-            if (!empty($_SESSION['ref_code'])) {
-                $referrerId = referral_code_owner($_SESSION['ref_code']);
-                if ($referrerId && $referrerId !== (int)$userId) {
-                    record_referral($referrerId, (int)$userId, $_SESSION['ref_code']);
-                }
-                unset($_SESSION['ref_code']);
+            // A clicked referral link (captured to session on page load) takes
+            // priority since it's already tracked with a visit record; if the
+            // user never clicked a link at all, fall back to whatever code
+            // they typed in manually — referrals still benefit either way.
+            $refCode = $_SESSION['ref_code'] ?? '';
+            if ($refCode === '' && trim($_POST['referral_code'] ?? '') !== '') {
+                $refCode = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', trim($_POST['referral_code'])));
             }
+            if ($refCode !== '') {
+                $referrerId = referral_code_owner($refCode);
+                if ($referrerId && $referrerId !== (int)$userId) {
+                    record_referral($referrerId, (int)$userId, $refCode);
+                }
+            }
+            unset($_SESSION['ref_code']);
 
             header('Location: community.php');
             exit;
@@ -123,6 +131,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <?php if ($error): ?>
                 <div class="alert alert-error"><?php echo sanitize($error); ?></div>
             <?php endif; ?>
+
+            <a href="google_auth.php" class="button button-secondary" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;box-sizing:border-box;margin-bottom:14px;">
+                <?php require __DIR__ . '/partials/google_icon.php'; ?>
+                Continue with Google
+            </a>
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;color:var(--text-muted,#6b7280);font-size:.8rem;">
+                <span style="flex:1;height:1px;background:var(--border,#e5e7eb);"></span>
+                or create an account with email
+                <span style="flex:1;height:1px;background:var(--border,#e5e7eb);"></span>
+            </div>
 
             <label>Full name</label>
             <input type="text" name="name" required value="<?php echo sanitize($_POST['name'] ?? ''); ?>" />
@@ -161,6 +179,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <label>Profile picture <span class="meta">(optional)</span></label>
             <input type="file" name="profile_photo" accept="image/jpeg,image/png,image/webp" />
             <p class="small-note" style="text-align: left; margin-top: 4px;">Shown on your dashboard. JPEG, PNG, or WEBP, up to 5MB.</p>
+
+            <label>Referral code <span class="meta">(optional)</span></label>
+            <input type="text" name="referral_code" value="<?php echo sanitize($_POST['referral_code'] ?? ($_SESSION['ref_code'] ?? '')); ?>" placeholder="e.g. ABC123XY" style="text-transform:uppercase;" />
+            <p class="small-note" style="text-align: left; margin-top: 4px;">Were you invited by a friend? Enter their referral code so they get credit — even if you didn't use their link.</p>
 
             <div style="margin-top: 12px;">
                 <button type="submit" class="button button-primary">Create account</button>

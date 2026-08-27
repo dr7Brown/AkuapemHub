@@ -30,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'shop_se
     $phone      = trim($_POST['phone']        ?? '');
     $email      = trim($_POST['email']        ?? '');
     $region     = trim($_POST['region']       ?? '');
+    $townId     = (int)($_POST['town_id'] ?? 0) ?: null;
     $mapsLink   = trim($_POST['google_maps_link'] ?? '');
 
     if ($shopName === '') $shopError = 'Shop name is required.';
@@ -45,13 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'shop_se
     if (!$shopError) {
         try {
             if ($editingShop) {
-                $pdo->prepare('UPDATE mp_shops SET shop_name=?, description=?, phone=?, email=?, region=?, google_maps_link=?, updated_at=NOW() WHERE id=?')
-                    ->execute([$shopName, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $mapsLink ?: null, $editingShop['id']]);
+                $pdo->prepare('UPDATE mp_shops SET shop_name=?, description=?, phone=?, email=?, region=?, town_id=?, google_maps_link=?, updated_at=NOW() WHERE id=?')
+                    ->execute([$shopName, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $townId, $mapsLink ?: null, $editingShop['id']]);
                 $shopId = $editingShop['id'];
             } else {
                 $slug = mp_unique_slug($shopName, 'mp_shops', 'slug', $pdo);
-                $pdo->prepare('INSERT INTO mp_shops (user_id, shop_name, slug, description, phone, email, region, google_maps_link) VALUES (?,?,?,?,?,?,?,?)')
-                    ->execute([$user['id'], $shopName, $slug, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $mapsLink ?: null]);
+                $pdo->prepare('INSERT INTO mp_shops (user_id, shop_name, slug, description, phone, email, region, town_id, google_maps_link) VALUES (?,?,?,?,?,?,?,?,?)')
+                    ->execute([$user['id'], $shopName, $slug, $desc ?: null, $phone ?: null, $email ?: null, $region ?: null, $townId, $mapsLink ?: null]);
                 $shopId = (int)$pdo->lastInsertId();
                 $_SESSION['seller_active_shop_id'] = $shopId; // switch into the newly created shop
             }
@@ -125,9 +126,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'order_s
     if ($order && in_array($newStatus, $validTransitions[$order['status']] ?? [], true)) {
         $pdo->prepare('UPDATE mp_orders SET status=?, updated_at=NOW() WHERE id=?')->execute([$newStatus, $orderId]);
 
-        // Delivery integration: when ready_for_delivery, auto-create delivery request
+        // Delivery integration: when ready_for_delivery, auto-create delivery
+        // request — unless the buyer chose to arrange their own pickup at
+        // checkout (mp_orders.delivery_mode), in which case there's nothing
+        // to create and the seller coordinates handoff directly.
         $deliveryFailed = false;
-        if ($newStatus === 'ready_for_delivery' && !$order['delivery_request_id']) {
+        if ($newStatus === 'ready_for_delivery' && !$order['delivery_request_id'] && ($order['delivery_mode'] ?? 'platform') !== 'self_arranged') {
             $fullOrder = $pdo->prepare('SELECT * FROM mp_orders WHERE id = ?');
             $fullOrder->execute([$orderId]);
             $orderData = $fullOrder->fetch();
@@ -158,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['form'] ?? '') === 'retry_d
     if (!$shop) { flash('Create your shop first.', 'warning'); header('Location: seller_dashboard.php'); exit; }
 
     $orderId = (int)$_POST['order_id'];
-    $orderRow = $pdo->prepare("SELECT * FROM mp_orders WHERE id=? AND shop_id=? AND status='ready_for_delivery' AND delivery_request_id IS NULL");
+    $orderRow = $pdo->prepare("SELECT * FROM mp_orders WHERE id=? AND shop_id=? AND status='ready_for_delivery' AND delivery_request_id IS NULL AND delivery_mode != 'self_arranged'");
     $orderRow->execute([$orderId, $shop['id']]);
     $order = $orderRow->fetch();
 
@@ -632,6 +636,7 @@ $categories = $pdo->query('SELECT * FROM mp_categories ORDER BY sort_order, name
 
         label { font-weight:600; font-size:.86rem; display:block; margin-bottom:4px; }
         .form-group { margin-bottom:14px; }
+        .sd-desc-group .rte-editor { max-height:16.5em; }
     </style>
 </head>
 <body class="has-bottom-nav">
@@ -826,7 +831,11 @@ if ($sdOrderMarketIds) {
         🏬 <strong><?php echo sanitize($sdOrderMarket['name']); ?></strong> order — bring this to the storehouse<?php if ($sdOrderMarket['storehouse_location']): ?>: <?php echo sanitize($sdOrderMarket['storehouse_location']); ?><?php endif; ?> once you accept it. A market manager handles handoff from there — no delivery request needed.
     </div>
     <?php endif; ?>
-    <?php if ($order['status'] === 'ready_for_delivery' && !$order['delivery_request_id']): ?>
+    <?php if (($order['delivery_mode'] ?? 'platform') === 'self_arranged'): ?>
+    <div style="font-size:.78rem;padding:6px 8px;margin-top:6px;background:#e0f2fe;border-radius:6px;color:#075985;">
+        🤝 Buyer chose to arrange their own pickup — no delivery request will be created. Coordinate handoff directly with them.
+    </div>
+    <?php elseif ($order['status'] === 'ready_for_delivery' && !$order['delivery_request_id']): ?>
     <div style="font-size:.78rem;padding:6px 8px;margin-top:6px;background:#fee2e2;border-radius:6px;color:#c0392b;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
         <span>⚠️ Delivery request failed to create.</span>
         <form method="post" style="margin:0;">
@@ -1045,6 +1054,9 @@ if ($sdOrderMarketIds) {
     </div>
 </div>
 <p class="sdw-hint">💡 Funds move from Pending to Available <?php echo $confirmDaysDisplay; ?> day(s) after an order is marked delivered.</p>
+<?php if (!empty($shop['fast_payout_enabled'])): ?>
+<p class="sdw-hint">⚡ Fast Payout is on for this shop — eligible orders settle straight to your bank once cleared and won't pass through Available Balance. <a href="seller_payout_accounts.php">Manage</a></p>
+<?php endif; ?>
 
 <?php if ($pendingReleases): ?>
 <div class="sdw-panel">
@@ -1393,9 +1405,9 @@ if ($sdOrderMarketIds) {
             <label for="shop_name">Shop Name *</label>
             <input type="text" id="shop_name" name="shop_name" required value="<?php echo sanitize($_POST['shop_name'] ?? ($shop['shop_name']??'')); ?>">
         </div>
-        <div class="form-group">
+        <div class="form-group sd-desc-group">
             <label for="description">Shop Description</label>
-            <textarea id="description" name="description" rows="3" placeholder="Tell customers about your shop…"><?php echo sanitize($_POST['description'] ?? ($shop['description']??'')); ?></textarea>
+            <textarea id="description" name="description" class="rich-editor" rows="10" placeholder="Tell customers about your shop…"><?php echo $_POST['description'] ?? ($shop['description']??''); ?></textarea>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div class="form-group">
@@ -1407,8 +1419,22 @@ if ($sdOrderMarketIds) {
                 <input type="email" id="email" name="email" value="<?php echo sanitize($_POST['email'] ?? ($shop['email']??$user['email']??'')); ?>">
             </div>
             <div class="form-group">
-                <label for="region">Region / Location</label>
-                <input type="text" id="region" name="region" placeholder="e.g. Akuapem North, Eastern Region" value="<?php echo sanitize($_POST['region'] ?? ($shop['region']??'')); ?>">
+                <label for="town_id">Town</label>
+                <?php $selShopTown = $_POST['town_id'] ?? ($shop['town_id'] ?? ''); ?>
+                <select id="town_id" name="town_id">
+                    <option value="">— Select town —</option>
+                    <?php foreach (get_towns_grouped_by_district() as $district => $ts): ?>
+                    <optgroup label="<?php echo sanitize($district); ?>">
+                        <?php foreach ($ts as $t): ?>
+                        <option value="<?php echo $t['id']; ?>" <?php echo $selShopTown==$t['id']?'selected':''; ?>><?php echo sanitize($t['name']); ?></option>
+                        <?php endforeach; ?>
+                    </optgroup>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="region">Venue / Location</label>
+                <input type="text" id="region" name="region" placeholder="e.g. Near Aburi Market" value="<?php echo sanitize($_POST['region'] ?? ($shop['region']??'')); ?>">
             </div>
             <div class="form-group">
                 <label for="google_maps_link">Google Maps Pickup Link</label>
@@ -1510,6 +1536,7 @@ $verification = $verStmt->fetch() ?: null;
 
 </div><!-- /sd-shell -->
 
+<script src="assets/js/rich-editor.js"></script>
 <?php require_once __DIR__ . '/partials/bottom_nav.php'; ?>
 </body>
 </html>

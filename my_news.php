@@ -11,7 +11,7 @@ $feeAmount  = (float)get_platform_setting('news_fee_amount', '10');
 
 $errors  = [];
 $success = match($_GET['msg'] ?? '') {
-    'deleted'   => 'Article deleted.',
+    'delete_requested' => 'Deletion requested — an admin will review it shortly.',
     'updated'   => 'Article updated.',
     'submitted' => 'Article submitted and is pending admin review.',
     default     => '',
@@ -28,16 +28,20 @@ function mn_slug($pdo, $base, $excludeId = 0) {
     return $t;
 }
 
-// Delete own draft / pending_payment
+// Request deletion of own draft/pending_payment/rejected article — users can
+// no longer delete articles directly; a moderator must approve the request
+// (admin/mod_action.php: approve_delete_news/reject_delete_news).
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     csrf_check();
     $did = (int)$_POST['delete_id'];
-    $chk = $pdo->prepare("SELECT id, status FROM news WHERE id=? AND user_id=? LIMIT 1");
+    $chk = $pdo->prepare("SELECT id, title, status, deletion_requested FROM news WHERE id=? AND user_id=? LIMIT 1");
     $chk->execute([$did, $user['id']]);
     $row = $chk->fetch();
-    if ($row && in_array($row['status'], ['draft', 'pending_payment', 'rejected'])) {
-        $pdo->prepare("DELETE FROM news WHERE id=?")->execute([$did]);
-        header('Location: my_news.php?msg=deleted'); exit;
+    if ($row && !$row['deletion_requested'] && in_array($row['status'], ['draft', 'pending_payment', 'rejected'])) {
+        $pdo->prepare("UPDATE news SET deletion_requested=1, deletion_requested_at=NOW() WHERE id=?")->execute([$did]);
+        notify_moderators('approve_news', 'News Article Deletion Requested',
+            display_name($user) . ' requested deletion of "' . $row['title'] . '". Review in Admin → Your Queue.');
+        header('Location: my_news.php?msg=delete_requested'); exit;
     }
 }
 
@@ -307,19 +311,21 @@ $statusLabels = [
                                 <?php if ($art['status'] === 'pending_payment'): ?>
                                     <a href="pay_news.php?id=<?php echo (int)$art['id']; ?>" class="button button-small button-primary">Pay</a>
                                 <?php endif; ?>
-                                <?php if ($isRejected): ?>
+                                <?php if (!empty($art['deletion_requested'])): ?>
+                                    <span style="font-size:.72rem;font-weight:700;padding:4px 9px;border-radius:8px;background:#fef3c7;color:#92400e;">🗑️ Deletion pending admin review</span>
+                                <?php elseif ($isRejected): ?>
                                     <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-primary button-small" style="background:#ef4444;border-color:#ef4444;width:100%;text-align:center;display:block;margin-bottom:5px;">✏️ Fix &amp; Resubmit</a>
-                                    <form method="post" onsubmit="return confirm('Delete this article?')" style="width:100%;">
+                                    <form method="post" onsubmit="return confirm('Request deletion of this article? An admin must approve it before it is removed.')" style="width:100%;">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="delete_id" value="<?php echo (int)$art['id']; ?>">
-                                        <button class="button button-small" style="width:100%;background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
+                                        <button class="button button-small" style="width:100%;background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Request Delete</button>
                                     </form>
                                 <?php elseif (in_array($art['status'], ['draft', 'pending_payment'])): ?>
                                     <a href="my_news.php?edit=<?php echo (int)$art['id']; ?>" class="button button-small button-secondary">Edit</a>
-                                    <form method="post" onsubmit="return confirm('Delete this article?')">
+                                    <form method="post" onsubmit="return confirm('Request deletion of this article? An admin must approve it before it is removed.')">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="delete_id" value="<?php echo (int)$art['id']; ?>">
-                                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Del</button>
+                                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Request Delete</button>
                                     </form>
                                 <?php endif; ?>
                             </div>

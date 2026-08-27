@@ -57,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
         $data[$f] = trim($_POST[$f] ?? '');
         if ($data[$f] === '') $data[$f] = null;
     }
+    $townId = (int)($_POST['town_id'] ?? 0) ?: null;
     if (!$data['deceased_name']) $errors[] = 'Deceased name is required.';
     if (!$postEditId && requires_verified_email('funeral_post') && !is_email_verified()) {
         $errors[] = 'Please verify your email address before submitting an announcement.';
@@ -102,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
             $pdo->prepare(
                 "UPDATE funeral_announcements SET
                  deceased_name=?,gender=?,age=?,photograph=?,funeral_poster=?,date_of_birth=?,date_of_death=?,biography=?,
-                 wake_keeping_date=?,burial_date=?,thanksgiving_date=?,venue=?,gps_address=?,
+                 wake_keeping_date=?,burial_date=?,thanksgiving_date=?,venue=?,gps_address=?,town_id=?,
                  organizer_name=?,organizer_phone=?,organizer_email=?,google_maps_link=?,
                  status='pending',rejection_reason=NULL,updated_at=NOW()
                  WHERE id=? AND user_id=?"
@@ -110,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
                 $data['deceased_name'], $data['gender'] ?: 'male', $data['age'] ?: null,
                 $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
                 $data['wake_keeping_date'] ?: null, $data['burial_date'] ?: null, $data['thanksgiving_date'] ?: null,
-                $data['venue'], $data['gps_address'], $data['organizer_name'], $data['organizer_phone'],
+                $data['venue'], $data['gps_address'], $townId, $data['organizer_name'], $data['organizer_phone'],
                 $data['organizer_email'], $googleMapsLink, $postEditId, $user['id']
             ]);
             notify_admins_and_managers(
@@ -127,14 +128,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_submit'])) {
         $pdo->prepare(
             "INSERT INTO funeral_announcements
              (user_id, deceased_name, gender, age, photograph, funeral_poster, date_of_birth, date_of_death, biography,
-              wake_keeping_date, burial_date, thanksgiving_date, venue, gps_address,
+              wake_keeping_date, burial_date, thanksgiving_date, venue, gps_address, town_id,
               organizer_name, organizer_phone, organizer_email, google_maps_link, status, slug)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         )->execute([
             $user['id'], $data['deceased_name'], $data['gender'] ?: 'male', $data['age'] ?: null,
             $photoPath, $posterPath, $data['date_of_birth'], $data['date_of_death'], $data['biography'],
             $data['wake_keeping_date'] ?: null, $data['burial_date'] ?: null, $data['thanksgiving_date'] ?: null,
-            $data['venue'], $data['gps_address'], $data['organizer_name'], $data['organizer_phone'],
+            $data['venue'], $data['gps_address'], $townId, $data['organizer_name'], $data['organizer_phone'],
             $data['organizer_email'], $googleMapsLink, $status, $slug
         ]);
         $newId = (int)$pdo->lastInsertId();
@@ -317,6 +318,20 @@ $statusLabels = [
                 <div class="mf-field">
                     <label>Venue / Location Name</label>
                     <input type="text" name="venue" class="form-control" placeholder="Church, hall or location name" value="<?php echo $fv('venue'); ?>">
+                </div>
+                <div class="mf-field">
+                    <label>Town</label>
+                    <?php $selTownId = (int)($fp['town_id'] ?? 0); ?>
+                    <select name="town_id" class="form-control">
+                        <option value="">— Select town —</option>
+                        <?php foreach (get_towns_grouped_by_district() as $district => $ts): ?>
+                        <optgroup label="<?php echo sanitize($district); ?>">
+                            <?php foreach ($ts as $t): ?>
+                            <option value="<?php echo $t['id']; ?>" <?php echo $selTownId===(int)$t['id']?'selected':''; ?>><?php echo sanitize($t['name']); ?></option>
+                            <?php endforeach; ?>
+                        </optgroup>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
                 <div class="mf-field">
                     <label>GPS / Address</label>

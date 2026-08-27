@@ -93,6 +93,26 @@ switch ($action) {
         echo json_encode(['ok' => true, 'availability' => $av]);
         break;
 
+    // ── Delete a worker portfolio photo ───────────────────────────────────────
+    case 'delete_portfolio_image':
+        $imageId = (int)($_POST['image_id'] ?? 0);
+        $check = $pdo->prepare(
+            'SELECT wpimg.id, wpimg.item_id, wpimg.is_primary FROM worker_portfolio_images wpimg
+             JOIN worker_portfolio_items wpi ON wpimg.item_id = wpi.id
+             JOIN worker_profiles wp ON wpi.worker_profile_id = wp.id
+             WHERE wpimg.id = ? AND wp.user_id = ?'
+        );
+        $check->execute([$imageId, $user['id']]);
+        $img = $check->fetch();
+        if ($img) {
+            $pdo->prepare('DELETE FROM worker_portfolio_images WHERE id=?')->execute([$imageId]);
+            if ($img['is_primary']) {
+                $pdo->prepare('UPDATE worker_portfolio_images SET is_primary=1 WHERE item_id=? LIMIT 1')->execute([$img['item_id']]);
+            }
+        }
+        echo json_encode(['ok' => true]);
+        break;
+
     default:
         http_response_code(400);
         echo json_encode(['error' => 'Unknown action']);

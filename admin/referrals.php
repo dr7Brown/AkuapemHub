@@ -55,8 +55,13 @@ if ($tab === 'transactions') {
     $txWhere  = '';
     $txParams = [];
     if ($txSearch !== '') {
-        $txWhere = "WHERE u.name LIKE :q OR u.email LIKE :q OR pt.event LIKE :q";
-        $txParams[':q'] = '%' . $txSearch . '%';
+        // Three plain "?" placeholders, each bound separately — this app runs
+        // with PDO::ATTR_EMULATE_PREPARES=false (real server-side prepared
+        // statements), which can't bind one named parameter to more than one
+        // occurrence in the same query.
+        $txWhere = "WHERE u.name LIKE ? OR u.email LIKE ? OR pt.event LIKE ?";
+        $like = '%' . $txSearch . '%';
+        $txParams = [$like, $like, $like];
     }
 
     $txPage    = max(1, (int)($_GET['page'] ?? 1));
@@ -64,8 +69,7 @@ if ($tab === 'transactions') {
     $txOffset  = ($txPage - 1) * $txPerPage;
 
     $txCountStmt = $pdo->prepare("SELECT COUNT(*) FROM points_transactions pt JOIN users u ON u.id=pt.user_id {$txWhere}");
-    foreach ($txParams as $k => $v) $txCountStmt->bindValue($k, $v);
-    $txCountStmt->execute();
+    $txCountStmt->execute($txParams);
     $txTotal      = (int)$txCountStmt->fetchColumn();
     $txTotalPages = max(1, (int)ceil($txTotal / $txPerPage));
 
@@ -74,8 +78,7 @@ if ($tab === 'transactions') {
               {$txWhere}
               ORDER BY pt.created_at DESC LIMIT {$txPerPage} OFFSET {$txOffset}";
     $txStmt = $pdo->prepare($txSQL);
-    foreach ($txParams as $k => $v) $txStmt->bindValue($k, $v);
-    $txStmt->execute();
+    $txStmt->execute($txParams);
     $transactions = $txStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -129,6 +132,8 @@ $eventLabels = [
     'leave_review'            => 'Leave Review',
     'complete_job'            => 'Complete Job',
     'five_star_rating'        => 'Receive 5-Star Rating',
+    'news_approved'           => 'News Article Approved',
+    'event_approved'          => 'Event Approved',
 ];
 
 $groups = [
@@ -136,6 +141,7 @@ $groups = [
     'Referral Activities' => ['referral_registers','referral_email_verified','referral_first_payment'],
     'Job Activities (Client)' => ['hire_worker','mark_job_completed','leave_review'],
     'Worker Activities'   => ['complete_job','five_star_rating'],
+    'Content Activities'  => ['news_approved','event_approved'],
 ];
 ?>
 <!DOCTYPE html>
@@ -169,6 +175,9 @@ $groups = [
         .pagination a, .pagination span { padding:5px 10px; border-radius:6px; border:1px solid var(--border); text-decoration:none; font-size:.82rem; color:var(--text); }
         .pagination a:hover { background:var(--surface-muted,#f9fafb); }
         .pagination .current { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
+        .rwd-module-nav { display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }
+        .rwd-module-nav a { padding:6px 14px; border-radius:20px; background:var(--surface-muted,#f3f4f6); border:1px solid var(--border); font-size:.82rem; font-weight:700; text-decoration:none; color:var(--text-muted,#6b7280); }
+        .rwd-module-nav a.active { background:var(--primary,#0f766e); color:#fff; border-color:var(--primary,#0f766e); }
     </style>
 </head>
 <body>
@@ -183,6 +192,12 @@ $groups = [
         <?php foreach (get_flashes() as $msg): ?>
             <div class="alert alert-<?php echo sanitize($msg['type']); ?>"><?php echo $msg['message']; ?></div>
         <?php endforeach; ?>
+
+        <div class="rwd-module-nav">
+            <a href="referrals.php" class="active">🔗 Referrals &amp; Points</a>
+            <a href="reward_milestones.php">🏁 Reward Milestones</a>
+            <a href="reward_claims.php">🎁 Reward Claims</a>
+        </div>
 
         <nav class="ref-nav">
             <a href="referrals.php?tab=config"       class="<?php echo $tab==='config'       ? 'active':'' ?>">Config</a>

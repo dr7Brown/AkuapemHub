@@ -59,6 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
         }
         // Notify submitter (user-submitted article) when published
         if ($newStatus === 'published' && $row['user_id']) {
+            require_once __DIR__ . '/../modules/referrals/service.php';
+            award_points((int)$row['user_id'], 'news_approved', $tid);
             notify_user((int)$row['user_id'], 'Your article is now live!',
                 '"' . $row['title'] . '" has been reviewed and published on the news page.', 'success');
         }
@@ -193,6 +195,10 @@ $articles = $pdo->query("
     </header>
 
     <main class="an-shell">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+            <a href="news_edit.php" class="button button-primary button-small">+ New Article</a>
+        </div>
+
         <?php if (isset($_GET['saved'])):  ?><div class="alert alert-success" style="margin-bottom:12px;">Saved.</div><?php endif; ?>
         <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success" style="margin-bottom:12px;">Article deleted.</div><?php endif; ?>
 

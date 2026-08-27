@@ -1,0 +1,179 @@
+AKUAPEMCONNECT — POINTS & MILESTONE REWARDS STRATEGY
+======================================================
+Prepared as a recommendation for configuring the Referrals & Points module
+(Admin → Users → Referrals) and the Milestone Reward system
+(Admin → Users → Reward Milestones / Reward Claims).
+
+MARKETING PHILOSOPHY — WHY THESE NUMBERS
+------------------------------------------
+1. Reward GROWTH the most. A referral who actually pays for something is
+   worth more to the platform than almost any other single action — so
+   referral-conversion points should sit near the top of the earning table,
+   not the bottom.
+2. Reward TRUST-BUILDING actions generously but ONCE. Verifying your email,
+   phone, and adding a photo/ID makes every future interaction on the
+   platform safer for everyone else — pay well for it, but only the first
+   time (already enforced as "one-time" in the system).
+3. Reward QUALITY over VOLUME on repeatable actions. Anything a user could
+   spam (leaving reviews, marking jobs complete) needs a low per-action
+   value AND a daily cap, so points stay a signal of real activity, not a
+   grinding exploit.
+4. Reward CONTENT that survives admin moderation, not content that's merely
+   submitted. Points for news/events/funerals/accommodation listings should
+   only fire on approval (already how it's built) — this stops low-effort
+   or spam submissions from farming points.
+5. Keep the TOP of the ladder rare and cash-based, and the BOTTOM of the
+   ladder frequent and cheap (badges, small airtime). This makes the
+   programme feel achievable early (retention) while keeping real payout
+   cost concentrated on your most loyal, highest-LTV users.
+
+====================================================================
+PART 1 — POINTS PER ACTION
+====================================================================
+Format: Action | Points | Frequency | Daily Cap | Why
+
+ACCOUNT & TRUST (one-time — pays for the safety/quality signal once)
+---------------------------------------------------------------------
+Complete registration                      10 pts   one-time   —
+Verify email address                       10 pts   one-time   —
+Verify phone number                        10 pts   one-time   —
+Upload a profile photo                     10 pts   one-time   —
+Complete worker/ID verification badge      25 pts   one-time   —
+  → Verification is the single strongest trust signal on the platform —
+    price it like it matters.
+
+REFERRALS (your growth engine — price these HIGHEST per action)
+---------------------------------------------------------------------
+Friend registers via your link             15 pts   repeatable   —
+Referred friend verifies their email       10 pts   repeatable   —
+Referred friend makes their first payment  30 pts   repeatable   —
+  → This is the most valuable action on the whole table. A referral who
+    pays is a proven, converting customer — reward it like a marketer who
+    knows customer acquisition cost.
+
+MARKETPLACE (buying & selling)
+---------------------------------------------------------------------
+Open a shop / list first product           10 pts   one-time     —
+Complete a sale (as seller)                10 pts   repeatable   30/day
+Complete a purchase (as buyer)              5 pts   repeatable   20/day
+Leave a product review                      5 pts   repeatable   15/day
+  → Cap sales/purchases so a seller can't wash-trade points with a
+    friend's account for free rewards.
+
+JOBS & SERVICES
+---------------------------------------------------------------------
+Post a job request                          5 pts   repeatable   10/day
+Hire a worker                              10 pts   repeatable   20/day
+Mark a job completed (as client)            5 pts   repeatable   10/day
+Complete a job (as worker)                 15 pts   repeatable   30/day
+Leave a review                              5 pts   repeatable   10/day
+Receive a 5-star rating                    10 pts   repeatable   20/day
+  → Completing work (the worker side) is priced above merely hiring —
+    it's the harder, more valuable half of the transaction.
+
+COMMUNITY CONTENT (only on admin approval — never on submission)
+---------------------------------------------------------------------
+News article approved                      10 pts   repeatable   30/day
+Event approved                             10 pts   repeatable   30/day
+Funeral announcement approved               10 pts   repeatable   20/day
+Accommodation listing approved              15 pts   repeatable   30/day
+  → Accommodation is priced slightly higher — it's a newer module and
+    you want to seed supply (listings) faster than the others right now.
+
+====================================================================
+PART 2 — MILESTONE POINTS & REWARDS LADDER
+====================================================================
+Configure each of these as a separate Milestone in Admin → Reward
+Milestones. Suggested "Maximum Claims" numbers keep the top tiers scarce
+and your cash payout budget predictable — raise them later once you know
+your real earn-rate and conversion.
+
+Tier 1 — 100 pts   "Welcome Aboard"
+  Reward: Badge "New Member" + GHS 2 Airtime
+  Max claims: unlimited
+  Why: Almost anyone who verifies email+phone+photo gets here in one
+  session. It's the first taste of a real reward — keep it cheap and easy.
+
+Tier 2 — 300 pts   "Getting Started"
+  Reward: GHS 5 Airtime (or 500MB Data — let users choose by creating
+  two milestones at the same threshold with different reward_type, and
+  treating them as one-time-each so a user can only pick one)
+  Max claims: unlimited
+  Why: Reachable within the first 1–2 weeks of normal use; keeps early
+  momentum going before the bigger tiers feel far away.
+
+Tier 3 — 750 pts   "Active Member"
+  Reward: Badge "Active Member" + GHS 10 Airtime
+  Max claims: unlimited
+  Why: This is where casual users start separating from regulars —
+  reward the badge for status, and the airtime to keep it worth claiming.
+
+Tier 4 — 1,500 pts   "Community Contributor"
+  Reward: GHS 20 Cash
+  Max claims: unlimited (or cap at ~500 in your first quarter to test cost)
+  Why: First real cash tier. Achievable by one solid referral conversion
+  plus normal weekly use — a believable, motivating target.
+
+Tier 5 — 3,000 pts   "Trusted Local"
+  Reward: GHS 50 Cash
+  Max claims: 200 (raise later based on budget)
+  Why: Requires sustained activity or 2–3 successful referrals — this is
+  your "regular" tier, the users worth retaining most.
+
+Tier 6 — 5,000 pts   "AkuapemConnect Champion"
+  Reward: GHS 100 Cash
+  Max claims: 100
+  Why: Matches the example from the original spec — a genuine power-user
+  milestone. Cap it so early adopters don't drain the budget before you've
+  seen real redemption patterns.
+
+Tier 7 — 10,000 pts   "Community Ambassador"
+  Reward: GHS 250 Cash + 30-day Featured Profile/Listing boost (OTHER
+  reward_type, fulfilled by admin toggling the feature manually)
+  Max claims: 30
+  Why: Bundling a non-cash perk here (visibility) reduces cash cost per
+  claim while still feeling premium — ambassadors get promoted, not just
+  paid.
+
+Tier 8 — 20,000 pts   "Legacy Builder"
+  Reward: GHS 500 Cash + permanent "Founding Champion" badge
+  Max claims: 10 (deliberately rare)
+  Why: Your top-of-funnel showcase tier — a handful of visible, real
+  success stories you can use in marketing ("Kwame earned GHS 500 by
+  helping build the AkuapemConnect community") is worth more than the
+  payout itself.
+
+====================================================================
+BUDGET SUSTAINABILITY NOTES
+====================================================================
+- Total possible cash exposure if every Max Claims slot above were fully
+  redeemed at cash tiers only:
+      1,500 × 20   (uncapped — model this against active user count)
+    +   200 × 50   = GHS 10,000
+    +   100 × 100  = GHS 10,000
+    +    30 × 250  = GHS  7,500
+    +    10 × 500  = GHS  5,000
+    -----------------------------
+    ≈ GHS 32,500 + whatever Tier 4 costs at your real user count
+  Start Max Claims conservative (as above), watch real redemption speed
+  in Admin → Reward Claims stats for a month, then raise the caps.
+- Airtime/data tiers (1–3) are cheap per unit but should still get a
+  soft internal budget alert once monthly spend crosses a threshold you
+  pick — they scale with total user count, not just power users.
+- Review the "Points Redeemed" stat on Admin → Reward Claims monthly
+  against actual GHS paid out, to catch any reward_value misconfiguration
+  early.
+
+====================================================================
+HOW TO CONFIGURE THIS IN THE APP
+====================================================================
+1. Points per action → Admin → Users → Referrals → Config tab. Every
+   action in Part 1 already has a matching entry there (or add
+   funeral_post_approved / accommodation_post_approved as new milestones
+   if not already present) — set the Points and Daily Cap fields to match
+   this document.
+2. Milestones → Admin → Users → Reward Milestones → Add Milestone. For
+   each tier in Part 2, set Required Points, Reward Type, Reward Value,
+   Reward Description, and Maximum Claims exactly as listed.
+3. Review claims as they come in from Admin → Reward Claims (also
+   surfaced in the "⚡ Your Queue" widget on the admin dashboard).

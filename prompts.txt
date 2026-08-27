@@ -1051,32 +1051,96 @@ NEXT;
 1. dont allow spaces in username input field
 dont allow user to type space in that field.
 
+next:
+1. admin should be able to cancel orders
+2. new services added. add them to "⚡ Your Queue — 0 item pending" so admin dont miss 
+a response for long. 
+3. some services added. admin to set their "Email Verification Requirements" 
+4. admin to create listing packages for accomodation. 
+admin to mark it free or paid under monitization 
+5. fix what needs to be completed for accomodation module, its analytics .
+
+next:
+1. under admin>finance>monitization: most of the services have their tabs in the panel with 
+their various packages. i want the services/modules that aint there 
+yet to be added to those already there and add their packages, if their packages are 
+else where, then carry them here. 
+2. job posters should be able to call applicants 
+
+next:
+just as news and other sections, the events and funeral announcement section
+on the main page should have two rows each, 
+each row to be horizontally scrollable. also, their card size to be the same as the news card size. 
+
+but, maintain the size for desktop. so we get 4 card per row per screen for the desktop
+
+next:
+0. system does not give me means to create additional ads. only 1
+1. some items extends outside on mobile view at /checkout.php 
+2. let users decide if they would use akuapem connect riders(system delivery agents)
+or they will arrange for their own pickups. allow that functionality 
 
 
+next:
+0. when use picks to arrange his own delivery, delivery address and other fields relating for the akuapemconnect 
+delivery should go hidden.
+0.1 the button for creating additional ads is embedded inside the first created ad, not a good design, should be outside 
+1. add some design to "view all" button on each of the services 
+on the index page. make it look classic. 
+2. update the admin>system theme.  
+
+Next:
+0. when user opens accomodation listing to "accommodation_detail.php"
+after showing all details, if there are other accomodation listings, they should also should 
+follow, starting from listing of the same user.  
+
+1. the icon used for the whatsapp in not the whatsapp icon, change it to whatsapp icon 
+2. add class field to the accomodation listing form and display it on the listing cards 
+right below the title. ie "Standard Room, Superior Room,Deluxe Room, Junior Suite, Executive Suite, Presidential"
+3. accomodation listing cards on index page to also contain location 
+
+1. the class field added to be Bold and blue colour 
+2. admin to CRUD marketplace category 
+
+next:
+1. Use dark Green color instead of the blue 
+2. shop description field under "seller_dashboard.php?tab=setup"  should be full width wide. 
+use reachtext, limit to 10 lines. show all texts on seller dashboard 
+3. admin to set per marketplace category if Condition section/strip to show or not. per category. 
+"New, Used, Refurbished"
+4. add town name to the location on the product cards
+
+1. product cards have shop name. add shop location to it.
+format (shopname - shop location)
+2. and for accomodation listing cards add town name to area landmark
+3. do same for funeral announcement listing cards 
 
 
+instead of "Region / Location" on seller dashboard settings, 
+let him select town for one field, then enter venue/location in another field. 
+then you show "venue name - town" as the location on the product card 
 
+next:
+1.after showing related products if any, at "product.php?id=52"
+continue to have a continuous scrol of other products on the platform 
+starting from most viewed products 
+all should not load at a go, make it efficient for best user experience 
+loads as user scrolls 
 
+next:
+1. users should not be able to delete events or news. 
+when they do, admin must approve it before it gets deleted. 
+2. admin has "⚡ Your Queue — 0 items pending" add The Rewards queue to items 
+there so users reward request would be seen ontime. 
+3. allow admin to be able to grant this module to a moderator, 
+if there are other modules yet for admin to be able to grant, work on those too 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+next: 
+1. put Referral, Reward Claims, Reward Milestone all under one umbrella 
+2. add Referral field to user registration form, add it to the complete_profile.php form too so 
+when user sign up with google, they dont skip that field. make it an optional field. 
+I beleive you know the gab that field will cover, 
+when user sign up without the referral link, referrals still benefits 
 
 
 

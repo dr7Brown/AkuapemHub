@@ -10,6 +10,7 @@ $flash = get_flash();
 
 // Agent profile for the logged-in user (if any)
 $agentProfile = $user ? get_delivery_agent_for_user((int)$user['id']) : null;
+$dlAd = get_ads_for_placement('delivery', ['banner', 'video'], 1)[0] ?? null;
 
 // ── Per-user stats & deliveries ───────────────────────────────────────────────
 $myDeliveries = [];
@@ -162,6 +163,13 @@ $activeNav = 'community';
     <h1>🚚 Delivery Services</h1>
     <p>Fast, reliable parcel &amp; item delivery across Akuapem</p>
 </div>
+
+<!-- ── Ad ── -->
+<?php if ($dlAd): ?>
+<div style="max-width:600px;margin:0 auto 16px;padding:0 16px;">
+    <?php render_ad_unit($dlAd); ?>
+</div>
+<?php endif; ?>
 
 <!-- ── Stats (logged-in) ── -->
 <?php if ($user): ?>

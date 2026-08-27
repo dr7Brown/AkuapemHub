@@ -55,6 +55,7 @@ $remindersSent    = send_job_deadline_reminders();
 $escrowReleased   = sweep_expired_escrow();
 $mpOrdersAbandoned = sweep_abandoned_marketplace_orders();
 $mpPayoutsReleased = sweep_marketplace_payout_releases();
+$mpFastPayoutSettled = sweep_fast_payout_settlements();
 
 $elapsed = round((microtime(true) - $before) * 1000);
 
@@ -79,6 +80,7 @@ $summary = [
     // Marketplace payouts
     'mp_orders_abandoned'         => $mpOrdersAbandoned,
     'mp_payouts_released'         => $mpPayoutsReleased,
+    'mp_fast_payout_shops_settled' => $mpFastPayoutSettled,
 ];
 
 // Log to audit_logs
@@ -96,6 +98,7 @@ log_audit_action(
     'Escrow auto-released: ' . $escrowReleased . '. ' .
     'MP abandoned orders cancelled: ' . $mpOrdersAbandoned . '. ' .
     'MP payouts released to available balance: ' . $mpPayoutsReleased . '. ' .
+    'MP Fast Payout shops settled: ' . $mpFastPayoutSettled . '. ' .
     'MP products/shops featured expired: ' . ($beforeCounts['expired_mp_products'] + $beforeCounts['expired_mp_shops']) . '. ' .
     'MP boost orders expired: ' . $beforeCounts['expired_mp_boosts'] . '. ' .
     'MP seller subscriptions expired: ' . $beforeCounts['expired_mp_subscriptions'] . '. ' .

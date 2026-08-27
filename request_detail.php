@@ -8,8 +8,7 @@ $flash = get_flash();
 $user = current_user();
 $requestId = intval($_GET['id'] ?? 0);
 if ($requestId <= 0) {
-    header('Location: jobs.php');
-    exit;
+    render_not_found('jobs.php', 'Browse Jobs', 'Job not found.');
 }
 
 $stmt = $pdo->prepare('SELECT sr.*, c.name AS customer_name, c.username AS customer_username, c.profile_photo AS customer_photo, c.email AS customer_email, c.phone AS customer_phone, w.name AS worker_name, w.username AS worker_username, wc.name AS category_name FROM service_requests sr JOIN users c ON sr.customer_id = c.id JOIN service_categories wc ON sr.category_id = wc.id LEFT JOIN users w ON sr.assigned_worker_id = w.id WHERE sr.id = ?');
@@ -17,8 +16,7 @@ $stmt->execute([$requestId]);
 $request = $stmt->fetch();
 
 if (!$request) {
-    header('Location: jobs.php');
-    exit;
+    render_not_found('jobs.php', 'Browse Jobs', 'This job listing is no longer available.');
 }
 
 if (empty($_SESSION['viewed_job'][$request['id']])) {
@@ -46,8 +44,7 @@ $isPubliclyViewable = in_array($request['status'], ['open','partially_staffed'],
 if (!$user) {
     // Guests may view open/partially_staffed public jobs only
     if (!$isPubliclyViewable) {
-        header('Location: jobs.php');
-        exit;
+        render_not_found('jobs.php', 'Browse Jobs', 'This job listing is no longer available.');
     }
 } else {
     // A worker keeps access once they've applied/been approved, even after

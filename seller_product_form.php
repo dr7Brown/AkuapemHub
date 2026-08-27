@@ -257,11 +257,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div class="form-group">
                 <label for="category_id">Category</label>
-                <select id="category_id" name="category_id">
+                <select id="category_id" name="category_id" onchange="pfToggleCondition()">
                     <option value="">— Select category —</option>
                     <?php $selCat = $_POST['category_id'] ?? ($product['category_id'] ?? ($catalogSuggestedCategoryId ?? '')); ?>
                     <?php foreach ($categories as $c): ?>
-                    <option value="<?php echo $c['id']; ?>" <?php echo $selCat==$c['id']?'selected':''; ?>><?php echo $c['icon'].' '; ?><?php echo sanitize($c['name']); ?></option>
+                    <option value="<?php echo $c['id']; ?>" data-show-condition="<?php echo (int)$c['show_condition']; ?>" <?php echo $selCat==$c['id']?'selected':''; ?>><?php echo $c['icon'].' '; ?><?php echo sanitize($c['name']); ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -296,7 +296,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
 
         <!-- Condition -->
-        <div class="pf-section">
+        <div class="pf-section" id="pf-condition-section">
             <p class="pf-section-title">Condition</p>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
                 <?php $selCond = $_POST['condition_type'] ?? ($product['condition_type']??'new'); ?>
@@ -356,6 +356,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script>
 var CSRF = <?php echo json_encode(csrf_token()); ?>;
+function pfToggleCondition() {
+    var sel = document.getElementById('category_id');
+    var opt = sel.options[sel.selectedIndex];
+    var show = !opt || opt.value === '' || opt.dataset.showCondition !== '0';
+    document.getElementById('pf-condition-section').style.display = show ? '' : 'none';
+}
+pfToggleCondition();
 function deleteProductImage(imageId, productId, btn) {
     if (!confirm('Remove this image?')) return;
     btn.disabled = true;

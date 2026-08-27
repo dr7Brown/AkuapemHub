@@ -33,7 +33,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
 $ads    = $pdo->query("SELECT * FROM advertisements ORDER BY created_at DESC")->fetchAll();
 $total  = count($ads);
 $active = count(array_filter($ads, fn($a) => $a['status'] === 'active'));
-$totalClicks = array_sum(array_column($ads, 'click_count'));
+$totalClicks      = array_sum(array_column($ads, 'click_count'));
+$totalImpressions = array_sum(array_column($ads, 'impression_count'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -51,7 +52,7 @@ $totalClicks = array_sum(array_column($ads, 'click_count'));
         .ad-grid   { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; }
         .ad-card   { background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
         .ad-img    { aspect-ratio:16/6; overflow:hidden; background:var(--surface-muted,#f3f4f6); display:flex; align-items:center; justify-content:center; color:var(--text-muted); font-size:.85rem; }
-        .ad-img img { width:100%; height:100%; object-fit:cover; }
+        .ad-img img, .ad-img video { width:100%; height:100%; object-fit:cover; }
         .ad-body   { padding:12px 14px 14px; flex:1; display:flex; flex-direction:column; gap:6px; }
         .ad-title  { font-weight:700; font-size:.95rem; }
         .ad-meta   { font-size:.76rem; color:var(--text-muted); display:flex; gap:10px; flex-wrap:wrap; }
@@ -61,6 +62,7 @@ $totalClicks = array_sum(array_column($ads, 'click_count'));
         .badge-inactive { background:#f3f4f6; color:#6b7280; font-size:.7rem; font-weight:700; padding:2px 8px; border-radius:10px; }
         .badge-banner   { background:#dbeafe; color:#1e40af; font-size:.7rem; padding:2px 8px; border-radius:10px; }
         .badge-sponsored{ background:#fef3c7; color:#92400e; font-size:.7rem; padding:2px 8px; border-radius:10px; }
+        .badge-video    { background:#ede9fe; color:#5b21b6; font-size:.7rem; padding:2px 8px; border-radius:10px; }
     </style>
 </head>
 <body>
@@ -71,6 +73,10 @@ $totalClicks = array_sum(array_column($ads, 'click_count'));
     </header>
 
     <main class="ad-shell">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+            <a href="ads_edit.php" class="button button-primary button-small">+ New Ad</a>
+        </div>
+
         <?php if (isset($_GET['saved'])):   ?><div class="alert alert-success" style="margin-bottom:12px;">Ad status updated.</div><?php endif; ?>
         <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success" style="margin-bottom:12px;">Ad deleted.</div><?php endif; ?>
 
@@ -78,7 +84,9 @@ $totalClicks = array_sum(array_column($ads, 'click_count'));
             <div class="ad-stat"><strong><?php echo $total; ?></strong><span>Total Ads</span></div>
             <div class="ad-stat"><strong><?php echo $active; ?></strong><span>Active</span></div>
             <div class="ad-stat"><strong><?php echo $total - $active; ?></strong><span>Inactive</span></div>
+            <div class="ad-stat"><strong><?php echo number_format($totalImpressions); ?></strong><span>Impressions</span></div>
             <div class="ad-stat"><strong><?php echo number_format($totalClicks); ?></strong><span>Total Clicks</span></div>
+            <div class="ad-stat"><strong><?php echo $totalImpressions > 0 ? round($totalClicks / $totalImpressions * 100, 2) . '%' : '—'; ?></strong><span>Overall CTR</span></div>
         </div>
 
         <?php if (!$ads): ?>
@@ -86,12 +94,19 @@ $totalClicks = array_sum(array_column($ads, 'click_count'));
         <?php else: ?>
         <div class="ad-grid">
             <?php foreach ($ads as $ad): ?>
+            <?php
+                $cardImpressions = (int)$ad['impression_count'];
+                $cardCtr = $cardImpressions > 0 ? round((int)$ad['click_count'] / $cardImpressions * 100, 2) . '%' : '—';
+                $cardPlacements = array_filter(explode(',', $ad['placements'] ?? ''));
+            ?>
             <div class="ad-card">
                 <div class="ad-img">
-                    <?php if ($ad['image']): ?>
+                    <?php if ($ad['ad_type'] === 'video' && $ad['video']): ?>
+                        <video src="../<?php echo sanitize($ad['video']); ?>" muted loop playsinline></video>
+                    <?php elseif ($ad['image']): ?>
                         <img src="../<?php echo sanitize($ad['image']); ?>" alt="<?php echo sanitize($ad['title']); ?>">
                     <?php else: ?>
-                        No image
+                        No media
                     <?php endif; ?>
                 </div>
                 <div class="ad-body">
@@ -99,7 +114,15 @@ $totalClicks = array_sum(array_column($ads, 'click_count'));
                     <div class="ad-meta">
                         <span class="badge-<?php echo $ad['status']; ?>"><?php echo $ad['status']; ?></span>
                         <span class="badge-<?php echo $ad['ad_type']; ?>"><?php echo $ad['ad_type']; ?></span>
-                        <span>👆 <?php echo number_format((int)$ad['click_count']); ?> clicks</span>
+                        <span>⚖️ weight <?php echo (int)$ad['weight']; ?></span>
+                    </div>
+                    <div class="ad-meta">
+                        <span>👁️ <?php echo number_format($cardImpressions); ?></span>
+                        <span>👆 <?php echo number_format((int)$ad['click_count']); ?></span>
+                        <span><?php echo $cardCtr; ?> CTR</span>
+                    </div>
+                    <div style="font-size:.74rem;color:var(--text-muted);">
+                        <?php echo $cardPlacements ? sanitize(implode(', ', $cardPlacements)) : 'All placements'; ?>
                     </div>
                     <?php if ($ad['destination_url']): ?>
                         <div class="ad-url"><?php echo sanitize(mb_substr($ad['destination_url'], 0, 50)) . (strlen($ad['destination_url']) > 50 ? '…' : ''); ?></div>

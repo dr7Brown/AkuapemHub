@@ -49,7 +49,9 @@ function funeral_cards($pdo, array $filters, int $page, int $perPage, bool $feat
     };
 
     $whereClause = 'WHERE ' . implode(' AND ', $where);
-    $sql = "SELECT fa.* FROM funeral_announcements fa $whereClause
+    $sql = "SELECT fa.*, t.name AS town_name FROM funeral_announcements fa
+            LEFT JOIN towns t ON fa.town_id = t.id
+            $whereClause
             ORDER BY $orderBy
             LIMIT " . (int)$perPage . " OFFSET " . (int)$offset;
     $stmt = $pdo->prepare($sql);
@@ -96,7 +98,7 @@ $cards = funeral_cards($pdo, $activeFilters, $page, $perPage);
 $today           = date('Y-m-d');
 $sidebarEvents   = $pdo->query("SELECT title, slug, start_date, start_time FROM events WHERE status='published' AND start_date >= '$today' ORDER BY (featured=1 AND (featured_end_date IS NULL OR featured_end_date>=CURDATE())) DESC, start_date ASC LIMIT 5")->fetchAll();
 $sidebarNews     = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 4")->fetchAll();
-$sidebarAd       = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$sidebarAd       = get_ads_for_placement('funerals', ['banner', 'video'], 1)[0] ?? null;
 
 if ($isAjax) {
     foreach ($cards as $fa): ?>
@@ -118,8 +120,8 @@ if ($isAjax) {
                 <?php if ($fa['burial_date']): ?>
                 <p class="fa-card-date">⚰️ <?php echo date('D, d M Y', strtotime($fa['burial_date'])); ?></p>
                 <?php endif; ?>
-                <?php if ($fa['venue']): ?>
-                <p class="fa-card-venue">📍 <?php echo sanitize(mb_substr($fa['venue'], 0, 60)); ?></p>
+                <?php $faLoc = combine_location_parts($fa['venue'], $fa['town_name'] ?? null); if ($faLoc): ?>
+                <p class="fa-card-venue">📍 <?php echo sanitize(mb_substr($faLoc, 0, 60)); ?></p>
                 <?php endif; ?>
                 <span class="fa-card-btn">View Details →</span>
             </div>
@@ -335,8 +337,8 @@ if ($isAjax) {
                     <?php if ($fa['burial_date']): ?>
                     <div class="fa-featured-meta">⚰️ <?php echo date('D, d M Y', strtotime($fa['burial_date'])); ?></div>
                     <?php endif; ?>
-                    <?php if ($fa['venue']): ?>
-                    <div class="fa-featured-meta">📍 <?php echo sanitize(mb_substr($fa['venue'],0,50)); ?></div>
+                    <?php $faFeatLoc = combine_location_parts($fa['venue'], $fa['town_name'] ?? null); if ($faFeatLoc): ?>
+                    <div class="fa-featured-meta">📍 <?php echo sanitize(mb_substr($faFeatLoc,0,50)); ?></div>
                     <?php endif; ?>
                     <a href="funeral.php?slug=<?php echo urlencode($fa['slug']); ?>" class="fa-featured-link">View Details →</a>
                 </div>
@@ -363,7 +365,7 @@ if ($isAjax) {
                     <p class="fa-card-name"><?php echo sanitize($fa['deceased_name']); ?></p>
                     <?php if ($fa['age']): ?><p class="fa-card-age">Age <?php echo (int)$fa['age']; ?></p><?php endif; ?>
                     <?php if ($fa['burial_date']): ?><p class="fa-card-date">⚰️ <?php echo date('D, d M Y', strtotime($fa['burial_date'])); ?></p><?php endif; ?>
-                    <?php if ($fa['venue']): ?><p class="fa-card-venue">📍 <?php echo sanitize(mb_substr($fa['venue'],0,50)); ?></p><?php endif; ?>
+                    <?php $faGridLoc = combine_location_parts($fa['venue'], $fa['town_name'] ?? null); if ($faGridLoc): ?><p class="fa-card-venue">📍 <?php echo sanitize(mb_substr($faGridLoc,0,50)); ?></p><?php endif; ?>
                     <span class="fa-card-btn">View Details →</span>
                 </div>
             </a>
@@ -449,14 +451,7 @@ if ($isAjax) {
     <?php if ($sidebarAd): ?>
     <div class="nsb-widget">
         <div class="nsb-ad">
-            <div class="nsb-ad-label">Advertisement</div>
-            <a href="ad_click.php?id=<?php echo (int)$sidebarAd['id']; ?>" target="_blank" rel="noopener sponsored">
-                <?php if ($sidebarAd['image']): ?>
-                    <img src="<?php echo sanitize($sidebarAd['image']); ?>" alt="<?php echo sanitize($sidebarAd['title']); ?>">
-                <?php else: ?>
-                    <p style="font-size:.82rem;font-weight:600;color:var(--muted,#6b7280);margin:0;"><?php echo sanitize($sidebarAd['title']); ?></p>
-                <?php endif; ?>
-            </a>
+            <?php render_ad_unit($sidebarAd); ?>
         </div>
     </div>
     <?php endif; ?>

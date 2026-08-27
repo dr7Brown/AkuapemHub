@@ -11,7 +11,7 @@ $feeAmount  = (float)get_platform_setting('event_fee_amount', '15');
 
 $errors  = [];
 $success = match($_GET['msg'] ?? '') {
-    'deleted'   => 'Event deleted.',
+    'delete_requested' => 'Deletion requested — an admin will review it shortly.',
     'updated'   => 'Event updated. It is under review and will be published once approved.',
     'submitted' => 'Event submitted! It will appear on the site once an admin publishes it.',
     default     => '',
@@ -28,16 +28,20 @@ function ev_slug($pdo, $base, $excludeId = 0) {
     return $t;
 }
 
-// Delete own draft/pending_payment/cancelled submission
+// Request deletion of own draft/pending_payment/cancelled/rejected submission —
+// users can no longer delete events directly; a moderator must approve the
+// request (admin/mod_action.php: approve_delete_event/reject_delete_event).
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     csrf_check();
     $did = (int)$_POST['delete_id'];
-    $check = $pdo->prepare("SELECT id, status FROM events WHERE id=? AND user_id=? LIMIT 1");
+    $check = $pdo->prepare("SELECT id, title, status, deletion_requested FROM events WHERE id=? AND user_id=? LIMIT 1");
     $check->execute([$did, $user['id']]);
     $row = $check->fetch();
-    if ($row && in_array($row['status'], ['pending_payment','draft','cancelled','rejected'])) {
-        $pdo->prepare("DELETE FROM events WHERE id=?")->execute([$did]);
-        header('Location: my_events.php?msg=deleted'); exit;
+    if ($row && !$row['deletion_requested'] && in_array($row['status'], ['pending_payment','draft','cancelled','rejected'])) {
+        $pdo->prepare("UPDATE events SET deletion_requested=1, deletion_requested_at=NOW() WHERE id=?")->execute([$did]);
+        notify_moderators('approve_events', 'Event Deletion Requested',
+            display_name($user) . ' requested deletion of "' . $row['title'] . '". Review in Admin → Your Queue.');
+        header('Location: my_events.php?msg=delete_requested'); exit;
     }
 }
 
@@ -400,14 +404,21 @@ $dt = fn($k) => $editEvent[$k] ?? $_errPost[$k] ?? '';
                                 <?php if ($ev['status'] === 'pending_payment'): ?>
                                     <a href="pay_event.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">Pay</a>
                                 <?php endif; ?>
-                                <?php if ($ev['status'] === 'rejected'): ?>
+                                <?php if (!empty($ev['deletion_requested'])): ?>
+                                    <span style="font-size:.72rem;font-weight:700;padding:4px 9px;border-radius:8px;background:#fef3c7;color:#92400e;">🗑️ Deletion pending admin review</span>
+                                <?php elseif ($ev['status'] === 'rejected'): ?>
                                     <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-primary button-small" style="background:#ef4444;border-color:#ef4444;">✏️ Fix &amp; Resubmit</a>
-                                <?php elseif (in_array($ev['status'], ['pending_payment','draft','cancelled'])): ?>
-                                    <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-small button-secondary">Edit</a>
-                                    <form method="post" onsubmit="return confirm('Delete this event?')">
+                                    <form method="post" onsubmit="return confirm('Request deletion of this event? An admin must approve it before it is removed.')">
                                         <?php echo csrf_field(); ?>
                                         <input type="hidden" name="delete_id" value="<?php echo (int)$ev['id']; ?>">
-                                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Del</button>
+                                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Request Delete</button>
+                                    </form>
+                                <?php elseif (in_array($ev['status'], ['pending_payment','draft','cancelled'])): ?>
+                                    <a href="my_events.php?edit=<?php echo (int)$ev['id']; ?>" class="button button-small button-secondary">Edit</a>
+                                    <form method="post" onsubmit="return confirm('Request deletion of this event? An admin must approve it before it is removed.')">
+                                        <?php echo csrf_field(); ?>
+                                        <input type="hidden" name="delete_id" value="<?php echo (int)$ev['id']; ?>">
+                                        <button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Request Delete</button>
                                     </form>
                                 <?php endif; ?>
                             </div>

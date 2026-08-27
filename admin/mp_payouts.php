@@ -5,7 +5,8 @@ require_once __DIR__ . '/../marketplace_functions.php';
 require_once __DIR__ . '/../paystack.php';
 
 require_login();
-if (!is_admin()) { header('Location: index.php'); exit; }
+if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
+require_mod_permission('manage_mp_payouts');
 
 $adminUser = current_user();
 $tab       = $_GET['tab'] ?? 'pending';
@@ -124,6 +125,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         flash('Payout rejected.', 'info');
     }
 
+    // ── Fast Payout: settings, eligibility allowlist, request approval ────────
+    if ($postAction === 'save_fast_payout_settings') {
+        set_platform_setting('mp_fast_payout_module_enabled', isset($_POST['mp_fast_payout_module_enabled']) ? '1' : '0');
+        set_platform_setting('mp_fast_payout_requires_approval', isset($_POST['mp_fast_payout_requires_approval']) ? '1' : '0');
+        log_audit_action($adminUser['id'], 'mp_fast_payout_settings_save', 'Updated Fast Payout module settings');
+        flash('Fast Payout settings saved.', 'success');
+    }
+
+    if ($postAction === 'grant_fast_payout_eligibility' && !empty($_POST['shop_ids'])) {
+        $grantedCount = 0;
+        foreach ((array)$_POST['shop_ids'] as $sid) {
+            $sid = (int)$sid;
+            if ($sid > 0) {
+                mp_grant_fast_payout_eligibility($sid, $adminUser['id']);
+                $grantedCount++;
+            }
+        }
+        flash($grantedCount . ' shop' . ($grantedCount === 1 ? '' : 's') . ' granted Fast Payout eligibility.', 'success');
+    }
+
+    if ($postAction === 'revoke_fast_payout_eligibility' && !empty($_POST['shop_id'])) {
+        mp_revoke_fast_payout_eligibility((int)$_POST['shop_id'], $adminUser['id']);
+        flash('Shop\'s Fast Payout eligibility revoked.', 'info');
+    }
+
+    if ($postAction === 'approve_fast_payout' && !empty($_POST['shop_id'])) {
+        $result = mp_approve_fast_payout_request((int)$_POST['shop_id'], $adminUser['id']);
+        if ($result['success']) {
+            flash('Fast Payout request approved and activated.', 'success');
+        } else {
+            flash('Could not approve: ' . $result['error'], 'error');
+        }
+    }
+
+    if ($postAction === 'reject_fast_payout' && !empty($_POST['shop_id'])) {
+        mp_reject_fast_payout_request((int)$_POST['shop_id'], $adminUser['id'], trim($_POST['admin_notes'] ?? ''));
+        flash('Fast Payout request rejected.', 'info');
+    }
+
     if ($postAction === 'save_settings') {
         if (isset($_POST['mp_commission_percent'])) {
             set_platform_setting('mp_commission_percent', max(0, min(100, (float)$_POST['mp_commission_percent'])));
@@ -134,7 +174,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (in_array($_POST['mp_payout_mode'] ?? '', ['manual', 'auto'], true)) {
             set_platform_setting('mp_payout_mode', $_POST['mp_payout_mode']);
         }
-        log_audit_action($adminUser['id'], 'mp_payout_settings_save', 'Updated marketplace commission/payout settings');
+        if (isset($_POST['mp_customer_charge_type'])) {
+            $custChargeType = $_POST['mp_customer_charge_type'] === 'percent' ? 'percent' : 'flat';
+            set_platform_setting('mp_customer_charge_type', $custChargeType);
+        }
+        if (isset($_POST['mp_customer_charge_value'])) {
+            set_platform_setting('mp_customer_charge_value', (string)max(0, (float)$_POST['mp_customer_charge_value']));
+        }
+        log_audit_action($adminUser['id'], 'mp_payout_settings_save', 'Updated marketplace commission/payout/checkout-charge settings');
         flash('Settings saved.', 'success');
     }
 
@@ -193,6 +240,33 @@ $payoutRequests = $payoutStmt->fetchAll();
 
 $pendingCount  = (int)$pdo->query("SELECT COUNT(*) FROM mp_payout_requests WHERE status='pending'")->fetchColumn();
 
+$fastPayoutModuleEnabled    = get_platform_setting('mp_fast_payout_module_enabled', '0') === '1';
+$fastPayoutRequiresApproval = get_platform_setting('mp_fast_payout_requires_approval', '1') === '1';
+$fastPayoutPendingCount     = (int)$pdo->query("SELECT COUNT(*) FROM mp_shops WHERE fast_payout_requested_at IS NOT NULL AND fast_payout_enabled=0")->fetchColumn();
+
+if ($tab === 'fast_payout') {
+    $fastPayoutRequests = $pdo->query(
+        "SELECT ms.*, u.name AS owner_name, u.email AS owner_email
+         FROM mp_shops ms JOIN users u ON ms.user_id = u.id
+         WHERE ms.fast_payout_requested_at IS NOT NULL AND ms.fast_payout_enabled = 0
+         ORDER BY ms.fast_payout_requested_at ASC"
+    )->fetchAll();
+
+    $fastPayoutEligibleShops = $pdo->query(
+        "SELECT ms.*, u.name AS owner_name, u.email AS owner_email
+         FROM mp_shops ms JOIN users u ON ms.user_id = u.id
+         WHERE ms.fast_payout_eligible = 1
+         ORDER BY ms.shop_name"
+    )->fetchAll();
+
+    $fastPayoutIneligibleShops = $pdo->query(
+        "SELECT ms.id, ms.shop_name, u.name AS owner_name, u.email AS owner_email
+         FROM mp_shops ms JOIN users u ON ms.user_id = u.id
+         WHERE ms.fast_payout_eligible = 0
+         ORDER BY ms.shop_name"
+    )->fetchAll();
+}
+
 $totalPending   = (float)$pdo->query("SELECT COALESCE(SUM(pending_balance),0) FROM mp_shops")->fetchColumn();
 $totalAvailable = (float)$pdo->query("SELECT COALESCE(SUM(available_balance),0) FROM mp_shops")->fetchColumn();
 $totalPaidOut   = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM mp_payout_requests WHERE status='paid'")->fetchColumn();
@@ -200,6 +274,8 @@ $totalPaidOut   = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM mp_pay
 $commissionPct  = get_platform_setting('mp_commission_percent', '10');
 $confirmDays    = get_platform_setting('mp_payout_confirmation_days', '3');
 $payoutMode     = get_platform_setting('mp_payout_mode', 'manual');
+$custChargeType  = get_platform_setting('mp_customer_charge_type', 'flat');
+$custChargeValue = (float)get_platform_setting('mp_customer_charge_value', '0');
 
 // ── Analytics (period-filtered) ────────────────────────────────────────────
 if ($tab === 'analytics') {
@@ -299,6 +375,10 @@ if ($tab === 'analytics') {
 
 <main class="mp-shell">
 
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <a href="marketplace.php" class="button button-secondary button-small">Marketplace</a>
+    </div>
+
     <?php if ($flash): ?>
     <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin-bottom:14px;"><?php echo sanitize($flash['message']); ?></div>
     <?php endif; ?>
@@ -316,13 +396,16 @@ if ($tab === 'analytics') {
         </a>
         <a href="?tab=analytics" class="mp-tab <?php echo $tab==='analytics'?'active':''; ?>">📊 Analytics</a>
         <a href="?tab=settings" class="mp-tab <?php echo $tab==='settings'?'active':''; ?>">⚙️ Settings</a>
+        <a href="?tab=fast_payout" class="mp-tab <?php echo $tab==='fast_payout'?'active':''; ?>">
+            ⚡ Fast Payout <?php if ($fastPayoutPendingCount): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;margin-left:3px;"><?php echo $fastPayoutPendingCount; ?></span><?php endif; ?>
+        </a>
     </div>
 
     <!-- ═══ PAYOUT REQUESTS ═══ -->
     <?php if ($tab === 'pending'): ?>
     <form method="get" action="mp_payouts.php" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
         <input type="hidden" name="tab" value="pending">
-        <select name="req_status" onchange="this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
+        <select name="req_status" onchange="this.form.requestSubmit ? this.form.requestSubmit() : this.form.submit()" style="padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;">
             <?php foreach (['all'=>'All Statuses','pending'=>'Pending','processing'=>'Processing','paid'=>'Paid','failed'=>'Failed','rejected'=>'Rejected'] as $v=>$l): ?>
             <option value="<?php echo $v; ?>" <?php echo $reqStatus===$v?'selected':''; ?>><?php echo $l; ?></option>
             <?php endforeach; ?>
@@ -493,6 +576,19 @@ if ($tab === 'analytics') {
             </div>
         </div>
         <div class="mp-set-section">
+            <p class="mp-set-title">Customer Checkout Charge</p>
+            <p style="font-size:.74rem;color:var(--text-muted,#6b7280);margin:0 0 10px;">A separate charge shown to the <strong>buyer</strong> at checkout, added on top of their item total — distinct from the seller-side commission above. Leave at 0 to charge buyers nothing.</p>
+            <div style="display:flex;gap:14px;margin-bottom:8px;">
+                <label style="font-weight:400;display:flex;align-items:center;gap:5px;">
+                    <input type="radio" name="mp_customer_charge_type" value="flat" <?php echo $custChargeType !== 'percent' ? 'checked' : ''; ?>> Flat GH&#8373;
+                </label>
+                <label style="font-weight:400;display:flex;align-items:center;gap:5px;">
+                    <input type="radio" name="mp_customer_charge_type" value="percent" <?php echo $custChargeType === 'percent' ? 'checked' : ''; ?>> % of order total
+                </label>
+            </div>
+            <input type="number" name="mp_customer_charge_value" min="0" step="0.01" value="<?php echo sanitize($custChargeValue); ?>">
+        </div>
+        <div class="mp-set-section">
             <p class="mp-set-title">Payout Method</p>
             <div style="display:flex;gap:16px;margin-bottom:10px;">
                 <label><input type="radio" name="mp_payout_mode" value="manual" <?php echo $payoutMode !== 'auto' ? 'checked' : ''; ?>> Manual — admin approves each withdrawal</label>
@@ -507,6 +603,125 @@ if ($tab === 'analytics') {
         <p class="mp-set-title">Bank &amp; Mobile Money List</p>
         <p style="font-size:.74rem;color:var(--text-muted,#6b7280);margin-bottom:10px;">Refresh the list of banks/MoMo networks sellers can choose from when setting up their payout account.</p>
         <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="sync_banks"><button type="submit" class="button button-secondary">Sync Banks from Paystack</button></form>
+    </div>
+    <?php endif; ?>
+
+    <!-- ═══ FAST PAYOUT ═══ -->
+    <?php if ($tab === 'fast_payout'): ?>
+    <div class="mp-set-section">
+        <p class="mp-set-title">Module Settings</p>
+        <form method="post" action="mp_payouts.php?tab=fast_payout">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="save_fast_payout_settings">
+            <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                <input type="checkbox" name="mp_fast_payout_module_enabled" value="1" style="width:auto;" <?php echo $fastPayoutModuleEnabled ? 'checked' : ''; ?>>
+                Master switch — show the Fast Payout opt-in to sellers at all
+            </label>
+            <p style="font-size:.74rem;color:var(--text-muted,#6b7280);margin:0 0 12px 26px;">Off by default. While off, the section is hidden from every seller's dashboard, even shops already granted eligibility below — and no new order will route through Fast Payout, though any shop already active keeps winding down its held balance normally.</p>
+            <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                <input type="checkbox" name="mp_fast_payout_requires_approval" value="1" style="width:auto;" <?php echo $fastPayoutRequiresApproval ? 'checked' : ''; ?>>
+                Require admin approval before it activates
+            </label>
+            <p style="font-size:.74rem;color:var(--text-muted,#6b7280);margin:0 0 12px 26px;">On by default. While on, a seller clicking "Enable" only files a request — you approve it below before their subaccount is created. Turning it off lets an eligible seller self-serve immediately.</p>
+            <button type="submit" class="button button-primary">Save Settings</button>
+        </form>
+    </div>
+
+    <div class="mp-set-section">
+        <p class="mp-set-title">Pending Requests <?php if ($fastPayoutPendingCount): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:0 6px;font-size:.65rem;"><?php echo $fastPayoutPendingCount; ?></span><?php endif; ?></p>
+        <?php if (!$fastPayoutRequests): ?>
+        <p class="meta">No pending Fast Payout requests.</p>
+        <?php else: ?>
+        <div style="overflow-x:auto;">
+        <table class="mp-table">
+            <thead><tr><th>Shop</th><th>Requested</th><th>Actions</th></tr></thead>
+            <tbody>
+            <?php foreach ($fastPayoutRequests as $r): ?>
+            <tr>
+                <td><strong><?php echo sanitize($r['shop_name']); ?></strong><br><span style="font-size:.74rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($r['owner_name']); ?> — <?php echo sanitize($r['owner_email']); ?></span></td>
+                <td style="font-size:.78rem;color:var(--text-muted,#6b7280);"><?php echo date('d M Y', strtotime($r['fast_payout_requested_at'])); ?></td>
+                <td>
+                    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+                        <form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="approve_fast_payout"><input type="hidden" name="shop_id" value="<?php echo $r['id']; ?>"><button type="submit" class="button button-primary button-small" onclick="return confirm('Approve Fast Payout for &quot;<?php echo sanitize(addslashes($r['shop_name'])); ?>&quot;? This creates their Paystack subaccount now.');">✅ Approve</button></form>
+                        <form method="post" style="margin:0;display:flex;gap:4px;">
+                            <?php echo csrf_field(); ?><input type="hidden" name="action" value="reject_fast_payout"><input type="hidden" name="shop_id" value="<?php echo $r['id']; ?>">
+                            <input type="text" name="admin_notes" placeholder="Reason (optional)" style="width:140px;padding:5px 8px;font-size:.76rem;border:1px solid var(--border);border-radius:6px;">
+                            <button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;" onclick="return confirm('Reject this request?');">Reject</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <div class="mp-set-section">
+        <p class="mp-set-title">Eligible Shops (<?php echo count($fastPayoutEligibleShops); ?>)</p>
+        <p style="font-size:.74rem;color:var(--text-muted,#6b7280);margin:0 0 10px;">Only shops granted eligibility here can see the Fast Payout section at all, whether or not the request-approval setting above is on.</p>
+        <?php if (!$fastPayoutEligibleShops): ?>
+        <p class="meta">No shops are eligible yet — search below to grant access.</p>
+        <?php else: ?>
+        <div style="overflow-x:auto;">
+        <table class="mp-table">
+            <thead><tr><th>Shop</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            <?php foreach ($fastPayoutEligibleShops as $s): ?>
+            <tr>
+                <td><strong><?php echo sanitize($s['shop_name']); ?></strong><br><span style="font-size:.74rem;color:var(--text-muted,#6b7280);"><?php echo sanitize($s['owner_name']); ?></span></td>
+                <td>
+                    <?php if ($s['fast_payout_enabled']): ?><span style="background:#d1fae5;color:#065f46;font-size:.7rem;font-weight:800;padding:2px 8px;border-radius:10px;">Active</span>
+                    <?php elseif ($s['fast_payout_requested_at']): ?><span style="background:#fef3c7;color:#b45309;font-size:.7rem;font-weight:800;padding:2px 8px;border-radius:10px;">Pending</span>
+                    <?php else: ?><span style="background:#f3f4f6;color:#6b7280;font-size:.7rem;font-weight:800;padding:2px 8px;border-radius:10px;">Not enabled</span><?php endif; ?>
+                </td>
+                <td><form method="post" style="margin:0;"><?php echo csrf_field(); ?><input type="hidden" name="action" value="revoke_fast_payout_eligibility"><input type="hidden" name="shop_id" value="<?php echo $s['id']; ?>"><button type="submit" class="button button-small" style="background:#ef4444;color:#fff;border-color:transparent;" onclick="return confirm('Revoke Fast Payout eligibility for &quot;<?php echo sanitize(addslashes($s['shop_name'])); ?>&quot;? This also turns it off immediately if active.');">Revoke</button></form></td>
+            </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <div class="mp-set-section">
+        <p class="mp-set-title">Grant Eligibility (<?php echo count($fastPayoutIneligibleShops); ?> not yet eligible)</p>
+        <?php if (!$fastPayoutIneligibleShops): ?>
+        <p class="meta">Every shop is already eligible.</p>
+        <?php else: ?>
+        <input type="text" id="fp-eligible-filter" placeholder="Filter by shop, owner, or email…" oninput="fpFilterEligibleList(this.value)" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;font-size:.82rem;margin-bottom:10px;">
+        <form method="post" action="mp_payouts.php?tab=fast_payout">
+            <?php echo csrf_field(); ?>
+            <input type="hidden" name="action" value="grant_fast_payout_eligibility">
+            <div id="fp-eligible-list" style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;">
+                <?php foreach ($fastPayoutIneligibleShops as $s): ?>
+                <label class="fp-eligible-row" data-search="<?php echo sanitize(mb_strtolower($s['shop_name'] . ' ' . $s['owner_name'] . ' ' . $s['owner_email'])); ?>" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-weight:400;">
+                    <input type="checkbox" name="shop_ids[]" value="<?php echo $s['id']; ?>" style="width:auto;flex-shrink:0;">
+                    <span style="flex:1;">
+                        <strong style="font-weight:700;"><?php echo sanitize($s['shop_name']); ?></strong>
+                        <span style="font-size:.78rem;color:var(--text-muted,#6b7280);"> — <?php echo sanitize($s['owner_name']); ?> (<?php echo sanitize($s['owner_email']); ?>)</span>
+                    </span>
+                </label>
+                <?php endforeach; ?>
+                <p id="fp-eligible-empty" class="meta" style="display:none;padding:9px 12px;margin:0;">No shops match that filter.</p>
+            </div>
+            <button type="submit" class="button button-primary" style="margin-top:12px;" onclick="if(!this.form.querySelector('input[name=&quot;shop_ids[]&quot;]:checked')){alert('Check at least one shop first.');return false;}">Grant Eligibility to Checked Shops</button>
+        </form>
+        <script>
+        function fpFilterEligibleList(q) {
+            q = q.trim().toLowerCase();
+            var rows = document.querySelectorAll('.fp-eligible-row');
+            var visible = 0;
+            rows.forEach(function (row) {
+                var match = row.getAttribute('data-search').indexOf(q) !== -1;
+                row.style.display = match ? '' : 'none';
+                if (match) visible++;
+            });
+            document.getElementById('fp-eligible-empty').style.display = visible === 0 ? '' : 'none';
+        }
+        </script>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 

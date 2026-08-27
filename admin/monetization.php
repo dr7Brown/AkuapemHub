@@ -29,6 +29,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $success = 'Paystack settings saved.';
         $tab = 'settings';
 
+    } elseif ($action === 'save_google_settings') {
+        $gClientId     = trim($_POST['google_client_id'] ?? '');
+        $gClientSecret = trim($_POST['google_client_secret'] ?? '');
+        set_platform_setting('google_client_id', $gClientId);
+        // Only update secret if non-empty (prevents blanking it if field left empty)
+        if ($gClientSecret !== '') set_platform_setting('google_client_secret', $gClientSecret);
+        log_audit_action($user['id'], 'google_settings_updated', 'Google Sign-In settings updated');
+        $success = 'Google Sign-In settings saved.';
+        $tab = 'settings';
+
     } elseif ($action === 'save_settings') {
         $prevMode = get_platform_setting('monetization_mode', 'free');
         $mode = $_POST['monetization_mode'] ?? 'free';
@@ -39,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'enable_paid_verification_badges', 'enable_paid_job_posting',
             'enable_paid_worker_service', 'enable_paid_worker_premium',
             'enable_paid_featured_events', 'enable_paid_featured_funerals', 'enable_paid_featured_news',
+            'enable_paid_featured_accommodation', 'enable_paid_accommodation_listing',
         ];
         $anyFeaturePaid = false;
         foreach ($featureKeys as $key) {
@@ -76,6 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'require_verified_email_funeral_post', 'require_verified_email_shop_create',
             'require_verified_email_product_post', 'require_verified_email_delivery_request',
             'require_verified_email_delivery_agent',
+            'require_verified_email_quick_service', 'require_verified_email_accommodation_post',
         ] as $key) {
             set_platform_setting($key, ($_POST[$key] ?? '0') === '1' ? '1' : '0');
         }
@@ -84,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tab = 'settings';
 
     } elseif ($action === 'save_module_toggles') {
-        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'quick_services', 'promotions'] as $modKey) {
+        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'quick_services', 'promotions', 'accommodation'] as $modKey) {
             set_platform_setting("{$modKey}_enabled", isset($_POST["{$modKey}_enabled"]) ? '1' : '0');
         }
         log_audit_action($user['id'], 'module_toggles_updated', 'Updated platform module availability');
@@ -176,6 +188,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($planId) { $pdo->prepare("DELETE FROM mp_seller_subscription_plans WHERE id=?")->execute([$planId]); $success='Plan deleted.'; }
         $tab = 'marketplace';
 
+    } elseif ($action === 'save_accommodation_pkg') {
+        csrf_check();
+        $planId    = (int)($_POST['plan_id']??0);
+        $planName  = trim($_POST['plan_name']??'');
+        $planDesc  = trim($_POST['plan_desc']??'');
+        $planDays  = max(1,(int)($_POST['plan_days']??30));
+        $planPrice = max(0,(float)($_POST['plan_price']??0));
+        $planLimit = (int)($_POST['plan_limit']??-1);
+        $planSt    = ($_POST['plan_status']??'active')==='active'?'active':'inactive';
+        if ($planName) {
+            if ($planId > 0) {
+                $pdo->prepare("UPDATE accommodation_listing_packages SET name=?,description=?,duration_days=?,price=?,listing_limit=?,status=? WHERE id=?")->execute([$planName,$planDesc?:null,$planDays,$planPrice,$planLimit,$planSt,$planId]);
+            } else {
+                $pdo->prepare("INSERT INTO accommodation_listing_packages (name,description,duration_days,price,listing_limit,status) VALUES (?,?,?,?,?,?)")->execute([$planName,$planDesc?:null,$planDays,$planPrice,$planLimit,$planSt]);
+            }
+            log_audit_action($user['id'], 'accommodation_pkg_save', "Saved accommodation listing package: {$planName}");
+            $success = 'Listing package saved.';
+        } else { $error = 'Package name required.'; }
+        $tab = 'accommodation';
+
+    } elseif ($action === 'delete_accommodation_pkg') {
+        csrf_check();
+        $planId = (int)($_POST['plan_id']??0);
+        if ($planId) { $pdo->prepare("DELETE FROM accommodation_listing_packages WHERE id=?")->execute([$planId]); $success='Package deleted.'; }
+        $tab = 'accommodation';
+
+    } elseif ($action === 'save_delivery_pricing') {
+        csrf_check();
+        // Same platform_settings keys admin/delivery.php's own Settings tab
+        // already reads/writes — this is a second UI surface over the exact
+        // same data (not a copy), so both pages always agree. Deliberately
+        // scoped to pricing only; delivery_enabled/approval/commission
+        // settings stay owned by admin/delivery.php.
+        foreach (['delivery_enable_premium','delivery_premium_requires_payment',
+                  'delivery_enable_verification_fee','delivery_enable_sponsored',
+                  'delivery_sponsored_requires_payment'] as $ck) {
+            set_platform_setting($ck, isset($_POST[$ck]) ? '1' : '0');
+        }
+        foreach (['delivery_premium_monthly_price','delivery_premium_quarterly_price','delivery_premium_yearly_price',
+                  'delivery_verification_fee',
+                  'delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price'] as $pk) {
+            set_platform_setting($pk, number_format(max(0, (float)($_POST[$pk] ?? 0)), 2, '.', ''));
+        }
+        log_audit_action($user['id'], 'delivery_pricing_save', 'Updated delivery pricing from Monetization panel');
+        $success = 'Delivery pricing saved.';
+        $tab = 'delivery';
+
     } elseif ($action === 'activate_boost') {
         csrf_check();
         $boostId = (int)($_POST['boost_id']??0);
@@ -220,6 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'featured_funeral'=> 'featured_funeral_packages',
             'featured_news'   => 'featured_news_packages',
             'sponsor'         => 'sponsor_packages',
+            'featured_accommodation' => 'featured_accommodation_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgName !== '') {
@@ -287,6 +347,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'featured_funeral'=> 'community',
             'featured_news'   => 'community',
             'sponsor'         => 'community',
+            'featured_accommodation' => 'community',
         ];
         $tab = $tabMap[$pkgType] ?? 'settings';
 
@@ -304,6 +365,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'featured_funeral'=> 'featured_funeral_packages',
             'featured_news'   => 'featured_news_packages',
             'sponsor'         => 'sponsor_packages',
+            'featured_accommodation' => 'featured_accommodation_packages',
         ];
         $table = $tableMap[$pkgType] ?? '';
         if ($table && $pkgId > 0) {
@@ -322,6 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'featured_funeral'=> 'community',
             'featured_news'   => 'community',
             'sponsor'         => 'community',
+            'featured_accommodation' => 'community',
         ];
         $tab = $tabMap2[$pkgType] ?? 'settings';
 
@@ -570,6 +633,8 @@ $enablePaidWorkerPremium = get_platform_setting('enable_paid_worker_premium', '0
 $enableFeaturedEvents    = get_platform_setting('enable_paid_featured_events', '0');
 $enableFeaturedFunerals  = get_platform_setting('enable_paid_featured_funerals', '0');
 $enableFeaturedNews      = get_platform_setting('enable_paid_featured_news', '0');
+$enableFeaturedAccommodation = get_platform_setting('enable_paid_featured_accommodation', '0');
+$enableAccommodationListing  = get_platform_setting('enable_paid_accommodation_listing', '0');
 
 $verifyReqs = [
     'login'             => get_platform_setting('require_verified_email_login', '1') === '1',
@@ -582,6 +647,8 @@ $verifyReqs = [
     'product_post'      => get_platform_setting('require_verified_email_product_post', '0') === '1',
     'delivery_request'  => get_platform_setting('require_verified_email_delivery_request', '0') === '1',
     'delivery_agent'    => get_platform_setting('require_verified_email_delivery_agent', '0') === '1',
+    'quick_service'     => get_platform_setting('require_verified_email_quick_service', '0') === '1',
+    'accommodation_post'=> get_platform_setting('require_verified_email_accommodation_post', '0') === '1',
 ];
 
 $moduleToggles = [
@@ -594,6 +661,7 @@ $moduleToggles = [
     'markets'  => ['label' => 'Nearby Markets',        'desc' => 'Ofie Market, Nkurakan Market & other scheduled markets'],
     'quick_services' => ['label' => 'Quick Services',    'desc' => 'Airtime, ECG, exam results & other paid service requests'],
     'promotions'      => ['label' => 'Promotions',        'desc' => 'Time-limited free-access & discount offers'],
+    'accommodation'   => ['label' => 'Accommodation',      'desc' => 'Rooms, houses, hotels & guest houses'],
 ];
 foreach ($moduleToggles as $modKey => &$modInfo) {
     $modInfo['enabled'] = module_enabled($modKey);
@@ -617,6 +685,10 @@ $psMode    = get_platform_setting('paystack_mode', 'test');
 $psPubKey  = get_platform_setting('paystack_public_key', '');
 $psConfigured = get_platform_setting('paystack_secret_key', '') !== '';
 
+$googleClientId     = get_platform_setting('google_client_id', '');
+$googleConfigured   = get_platform_setting('google_client_secret', '') !== '';
+$googleRedirectUri  = absolute_base_url() . '/google_callback.php';
+
 $featuredJobPackages = get_active_packages('featured_job_packages');
 $allFeaturedJobPackages = $pdo->query("SELECT * FROM featured_job_packages ORDER BY price ASC")->fetchAll();
 $workerPromoPackages = get_active_packages('worker_promotion_packages');
@@ -629,6 +701,7 @@ $allWorkerPremiumPackages = $pdo->query("SELECT * FROM worker_premium_packages O
 $allFeaturedEventPackages   = $pdo->query("SELECT * FROM featured_event_packages ORDER BY price ASC")->fetchAll();
 $allFeaturedFuneralPackages = $pdo->query("SELECT * FROM featured_funeral_packages ORDER BY price ASC")->fetchAll();
 $allFeaturedNewsPackages    = $pdo->query("SELECT * FROM featured_news_packages ORDER BY price ASC")->fetchAll();
+$allFeaturedAccommodationPackages = $pdo->query("SELECT * FROM featured_accommodation_packages ORDER BY price ASC")->fetchAll();
 $allSponsorPackages         = $pdo->query("SELECT * FROM sponsor_packages ORDER BY price ASC")->fetchAll();
 
 // Pending payments with context
@@ -648,6 +721,7 @@ $pendingPayments = $pdo->query("
             WHEN 'mp_subscription' THEN COALESCE(msp.name, '—')
             WHEN 'mp_boost'        THEN COALESCE(mbp.name, '—')
             WHEN 'sponsor'         THEN COALESCE(spp.name, '—')
+            WHEN 'featured_accommodation' THEN COALESCE(fap.name, '—')
             ELSE '—'
         END AS package_name
     FROM platform_payments pp
@@ -664,6 +738,7 @@ $pendingPayments = $pdo->query("
     LEFT JOIN mp_seller_subscription_plans msp ON pp.payment_type = 'mp_subscription' AND msp.id = pp.package_id
     LEFT JOIN mp_boost_packages mbp         ON pp.payment_type = 'mp_boost'        AND mbp.id = pp.package_id
     LEFT JOIN sponsor_packages spp          ON pp.payment_type = 'sponsor'         AND spp.id = pp.package_id
+    LEFT JOIN featured_accommodation_packages fap ON pp.payment_type = 'featured_accommodation' AND fap.id = pp.package_id
     WHERE pp.status = 'pending'
     ORDER BY pp.created_at DESC
 ")->fetchAll();
@@ -801,6 +876,27 @@ foreach ($mpBoostPackages as $pk) $mpBoostPkgByType[$pk['boost_type']][] = $pk;
 // Subscription plans
 $mpSubPlans = $pdo->query("SELECT * FROM mp_seller_subscription_plans ORDER BY price")->fetchAll();
 
+// Accommodation listing packages — the free/paid gate itself lives in the
+// Settings tab's Global Monetization Mode table (enable_paid_accommodation_listing),
+// same system every other paid feature uses.
+$accommodationListingPaid = is_feature_paid('enable_paid_accommodation_listing');
+$accommodationPackages   = $pdo->query("SELECT * FROM accommodation_listing_packages ORDER BY price")->fetchAll();
+
+// Delivery pricing — carried in from admin/delivery.php's Settings tab (same
+// platform_settings keys, second UI surface, see save_delivery_pricing above).
+$deliveryPricingKeys = ['delivery_enable_premium','delivery_premium_requires_payment',
+    'delivery_premium_monthly_price','delivery_premium_quarterly_price','delivery_premium_yearly_price',
+    'delivery_enable_verification_fee','delivery_verification_fee',
+    'delivery_enable_sponsored','delivery_sponsored_requires_payment',
+    'delivery_sponsored_7day_price','delivery_sponsored_30day_price','delivery_sponsored_90day_price'];
+$deliveryCfg = [];
+foreach ($deliveryPricingKeys as $dk) { $deliveryCfg[$dk] = get_platform_setting($dk, '0'); }
+$deliverySponsoredRevenue    = (float)$pdo->query("SELECT COALESCE(SUM(price_paid),0) FROM delivery_sponsored_listings WHERE status='active'")->fetchColumn();
+$deliveryVerificationRevenue = (float)$pdo->query("SELECT COALESCE(SUM(fee_paid),0) FROM delivery_verifications WHERE status='approved'")->fetchColumn();
+$deliveryPremiumRevenue      = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type='delivery_subscription' AND status='paid'")->fetchColumn();
+$accommodationSubRevenue = (float)$pdo->query("SELECT COALESCE(SUM(amount),0) FROM platform_payments WHERE payment_type='accommodation_subscription' AND status='paid'")->fetchColumn();
+$accommodationPendingSubs = (int)$pdo->query("SELECT COUNT(*) FROM accommodation_listing_subscriptions WHERE status='pending'")->fetchColumn();
+
 // Active boosts
 $mpActiveBoosts = $pdo->query(
     "SELECT mb.*, ms.shop_name, u.name AS owner_name
@@ -836,6 +932,9 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
         .pkg-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
         .pkg-table th, .pkg-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
         .pkg-table th { font-weight: 600; background: var(--surface); }
+        .form-group { margin-bottom: 12px; }
+        .adm-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media(max-width:520px) { .adm-grid2 { grid-template-columns: 1fr; } }
         .mono-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
         .mono-tab { padding: 8px 16px; cursor: pointer; font-size: 0.9rem; border: none; background: none; border-bottom: 2px solid transparent; margin-bottom: -2px; }
         .mono-tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: 600; }
@@ -874,6 +973,8 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
             <button class="mono-tab <?php echo $tab === 'worker_pkgs' ? 'active' : ''; ?>" data-tab="worker_pkgs">👷 Worker Pkgs <?php if (!empty($pendingVerificationPayments)): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($pendingVerificationPayments); ?></span><?php endif; ?></button>
             <button class="mono-tab <?php echo $tab === 'marketplace' ? 'active' : ''; ?>" data-tab="marketplace">🛍️ Marketplace <?php if (count($mpPendingBoosts)): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($mpPendingBoosts); ?></span><?php endif; ?></button>
             <button class="mono-tab <?php echo $tab === 'community' ? 'active' : ''; ?>" data-tab="community">📢 Community Pkgs</button>
+            <button class="mono-tab <?php echo $tab === 'accommodation' ? 'active' : ''; ?>" data-tab="accommodation">🏠 Accommodation <?php if ($accommodationPendingSubs): ?><span style="background:#f59e0b;color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo $accommodationPendingSubs; ?></span><?php endif; ?></button>
+            <button class="mono-tab <?php echo $tab === 'delivery' ? 'active' : ''; ?>" data-tab="delivery">🚚 Delivery</button>
             <button class="mono-tab <?php echo $tab === 'payments' ? 'active' : ''; ?>" data-tab="payments">Pending Payments <?php if ($pendingPayments): ?><span style="background:var(--primary);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.8rem;"><?php echo count($pendingPayments); ?></span><?php endif; ?></button>
             <button class="mono-tab <?php echo $tab === 'audit' ? 'active' : ''; ?>" data-tab="audit">Audit Log</button>
         </nav>
@@ -970,6 +1071,13 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                                     </td>
                                 </tr>
                                 <tr>
+                                    <td><strong>Accommodation Listing</strong><br><span class="meta">Charge owners/agents before they can publish a room, house, hotel or guest house listing</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_accommodation_listing" value="0" <?php echo !$enableAccommodationListing ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_accommodation_listing" value="1" <?php echo $enableAccommodationListing ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
                                     <td colspan="2" style="background:var(--surface-muted,#f8fafc);font-size:.72rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#6b7280);padding:8px 12px;">Community Content Featuring</td>
                                 </tr>
                                 <tr>
@@ -991,6 +1099,13 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                                     <td>
                                         <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_news" value="0" <?php echo !$enableFeaturedNews ? 'checked' : ''; ?>> Free</label>
                                         <label><input type="radio" name="enable_paid_featured_news" value="1" <?php echo $enableFeaturedNews ? 'checked' : ''; ?>> Paid</label>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Accommodation Listing Featuring</strong><br><span class="meta">Charge owners/agents to pin listings at the top of Accommodation search results</span></td>
+                                    <td>
+                                        <label style="margin-right:16px;"><input type="radio" name="enable_paid_featured_accommodation" value="0" <?php echo !$enableFeaturedAccommodation ? 'checked' : ''; ?>> Free</label>
+                                        <label><input type="radio" name="enable_paid_featured_accommodation" value="1" <?php echo $enableFeaturedAccommodation ? 'checked' : ''; ?>> Paid</label>
                                     </td>
                                 </tr>
                             </tbody>
@@ -1029,6 +1144,30 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     <label>Secret key <span class="meta">(leave blank to keep existing)</span></label>
                     <input type="password" name="paystack_secret_key" placeholder="sk_test_xxxxxxxxxxxxxxxx — leave blank to keep current" autocomplete="new-password" />
                     <button type="submit" class="button button-primary" style="margin-top:12px;">Save Paystack settings</button>
+                </form>
+            </section>
+
+            <!-- Google Sign-In settings -->
+            <section class="panel">
+                <h2>Sign in with Google</h2>
+                <?php if ($googleConfigured && $googleClientId !== ''): ?>
+                    <div class="alert alert-success" style="margin-bottom:12px;">
+                        ✓ Google Sign-In is configured. The "Continue with Google" button on Login/Register is live.
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-warning" style="margin-bottom:12px;">
+                        ⚠️ Client ID/Secret not set. The "Continue with Google" button will show an error until configured.
+                    </div>
+                <?php endif; ?>
+                <p class="meta">Create a Web application OAuth Client ID at <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console → APIs & Services → Credentials</a>.<br>
+                Add this as an Authorized redirect URI: <code><?php echo sanitize($googleRedirectUri); ?></code></p>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_google_settings" />
+                    <label>Client ID</label>
+                    <input type="text" name="google_client_id" value="<?php echo sanitize($googleClientId); ?>" placeholder="xxxxxxxxxxxx.apps.googleusercontent.com" autocomplete="off" />
+                    <label>Client Secret <span class="meta">(leave blank to keep existing)</span></label>
+                    <input type="password" name="google_client_secret" placeholder="GOCSPX-xxxxxxxxxxxxxxxx — leave blank to keep current" autocomplete="new-password" />
+                    <button type="submit" class="button button-primary" style="margin-top:12px;">Save Google Sign-In settings</button>
                 </form>
             </section>
 
@@ -1173,6 +1312,18 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                                 <td><strong>Register as Delivery Agent</strong><br><span class="meta">Rider must verify email before registering</span></td>
                                 <td style="width:80px;text-align:center;">
                                     <input type="checkbox" name="require_verified_email_delivery_agent" value="1" <?php echo $verifyReqs['delivery_agent'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Submit a Quick Service Request</strong><br><span class="meta">Customer must verify email before requesting airtime, ECG, exam results &amp; other quick services</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_quick_service" value="1" <?php echo $verifyReqs['quick_service'] ? 'checked' : ''; ?> />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>List Accommodation</strong><br><span class="meta">Owner/agent must verify email before listing a room, house, hotel or guest house</span></td>
+                                <td style="width:80px;text-align:center;">
+                                    <input type="checkbox" name="require_verified_email_accommodation_post" value="1" <?php echo $verifyReqs['accommodation_post'] ? 'checked' : ''; ?> />
                                 </td>
                             </tr>
                         </tbody>
@@ -1627,6 +1778,7 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                 ['type' => 'featured_funeral',  'label' => 'Featured Funeral Packages', 'icon' => '🕊️', 'packages' => $allFeaturedFuneralPackages],
                 ['type' => 'featured_news',     'label' => 'Featured News Packages',    'icon' => '📰', 'packages' => $allFeaturedNewsPackages],
                 ['type' => 'sponsor',           'label' => 'Sponsor Packages',          'icon' => '🤝', 'packages' => $allSponsorPackages],
+                ['type' => 'featured_accommodation', 'label' => 'Featured Accommodation Packages', 'icon' => '🏠', 'packages' => $allFeaturedAccommodationPackages],
             ];
             foreach ($communityPackageSections as $sec):
             ?>
@@ -1990,6 +2142,7 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                             <option value="funeral_post"    <?php echo $filterType === 'funeral_post'    ? 'selected' : ''; ?>>Funeral Post Fee</option>
                             <option value="news_post"       <?php echo $filterType === 'news_post'       ? 'selected' : ''; ?>>News Post Fee</option>
                             <option value="sponsor"         <?php echo $filterType === 'sponsor'         ? 'selected' : ''; ?>>Sponsorship</option>
+                            <option value="featured_accommodation" <?php echo $filterType === 'featured_accommodation' ? 'selected' : ''; ?>>Featured Accommodation</option>
                             </optgroup>
                             <optgroup label="Marketplace">
                             <option value="mp_boost"        <?php echo $filterType === 'mp_boost'        ? 'selected' : ''; ?>>Marketplace Boost</option>
@@ -2153,6 +2306,148 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                     </div>
                     <?php endif; ?>
                 <?php endif; ?>
+            </section>
+        </div>
+
+        <!-- ═══════════════ ACCOMMODATION TAB ═══════════════ -->
+        <div class="tab-panel <?php echo $tab === 'accommodation' ? 'active' : ''; ?>" id="tab-accommodation">
+
+            <!-- Global Settings -->
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;font-size:1rem;">⚙️ Global Settings</h2>
+                <p class="meta" style="margin-bottom:4px;">Whether a listing package is required before publishing accommodation is controlled by <strong>Accommodation Listing</strong> on the <a href="?tab=settings">⚙️ Settings</a> tab's Global Monetization Mode table — the same Free/Hybrid/Paid system every other paid feature uses, not a separate switch.</p>
+                <p class="meta" style="margin-bottom:0;">Currently: <strong style="color:<?php echo $accommodationListingPaid ? '#b45309' : '#065f46'; ?>;"><?php echo $accommodationListingPaid ? 'Paid — a package is required' : 'Free — anyone can list without a package'; ?></strong>.
+                "Featured" boosts (pinning a listing to the top) are a separate concept, managed on the <a href="?tab=community">📢 Community Pkgs</a> tab.</p>
+            </section>
+
+            <!-- Listing Packages -->
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;font-size:1rem;">📦 Listing Packages</h2>
+                <p class="meta" style="margin-bottom:10px;">These are only enforced while Accommodation Listing is set to Paid (see Global Settings above). Revenue from listing packages: <strong>GH₵ <?php echo number_format($accommodationSubRevenue, 2); ?></strong><?php if ($accommodationPendingSubs): ?> · <span style="color:#b45309;"><?php echo $accommodationPendingSubs; ?> pending payment</span><?php endif; ?></p>
+                <?php if ($accommodationPackages): ?>
+                <table class="pkg-table" style="margin-bottom:14px;">
+                    <thead><tr><th>Package</th><th>Days</th><th>Price</th><th>Listing Limit</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                    <?php foreach ($accommodationPackages as $plan): ?>
+                    <tr style="<?php echo $plan['status']==='inactive'?'opacity:.5':''; ?>">
+                        <td><strong><?php echo sanitize($plan['name']); ?></strong><?php if ($plan['description']): ?><br><span style="font-size:.76rem;color:var(--muted,#6b7280);"><?php echo sanitize(mb_substr($plan['description'],0,60)); ?></span><?php endif; ?></td>
+                        <td><?php echo (int)$plan['duration_days']; ?></td>
+                        <td style="font-weight:700;color:var(--primary);">GH₵ <?php echo number_format((float)$plan['price'],2); ?></td>
+                        <td><?php echo $plan['listing_limit']==-1?'Unlimited':(int)$plan['listing_limit']; ?></td>
+                        <td><span style="font-size:.68rem;font-weight:800;padding:2px 8px;border-radius:20px;background:<?php echo $plan['status']==='active'?'#d1fae5':'#f3f4f6'; ?>;color:<?php echo $plan['status']==='active'?'#065f46':'#6b7280'; ?>;"><?php echo ucfirst($plan['status']); ?></span></td>
+                        <td>
+                            <button type="button" class="button button-small button-secondary" style="font-size:.7rem;padding:2px 8px;"
+                                onclick="editAccommodationPkg(<?php echo $plan['id']; ?>, '<?php echo addslashes(sanitize($plan['name'])); ?>', '<?php echo addslashes(sanitize($plan['description'] ?? '')); ?>', <?php echo (int)$plan['duration_days']; ?>, <?php echo (float)$plan['price']; ?>, <?php echo (int)$plan['listing_limit']; ?>, '<?php echo $plan['status']; ?>')">Edit</button>
+                            <form method="post" action="monetization.php?tab=accommodation" style="display:inline;" onsubmit="return confirm('Delete package?')">
+                                <?php echo csrf_field(); ?><input type="hidden" name="action" value="delete_accommodation_pkg"><input type="hidden" name="plan_id" value="<?php echo $plan['id']; ?>">
+                                <button type="submit" class="button button-small" style="font-size:.7rem;padding:2px 8px;background:#fee2e2;color:#991b1b;border-color:transparent;">Del</button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php endif; ?>
+                <details id="accommodation-pkg-details" style="margin-top:10px;">
+                    <summary style="font-size:.84rem;font-weight:700;cursor:pointer;color:var(--primary);">+ Add / Edit Listing Package</summary>
+                    <form method="post" action="monetization.php?tab=accommodation" id="form-accommodation-pkg" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+                        <?php echo csrf_field(); ?><input type="hidden" name="action" value="save_accommodation_pkg"><input type="hidden" name="plan_id" id="accommodation-pkg-id" value="0">
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Package Name *</label><input type="text" name="plan_name" id="accommodation-pkg-name" required placeholder="e.g. Basic" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Duration (days)</label><input type="number" name="plan_days" id="accommodation-pkg-days" min="1" value="30" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Price (GH₵)</label><input type="number" name="plan_price" id="accommodation-pkg-price" min="0" step="0.01" value="0" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Listing Limit (-1 = unlimited)</label><input type="number" name="plan_limit" id="accommodation-pkg-limit" value="-1" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div style="grid-column:1/-1;"><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Description</label><input type="text" name="plan_desc" id="accommodation-pkg-desc" placeholder="Describe what owners/agents get..." style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"></div>
+                        <div><label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:3px;">Status</label><select name="plan_status" id="accommodation-pkg-status" style="width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:8px;"><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
+                        <div style="grid-column:1/-1;display:flex;gap:8px;"><button type="submit" class="button button-primary" id="accommodation-pkg-submit">Save Package</button><button type="button" class="button button-secondary" onclick="resetAccommodationPkgForm()">Clear</button></div>
+                    </form>
+                </details>
+            </section>
+
+            <script>
+            function editAccommodationPkg(id, name, desc, days, price, limit, status) {
+                document.getElementById('accommodation-pkg-id').value = id;
+                document.getElementById('accommodation-pkg-name').value = name;
+                document.getElementById('accommodation-pkg-desc').value = desc;
+                document.getElementById('accommodation-pkg-days').value = days;
+                document.getElementById('accommodation-pkg-price').value = price;
+                document.getElementById('accommodation-pkg-limit').value = limit;
+                document.getElementById('accommodation-pkg-status').value = status;
+                document.getElementById('accommodation-pkg-submit').textContent = 'Update Package';
+                document.getElementById('accommodation-pkg-details').open = true;
+                document.getElementById('form-accommodation-pkg').scrollIntoView({behavior:'smooth',block:'center'});
+            }
+            function resetAccommodationPkgForm() {
+                document.getElementById('accommodation-pkg-id').value = 0;
+                document.getElementById('accommodation-pkg-name').value = '';
+                document.getElementById('accommodation-pkg-desc').value = '';
+                document.getElementById('accommodation-pkg-days').value = 30;
+                document.getElementById('accommodation-pkg-price').value = 0;
+                document.getElementById('accommodation-pkg-limit').value = -1;
+                document.getElementById('accommodation-pkg-status').value = 'active';
+                document.getElementById('accommodation-pkg-submit').textContent = 'Save Package';
+            }
+            </script>
+        </div>
+
+        <!-- ═══════════════ DELIVERY TAB ═══════════════ -->
+        <div class="tab-panel <?php echo $tab === 'delivery' ? 'active' : ''; ?>" id="tab-delivery">
+            <p class="meta" style="margin-bottom:14px;">These fields are the same settings on <a href="delivery.php?tab=settings">Admin → Delivery → Settings</a> — edit from either page, both save to the same place. Approval rules, commission, and the on/off switch for the whole Delivery module stay on that page; only pricing is carried here.</p>
+
+            <section class="panel" style="margin-bottom:20px;">
+                <h2 style="margin-top:0;font-size:1rem;">⭐ Premium Rider Subscriptions</h2>
+                <p class="meta" style="margin-bottom:10px;">Revenue: <strong>GH₵ <?php echo number_format($deliveryPremiumRevenue, 2); ?></strong></p>
+                <form method="post" action="monetization.php?tab=delivery">
+                    <?php echo csrf_field(); ?>
+                    <input type="hidden" name="action" value="save_delivery_pricing">
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
+                            <input type="checkbox" name="delivery_enable_premium" value="1" <?php echo $deliveryCfg['delivery_enable_premium']==='1'?'checked':''; ?>>
+                            Enable premium subscriptions feature
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="delivery_premium_requires_payment" value="1" <?php echo $deliveryCfg['delivery_premium_requires_payment']==='1'?'checked':''; ?>>
+                            Require payment (if unchecked, admin grants free)
+                        </label>
+                    </div>
+                    <div class="adm-grid2">
+                        <?php foreach (['delivery_premium_monthly_price'=>'Monthly price (GHS)','delivery_premium_quarterly_price'=>'Quarterly price (GHS)','delivery_premium_yearly_price'=>'Yearly price (GHS)'] as $k=>$l): ?>
+                        <div class="form-group"><label><?php echo $l; ?></label><input type="number" name="<?php echo $k; ?>" min="0" step="0.01" value="<?php echo sanitize($deliveryCfg[$k]); ?>"></div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <h3 style="margin:20px 0 10px;font-size:.9rem;">✓ Verification Badge</h3>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="delivery_enable_verification_fee" value="1" <?php echo $deliveryCfg['delivery_enable_verification_fee']==='1'?'checked':''; ?>>
+                            Charge a fee for the Verified Rider badge
+                        </label>
+                    </div>
+                    <p class="meta" style="margin-bottom:4px;">Revenue: GH₵ <?php echo number_format($deliveryVerificationRevenue, 2); ?></p>
+                    <div class="form-group" style="max-width:200px;">
+                        <label>Verification fee (GHS — 0 = free)</label>
+                        <input type="number" name="delivery_verification_fee" min="0" step="0.01" value="<?php echo sanitize($deliveryCfg['delivery_verification_fee']); ?>">
+                    </div>
+
+                    <h3 style="margin:20px 0 10px;font-size:.9rem;">🌟 Sponsored Listings</h3>
+                    <p class="meta" style="margin-bottom:4px;">Revenue: GH₵ <?php echo number_format($deliverySponsoredRevenue, 2); ?></p>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px;">
+                            <input type="checkbox" name="delivery_enable_sponsored" value="1" <?php echo $deliveryCfg['delivery_enable_sponsored']==='1'?'checked':''; ?>>
+                            Enable sponsored rider listings feature
+                        </label>
+                        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                            <input type="checkbox" name="delivery_sponsored_requires_payment" value="1" <?php echo $deliveryCfg['delivery_sponsored_requires_payment']==='1'?'checked':''; ?>>
+                            Require payment (if unchecked, admin grants free)
+                        </label>
+                    </div>
+                    <div class="adm-grid2">
+                        <?php foreach (['delivery_sponsored_7day_price'=>'7-day price (GHS)','delivery_sponsored_30day_price'=>'30-day price (GHS)','delivery_sponsored_90day_price'=>'90-day price (GHS)'] as $k=>$l): ?>
+                        <div class="form-group"><label><?php echo $l; ?></label><input type="number" name="<?php echo $k; ?>" min="0" step="0.01" value="<?php echo sanitize($deliveryCfg[$k]); ?>"></div>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <button type="submit" class="button button-primary" style="margin-top:14px;">Save Delivery Pricing</button>
+                </form>
             </section>
         </div>
 

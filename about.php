@@ -57,13 +57,13 @@ $user = current_user();
 
     <div class="about-hero">
         <h1><?php echo sanitize(APP_NAME); ?></h1>
-        <p>A community platform connecting skilled workers, customers, buyers, sellers, and neighbours across the Akuapem area — find skilled workers, buy and sell products, request deliveries, share news, honour the departed, celebrate community events, and support each other.</p>
+        <p>A community platform connecting skilled workers, customers, buyers, sellers, hosts, and neighbours across the Akuapem area — find skilled workers, buy and sell products, find a place to stay, request deliveries, share news, honour the departed, celebrate community events, and support each other.</p>
     </div>
 
     <!-- Mission -->
     <div class="about-section">
         <h2>Our Mission</h2>
-        <p><?php echo sanitize(APP_NAME); ?> was built to bring the Akuapem community together in one digital space. We believe that local talent deserves a platform where they can be found and fairly paid, that goods can be bought and sold safely within the community, and that items can be delivered quickly and reliably by local riders.</p>
+        <p><?php echo sanitize(APP_NAME); ?> was built to bring the Akuapem community together in one digital space. We believe that local talent deserves a platform where they can be found and fairly paid, that goods can be bought and sold safely within the community, that a room, house, or guest house can be found without leaving home, and that items can be delivered quickly and reliably by local riders.</p>
         <p>We also serve as a digital notice board — making it easy to share community events, local news, funeral announcements, and sponsored advertisements with family and friends across Ghana and beyond.</p>
     </div>
 
@@ -161,6 +161,31 @@ $user = current_user();
                 <h3>Receipts &amp; Payments</h3>
                 <p>Every payment — jobs, marketplace orders, delivery fees, and boost listings — generates a downloadable receipt. Supports MTN MoMo, Telecel Cash, AirtelTigo, and card payments.</p>
             </div>
+            <div class="service-card">
+                <div class="icon">🏠</div>
+                <h3>Accommodation</h3>
+                <p>Find rooms, houses, hotels, and guest houses across the Akuapem area. Filter by town, price, and facilities, then message the host directly to arrange a viewing or booking.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">🗓️</div>
+                <h3>Nearby Markets</h3>
+                <p>Order ahead from scheduled periodic markets like Ofie Market and Nkurakan Market, and collect from the storehouse on market day.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">⚡</div>
+                <h3>Quick Services</h3>
+                <p>Airtime top-up, ECG and utility payments, exam results checkers, passport and Ghana Card assistance, and more — handled directly by our team.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">🎉</div>
+                <h3>Special Offers</h3>
+                <p>Claim time-limited discounts, free access promotions, or redeem a promo code — check what's available and see your active offers anytime.</p>
+            </div>
+            <div class="service-card">
+                <div class="icon">🔑</div>
+                <h3>Sign in with Google</h3>
+                <p>Register or log in instantly with your Google account — no separate password to remember.</p>
+            </div>
         </div>
     </div>
 
@@ -205,6 +230,22 @@ $user = current_user();
             <div class="step-card"><div class="num">Step 3</div><h4>Receive Orders</h4><p>Customers place orders. Confirm, process, and mark as ready. The platform notifies riders automatically.</p></div>
             <div class="step-card"><div class="num">Step 4</div><h4>Boost &amp; Grow</h4><p>Feature or sponsor your products and shop for top visibility. Track your sales and revenue from the seller dashboard.</p></div>
         </div>
+
+        <h3 style="font-size:.9rem;font-weight:700;margin:24px 0 10px;color:#6b7280;">🏠 Finding a Place to Stay</h3>
+        <div class="how-steps">
+            <div class="step-card"><div class="num">Step 1</div><h4>Browse Listings</h4><p>Choose Rooms &amp; Houses or Hotels &amp; Guest Houses, then filter by town, price, guests, and facilities.</p></div>
+            <div class="step-card"><div class="num">Step 2</div><h4>Open a Listing</h4><p>View photos, pricing, and facilities, and see the host's contact details.</p></div>
+            <div class="step-card"><div class="num">Step 3</div><h4>Message the Host</h4><p>Tap Contact Owner, Request Viewing, or Send Booking Enquiry to start a conversation directly with the host.</p></div>
+            <div class="step-card"><div class="num">Step 4</div><h4>Arrange &amp; Pay Directly</h4><p>Agree on viewing, booking, and payment terms directly with the host — the platform connects you, but doesn't process accommodation bookings or payments.</p></div>
+        </div>
+
+        <h3 style="font-size:.9rem;font-weight:700;margin:24px 0 10px;color:#6b7280;">🔑 Listing Your Property</h3>
+        <div class="how-steps">
+            <div class="step-card"><div class="num">Step 1</div><h4>Add Your Listing</h4><p>Choose a category, add your location, price, facilities, and photos.</p></div>
+            <div class="step-card"><div class="num">Step 2</div><h4>Admin Review</h4><p>Your listing is reviewed before it goes live to keep the directory trustworthy.</p></div>
+            <div class="step-card"><div class="num">Step 3</div><h4>Respond to Enquiries</h4><p>Interested renters and guests message you directly through the platform.</p></div>
+            <div class="step-card"><div class="num">Step 4</div><h4>Feature &amp; Grow</h4><p>Feature your listing for extra visibility and manage everything from My Listings.</p></div>
+        </div>
     </div>
 
     <!-- Values -->
@@ -228,11 +269,13 @@ $user = current_user();
             <?php if ($user): ?>
             <a href="jobs.php"         class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Jobs</a>
             <a href="marketplace.php"  class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Marketplace</a>
+            <a href="accommodation.php" class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Accommodation</a>
             <a href="delivery.php"     class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Deliveries</a>
             <a href="request.php"      class="button button-primary">Post a Job</a>
             <?php else: ?>
             <a href="register.php"     class="button button-primary">Create Free Account</a>
             <a href="marketplace.php"  class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Products</a>
+            <a href="accommodation.php" class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Accommodation</a>
             <a href="browse_jobs.php"  class="button button-secondary" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3);color:#fff;">Browse Jobs</a>
             <?php endif; ?>
         </div>

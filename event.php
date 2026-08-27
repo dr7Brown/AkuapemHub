@@ -7,12 +7,12 @@ require_module_enabled('events', 'Events');
 $user = current_user();
 $slug = trim($_GET['slug'] ?? '');
 
-if (!$slug) { header('Location: events.php'); exit; }
+if (!$slug) { render_not_found('events.php', 'Browse Events', 'Event not found.'); }
 
 $stmt = $pdo->prepare("SELECT * FROM events WHERE slug=? AND status='published' AND (user_id IS NULL OR user_id NOT IN (SELECT id FROM users WHERE banned=1)) LIMIT 1");
 $stmt->execute([$slug]);
 $ev = $stmt->fetch();
-if (!$ev) { header('Location: events.php'); exit; }
+if (!$ev) { render_not_found('events.php', 'Browse Events', 'This event is no longer available.'); }
 
 if (empty($_SESSION['viewed_event'][$ev['id']])) {
     $pdo->prepare("UPDATE events SET view_count=view_count+1 WHERE id=?")->execute([$ev['id']]);
@@ -31,7 +31,7 @@ $sbEvents->execute([$today, $ev['id']]);
 $sbEvents    = $sbEvents->fetchAll();
 $sbFunerals  = $pdo->query("SELECT deceased_name, slug, burial_date, venue FROM funeral_announcements WHERE status='approved' ORDER BY created_at DESC LIMIT 4")->fetchAll();
 $sbNews      = $pdo->query("SELECT title, slug, published_at FROM news WHERE status='published' ORDER BY COALESCE(published_at,created_at) DESC LIMIT 4")->fetchAll();
-$sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' AND ad_type='banner' AND (start_date IS NULL OR start_date<=CURDATE()) AND (end_date IS NULL OR end_date>=CURDATE()) ORDER BY RAND() LIMIT 1")->fetch();
+$sbAd        = get_ads_for_placement('events', ['banner', 'video'], 1)[0] ?? null;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -402,18 +402,8 @@ $sbAd        = $pdo->query("SELECT * FROM advertisements WHERE status='active' A
 
         <?php if ($sbAd): ?>
         <div class="nsb-widget">
-            <div class="nsb-head">Sponsored</div>
             <div class="nsb-ad">
-                <?php if ($sbAd['image']): ?>
-                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored">
-                    <img src="<?php echo sanitize($sbAd['image']); ?>" alt="<?php echo sanitize($sbAd['title']); ?>">
-                </a>
-                <?php else: ?>
-                <a href="<?php echo sanitize($sbAd['destination_url'] ?? '#'); ?>" target="_blank" rel="noopener sponsored"
-                   style="display:block;background:var(--primary,#0f766e);color:#fff;text-align:center;padding:20px 12px;border-radius:8px;font-weight:800;text-decoration:none;">
-                    <?php echo sanitize($sbAd['title']); ?>
-                </a>
-                <?php endif; ?>
+                <?php render_ad_unit($sbAd); ?>
             </div>
         </div>
         <?php endif; ?>

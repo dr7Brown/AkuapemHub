@@ -4,8 +4,7 @@ require_once __DIR__ . '/functions.php';
 
 $workerId = intval($_GET['id'] ?? 0);
 if ($workerId <= 0) {
-    header('Location: find_workers.php');
-    exit;
+    render_not_found('find_workers.php', 'Find Workers', 'Worker not found.');
 }
 
 $stmt = $pdo->prepare('
@@ -22,8 +21,7 @@ $stmt->execute([$workerId]);
 $worker = $stmt->fetch();
 
 if (!$worker) {
-    header('Location: find_workers.php');
-    exit;
+    render_not_found('find_workers.php', 'Find Workers', 'This profile is no longer available.');
 }
 
 if (empty($_SESSION['viewed_worker_profile'][$worker['worker_profile_id']])) {
@@ -39,6 +37,24 @@ $skillStmt->execute([$worker['worker_profile_id']]);
 $skills = array_column($skillStmt->fetchAll(), 'skill_name');
 
 $schedule = get_worker_schedule($worker['worker_profile_id']);
+
+// Portfolio — showcased past projects, each with its own photo gallery.
+$portfolioItems = $pdo->prepare(
+    'SELECT id, title, description FROM worker_portfolio_items WHERE worker_profile_id=? ORDER BY sort_order ASC, created_at DESC'
+);
+$portfolioItems->execute([$worker['worker_profile_id']]);
+$portfolioItems = $portfolioItems->fetchAll();
+
+$portfolioImages = [];
+if ($portfolioItems) {
+    $pIds = array_column($portfolioItems, 'id');
+    $pPlaceholders = implode(',', array_fill(0, count($pIds), '?'));
+    $pImgSt = $pdo->prepare("SELECT * FROM worker_portfolio_images WHERE item_id IN ($pPlaceholders) ORDER BY is_primary DESC, sort_order ASC");
+    $pImgSt->execute($pIds);
+    foreach ($pImgSt->fetchAll() as $img) {
+        $portfolioImages[$img['item_id']][] = $img['image_path'];
+    }
+}
 
 $recentStmt = $pdo->prepare('
     SELECT sr.title, c.name AS category_name, r.score AS rating_score, r.comment, sr.updated_at
@@ -164,6 +180,41 @@ $user = current_user();
             </section>
         <?php endif; ?>
 
+        <!-- Portfolio -->
+        <?php if (!empty($portfolioItems)): ?>
+            <section class="panel">
+                <h3 class="wpp-section-title">🛠️ Portfolio</h3>
+                <div class="wpp-portfolio-grid">
+                    <?php foreach ($portfolioItems as $it):
+                        $itImages = $portfolioImages[$it['id']] ?? [];
+                        $itData = json_encode([
+                            'title'       => $it['title'],
+                            'description' => trim(strip_tags(render_rich($it['description'] ?? ''))),
+                            'images'      => $itImages,
+                        ], JSON_UNESCAPED_UNICODE);
+                    ?>
+                    <button type="button" class="wpp-portfolio-card" onclick='wppOpenPortfolio(<?php echo htmlspecialchars($itData, ENT_QUOTES, 'UTF-8'); ?>)'>
+                        <span class="wpp-portfolio-img">
+                            <?php if ($itImages): ?><img src="<?php echo sanitize($itImages[0]); ?>" alt="<?php echo sanitize($it['title']); ?>">
+                            <?php else: ?><span class="wpp-portfolio-fallback">🛠️</span><?php endif; ?>
+                        </span>
+                        <span class="wpp-portfolio-title"><?php echo sanitize($it['title']); ?></span>
+                    </button>
+                    <?php endforeach; ?>
+                </div>
+            </section>
+
+            <div class="wpp-lightbox" id="wpp-lightbox" onclick="if(event.target===this) wppClosePortfolio()">
+                <div class="wpp-lightbox-box">
+                    <button type="button" class="wpp-lightbox-close" onclick="wppClosePortfolio()">×</button>
+                    <div class="wpp-lightbox-img" id="wpp-lightbox-main"></div>
+                    <div class="wpp-lightbox-thumbs" id="wpp-lightbox-thumbs"></div>
+                    <h3 id="wpp-lightbox-title"></h3>
+                    <p id="wpp-lightbox-desc" class="meta"></p>
+                </div>
+            </div>
+        <?php endif; ?>
+
         <!-- Recent work -->
         <?php if (!empty($recentJobs)): ?>
             <section class="panel">
@@ -223,11 +274,63 @@ $user = current_user();
         .wpp-job-title { font-size:0.95rem; }
         .wpp-job-rating { background:#fef9c3; color:#92400e; border-radius:6px; padding:3px 9px; font-size:0.85rem; font-weight:700; white-space:nowrap; flex-shrink:0; }
         .wpp-job-comment { margin:8px 0 0; font-size:0.87rem; color:var(--muted); font-style:italic; }
+        .wpp-portfolio-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+        .wpp-portfolio-card { display:flex; flex-direction:column; gap:6px; background:none; border:none; padding:0; cursor:pointer; text-align:left; font:inherit; color:inherit; }
+        .wpp-portfolio-img { aspect-ratio:1/1; border-radius:var(--radius-sm); overflow:hidden; background:var(--surface-muted); display:flex; align-items:center; justify-content:center; }
+        .wpp-portfolio-img img { width:100%; height:100%; object-fit:cover; }
+        .wpp-portfolio-fallback { font-size:1.8rem; opacity:.35; }
+        .wpp-portfolio-title { font-size:.82rem; font-weight:700; line-height:1.35; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .wpp-lightbox { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:1000; align-items:center; justify-content:center; padding:16px; }
+        .wpp-lightbox.open { display:flex; }
+        .wpp-lightbox-box { background:var(--surface,#fff); border-radius:var(--radius-lg); padding:18px; max-width:520px; width:100%; max-height:90vh; overflow-y:auto; position:relative; }
+        .wpp-lightbox-close { position:absolute; top:10px; right:10px; width:30px; height:30px; border-radius:50%; border:none; background:var(--surface-muted,#f1f5f9); font-size:1.1rem; cursor:pointer; line-height:1; }
+        .wpp-lightbox-img { aspect-ratio:4/3; background:var(--surface-muted); border-radius:var(--radius-sm); overflow:hidden; display:flex; align-items:center; justify-content:center; margin-bottom:8px; }
+        .wpp-lightbox-img img { width:100%; height:100%; object-fit:contain; }
+        .wpp-lightbox-thumbs { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+        .wpp-lightbox-thumbs img { width:48px; height:48px; object-fit:cover; border-radius:6px; border:2px solid transparent; cursor:pointer; }
+        .wpp-lightbox-thumbs img.active { border-color:var(--primary); }
+        #wpp-lightbox-title { margin:0 0 6px; font-size:1.05rem; }
         @media (max-width:480px) {
             .wpp-hero-top { flex-direction:column; text-align:center; }
             .wpp-name { justify-content:center; }
         }
     </style>
+    <script>
+        function wppOpenPortfolio(data) {
+            var lb = document.getElementById('wpp-lightbox');
+            document.getElementById('wpp-lightbox-title').textContent = data.title;
+            document.getElementById('wpp-lightbox-desc').textContent = data.description || '';
+            var main   = document.getElementById('wpp-lightbox-main');
+            var thumbs = document.getElementById('wpp-lightbox-thumbs');
+            main.innerHTML = '';
+            thumbs.innerHTML = '';
+            var images = data.images && data.images.length ? data.images : [];
+            if (!images.length) {
+                main.innerHTML = '<span style="font-size:2.5rem;opacity:.3;">🛠️</span>';
+            } else {
+                var mainImg = document.createElement('img');
+                mainImg.src = images[0];
+                main.appendChild(mainImg);
+                if (images.length > 1) {
+                    images.forEach(function (src, i) {
+                        var t = document.createElement('img');
+                        t.src = src;
+                        if (i === 0) t.classList.add('active');
+                        t.addEventListener('click', function () {
+                            mainImg.src = src;
+                            thumbs.querySelectorAll('img').forEach(function (x) { x.classList.remove('active'); });
+                            t.classList.add('active');
+                        });
+                        thumbs.appendChild(t);
+                    });
+                }
+            }
+            lb.classList.add('open');
+        }
+        function wppClosePortfolio() {
+            document.getElementById('wpp-lightbox').classList.remove('open');
+        }
+    </script>
     <?php require __DIR__ . '/partials/site_footer.php'; ?>
     <?php if ($user): ?>
         <?php $activeNav = 'workers'; require __DIR__ . '/partials/bottom_nav.php'; ?>

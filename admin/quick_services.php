@@ -370,6 +370,10 @@ if ($manageServiceId) {
 
 <main class="qsa-shell">
 
+    <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <a href="quick_service_requests.php" class="button button-primary button-small">📥 Service Requests</a>
+    </div>
+
     <?php if ($flash): ?>
     <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin-bottom:14px;"><?php echo sanitize($flash['message']); ?></div>
     <?php endif; ?>

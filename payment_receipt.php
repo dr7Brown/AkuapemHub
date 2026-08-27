@@ -51,6 +51,15 @@ switch ($type) {
                 'amount'     => (float)$i['subtotal'],
             ];
         }
+        $orderSystemCharge = (float)($row['system_charge'] ?? 0);
+        if ($orderSystemCharge > 0) {
+            $lineItems[] = [
+                'name'       => 'Service Charge',
+                'qty'        => 1,
+                'unit_price' => $orderSystemCharge,
+                'amount'     => $orderSystemCharge,
+            ];
+        }
         $receipt = [
             'ref'     => 'MKT-' . str_pad($id, 6, '0', STR_PAD_LEFT),
             'date'    => $row['created_at'],
@@ -59,7 +68,7 @@ switch ($type) {
             'email'   => $row['customer_email'],
             'method'  => ucwords(str_replace('_',' ',$row['payment_method'])),
             'status'  => $row['payment_status'] === 'paid' ? 'Paid' : 'Unpaid',
-            'total'   => (float)$row['total_amount'],
+            'total'   => (float)$row['total_amount'] + $orderSystemCharge,
             'itemized' => true,
             'shop'    => [
                 'name'   => $row['shop_name'],
