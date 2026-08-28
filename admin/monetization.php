@@ -96,7 +96,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tab = 'settings';
 
     } elseif ($action === 'save_module_toggles') {
-        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'quick_services', 'promotions', 'accommodation'] as $modKey) {
+        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'quick_services', 'promotions', 'accommodation', 'workers'] as $modKey) {
             set_platform_setting("{$modKey}_enabled", isset($_POST["{$modKey}_enabled"]) ? '1' : '0');
         }
         log_audit_action($user['id'], 'module_toggles_updated', 'Updated platform module availability');
@@ -662,6 +662,7 @@ $moduleToggles = [
     'quick_services' => ['label' => 'Quick Services',    'desc' => 'Airtime, ECG, exam results & other paid service requests'],
     'promotions'      => ['label' => 'Promotions',        'desc' => 'Time-limited free-access & discount offers'],
     'accommodation'   => ['label' => 'Accommodation',      'desc' => 'Rooms, houses, hotels & guest houses'],
+    'workers'  => ['label' => 'Workers (Homepage)',    'desc' => 'Show the Workers module card & Featured/Top Rated worker strips on the homepage'],
 ];
 foreach ($moduleToggles as $modKey => &$modInfo) {
     $modInfo['enabled'] = module_enabled($modKey);

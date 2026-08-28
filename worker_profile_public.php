@@ -69,6 +69,7 @@ $recentJobs = $recentStmt->fetchAll();
 
 $isActive = $worker['is_featured'] && (!$worker['featured_end_date'] || $worker['featured_end_date'] >= date('Y-m-d'));
 $user = current_user();
+$waLink = !empty($worker['contact_phone']) ? whatsapp_contact_link($worker['contact_phone'], $worker['name']) : false;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -86,7 +87,7 @@ $user = current_user();
             <a href="login.php?redirect=<?php echo urlencode(current_request_path()); ?>" class="button button-secondary button-small">Sign in</a>
         <?php endif; ?>
     </header>
-    <main class="page-shell small-shell">
+    <main class="page-shell wpp-shell">
 
         <!-- Profile hero -->
         <section class="wpp-hero">
@@ -115,9 +116,20 @@ $user = current_user();
             </div>
 
             <?php if ($user && $user['id'] !== $workerId): ?>
-                <a href="chat_start.php?user_id=<?php echo $workerId; ?>" class="button wpp-message-btn">
-                    ✉️ Send Message
-                </a>
+                <div class="wpp-contact-actions">
+                    <?php if (!empty($worker['contact_phone'])): ?>
+                        <a href="tel:<?php echo sanitize($worker['contact_phone']); ?>" class="button wpp-call-btn">📞 Call <?php echo sanitize($worker['contact_phone']); ?></a>
+                    <?php endif; ?>
+                    <?php if ($waLink): ?>
+                        <a href="<?php echo sanitize($waLink); ?>" target="_blank" rel="noopener" class="button wpp-wa-btn">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="#fff" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347M12.05 21.785h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884M20.463 3.488A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413"/></svg>
+                            WhatsApp
+                        </a>
+                    <?php endif; ?>
+                    <a href="chat_start.php?user_id=<?php echo $workerId; ?>" class="button wpp-message-btn">
+                        ✉️ Message
+                    </a>
+                </div>
             <?php endif; ?>
         </section>
 
@@ -189,17 +201,22 @@ $user = current_user();
                         $itImages = $portfolioImages[$it['id']] ?? [];
                         $itData = json_encode([
                             'title'       => $it['title'],
-                            'description' => trim(strip_tags(render_rich($it['description'] ?? ''))),
+                            'description' => render_rich($it['description'] ?? ''),
                             'images'      => $itImages,
                         ], JSON_UNESCAPED_UNICODE);
                     ?>
-                    <button type="button" class="wpp-portfolio-card" onclick='wppOpenPortfolio(<?php echo htmlspecialchars($itData, ENT_QUOTES, 'UTF-8'); ?>)'>
+                    <div class="wpp-portfolio-card" role="button" tabindex="0"
+                         onclick='wppOpenPortfolio(<?php echo htmlspecialchars($itData, ENT_QUOTES, 'UTF-8'); ?>)'
+                         onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
                         <span class="wpp-portfolio-img">
                             <?php if ($itImages): ?><img src="<?php echo sanitize($itImages[0]); ?>" alt="<?php echo sanitize($it['title']); ?>">
                             <?php else: ?><span class="wpp-portfolio-fallback">🛠️</span><?php endif; ?>
                         </span>
                         <span class="wpp-portfolio-title"><?php echo sanitize($it['title']); ?></span>
-                    </button>
+                        <?php if (!empty($it['description'])): ?>
+                        <div class="wpp-portfolio-desc"><?php echo render_rich($it['description']); ?></div>
+                        <?php endif; ?>
+                    </div>
                     <?php endforeach; ?>
                 </div>
             </section>
@@ -258,8 +275,14 @@ $user = current_user();
         .wpp-verified-pill { display:inline-flex; align-items:center; gap:3px; background:rgba(255,255,255,.2); border:1px solid rgba(255,255,255,.4); color:#fff; border-radius:999px; padding:2px 10px; font-size:0.72rem; font-weight:700; letter-spacing:.02em; }
         .wpp-featured-pill { display:inline-flex; align-items:center; background:var(--secondary); color:#fff; border-radius:999px; padding:2px 10px; font-size:0.72rem; font-weight:700; letter-spacing:.02em; }
         .wpp-meta { margin:0 0 10px; color:rgba(255,255,255,.85); font-size:0.88rem; }
-        .wpp-message-btn { width:100%; margin-top:16px; text-align:center; display:block; background:#fff; color:var(--primary-dark); font-weight:700; border:none; }
+        .wpp-contact-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+        .wpp-contact-actions .button { flex:1 1 auto; text-align:center; white-space:nowrap; border:none; }
+        .wpp-message-btn { background:#fff; color:var(--primary-dark); font-weight:700; }
         .wpp-message-btn:hover { background:rgba(255,255,255,.92); text-decoration:none; }
+        .wpp-call-btn { background:rgba(255,255,255,.18); color:#fff; font-weight:700; border:1px solid rgba(255,255,255,.4) !important; }
+        .wpp-call-btn:hover { background:rgba(255,255,255,.28); text-decoration:none; }
+        .wpp-wa-btn { background:#25D366; color:#fff; font-weight:700; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+        .wpp-wa-btn:hover { background:#1ebe57; text-decoration:none; }
         .stats-grid.wpp-stats { margin-bottom: var(--space-3); grid-template-columns: 1fr 1fr; }
         .stats-grid.wpp-stats .stat-card p { white-space: nowrap; }
         .wpp-section-title { margin:0 0 14px; font-size:1.02rem; }
@@ -274,12 +297,16 @@ $user = current_user();
         .wpp-job-title { font-size:0.95rem; }
         .wpp-job-rating { background:#fef9c3; color:#92400e; border-radius:6px; padding:3px 9px; font-size:0.85rem; font-weight:700; white-space:nowrap; flex-shrink:0; }
         .wpp-job-comment { margin:8px 0 0; font-size:0.87rem; color:var(--muted); font-style:italic; }
-        .wpp-portfolio-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
-        .wpp-portfolio-card { display:flex; flex-direction:column; gap:6px; background:none; border:none; padding:0; cursor:pointer; text-align:left; font:inherit; color:inherit; }
-        .wpp-portfolio-img { aspect-ratio:1/1; border-radius:var(--radius-sm); overflow:hidden; background:var(--surface-muted); display:flex; align-items:center; justify-content:center; }
+        .wpp-portfolio-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:20px; }
+        .wpp-portfolio-card { display:flex; flex-direction:column; gap:8px; background:var(--surface-muted); border:1px solid var(--border); border-radius:var(--radius-md); padding:10px; cursor:pointer; text-align:left; font:inherit; color:inherit; }
+        .wpp-portfolio-card:hover { box-shadow:var(--shadow-sm); }
+        .wpp-portfolio-img { aspect-ratio:1/1; border-radius:var(--radius-sm); overflow:hidden; background:var(--surface); display:flex; align-items:center; justify-content:center; }
         .wpp-portfolio-img img { width:100%; height:100%; object-fit:cover; }
-        .wpp-portfolio-fallback { font-size:1.8rem; opacity:.35; }
-        .wpp-portfolio-title { font-size:.82rem; font-weight:700; line-height:1.35; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .wpp-portfolio-fallback { font-size:3.4rem; opacity:.35; }
+        .wpp-portfolio-title { font-size:1rem; font-weight:700; line-height:1.35; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+        .wpp-portfolio-desc { font-size:.84rem; line-height:1.55; color:var(--muted); overflow:hidden; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; }
+        .wpp-portfolio-desc p { margin:0 0 6px; }
+        .wpp-portfolio-desc :last-child { margin-bottom:0; }
         .wpp-lightbox { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:1000; align-items:center; justify-content:center; padding:16px; }
         .wpp-lightbox.open { display:flex; }
         .wpp-lightbox-box { background:var(--surface,#fff); border-radius:var(--radius-lg); padding:18px; max-width:520px; width:100%; max-height:90vh; overflow-y:auto; position:relative; }
@@ -294,12 +321,20 @@ $user = current_user();
             .wpp-hero-top { flex-direction:column; text-align:center; }
             .wpp-name { justify-content:center; }
         }
+        @media (min-width:700px) {
+            .wpp-shell { max-width:820px; }
+            .stats-grid.wpp-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .wpp-hero { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+            .wpp-hero-top { flex:1; }
+            .wpp-contact-actions { margin-top:0; flex-wrap:nowrap; }
+            .wpp-contact-actions .button { flex:0 0 auto; padding-left:20px; padding-right:20px; }
+        }
     </style>
     <script>
         function wppOpenPortfolio(data) {
             var lb = document.getElementById('wpp-lightbox');
             document.getElementById('wpp-lightbox-title').textContent = data.title;
-            document.getElementById('wpp-lightbox-desc').textContent = data.description || '';
+            document.getElementById('wpp-lightbox-desc').innerHTML = data.description || '';
             var main   = document.getElementById('wpp-lightbox-main');
             var thumbs = document.getElementById('wpp-lightbox-thumbs');
             main.innerHTML = '';

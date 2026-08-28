@@ -132,9 +132,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="text" name="custom_town" placeholder="Enter your town/city" value="<?php echo sanitize($_POST['custom_town'] ?? ''); ?>" />
             </div>
 
+            <?php $refFromLink = trim($_SESSION['ref_code'] ?? '') !== ''; ?>
             <label>Referral code <span class="meta">(optional)</span></label>
-            <input type="text" name="referral_code" value="<?php echo sanitize($_POST['referral_code'] ?? ($_SESSION['ref_code'] ?? '')); ?>" placeholder="e.g. ABC123XY" style="text-transform:uppercase;" />
-            <p class="small-note" style="text-align: left; margin-top: 4px;">Were you invited by a friend? Enter their referral code so they get credit — even if you didn't use their link.</p>
+            <input type="text" name="referral_code" value="<?php echo sanitize($refFromLink ? $_SESSION['ref_code'] : ($_POST['referral_code'] ?? '')); ?>" placeholder="e.g. ABC123XY" style="text-transform:uppercase;<?php echo $refFromLink ? 'background:#f3f4f6;cursor:not-allowed;' : ''; ?>" <?php echo $refFromLink ? 'readonly' : ''; ?> />
+            <p class="small-note" style="text-align: left; margin-top: 4px;"><?php echo $refFromLink ? 'Applied automatically from your invite link.' : "Were you invited by a friend? Enter their referral code so they get credit — even if you didn't use their link."; ?></p>
 
             <div style="margin-top: 12px;">
                 <button type="submit" class="button button-primary">Continue</button>

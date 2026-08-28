@@ -32,6 +32,39 @@ $openJobs = $pdo->query(
      ORDER BY (sr.featured=1 AND (sr.featured_end_date IS NULL OR sr.featured_end_date>=CURDATE())) DESC, sr.created_at DESC LIMIT 4"
 )->fetchAll();
 
+// Workers — Featured (paid/promoted placement) and Top Rated (by rating +
+// completed jobs), each its own horizontally-scrolling strip mirroring the
+// Accommodation strips below. Top Rated excludes anyone already shown in
+// Featured so the two strips never repeat the same card.
+$featuredWorkers = $topRatedWorkers = [];
+if (module_enabled('workers')) {
+    try {
+        $wkBase = "
+            SELECT u.id, u.name, u.profile_photo, w.id AS profile_id, w.location, w.availability, w.is_verified, w.is_featured, w.featured_end_date,
+                   COALESCE(COUNT(DISTINCT sr.id),0) AS completed_jobs,
+                   COALESCE(AVG(r.score),0) AS avg_rating,
+                   (SELECT ws.skill_name FROM worker_skills ws WHERE ws.worker_profile_id = w.id ORDER BY ws.id LIMIT 1) AS top_skill
+            FROM users u
+            JOIN worker_profiles w ON u.id = w.user_id
+            LEFT JOIN service_requests sr ON u.id = sr.assigned_worker_id AND sr.status = 'completed'
+            LEFT JOIN ratings r ON sr.id = r.request_id AND r.worker_id = u.id
+            WHERE u.role='worker' AND u.banned=0";
+
+        $featuredWorkers = $pdo->query($wkBase . "
+              AND w.is_featured=1 AND (w.featured_end_date IS NULL OR w.featured_end_date>=CURDATE())
+            GROUP BY u.id, u.name, u.profile_photo, w.id, w.location, w.availability, w.is_verified, w.is_featured, w.featured_end_date
+            ORDER BY w.is_verified DESC, avg_rating DESC LIMIT 10"
+        )->fetchAll();
+
+        $featuredIds = array_map('intval', array_column($featuredWorkers, 'id'));
+        $excludeSql  = $featuredIds ? ('AND u.id NOT IN (' . implode(',', $featuredIds) . ')') : '';
+        $topRatedWorkers = $pdo->query($wkBase . " {$excludeSql}
+            GROUP BY u.id, u.name, u.profile_photo, w.id, w.location, w.availability, w.is_verified, w.is_featured, w.featured_end_date
+            ORDER BY avg_rating DESC, completed_jobs DESC, w.is_verified DESC, w.id DESC LIMIT 10"
+        )->fetchAll();
+    } catch (Exception $e) {}
+}
+
 $homeAd = get_ads_for_placement('homepage', ['banner', 'video'], 1)[0] ?? null;
 
 $sponsors = $pdo->query(
@@ -375,6 +408,39 @@ try {
         .cm-ac-card-price { font-weight:900; color:var(--primary,#0f766e); font-size:.86rem; }
         @media(max-width:480px){ .cm-ac-card { flex-basis:44vw; } }
 
+        /* ── Workers strip — same horizontal-scroll row/card mechanics as
+           Accommodation above, sized for a portrait "person" card instead
+           of a landscape photo. ── */
+        .cm-wk-row {
+            display:flex; flex-wrap:nowrap; overflow-x:auto; gap:14px;
+            scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+            padding-bottom:4px;
+        }
+        .cm-wk-row::-webkit-scrollbar { display:none; }
+        .cm-wk-card {
+            flex:0 0 150px; scroll-snap-align:start;
+            background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden;
+            text-decoration:none; color:inherit; display:flex; flex-direction:column; align-items:center; text-align:center;
+            padding:16px 10px 12px; transition:box-shadow .15s,transform .15s;
+        }
+        .cm-wk-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.1); transform:translateY(-2px); }
+        .cm-wk-card--featured { border:2px solid #f59e0b; }
+        .cm-wk-avatar-wrap { position:relative; margin-bottom:10px; }
+        .cm-wk-avatar { width:64px; height:64px; border-radius:50%; object-fit:cover; display:block; }
+        .cm-wk-avatar-fallback { display:flex; align-items:center; justify-content:center; background:var(--primary-soft,#d1fae5); color:var(--primary,#0f766e); font-weight:800; font-size:1.4rem; }
+        .cm-wk-status { position:absolute; bottom:1px; right:1px; width:14px; height:14px; border-radius:50%; border:2px solid var(--surface,#fff); }
+        .cm-wk-status--available { background:#10b981; }
+        .cm-wk-status--busy { background:#f59e0b; }
+        .cm-wk-status--offline { background:#9ca3af; }
+        .cm-wk-feat-badge { position:absolute; top:-4px; left:-4px; background:#f59e0b; color:#fff; font-size:.62rem; border-radius:50%; width:18px; height:18px; display:flex; align-items:center; justify-content:center; }
+        .cm-wk-body { width:100%; min-width:0; }
+        .cm-wk-name { font-weight:700; font-size:.84rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .cm-wk-verified { color:#10b981; }
+        .cm-wk-skill { font-size:.7rem; font-weight:700; color:var(--primary,#0f766e); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .cm-wk-loc { font-size:.68rem; color:var(--text-muted,#6b7280); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .cm-wk-rating { font-size:.7rem; color:var(--text-muted,#6b7280); margin-top:4px; }
+        @media(max-width:480px){ .cm-wk-card { flex:0 0 30vw; } }
+
         .cm-empty { text-align:center; color:var(--muted,#6b7280); font-size:.88rem; padding:24px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:12px; }
 
         .cm-cta { background:linear-gradient(135deg,#1e293b,#0f172a); color:#fff; border-radius:16px; padding:24px 20px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; }
@@ -669,6 +735,7 @@ try {
 <!-- Module cards -->
 <div class="cm-modules">
     <?php if (module_enabled('jobs')): ?><a href="<?php echo $user ? 'jobs.php' : 'browse_jobs.php'; ?>" class="cm-mod"><div class="cm-mod-icon">💼</div><div class="cm-mod-title">Jobs &amp; Services</div><div class="cm-mod-desc">Browse open jobs &amp; post requests</div></a><?php endif; ?>
+    <?php if (module_enabled('workers')): ?><a href="find_workers.php" class="cm-mod"><div class="cm-mod-icon">🧑‍🔧</div><div class="cm-mod-title">Find Workers</div><div class="cm-mod-desc">Hire skilled, verified workers</div></a><?php endif; ?>
     <?php if (module_enabled('news')): ?><a href="news.php"         class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a><?php endif; ?>
     <?php if (module_enabled('events')): ?><a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a><?php endif; ?>
     <?php if (module_enabled('funerals')): ?><a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a><?php endif; ?>
@@ -854,6 +921,55 @@ try {
                 <?php endif; ?>
             </div>
             <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Workers -->
+    <?php
+    $wkCard = function ($w) {
+        $isFeatured = !empty($w['is_featured']) && (empty($w['featured_end_date']) || $w['featured_end_date'] >= date('Y-m-d'));
+        ?>
+        <a href="worker_profile_public.php?id=<?php echo (int)$w['id']; ?>" class="cm-wk-card<?php echo $isFeatured?' cm-wk-card--featured':''; ?>">
+            <div class="cm-wk-avatar-wrap">
+                <?php if (!empty($w['profile_photo'])): ?>
+                <img src="<?php echo sanitize($w['profile_photo']); ?>" alt="<?php echo sanitize($w['name']); ?>" class="cm-wk-avatar">
+                <?php else: ?>
+                <span class="cm-wk-avatar cm-wk-avatar-fallback"><?php echo sanitize(strtoupper(mb_substr($w['name'],0,1))); ?></span>
+                <?php endif; ?>
+                <span class="cm-wk-status cm-wk-status--<?php echo sanitize($w['availability']); ?>"></span>
+                <?php if ($isFeatured): ?><span class="cm-wk-feat-badge">⭐</span><?php endif; ?>
+            </div>
+            <div class="cm-wk-body">
+                <div class="cm-wk-name"><?php echo sanitize($w['name']); ?><?php if ($w['is_verified']): ?> <span class="cm-wk-verified" title="Verified">✓</span><?php endif; ?></div>
+                <?php if (!empty($w['top_skill'])): ?><div class="cm-wk-skill"><?php echo sanitize($w['top_skill']); ?></div><?php endif; ?>
+                <?php if (!empty($w['location'])): ?><div class="cm-wk-loc">📍 <?php echo sanitize(mb_substr($w['location'],0,26)); ?></div><?php endif; ?>
+                <div class="cm-wk-rating">⭐ <?php echo number_format((float)$w['avg_rating'],1); ?> · <?php echo (int)$w['completed_jobs']; ?> job<?php echo (int)$w['completed_jobs']===1?'':'s'; ?></div>
+            </div>
+        </a>
+        <?php
+    };
+    ?>
+    <?php if ($featuredWorkers && module_enabled('workers')): ?>
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>⭐ Featured Workers</h2>
+            <a href="find_workers.php">View all →</a>
+        </div>
+        <div class="cm-wk-row">
+            <?php foreach ($featuredWorkers as $w) $wkCard($w); ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($topRatedWorkers && module_enabled('workers')): ?>
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>🏆 Top Rated Workers</h2>
+            <a href="find_workers.php">View all →</a>
+        </div>
+        <div class="cm-wk-row">
+            <?php foreach ($topRatedWorkers as $w) $wkCard($w); ?>
         </div>
     </div>
     <?php endif; ?>
