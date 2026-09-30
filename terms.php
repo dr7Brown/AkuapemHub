@@ -162,14 +162,13 @@ $lastUpdated = '24 August 2026';
         </ul>
 
         <h2 id="marketplace">8. Marketplace</h2>
-        <p>The Marketplace lets Sellers open a shop and list products for Customers to buy, including through scheduled Nearby Markets and Quick Services (see below).</p>
+        <p>The Marketplace lets Sellers open a shop and list products for Customers to buy, including through scheduled Nearby Markets (see below).</p>
         <ul>
             <li>Sellers are responsible for the accuracy of their product listings — description, price, stock, and condition — and for fulfilling orders they accept.</li>
             <li>Products are subject to admin review before going live and may be rejected if they violate these Terms or are outside the scope of the Platform.</li>
             <li>A buyer pays the full order total via Paystack at checkout, plus any customer checkout charge disclosed at checkout. The Platform deducts a commission, set by the admin and shown in seller reporting, from each paid order before crediting the seller.</li>
             <li>A seller's share of a paid order is held as a <strong>pending balance</strong> and only becomes withdrawable after the order is marked delivered and a confirmation window (set by the admin) has passed, unless a delivery complaint pauses that window. Some sellers may opt in to <strong>Fast Payout</strong>, which settles their share directly to a linked payout account once the same confirmation window closes, instead of requiring a manual withdrawal — the buyer-protection timing is the same either way.</li>
             <li><strong>Nearby Markets</strong> is a variant of the Marketplace for scheduled, periodic markets (e.g. Ofie Market, Nkurakan Market) — orders are placed ahead of the market day and collected from a storehouse; each market's own open/closed schedule governs when orders can be placed.</li>
-            <li><strong>Quick Services</strong> (airtime, utility bill payments, exam results checkers, document assistance, and similar) are fulfilled directly by the Platform's team rather than by a third-party seller — payment is made upfront and the request is processed once payment is confirmed.</li>
             <li>At checkout, a buyer chooses between AkuapemConnect Delivery Riders (a delivery request is created automatically once the seller marks the order ready) or arranging their own pickup directly with the seller. Choosing to arrange your own pickup means the Delivery Services protections described below don't apply to that handoff — the Platform is not a party to it.</li>
             <li>Refunds on a cancelled or disputed order are handled by the Platform, reversing the seller's held balance accordingly; a seller whose share has already been paid out is expected to cooperate with the Platform to return funds when a refund is due.</li>
             <li>Disputes over marketplace orders are resolved by Platform admins in the same way as delivery and job disputes (see Disputes below).</li>

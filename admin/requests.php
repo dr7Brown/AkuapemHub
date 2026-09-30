@@ -8,13 +8,29 @@ if (!is_admin_or_manager()) {
     header('Location: ../jobs.php');
     exit;
 }
-require_mod_permission('approve_jobs');
+// Page-level gate: any one of the three job permissions grants viewing
+// access; each individual action below is then re-checked against its own
+// specific permission (same split as Events/Funerals/News).
+if (!is_admin()
+    && !has_mod_permission('approve_jobs')
+    && !has_mod_permission('edit_jobs')
+    && !has_mod_permission('delete_jobs')
+) {
+    require_mod_permission('approve_jobs');
+}
+
+$canApprove = has_mod_permission('approve_jobs');
+$canEdit    = has_mod_permission('edit_jobs');
+$canDelete  = has_mod_permission('delete_jobs');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
     csrf_check();
     if ($_POST['action'] === 'bulk' && !empty($_POST['selected_requests']) && is_array($_POST['selected_requests'])) {
         $requestIds   = array_map('intval', $_POST['selected_requests']);
         $bulkAction   = $_POST['bulk_action'] ?? '';
+        if ($bulkAction === 'approve') require_mod_permission('approve_jobs');
+        if ($bulkAction === 'remove')  require_mod_permission('delete_jobs');
+        if ($bulkAction === 'feature') require_mod_permission('edit_jobs');
         $placeholders = implode(',', array_fill(0, count($requestIds), '?'));
         $stmt = $pdo->prepare("SELECT sr.*, u.email AS customer_email, u.name AS customer_name FROM service_requests sr JOIN users u ON sr.customer_id = u.id WHERE sr.id IN ($placeholders)");
         $stmt->execute($requestIds);
@@ -51,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
         $request = $stmt->fetch();
 
         if ($_POST['action'] === 'approve' && $request) {
+            require_mod_permission('approve_jobs');
             if (check_mod_coi('job', $requestId, $user['id'])) {
                 log_coi_violation($user['id'], 'job', $requestId, 'approve');
                 header('Location: requests.php?err=' . urlencode('Conflict of interest: you cannot approve your own job posting.'));
@@ -67,6 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
             notify_workers_of_matching_job($request);
             log_mod_activity($user['id'], 'jobs', 'approve_job', $requestId, $request['title']);
         } elseif ($_POST['action'] === 'reject' && $request) {
+            require_mod_permission('approve_jobs');
             $reason = trim($_POST['rejection_reason'] ?? '');
             $pdo->prepare('UPDATE service_requests SET status=?, rejection_reason=?, updated_at=NOW() WHERE id=?')
                 ->execute(['rejected', $reason ?: null, $requestId]);
@@ -80,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 "Your request \"{$request['title']}\" was not approved." . ($reason ? "\n\nReason: {$reason}" : '') . "\n\nClick to edit and resubmit.",
                 'error', 'request_detail.php?id=' . $requestId);
         } elseif ($_POST['action'] === 'remove' && $request) {
+            require_mod_permission('delete_jobs');
             $applicantIds = $pdo->prepare('SELECT worker_id FROM applications WHERE request_id = ?');
             $applicantIds->execute([$requestId]);
             $applicantIds = $applicantIds->fetchAll(PDO::FETCH_COLUMN);
@@ -92,6 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 notify_user((int)$workerId, 'Job Listing Removed', "The job \"{$request['title']}\" you applied to was removed by admin.", 'warning');
             }
         } elseif ($_POST['action'] === 'edit' && $request) {
+            require_mod_permission('edit_jobs');
             $newTitle    = trim($_POST['title'] ?? '');
             $newDesc     = trim($_POST['description'] ?? '');
             $newCategory = (int)($_POST['category_id'] ?? 0);
@@ -114,6 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action'])) {
                 exit;
             }
         } elseif ($_POST['action'] === 'feature' && $request) {
+            require_mod_permission('edit_jobs');
             $pdo->prepare('UPDATE service_requests SET featured = 1 WHERE id = ?')->execute([$requestId]);
             send_email_notification($request['customer_email'], 'Your request is featured', "Hello {$request['customer_name']},\n\nYour request '{$request['title']}' has been marked as featured by the admin.\n\nGreat job!\n", $request['customer_id']);
             notify_user($request['customer_id'], 'Request featured', "Your request '{$request['title']}' was marked as featured.", 'success');
@@ -134,7 +155,7 @@ $categories = get_categories();
 // never reaches the visible editor).
 $editRequestId = (int)($_GET['edit'] ?? 0);
 $editRequest = null;
-if ($editRequestId) {
+if ($editRequestId && $canEdit) {
     $erStmt = $pdo->prepare('SELECT * FROM service_requests WHERE id = ?');
     $erStmt->execute([$editRequestId]);
     $editRequest = $erStmt->fetch() ?: null;
@@ -407,18 +428,20 @@ $statusMeta = [
 
         <!-- Toolbar -->
         <div class="rq-toolbar">
+            <?php if ($canApprove || $canDelete || $canEdit): ?>
             <form id="bulk-requests" method="post" action="requests.php" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                 <input type="hidden" name="action" value="bulk" />
                 <select name="bulk_action" style="padding:7px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem;">
-                    <option value="approve">Approve selected</option>
-                    <option value="remove">Remove selected</option>
-                    <option value="feature">Feature selected</option>
+                    <?php if ($canApprove): ?><option value="approve">Approve selected</option><?php endif; ?>
+                    <?php if ($canDelete): ?><option value="remove">Remove selected</option><?php endif; ?>
+                    <?php if ($canEdit): ?><option value="feature">Feature selected</option><?php endif; ?>
                 </select>
                 <button type="submit" class="button button-primary button-small">Apply</button>
                 <label style="font-size:.8rem;color:#6b7280;display:flex;align-items:center;gap:5px;cursor:pointer;">
                     <input type="checkbox" id="select-all" /> Select all
                 </label>
             </form>
+            <?php endif; ?>
             <form method="get" action="requests.php" style="display:flex;gap:6px;align-items:center;">
                 <?php if ($filterStatus): ?><input type="hidden" name="status" value="<?php echo sanitize($filterStatus); ?>"><?php endif; ?>
                 <input type="search" id="rq-search" name="q" value="<?php echo sanitize($searchQ); ?>" placeholder="Search title or customer…">
@@ -493,7 +516,7 @@ $statusMeta = [
                                 <input type="hidden" name="request_id" value="<?php echo $request['id']; ?>" />
                                 <?php if ($isCoi && $request['status'] === 'pending'): ?>
                                     <span title="Conflict of interest — you submitted this job" style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:8px;white-space:nowrap;">⚠️ Your listing</span>
-                                <?php else: ?>
+                                <?php elseif ($canApprove): ?>
                                 <?php if (!in_array($request['status'], ['open','partially_staffed','fully_staffed','completed','cancelled','rejected'], true)): ?>
                                     <?php if ($feeStatus === 'pending'): ?>
                                         <button type="button" class="button button-primary button-small" disabled title="Posting fee not confirmed">Approve</button>
@@ -506,13 +529,17 @@ $statusMeta = [
                                     onclick="openRejectModal(<?php echo (int)$request['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <?php endif; ?>
+                                <?php if ($canEdit): ?>
                                 <a href="requests.php?edit=<?php echo (int)$request['id']; ?>" class="button button-secondary button-small">✏️ Edit</a>
                                 <button type="submit" name="action" value="feature" class="button button-secondary button-small"
                                     style="<?php echo $arFeatActive ? 'color:#854d0e;border-color:#f59e0b;' : ''; ?>">
                                     <?php echo $arFeatActive ? '⭐' : 'Feature'; ?>
                                 </button>
+                                <?php endif; ?>
+                                <?php if ($canDelete): ?>
                                 <button type="submit" name="action" value="remove" class="button button-secondary button-small"
                                     style="color:#dc2626;" onclick="return confirm('Remove this request?')">✕</button>
+                                <?php endif; ?>
                             </form>
                         </div>
                     </div>

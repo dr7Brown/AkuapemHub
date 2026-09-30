@@ -172,11 +172,6 @@ $user = current_user();
                 <p>Order ahead from scheduled periodic markets like Ofie Market and Nkurakan Market, and collect from the storehouse on market day.</p>
             </div>
             <div class="service-card">
-                <div class="icon">⚡</div>
-                <h3>Quick Services</h3>
-                <p>Airtime top-up, ECG and utility payments, exam results checkers, passport and Ghana Card assistance, and more — handled directly by our team.</p>
-            </div>
-            <div class="service-card">
                 <div class="icon">🎉</div>
                 <h3>Special Offers</h3>
                 <p>Claim time-limited discounts, free access promotions, or redeem a promo code — check what's available and see your active offers anytime.</p>

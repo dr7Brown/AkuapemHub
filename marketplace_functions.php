@@ -4,6 +4,50 @@
  * Include with: require_once __DIR__ . '/marketplace_functions.php';
  */
 
+// ── Sorting ───────────────────────────────────────────────────────────────────
+
+/**
+ * Resolves a marketplace sort key (as used by marketplace.php's ?sort=)
+ * into a raw ORDER BY expression (no "ORDER BY" prefix). Pass null to fall
+ * back to the admin-configured platform default (Admin → Marketplace →
+ * "Default sort order on the public Marketplace page") — this is what lets
+ * every listing surface (the public Marketplace page, the homepage's
+ * Marketplace strip, etc.) stay in sync with a single admin setting instead
+ * of each hardcoding its own order.
+ */
+function mp_sort_order_sql(?string $sort = null): string {
+    global $pdo;
+    $sort = $sort ?? get_platform_setting('mp_default_sort', 'default');
+
+    // 'default' — the blended "smart" listing order: featured/sponsored pinned
+    // to the top, then a daily-reshuffled mix of recently-posted and popular
+    // items, then everything else. RAND() is seeded by the day number (not
+    // per-request) so pagination stays stable within a day while the mix
+    // still varies day to day. The "popular" cutoff (average view count
+    // across all approved products) is cached to avoid a subquery re-run on
+    // every request that uses this sort.
+    $avgViewCount = (float)apcu_remember('mp_avg_view_count_v1', 60, function () use ($pdo) {
+        return $pdo->query("SELECT AVG(view_count) FROM mp_products WHERE status='approved'")->fetchColumn();
+    });
+    $defaultOrderBy =
+        "(CASE
+            WHEN mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE() THEN 3
+            WHEN mp.is_featured=1 AND mp.featured_end>=CURDATE() THEN 2
+            WHEN mp.created_at >= NOW() - INTERVAL 14 DAY
+              OR mp.view_count >= $avgViewCount THEN 1
+            ELSE 0
+          END) DESC, RAND(TO_DAYS(CURDATE()))";
+
+    return match($sort) {
+        'price_asc'  => 'COALESCE(mp.discount_price,mp.price) ASC',
+        'price_desc' => 'COALESCE(mp.discount_price,mp.price) DESC',
+        'newest'     => 'mp.created_at DESC',
+        'popular'    => 'mp.view_count DESC',
+        'featured'   => '(CASE WHEN mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE() THEN 2 WHEN mp.is_featured=1 AND mp.featured_end>=CURDATE() THEN 1 ELSE 0 END) DESC, mp.created_at DESC',
+        default      => $defaultOrderBy, // covers 'default' and any unrecognized value
+    };
+}
+
 // ── Slugs ─────────────────────────────────────────────────────────────────────
 
 function mp_slugify(string $text): string {
@@ -331,6 +375,7 @@ function get_product(int $id): ?array {
         'SELECT mp.*, ms.shop_name, ms.slug AS shop_slug, ms.id AS shop_id,
                 ms.user_id AS shop_owner_id, ms.rating AS shop_rating,
                 ms.verification_status AS shop_verified, ms.market_id,
+                ms.region AS shop_venue, t.name AS shop_town,
                 u.banned AS shop_owner_banned,
                 mc.name AS category_name, mc.slug AS category_slug,
                 mc.icon AS category_icon, COALESCE(mc.show_condition,1) AS category_show_condition,
@@ -340,6 +385,7 @@ function get_product(int $id): ?array {
          JOIN users u ON ms.user_id = u.id
          LEFT JOIN mp_categories mc ON mp.category_id = mc.id
          LEFT JOIN markets mk ON ms.market_id = mk.id
+         LEFT JOIN towns t ON ms.town_id = t.id
          WHERE mp.id = ?'
     );
     $st->execute([$id]);

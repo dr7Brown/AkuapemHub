@@ -1394,6 +1394,20 @@ if ($sdOrderMarketIds) {
     </div>
 
 <?php elseif ($tab === 'setup'): ?>
+<?php if ($shop): ?>
+<div class="card" style="margin-bottom:16px;">
+    <p style="font-weight:700;margin:0 0 4px;">🔗 Share Your Shop</p>
+    <p class="meta" style="margin:0 0 10px;">This is your shop's public link — share this with customers, not your dashboard link (which only ever shows <em>your own</em> shop to whoever is logged in when they open it).</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+        <input type="text" readonly value="<?php echo htmlspecialchars(rtrim(BASE_URL,'/') . '/shop.php?id=' . $shop['id']); ?>" onclick="this.select()" style="flex:1;min-width:200px;font-size:.85rem;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface-muted);color:var(--text);font-family:monospace;">
+    </div>
+    <?php
+    $shareTitle = $shop['shop_name'];
+    $shareUrl   = rtrim(BASE_URL, '/') . '/shop.php?id=' . $shop['id'];
+    require __DIR__ . '/partials/share_buttons.php';
+    ?>
+</div>
+<?php endif; ?>
 <?php if ($shopError): ?><div class="alert alert-error"><?php echo sanitize($shopError); ?></div><?php endif; ?>
 <form method="post" action="seller_dashboard.php?tab=setup" enctype="multipart/form-data">
     <?php echo csrf_field(); ?>

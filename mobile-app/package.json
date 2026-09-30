@@ -1,0 +1,31 @@
+{
+  "name": "akuapemconnect-mobile",
+  "version": "1.0.0",
+  "description": "AkuapemConnect — Android & iOS app shell (Capacitor)",
+  "main": "index.js",
+  "scripts": {
+    "sync": "npx cap sync",
+    "assets": "npx capacitor-assets generate",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/browser": "^8.0.4",
+    "@capacitor/cli": "^8.5.1",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}

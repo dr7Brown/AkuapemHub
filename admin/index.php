@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../quick_service_functions.php';
 
 require_login();
 if (!is_admin_or_manager()) {
@@ -250,7 +251,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     <button class="adm-sb" id="adm-sl" aria-label="Scroll nav left">‹</button>
 
     <nav class="adm-nav" id="adm-nav" aria-label="Admin sections">
-        <?php if (is_admin() || has_mod_permission('approve_jobs') || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents')): ?>
+        <?php if (is_admin() || has_mod_permission('approve_jobs') || has_mod_permission('edit_jobs') || has_mod_permission('delete_jobs') || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents') || has_mod_permission('approve_verifications') || has_mod_permission('approve_boosts')): ?>
         <button class="adm-cat-btn" data-cat="jobs">
             📋 Jobs <span class="adm-caret">▾</span>
         </button>
@@ -270,7 +271,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             💳 Finance <span class="adm-caret">▾</span>
         </button>
         <?php endif; ?>
-        <?php if (is_admin() || has_mod_permission('approve_news') || has_mod_permission('approve_events') || has_mod_permission('approve_funerals') || has_mod_permission('manage_ads') || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents') || has_mod_permission('manage_markets') || has_mod_permission('manage_quick_services') || has_mod_permission('manage_promotions') || has_mod_permission('manage_accommodation')): ?>
+        <?php if (is_admin() || has_mod_permission('approve_news') || has_mod_permission('edit_news') || has_mod_permission('delete_news') || has_mod_permission('manage_news_pricing') || has_mod_permission('approve_events') || has_mod_permission('edit_events') || has_mod_permission('delete_events') || has_mod_permission('manage_event_pricing') || has_mod_permission('approve_funerals') || has_mod_permission('edit_funerals') || has_mod_permission('delete_funerals') || has_mod_permission('manage_funeral_pricing') || has_mod_permission('manage_ads') || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents') || has_mod_permission('manage_markets') || has_mod_permission('manage_quick_services') || has_mod_permission('manage_quick_service_requests') || has_mod_permission('manage_promotions') || has_mod_permission('manage_accommodation')): ?>
         <button class="adm-cat-btn" data-cat="community">
             🌍 Community <span class="adm-caret">▾</span>
         </button>
@@ -374,17 +375,18 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     </div>
     <!-- Community dropdown — each item gated -->
     <div class="adm-drop" data-cat="community">
-        <?php if (is_admin() || has_mod_permission('approve_news')): ?><a href="news.php"     data-page="news.php">📰 News</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_news') || has_mod_permission('edit_news') || has_mod_permission('delete_news') || has_mod_permission('manage_news_pricing')): ?><a href="news.php"     data-page="news.php">📰 News</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('manage_ads')): ?><a href="ads.php"      data-page="ads.php">📣 Ads</a><?php endif; ?>
-        <?php if (is_admin() || has_mod_permission('approve_funerals')): ?><a href="funerals.php" data-page="funerals.php">🕊️ Funerals</a><?php endif; ?>
-        <?php if (is_admin() || has_mod_permission('approve_events')): ?><a href="events.php"   data-page="events.php">📅 Events</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_funerals') || has_mod_permission('edit_funerals') || has_mod_permission('delete_funerals') || has_mod_permission('manage_funeral_pricing')): ?><a href="funerals.php" data-page="funerals.php">🕊️ Funerals</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('approve_events') || has_mod_permission('edit_events') || has_mod_permission('delete_events') || has_mod_permission('manage_event_pricing')): ?><a href="events.php"   data-page="events.php">📅 Events</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_sponsors')): ?><a href="sponsors.php" data-page="sponsors.php">🤝 Sponsors</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_delivery_requests') || has_mod_permission('approve_delivery_agents') || has_mod_permission('approve_verifications') || has_mod_permission('approve_boosts')): ?><a href="delivery.php"    data-page="delivery.php">🚚 Delivery</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('approve_products') || has_mod_permission('approve_shops') || has_mod_permission('approve_boosts') || has_mod_permission('manage_quote_requests')): ?><a href="marketplace.php" data-page="marketplace.php">🛍️ Marketplace</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('manage_markets')): ?><a href="markets.php" data-page="markets.php">🏬 Nearby Markets</a><?php endif; ?>
-        <?php if (is_admin() || has_mod_permission('manage_quick_services')): ?><a href="quick_services.php" data-page="quick_services.php">⚡ Quick Services</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_quick_services') || has_mod_permission('manage_quick_service_requests')): ?><a href="quick_services.php" data-page="quick_services.php">⚡ Quick Services</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('manage_promotions')): ?><a href="promotions.php" data-page="promotions.php">🎁 Promotions</a><?php endif; ?>
         <?php if (is_admin() || has_mod_permission('manage_accommodation')): ?><a href="accommodation.php" data-page="accommodation.php">🏠 Accommodation</a><?php endif; ?>
+        <?php if (is_admin() || has_mod_permission('manage_fm_stations') || has_mod_permission('manage_fm_programmes')): ?><a href="fm_stations.php" data-page="fm_stations.php">📻 FM Stations</a><?php endif; ?>
     </div>
     <!-- Platform dropdown — mostly admin-only, plus a few permitted -->
     <div class="adm-drop" data-cat="platform">
@@ -396,6 +398,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         <?php if (is_admin() || has_mod_permission('manage_master_catalog')): ?><a href="master_catalog.php" data-page="master_catalog.php">🗂️ Master Catalog</a><?php endif; ?>
         <?php if (is_admin()): ?>
         <a href="email_settings.php"   data-page="email_settings.php">📧 Email / SMTP</a>
+        <a href="sms_settings.php"     data-page="sms_settings.php">📱 SMS / Arkesel</a>
+        <a href="sms_templates.php"    data-page="sms_templates.php">✏️ SMS Templates</a>
         <a href="contact_settings.php" data-page="contact_settings.php">📞 Contact</a>
         <a href="theme.php"            data-page="theme.php">🎨 Theme</a>
         <a href="moderators.php"       data-page="moderators.php">🛡️ Moderators</a>
@@ -410,7 +414,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     <!-- Home panel: stats + quick-access cards -->
     <div id="adm-home" class="adm-home">
 
-        <?php if ($pendingPayments > 0): ?>
+        <?php if ($pendingPayments > 0 && (is_admin() || has_mod_permission('view_reports'))): ?>
         <div class="adm-pay-alert">
             💳 <strong><?php echo $pendingPayments; ?> pending payment<?php echo $pendingPayments !== 1 ? 's' : ''; ?></strong>
             awaiting confirmation.
@@ -455,7 +459,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             $items=$pdo->query("SELECT e.id, e.slug, e.title, e.venue AS location, e.description, e.start_date, e.user_id AS owner_id, u.name AS user_name, e.created_at FROM events e JOIN users u ON e.user_id=u.id WHERE e.status IN('draft','pending_payment') ORDER BY e.created_at ASC LIMIT 3")->fetchAll();
             foreach ($items as &$it) { $it['view_url'] = 'event_edit.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
             $queueSections[]=['icon'=>'📅','title'=>'Events','color'=>'#10b981','bg'=>'#f0fdf4','count'=>$c,'items'=>$items,'page'=>'events.php','approve_action'=>'approve_event','reject_action'=>'reject_event','label_key'=>'title','meta_key'=>'location'];
-
+        }
+        if (has_mod_permission('delete_events')) {
             $dc=(int)$pdo->query("SELECT COUNT(*) FROM events WHERE deletion_requested=1")->fetchColumn();
             $ditems=$pdo->query("SELECT e.id, e.slug, e.title, e.venue AS location, e.user_id AS owner_id, u.name AS user_name, e.deletion_requested_at AS created_at FROM events e JOIN users u ON e.user_id=u.id WHERE e.deletion_requested=1 ORDER BY e.deletion_requested_at ASC LIMIT 3")->fetchAll();
             foreach ($ditems as &$it) { $it['view_url'] = $it['slug'] ? '../event.php?slug=' . urlencode($it['slug']) : null; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
@@ -472,7 +477,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             $items=$pdo->query("SELECT n.id, n.slug, n.title, n.summary AS description, 'Article' AS location, n.user_id AS owner_id, u.name AS user_name, n.created_at FROM news n JOIN users u ON n.user_id=u.id WHERE n.status='draft' ORDER BY n.created_at ASC LIMIT 3")->fetchAll();
             foreach ($items as &$it) { $it['view_url'] = 'news_edit.php?id=' . $it['id']; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
             $queueSections[]=['icon'=>'📰','title'=>'News Articles','color'=>'#059669','bg'=>'#f0fdf4','count'=>$c,'items'=>$items,'page'=>'news.php','approve_action'=>'approve_news','reject_action'=>'reject_news','label_key'=>'title','meta_key'=>'location'];
-
+        }
+        if (has_mod_permission('delete_news')) {
             $dc=(int)$pdo->query("SELECT COUNT(*) FROM news WHERE deletion_requested=1")->fetchColumn();
             $ditems=$pdo->query("SELECT n.id, n.slug, n.title, 'Article' AS location, n.user_id AS owner_id, u.name AS user_name, n.deletion_requested_at AS created_at FROM news n JOIN users u ON n.user_id=u.id WHERE n.deletion_requested=1 ORDER BY n.deletion_requested_at ASC LIMIT 3")->fetchAll();
             foreach ($ditems as &$it) { $it['view_url'] = $it['slug'] ? '../news_article.php?slug=' . urlencode($it['slug']) : null; $it['has_coi'] = (int)$it['owner_id'] === $modId; }; unset($it);
@@ -514,8 +520,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                 $qsIds = is_admin() ? array_column($pdo->query('SELECT id FROM quick_services')->fetchAll(), 'id') : get_managed_quick_service_ids($modId);
                 if ($qsIds) {
                     $qsIn = implode(',', array_map('intval', $qsIds));
-                    $c=(int)$pdo->query("SELECT COUNT(*) FROM quick_service_requests WHERE status IN ('paid','processing') AND service_id IN ($qsIn)")->fetchColumn();
-                    if ($c) $queueSections[]=['icon'=>'📥','title'=>'Quick Service Requests','color'=>'#0ea5e9','bg'=>'#f0f9ff','count'=>$c,'items'=>[],'page'=>'quick_service_requests.php','approve_action'=>null,'reject_action'=>null,'label_key'=>null,'meta_key'=>null];
+                    $c=(int)$pdo->query("SELECT COUNT(*) FROM quick_transactions WHERE payment_status='paid' AND processing_status IN ('awaiting_assignment','assigned','processing') AND service_id IN ($qsIn)")->fetchColumn();
+                    if ($c) $queueSections[]=['icon'=>'📥','title'=>'Quick Services Requests','color'=>'#0ea5e9','bg'=>'#f0f9ff','count'=>$c,'items'=>[],'page'=>'quick_service_requests.php','approve_action'=>null,'reject_action'=>null,'label_key'=>null,'meta_key'=>null];
                 }
             } catch(Exception $e){}
         }
@@ -820,7 +826,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         // [href, icon, title, desc, required_permission_or_null]
         // null = always visible to admin+manager; string = visible if is_admin() OR has_mod_permission($perm)
         $cards = [
-            ['requests.php',         '📋', 'Requests',     'Service request queue',       'approve_jobs'],
+            ['requests.php',         '📋', 'Requests',     'Service request queue',       ['approve_jobs','edit_jobs','delete_jobs']],
             ['applications.php',     '📝', 'Applications', 'Job applications',            'approve_jobs'],
             ['users.php',            '👥', 'Users',        'Manage accounts & roles',     'manage_users'],
             ['disputes.php',         '⚖️', 'Disputes',     'Resolve user conflicts',      'manage_disputes'],
@@ -830,26 +836,29 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
             ['payments.php',         '💳', 'Payments',     'Platform payment records',    'view_reports'],
             ['mp_payouts.php',       '🏪', 'Seller Payouts', 'Process marketplace seller payouts', 'manage_mp_payouts'],
             ['monetization.php',     '💰', 'Monetize',     'Pricing, plans & fees',       null],
-            ['news.php',             '📰', 'News',         'Articles & blog posts',       'approve_news'],
+            ['news.php',             '📰', 'News',         'Articles & blog posts',       ['approve_news','edit_news','delete_news','manage_news_pricing']],
             ['ads.php',              '📣', 'Ads',          'Manage advertisements',       'manage_ads'],
-            ['funerals.php',         '🕊️', 'Funerals',     'Funeral announcements',       'approve_funerals'],
-            ['events.php',           '📅', 'Events',       'Community events',            'approve_events'],
-            ['delivery.php',         '🚚', 'Delivery',     'Agents, requests & tracking', 'approve_delivery_agents'],
+            ['funerals.php',         '🕊️', 'Funerals',     'Funeral announcements',       ['approve_funerals','edit_funerals','delete_funerals','manage_funeral_pricing']],
+            ['events.php',           '📅', 'Events',       'Community events',            ['approve_events','edit_events','delete_events','manage_event_pricing']],
+            ['delivery.php',         '🚚', 'Delivery',     'Agents, requests & tracking', ['approve_delivery_agents','approve_delivery_requests','approve_verifications','approve_boosts']],
             ['marketplace.php',      '🛍️', 'Marketplace',  'Shops, products, orders & quote requests', ['approve_products','approve_shops','approve_boosts','manage_quote_requests']],
             ['markets.php',          '🏬', 'Nearby Markets', 'Ofie, Nkurakan & other scheduled markets', 'manage_markets'],
             ['market_orders.php',    '📝', 'Custom Orders', 'Price buyers\' market shopping lists',      'manage_market_deliveries'],
             ['market_deliveries.php','📦', 'Storehouse Deliveries', 'Manage market pickup/handoff',      'manage_market_deliveries'],
             ['market_settings.php',  '⚙️', 'Market Settings', 'Global nearby market settings',   null],
-            ['quick_services.php',   '⚡', 'Quick Services', 'Manage services, fees & managers', 'manage_quick_services'],
-            ['quick_service_requests.php', '📥', 'Service Requests', 'Process assigned service requests', 'manage_quick_service_requests'],
             ['promotions.php',       '🎁', 'Promotions',   'Special offers & free-access campaigns', 'manage_promotions'],
             ['accommodation.php',    '🏠', 'Accommodation', 'Listings, types, facilities & reports', 'manage_accommodation'],
+            ['quick_services.php',   '⚡', 'Quick Services', 'Catalog, data bundles & managers', 'manage_quick_services'],
+            ['quick_service_requests.php', '📥', 'Service Requests', 'Process assigned service requests', 'manage_quick_service_requests'],
+            ['fm_stations.php',      '📻', 'FM Stations',  'Stations & programme schedules', ['manage_fm_stations','manage_fm_programmes']],
             ['moderators.php',       '🛡️', 'Moderators',   'Roles & access control',      null],
             ['mod_performance.php',  '🏆', 'Performance',  'Points, leaderboard & rewards',null],
             ['analytics.php',        '📊', 'Analytics',    'Stats & growth trends',       'view_reports'],
             ['business_messages.php','💬', 'Messages',     'Business enquiries',          null],
             ['communication.php',    '📣', 'Broadcast',    'Push notifications',          'manage_communication'],
             ['email_settings.php',   '📧', 'Email / SMTP', 'SMTP config & test',          null],
+            ['sms_settings.php',     '📱', 'SMS / Arkesel', 'Arkesel API key & test',      null],
+            ['sms_templates.php',    '✏️', 'SMS Templates', 'Edit each SMS message',       null],
             ['contact_settings.php', '📞', 'Contact',      'Contact page information',    null],
             ['media_settings.php',   '🖼️', 'Image Optimization', 'Upload resize & quality', 'manage_media_settings'],
             ['towns.php',            '📍', 'Towns',        'Manage Akuapem towns list',   'manage_towns'],
@@ -891,6 +900,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     var srBtn          = document.getElementById('adm-sr');
     var pageStyleEl    = null;
     var currentLoadUrl = null;
+    var loadSeq        = 0;
     var currentCat     = null;
 
     /* ── Scroll buttons ───────────────────────────────────────── */
@@ -1010,6 +1020,7 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         var base   = currentLoadUrl || window.location.href;
         var absUrl = new URL(href, base).href;
         currentLoadUrl = absUrl;
+        var mySeq = ++loadSeq;
 
         homeEl.style.display = 'none';
         ajaxEl.style.display = 'block';
@@ -1030,10 +1041,25 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                     window.location.href = r.url;
                     return Promise.reject('session-expired');
                 }
+                // A page-level permission guard (e.g. "not an admin/manager")
+                // redirected straight to the shell itself (admin/index.php),
+                // not a fetchable sub-page — same problem admLoad() has for the
+                // "← Admin" link: injecting the whole shell into itself. Go
+                // home instead of rendering it as if it were page content.
+                if (r.url && /\/admin\/index\.php$/.test(new URL(r.url).pathname) && !new URL(r.url).search) {
+                    if (mySeq === loadSeq) showHome(false);
+                    return Promise.reject('redirected-home');
+                }
                 if (!r.ok) throw new Error('HTTP ' + r.status);
                 return r.text();
             })
             .then(function (html) {
+                // A newer admLoad() call has started since this fetch began
+                // (e.g. the user clicked back again before this one finished)
+                // — applying this stale response now would clobber whatever
+                // the newer, still-pending load is about to show.
+                if (mySeq !== loadSeq) return;
+
                 var parser = new DOMParser();
                 var doc    = parser.parseFromString(html, 'text/html');
 
@@ -1075,7 +1101,8 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
                 window.scrollTo({ top: 0 });
             })
             .catch(function (err) {
-                if (err === 'session-expired') return; // navigation already in progress
+                if (err === 'session-expired' || err === 'redirected-home') return; // already handled above
+                if (mySeq !== loadSeq) return; // superseded by a newer load — see the .then() above
                 ajaxEl.innerHTML =
                     '<div style="padding:30px 16px;">' +
                     '<div class="alert alert-error">Failed to load the page. ' +
@@ -1114,7 +1141,17 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
         catch (ex) { return; }
         if (!isInternalAdminPage(resolved)) return;
         e.preventDefault();
-        admLoad(resolved);
+        // Every sub-page's own "← Admin" back-link points at index.php — that's
+        // this SPA shell itself, not a fetchable sub-page fragment. Routing it
+        // through admLoad() would fetch and inject the whole dashboard
+        // (scripts included) into its own AJAX panel, re-running this entire
+        // script a second time on top of itself. Treat it as "go home" instead.
+        var u = new URL(resolved);
+        if (/\/admin\/index\.php$/.test(u.pathname) && !u.search) {
+            showHome();
+        } else {
+            admLoad(resolved);
+        }
     });
 
     /* ── Delegate: intercept forms inside AJAX content ─────────── */
@@ -1173,6 +1210,19 @@ $pendingPostingFees = (int)$pdo->query("SELECT COUNT(*) FROM service_requests WH
     } else {
         history.replaceState({ adm: 'home' }, '', window.location.href);
     }
+
+    /* ── Bfcache restore: the browser can freeze this whole tab (e.g. when
+       navigating away to a non-admin page) and later restore it exactly as
+       it was on back/forward, WITHOUT re-running this script. If a fetch was
+       still in flight at that moment, the browser kills it silently — so
+       nothing ever replaces the "Loading…" spinner, and it's stuck forever.
+       event.persisted tells us this was a bfcache restore, not a fresh load;
+       re-issue whatever was showing so it actually finishes. ─────────── */
+    window.addEventListener('pageshow', function (e) {
+        if (!e.persisted) return;
+        if (currentLoadUrl) { admLoad(currentLoadUrl, false); }
+        else { showHome(false); }
+    });
 
     /* Expose for inline onclick (payments alert button) */
     window.admLoad = admLoad;

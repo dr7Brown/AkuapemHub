@@ -342,6 +342,10 @@ if ($isMoreAjax) {
                 <?php endif; ?>
             </div>
 
+            <?php if (!empty($product['shop_town'])): ?>
+            <div style="margin-bottom:12px;font-size:.85rem;color:var(--text-muted,#6b7280);">📍 <?php echo sanitize($product['shop_town']); ?></div>
+            <?php endif; ?>
+
             <?php if (!empty($product['market_id'])): ?>
             <div style="margin-bottom:12px;padding:9px 12px;border-radius:10px;font-size:.82rem;background:<?php echo $product['market_status']==='open'?'#d1fae5':'#fee2e2'; ?>;color:<?php echo $product['market_status']==='open'?'#065f46':'#c0392b'; ?>;">
                 🏬 <strong><?php echo sanitize($product['market_name']); ?></strong> — <?php echo $product['market_status']==='open' ? 'Open for orders now' : 'Currently closed for checkout'; ?>

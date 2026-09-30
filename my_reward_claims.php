@@ -49,7 +49,7 @@ $statusLabels = reward_claim_status_labels();
 </head>
 <body class="has-bottom-nav">
     <header class="app-topbar">
-        <a href="my_rewards.php" class="brand" style="text-decoration:none;">‹ My Rewards</a>
+        <a href="referrals.php#rewards" class="brand" style="text-decoration:none;">‹ My Rewards</a>
         <span style="font-weight:600;">My Reward Claims</span>
     </header>
     <main class="page-shell small-shell" style="padding-bottom:80px;">
@@ -58,7 +58,7 @@ $statusLabels = reward_claim_status_labels();
         <?php endforeach; ?>
 
         <?php if (!$claims): ?>
-        <div class="mr-empty">You haven't claimed any rewards yet. <a href="my_rewards.php">View available rewards →</a></div>
+        <div class="mr-empty">You haven't claimed any rewards yet. <a href="referrals.php#rewards">View available rewards →</a></div>
         <?php else: foreach ($claims as $c):
             $details = json_decode($c['claim_details'] ?? '[]', true) ?: [];
             $isFocus = $focusRef !== '' && strcasecmp($focusRef, $c['reference_code']) === 0;

@@ -15,12 +15,12 @@ require_login();
 $user = current_user();
 
 $milestoneId = (int)($_GET['id'] ?? $_POST['milestone_id'] ?? 0);
-if (!$milestoneId) { header('Location: my_rewards.php'); exit; }
+if (!$milestoneId) { header('Location: referrals.php#rewards'); exit; }
 
 $check = evaluate_claim_eligibility((int)$user['id'], $milestoneId);
 if (!$check['ok']) {
     flash($check['error'], 'error');
-    header('Location: my_rewards.php');
+    header('Location: referrals.php#rewards');
     exit;
 }
 $milestone = $check['milestone'];
@@ -82,7 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'submit'
 </head>
 <body class="has-bottom-nav">
     <header class="app-topbar">
-        <a href="my_rewards.php" class="brand" style="text-decoration:none;">‹ My Rewards</a>
+        <a href="referrals.php#rewards" class="brand" style="text-decoration:none;">‹ My Rewards</a>
         <span style="font-weight:600;">Claim Reward</span>
     </header>
     <main class="page-shell small-shell" style="padding-bottom:80px;">
@@ -161,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['step'] ?? '') === 'submit'
                 <?php endswitch; ?>
 
             <button type="submit" class="button button-primary" style="width:100%;margin-top:18px;">CONFIRM CLAIM</button>
-            <a href="my_rewards.php" class="button button-secondary" style="width:100%;margin-top:8px;text-align:center;display:block;">CANCEL</a>
+            <a href="referrals.php#rewards" class="button button-secondary" style="width:100%;margin-top:8px;text-align:center;display:block;">CANCEL</a>
         </form>
     </main>
     <?php require __DIR__ . '/partials/bottom_nav.php'; ?>

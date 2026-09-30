@@ -23,7 +23,6 @@ $staticPages = [
     'marketplace.php'            => ['daily',   '0.8'],
     'shops.php'                  => ['daily',   '0.7'],
     'markets.php'                => ['daily',   '0.7'],
-    'quick_services.php'         => ['weekly',  '0.6'],
     'accommodation.php'          => ['weekly',  '0.7'],
     'accommodation_listings.php' => ['daily',   '0.7'],
     'about.php'                  => ['monthly', '0.4'],
@@ -160,11 +159,6 @@ try {
         ];
     }
 } catch (Throwable $e) {}
-
-// Quick Services: only the browse list is public — quick_service.php itself
-// requires login to view a specific service, so an individual service page
-// would just hand Google a login redirect. quick_services.php is already
-// covered via $staticPages above.
 
 // Accommodation: approved listings only, and never a banned owner's —
 // accommodation_detail.php redirects both cases away, same reasoning as the

@@ -64,7 +64,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <body>
     <main class="page-shell small-shell">
         <div style="text-align: center; margin-bottom: var(--space-4);">
-            <img src="assets/images/ac%20logo%20removedbg.png" alt="AkuapemConnect" style="height:72px;width:auto;margin-bottom:12px;">
+            <a href="index.php" title="Continue browsing without signing in">
+                <img src="assets/images/ac%20logo%20removedbg.png" alt="AkuapemConnect" style="height:72px;width:auto;margin-bottom:12px;">
+            </a>
             <h1 style="margin: 0;">Welcome back</h1>
             <p class="meta">Sign in to AkuapemConnect</p>
         </div>
@@ -104,7 +106,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               New here? <a href="register.php">Create account</a>
             </p>
         </form>
+        <p style="text-align:center;margin-top:16px;">
+            <a href="index.php" class="meta" style="text-decoration:underline;">‹ Not ready to sign in? Continue browsing</a>
+        </p>
     </main>
     <script src="assets/js/password-toggle.js"></script>
+    <script src="assets/js/google-auth-bridge.js"></script>
 </body>
 </html>

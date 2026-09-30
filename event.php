@@ -72,6 +72,15 @@ $sbAd        = get_ads_for_placement('events', ['banner', 'video'], 1)[0] ?? nul
         'organizer'   => [
             '@type' => 'Organization',
             'name'  => $ev['organizer_name'] ?: APP_NAME,
+            'url'   => rtrim(BASE_URL, '/') . '/',
+        ],
+        // No dedicated "performer" field exists on the platform (most listings
+        // are community events, not concerts) — PerformingGroup is Schema.org's
+        // own suggested generic fallback when the specific performer is unknown,
+        // satisfying Google's structured-data check without fabricating a name.
+        'performer'   => [
+            '@type' => 'PerformingGroup',
+            'name'  => $ev['organizer_name'] ?: APP_NAME,
         ],
     ];
     if (!empty($ev['end_date'])) $evLd['endDate'] = $evEndIso;
@@ -82,6 +91,9 @@ $sbAd        = get_ads_for_placement('events', ['banner', 'video'], 1)[0] ?? nul
         'price'         => $ev['ticket_type'] === 'paid' ? (float)$ev['ticket_price'] : 0,
         'priceCurrency' => 'GHS',
         'availability'  => 'https://schema.org/InStock',
+        // The listing (and its ticket offer) has been available for purchase
+        // since it was published — Google requires this field explicitly.
+        'validFrom'     => date('Y-m-d\TH:i:sP', strtotime($ev['created_at'])),
     ];
     echo json_encode($evLd, JSON_UNESCAPED_SLASHES);
     ?>

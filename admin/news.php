@@ -5,11 +5,28 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 $user = current_user();
-require_mod_permission('approve_news');
+
+// Page-level gate: any one of the four news permissions grants viewing
+// access; each individual action below is then re-checked against its own
+// specific permission (same split as Events/Funerals).
+if (!is_admin()
+    && !has_mod_permission('approve_news')
+    && !has_mod_permission('edit_news')
+    && !has_mod_permission('delete_news')
+    && !has_mod_permission('manage_news_pricing')
+) {
+    require_mod_permission('approve_news');
+}
+
+$canApprove = has_mod_permission('approve_news');
+$canEdit    = has_mod_permission('edit_news');
+$canDelete  = has_mod_permission('delete_news');
+$canPrice   = has_mod_permission('manage_news_pricing');
 
 // Fee settings
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
     csrf_check();
+    require_mod_permission('manage_news_pricing');
     set_platform_setting('news_fee_enabled', (int)isset($_POST['fee_enabled']));
     set_platform_setting('news_fee_amount', max(0, (float)($_POST['fee_amount'] ?? 0)));
     log_audit_action($user['id'], 'news_fee_update', 'Updated news article submission fee settings');
@@ -19,6 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
 // Featured settings
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_featured'])) {
     csrf_check();
+    require_mod_permission('manage_news_pricing');
     set_platform_setting('enable_paid_featured_news', isset($_POST['feat_paid']) ? '1' : '0');
     log_audit_action($user['id'], 'news_feat_update', 'Updated news featuring settings');
     header('Location: news.php?saved=1'); exit;
@@ -27,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_featured'])) {
 // Package CRUD
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pkg_action'])) {
     csrf_check();
+    require_mod_permission('manage_news_pricing');
     $pa = $_POST['pkg_action'];
     if ($pa === 'add_pkg') {
         $pName = trim($_POST['pkg_name'] ?? ''); $pDays = max(1,(int)($_POST['pkg_days']??30)); $pPrice = max(0,(float)($_POST['pkg_price']??0));
@@ -42,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pkg_action'])) {
 // Toggle publish/unpublish
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
     csrf_check();
+    require_mod_permission('approve_news');
     $tid = (int)$_POST['toggle_id'];
     $cur = $pdo->prepare("SELECT status, title, notification_sent, user_id FROM news WHERE id=? LIMIT 1");
     $cur->execute([$tid]);
@@ -87,6 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_id'])) {
 // Delete
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     csrf_check();
+    require_mod_permission('delete_news');
     $did = (int)$_POST['delete_id'];
     $pdo->prepare("DELETE FROM news_comments WHERE news_id=?")->execute([$did]);
     $pdo->prepare("DELETE FROM news_likes    WHERE news_id=?")->execute([$did]);
@@ -99,6 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
 // Reject article
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reject') {
     csrf_check();
+    require_mod_permission('approve_news');
     $tid    = (int)($_POST['id'] ?? 0);
     $reason = trim($_POST['rejection_reason'] ?? '');
     $row    = $pdo->prepare("SELECT id, title, user_id FROM news WHERE id=? LIMIT 1");
@@ -191,17 +213,20 @@ $articles = $pdo->query("
     <header class="topbar">
         <a href="index.php" class="button button-secondary button-small">← Admin</a>
         <h1>News Management</h1>
-        <a href="news_edit.php" class="button button-primary button-small">+ New Article</a>
+        <?php if ($canEdit): ?><a href="news_edit.php" class="button button-primary button-small">+ New Article</a><?php endif; ?>
     </header>
 
     <main class="an-shell">
+        <?php if ($canEdit): ?>
         <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
             <a href="news_edit.php" class="button button-primary button-small">+ New Article</a>
         </div>
+        <?php endif; ?>
 
         <?php if (isset($_GET['saved'])):  ?><div class="alert alert-success" style="margin-bottom:12px;">Saved.</div><?php endif; ?>
         <?php if (isset($_GET['deleted'])): ?><div class="alert alert-success" style="margin-bottom:12px;">Article deleted.</div><?php endif; ?>
 
+        <?php if ($canPrice): ?>
         <!-- Submission fee panel -->
         <div style="background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
@@ -300,6 +325,7 @@ $articles = $pdo->query("
                 <button type="submit" class="button button-primary button-small">+ Add Package</button>
             </form>
         </div>
+        <?php endif; // $canPrice ?>
 
         <div class="an-stats">
             <div class="an-stat"><strong><?php echo $total; ?></strong><span>Total Articles</span></div>
@@ -353,11 +379,12 @@ $articles = $pdo->query("
                     <td>
                         <?php $newsCoi = !is_admin() && (int)($a['user_id'] ?? 0) === (int)$user['id']; ?>
                         <div class="an-actions">
-                            <a href="news_edit.php?id=<?php echo (int)$a['id']; ?>" class="button button-small button-primary">View</a>
-                            <a href="news_edit.php?id=<?php echo (int)$a['id']; ?>" class="button button-small">Edit</a>
+                            <?php if ($canApprove || $canEdit): ?>
+                            <a href="news_edit.php?id=<?php echo (int)$a['id']; ?>" class="button button-small button-primary"><?php echo $canEdit ? 'Edit' : 'View'; ?></a>
+                            <?php endif; ?>
                             <?php if ($newsCoi && $a['status'] === 'draft'): ?>
                             <span style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:8px;">⚠️ Yours</span>
-                            <?php elseif ($a['status'] !== 'rejected'): ?>
+                            <?php elseif ($canApprove && $a['status'] !== 'rejected'): ?>
                             <form method="post" action="news.php" style="display:inline;">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="toggle_id" value="<?php echo (int)$a['id']; ?>">
@@ -366,23 +393,25 @@ $articles = $pdo->query("
                                 </button>
                             </form>
                             <?php endif; ?>
-                            <?php if ($a['status'] === 'rejected'): ?>
+                            <?php if ($canApprove && $a['status'] === 'rejected'): ?>
                             <form method="post" action="news.php" style="display:inline;">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="toggle_id" value="<?php echo (int)$a['id']; ?>">
                                 <button type="submit" class="button button-small button-secondary">↩ Draft</button>
                             </form>
                             <?php endif; ?>
-                            <?php if ($a['status'] !== 'rejected' && $a['user_id']): ?>
+                            <?php if ($canApprove && $a['status'] !== 'rejected' && $a['user_id']): ?>
                             <button onclick="openRejectModal(<?php echo (int)$a['id']; ?>, <?php echo $a['status']==='published'?'true':'false'; ?>)"
                                     class="button button-small"
                                     style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Reject</button>
                             <?php endif; ?>
+                            <?php if ($canDelete): ?>
                             <form method="post" action="news.php" style="display:inline;" onsubmit="return confirm('Delete this article permanently?')">
                                 <?php echo csrf_field(); ?>
                                 <input type="hidden" name="delete_id" value="<?php echo (int)$a['id']; ?>">
                                 <button type="submit" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button>
                             </form>
+                            <?php endif; ?>
                         </div>
                     </td>
                 </tr>

@@ -4,6 +4,7 @@ require_once __DIR__ . '/../functions.php';
 require_once __DIR__ . '/../modules/referrals/service.php';
 
 require_login();
+$user = current_user();
 if (!is_admin_or_manager()) {
     header('Location: index.php');
     exit;
@@ -33,6 +34,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         log_audit_action($user['id'], 'referral_config_saved', 'Points configuration updated');
         flash('Points configuration saved.', 'success');
         header('Location: referrals.php?tab=config');
+        exit;
+    }
+
+    if ($action === 'admin_adjust_points') {
+        $targetUserId = (int)($_POST['user_id'] ?? 0);
+        $points       = (int)($_POST['points'] ?? 0);
+        $note         = trim($_POST['note'] ?? '');
+        $redirect     = 'referrals.php?' . http_build_query(array_filter(['tab' => 'adjust', 'q' => $_POST['q'] ?? '', 'user_id' => $targetUserId]));
+
+        $result = admin_adjust_points($targetUserId, $points, $note, (int)$user['id']);
+        if ($result['ok']) {
+            log_audit_action($user['id'], 'admin_points_adjustment',
+                "Adjusted user #{$targetUserId} by " . ($points > 0 ? '+' : '') . "{$points} points — {$note}");
+            flash('Points adjusted. New balance: ' . number_format($result['new_balance']) . '.', 'success');
+        } else {
+            flash($result['error'], 'error');
+        }
+        header('Location: ' . $redirect);
         exit;
     }
 }
@@ -101,6 +120,35 @@ if ($tab === 'referrals') {
         ORDER BY r.created_at DESC LIMIT {$refPerPage} OFFSET {$refOffset}")->fetchAll(PDO::FETCH_ASSOC);
 }
 
+// ── Adjust Points tab: user search + selected user lookup ─────────────────────
+if ($tab === 'adjust') {
+    $adjQ = trim($_GET['q'] ?? '');
+    $adjResults = [];
+    if ($adjQ !== '') {
+        $like = '%' . $adjQ . '%';
+        $adjStmt = $pdo->prepare(
+            "SELECT u.id, u.name, u.email, COALESCE(pw.balance,0) AS balance
+             FROM users u LEFT JOIN points_wallets pw ON pw.user_id = u.id
+             WHERE u.name LIKE ? OR u.email LIKE ? OR u.username LIKE ?
+             ORDER BY u.name LIMIT 25"
+        );
+        $adjStmt->execute([$like, $like, $like]);
+        $adjResults = $adjStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    $adjSelectedUser = null;
+    $adjSelectedId = (int)($_GET['user_id'] ?? 0);
+    if ($adjSelectedId > 0) {
+        $selStmt = $pdo->prepare(
+            "SELECT u.id, u.name, u.email, COALESCE(pw.balance,0) AS balance
+             FROM users u LEFT JOIN points_wallets pw ON pw.user_id = u.id
+             WHERE u.id = ?"
+        );
+        $selStmt->execute([$adjSelectedId]);
+        $adjSelectedUser = $selStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    }
+}
+
 function refadm_qstr(array $overrides = []): string {
     $base = [];
     foreach (['tab', 'q', 'page'] as $k) {
@@ -134,6 +182,7 @@ $eventLabels = [
     'five_star_rating'        => 'Receive 5-Star Rating',
     'news_approved'           => 'News Article Approved',
     'event_approved'          => 'Event Approved',
+    'funeral_approved'        => 'Funeral Announcement Approved',
 ];
 
 $groups = [
@@ -141,7 +190,7 @@ $groups = [
     'Referral Activities' => ['referral_registers','referral_email_verified','referral_first_payment'],
     'Job Activities (Client)' => ['hire_worker','mark_job_completed','leave_review'],
     'Worker Activities'   => ['complete_job','five_star_rating'],
-    'Content Activities'  => ['news_approved','event_approved'],
+    'Content Activities'  => ['news_approved','event_approved','funeral_approved'],
 ];
 ?>
 <!DOCTYPE html>
@@ -204,6 +253,7 @@ $groups = [
             <a href="referrals.php?tab=transactions"  class="<?php echo $tab==='transactions'  ? 'active':'' ?>">Transactions</a>
             <a href="referrals.php?tab=referrals"     class="<?php echo $tab==='referrals'     ? 'active':'' ?>">Referrals</a>
             <a href="referrals.php?tab=leaderboard"   class="<?php echo $tab==='leaderboard'   ? 'active':'' ?>">Leaderboard</a>
+            <a href="referrals.php?tab=adjust"        class="<?php echo $tab==='adjust'        ? 'active':'' ?>">Adjust Points</a>
         </nav>
 
         <!-- Stats (always visible) -->
@@ -384,7 +434,64 @@ $groups = [
             </table>
         </div>
         <?php endif; ?>
+
+        <?php elseif ($tab === 'adjust'): ?>
+        <!-- ── Adjust Points tab ────────────────────────────────────────────── -->
+        <form method="get" action="referrals.php" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+            <input type="hidden" name="tab" value="adjust" />
+            <input type="text" name="q" value="<?php echo sanitize($adjQ); ?>"
+                   placeholder="Search by name, username, or email…" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);" />
+            <button type="submit" class="button button-primary">Search</button>
+        </form>
+
+        <?php if ($adjQ !== ''): ?>
+        <?php if (empty($adjResults)): ?>
+            <p class="meta" style="text-align:center;padding:20px 0;">No matching users.</p>
+        <?php else: ?>
+        <div style="overflow-x:auto;margin-bottom:20px;">
+            <table class="data-table">
+                <thead><tr>
+                    <th>User</th><th style="text-align:right;">Balance</th><th></th>
+                </tr></thead>
+                <tbody>
+                    <?php foreach ($adjResults as $ru): ?>
+                    <tr<?php echo $adjSelectedUser && (int)$adjSelectedUser['id'] === (int)$ru['id'] ? ' style="background:var(--surface-muted);"' : ''; ?>>
+                        <td><?php echo sanitize($ru['name']); ?><br><span class="meta"><?php echo sanitize($ru['email']); ?></span></td>
+                        <td style="text-align:right;font-weight:700;color:var(--primary);"><?php echo number_format($ru['balance']); ?></td>
+                        <td style="text-align:right;">
+                            <a href="referrals.php?tab=adjust&amp;q=<?php echo urlencode($adjQ); ?>&amp;user_id=<?php echo (int)$ru['id']; ?>" class="button button-secondary button-small">Select</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
         <?php endif; ?>
+        <?php endif; ?>
+
+        <?php if ($adjSelectedUser): ?>
+        <div class="stat-box" style="max-width:480px;">
+            <p style="font-weight:700;margin:0 0 4px;">Adjust points for <?php echo sanitize($adjSelectedUser['name']); ?></p>
+            <p class="meta" style="margin:0 0 4px;"><?php echo sanitize($adjSelectedUser['email']); ?></p>
+            <p class="meta" style="margin:0 0 16px;">Current balance: <strong style="color:var(--primary);"><?php echo number_format($adjSelectedUser['balance']); ?></strong> points</p>
+
+            <form method="post" action="referrals.php?tab=adjust">
+                <?php echo csrf_field(); ?>
+                <input type="hidden" name="action" value="admin_adjust_points" />
+                <input type="hidden" name="user_id" value="<?php echo (int)$adjSelectedUser['id']; ?>" />
+                <input type="hidden" name="q" value="<?php echo sanitize($adjQ); ?>" />
+
+                <label style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;">Points (use a negative number to remove)</label>
+                <input type="number" name="points" placeholder="e.g. 50 or -50" required style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);margin-bottom:12px;" />
+
+                <label style="display:block;font-size:0.82rem;font-weight:600;margin-bottom:4px;">Description (shown to the user)</label>
+                <textarea name="note" required rows="2" placeholder="Reason for this adjustment…" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);color:var(--text);margin-bottom:12px;resize:vertical;"></textarea>
+
+                <button type="submit" class="button button-primary">Apply Adjustment</button>
+            </form>
+        </div>
+        <?php endif; ?>
+        <?php endif; // tab === 'adjust' ?>
 
     </main>
 </body>

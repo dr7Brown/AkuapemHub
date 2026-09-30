@@ -34,6 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['action']) && !empty(
                 $pdo->prepare('UPDATE disputes SET status = ?, resolution_notes = ?, updated_at = NOW() WHERE id = ?')->execute(['resolved', $resolutionNotes, $disputeId]);
                 notify_user($dispute['reported_by'], 'Dispute resolved', 'Your dispute has been resolved by admin.', 'success');
                 notify_user($dispute['reported_user_id'], 'Dispute resolved', 'A dispute involving you has been resolved.', 'info');
+                sms_user((int)$dispute['reported_by'], 'dispute_resolved');
+                sms_user((int)$dispute['reported_user_id'], 'dispute_resolved');
             } elseif ($action === 'closed') {
                 $pdo->prepare('UPDATE disputes SET status = ? WHERE id = ?')->execute(['closed', $disputeId]);
                 notify_user($dispute['reported_by'], 'Dispute closed', 'Your dispute has been closed.', 'info');

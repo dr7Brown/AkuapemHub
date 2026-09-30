@@ -291,7 +291,7 @@ if ($user) {
                 <p style="color:#fff;font-size:1.5rem;font-weight:800;margin:0;letter-spacing:-0.5px;"><?php echo number_format($dashPtsBalance); ?></p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                <a href="referrals.php" style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.35);padding:7px 14px;border-radius:var(--radius-sm);font-size:0.85rem;font-weight:600;text-decoration:none;white-space:nowrap;">View &amp; Earn</a>
+                <a href="referrals.php" style="background:rgba(255,255,255,0.18);color:#fff;border:1px solid rgba(255,255,255,0.35);padding:7px 14px;border-radius:var(--radius-sm);font-size:0.85rem;font-weight:600;text-decoration:none;white-space:nowrap;">Rewards</a>
                 <button id="dash-share-btn" onclick="dashShare()" style="background:rgba(255,255,255,0.12);color:#fff;border:1px solid rgba(255,255,255,0.3);padding:7px 14px;border-radius:var(--radius-sm);font-size:0.85rem;font-weight:600;cursor:pointer;white-space:nowrap;display:none;">
                     Share Link
                 </button>

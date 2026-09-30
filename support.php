@@ -289,11 +289,6 @@ $waLink = $ci['whatsapp'] ? 'https://wa.me/' . preg_replace('/[^0-9]/', '', $ci[
         </div>
 
         <div class="faq-item">
-            <div class="faq-q">What are Quick Services? <span class="arrow">▼</span></div>
-            <div class="faq-a">Quick Services are everyday errands — airtime top-up, ECG/utility payments, exam results checkers, passport and Ghana Card assistance, and similar — that our team completes for you rather than a marketplace seller. Browse <a href="quick_services.php">Quick Services</a>, pick a service, pay, and our team processes your request.</div>
-        </div>
-
-        <div class="faq-item">
             <div class="faq-q">What is Fast Payout for sellers? <span class="arrow">▼</span></div>
             <div class="faq-a">Fast Payout is an optional upgrade for eligible sellers: once an order clears the same confirmation window as the standard payout flow, your share settles straight to your linked bank or mobile money account automatically — no manual withdrawal request needed. It's opt-in and set up from <strong>Seller Dashboard → Wallet → Payout Accounts</strong>, and may need admin approval depending on current settings.</div>
         </div>

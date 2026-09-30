@@ -65,6 +65,7 @@ try {
                    "Thank you for using AkuapemConnect.";
         send_email_notification($request['customer_email'], 'Your AkuapemConnect request is complete', $message, $request['customer_id']);
         notify_user($request['customer_id'], 'Job completed', "Your request '{$request['title']}' has been completed.", 'success');
+        sms_user((int)$request['customer_id'], 'job_completed', ['job_title' => $request['title']]);
         send_business_message($request['customer_id'], $request['contact_info'], "AkuapemConnect: Your request '{$request['title']}' has been marked complete by the worker. Please review the work and confirm payment.", 'whatsapp');
     }
 

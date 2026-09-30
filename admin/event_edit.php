@@ -5,8 +5,21 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
-require_mod_permission('approve_events');
 $id = (int)($_GET['id'] ?? 0);
+
+// Viewing an existing event's full details is also needed by anyone with
+// "approve_events" (they have to actually read it before approving/
+// rejecting) — but only "edit_events" may create a new event or save
+// changes. The POST handler below re-checks 'edit_events' strictly.
+if ($id > 0) {
+    if (!is_admin() && !has_mod_permission('approve_events') && !has_mod_permission('edit_events')) {
+        require_mod_permission('edit_events');
+    }
+} else {
+    require_mod_permission('edit_events');
+}
+$canEditEvent = is_admin() || has_mod_permission('edit_events');
+
 $ev = null;
 if ($id) {
     $stmt = $pdo->prepare("SELECT * FROM events WHERE id=? LIMIT 1");
@@ -29,6 +42,7 @@ function ev_unique_slug($pdo, $base, $excludeId = 0) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
+    require_mod_permission('edit_events');
 
     $title      = trim($_POST['title']      ?? '');
     $desc       = trim($_POST['description'] ?? '');
@@ -214,7 +228,11 @@ $dt   = fn($k) => !empty($ev[$k]) ? $ev[$k] : '';
             </div>
 
             <div style="display:flex;gap:10px;margin-top:12px;">
+                <?php if ($canEditEvent): ?>
                 <button type="submit" class="button button-primary"><?php echo $isNew ? 'Create Event' : 'Save Changes'; ?></button>
+                <?php else: ?>
+                <span class="meta" style="align-self:center;">👁️ Read-only — you can review this event here, but editing requires the "Edit Events" permission. Use Publish / Reject on the Events list.</span>
+                <?php endif; ?>
                 <a href="events.php" class="button button-secondary">Cancel</a>
             </div>
         </form>

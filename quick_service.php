@@ -1,344 +1,270 @@
 <?php
 /**
- * Quick Services — a single service's intro page + dynamic request form.
- * The form itself is generated from quick_services.form_fields (admin-
- * configured JSON), so a brand-new service needs no code changes here.
+ * Quick Services — single service page: shows the right request form for
+ * the service's service_type (data_bundle vs result_service) and, on
+ * submit, creates a pending quick_transactions row and hands off to the
+ * existing Paystack flow (initializePayment()) — no separate payment
+ * implementation. Login required since a transaction must belong to a user.
  */
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/quick_service_functions.php';
+require_once __DIR__ . '/paystack.php';
 
 require_module_enabled('quick_services', 'Quick Services');
 require_login();
-
 $user = current_user();
+
 $slug = trim($_GET['slug'] ?? '');
-
-$stmt = $pdo->prepare("SELECT * FROM quick_services WHERE slug = ? AND status = 'active' LIMIT 1");
-$stmt->execute([$slug]);
-$service = $stmt->fetch();
-
+$service = $slug !== '' ? qs_get_service_by_slug($slug) : null;
 if (!$service) {
-    flash('That service is not available right now.', 'error');
-    header('Location: quick_services.php');
-    exit;
+    render_not_found('quick_services.php', 'Browse Quick Services', 'This service is no longer available.');
 }
 
-$formFields = json_decode($service['form_fields'], true) ?: [];
-$error = '';
+$errors = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
 
-    // Pass 1: collect every raw submitted value first, so "Depends on" and
-    // "Show only if" parent lookups work regardless of field order.
-    $rawSubmitted = [];
-    foreach ($formFields as $f) {
-        $rawSubmitted[$f['key']] = trim($_POST['field'][$f['key']] ?? '');
-    }
+    if ($service['service_type'] === 'data_bundle') {
+        $bundleId  = (int)($_POST['bundle_id'] ?? 0);
+        $recipient = trim($_POST['recipient'] ?? '');
+        $bundle    = $bundleId ? qs_get_bundle($bundleId) : null;
 
-    // Pass 2: validate + build the final stored data. A field currently
-    // hidden by a "Show only if" condition is skipped entirely — not
-    // required, not validated, not stored — matching how a disabled form
-    // control never gets submitted by the browser in the first place.
-    $submitted = [];
-    foreach ($formFields as $f) {
-        $key = $f['key'];
-        if (!empty($f['show_if']['field'])) {
-            $parentVal = $rawSubmitted[$f['show_if']['field']] ?? '';
-            if (!in_array($parentVal, $f['show_if']['values'] ?? [], true)) {
-                continue;
-            }
-        }
-        $val = $rawSubmitted[$key];
-        if (!empty($f['required']) && $val === '') {
-            $error = ($f['label'] ?? $key) . ' is required.';
-            break;
-        }
-        if (($f['type'] ?? 'text') === 'select' && $val !== '') {
-            if (!empty($f['depends_on']) && is_array($f['options'] ?? null)) {
-                // Dependent select: valid options depend on which parent
-                // value was submitted.
-                $parentVal   = $rawSubmitted[$f['depends_on']] ?? '';
-                $bucket      = $f['options'][$parentVal] ?? [];
-                $validLabels = array_column($bucket, 'label');
-                if (!in_array($val, $validLabels, true)) {
-                    $error = 'Invalid value for ' . ($f['label'] ?? $key) . '.';
-                    break;
-                }
-            } elseif (qs_field_is_priced_select($f)) {
-                // Standalone priced select: valid options are this field's
-                // own flat priced list.
-                if (!in_array($val, array_column($f['options'], 'label'), true)) {
-                    $error = 'Invalid value for ' . ($f['label'] ?? $key) . '.';
-                    break;
-                }
-            } elseif (!empty($f['options']) && !in_array($val, $f['options'], true)) {
-                $error = 'Invalid value for ' . ($f['label'] ?? $key) . '.';
-                break;
-            }
-        }
-        $submitted[$key] = mb_substr($val, 0, 500);
-    }
+        if (!$bundle) $errors[] = 'Please select a valid data bundle.';
+        if (!class_exists('WhatsAppService', false)) require_once __DIR__ . '/services/WhatsAppService.php';
+        $normalizedRecipient = WhatsAppService::normalizePhone($recipient);
+        if (!$recipient || strlen($normalizedRecipient) < 12) $errors[] = 'Please enter a valid recipient phone number.';
 
-    if (!$error && requires_verified_email('quick_service') && !is_email_verified()) {
-        $error = 'Please verify your email address before requesting a service.';
-    }
+        if (!$errors) {
+            $amount = (float)$bundle['price'];
+            $requestData = ['network' => $bundle['network_name'], 'bundle' => $bundle['label'], 'recipient' => $recipient];
+            $summary = $bundle['network_name'] . ' ' . $bundle['label'] . ' for ' . $recipient;
+        }
+    } else { // result_service
+        $optionId  = (int)($_POST['option_id'] ?? 0);
+        $candidate = trim($_POST['candidate_name'] ?? '');
+        $indexNo   = trim($_POST['index_number'] ?? '');
+        $examYear  = trim($_POST['exam_year'] ?? '');
+        $whatsapp  = trim($_POST['whatsapp_number'] ?? '');
+        $option    = $optionId ? qs_get_option($optionId) : null;
 
-    if (!$error) {
-        $pricing = qs_compute_pricing($service, $submitted);
-        if ($pricing['total'] <= 0) {
-            $error = 'The total amount must be greater than zero.';
+        if (!$option) $errors[] = 'Please select a valid option.';
+        if (!$candidate) $errors[] = 'Candidate name is required.';
+        if (!$indexNo)   $errors[] = 'Index number is required.';
+        if (!$examYear)  $errors[] = 'Examination year is required.';
+        if (!$whatsapp)  $errors[] = 'WhatsApp number is required.';
+
+        if (!$errors) {
+            $amount = (float)$option['price'];
+            $requestData = [
+                'option' => $option['label'], 'candidate_name' => $candidate,
+                'index_number' => $indexNo, 'exam_year' => $examYear, 'whatsapp_number' => $whatsapp,
+            ];
+            $summary = $option['label'] . ' — ' . $candidate . ' (' . $indexNo . ')';
         }
     }
 
-    if (!$error) {
-        $pdo->prepare('INSERT INTO quick_service_requests
-            (user_id, service_id, request_data, service_amount, service_fee, total_amount, status)
-            VALUES (?,?,?,?,?,?,\'pending_payment\')')
-            ->execute([
-                $user['id'], $service['id'], json_encode($submitted, JSON_UNESCAPED_UNICODE),
-                $pricing['service_amount'], $pricing['service_fee'], $pricing['total'],
+    if (!$errors) {
+        $serviceCharge = get_quick_service_charge($amount);
+        $totalAmount = $amount + $serviceCharge;
+
+        $pdo->beginTransaction();
+        try {
+            $pdo->prepare(
+                "INSERT INTO quick_transactions (reference, user_id, service_id, amount, service_charge, customer_name, customer_phone, request_data)
+                 VALUES ('', ?, ?, ?, ?, ?, ?, ?)"
+            )->execute([
+                $user['id'], $service['id'], $amount, $serviceCharge, $user['name'],
+                $requestData['recipient'] ?? $requestData['whatsapp_number'] ?? null,
+                json_encode($requestData),
             ]);
-        $requestId = (int)$pdo->lastInsertId();
-        header('Location: pay_quick_service.php?id=' . $requestId);
-        exit;
+            $txId = (int)$pdo->lastInsertId();
+            $reference = qs_reference($txId);
+            $pdo->prepare('UPDATE quick_transactions SET reference=? WHERE id=?')->execute([$reference, $txId]);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            $errors[] = 'Something went wrong creating your request. Please try again.';
+        }
+
+        if (!$errors) {
+            $result = initializePayment($user['id'], $user['email'], 'quick_service', $txId, 0, $totalAmount, ['summary' => $summary]);
+            if (isset($result['error'])) {
+                $pdo->prepare("UPDATE quick_transactions SET processing_status='cancelled' WHERE id=?")->execute([$txId]);
+                $errors[] = $result['error'];
+            } else {
+                header('Location: ' . $result['checkout_url']);
+                exit;
+            }
+        }
     }
 }
 
-$otherServicesStmt = $pdo->prepare("SELECT * FROM quick_services WHERE status='active' AND id != ? ORDER BY RAND() LIMIT 5");
-$otherServicesStmt->execute([$service['id']]);
-$otherServices = $otherServicesStmt->fetchAll();
+$networks = $service['service_type'] === 'data_bundle' ? qs_get_networks_with_bundles() : [];
+$options  = $service['service_type'] === 'result_service' ? qs_get_service_options((int)$service['id']) : [];
+
+$qsChargeType  = get_platform_setting('qs_service_charge_type', 'flat');
+$qsChargeValue = (float)get_platform_setting('qs_service_charge_value', '0');
+$qsChargeCap   = (float)get_platform_setting('qs_service_charge_cap', '0');
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo sanitize($service['name']); ?> — <?php echo APP_NAME; ?></title>
+    <?php echo seo_meta([
+        'title'       => $service['name'] . ' — ' . APP_NAME,
+        'description' => $service['description'] ?: ($service['name'] . ' via ' . APP_NAME . '.'),
+    ]); ?>
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
-        .qs-shell { max-width: 640px; margin: 0 auto; padding: 16px 16px 80px; }
-        .qs-hero  { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:14px; text-align:center; }
-        .qs-hero-icon { font-size:2.4rem; margin-bottom:6px; }
-        .qs-hero-icon img { width:56px; height:56px; border-radius:50%; object-fit:cover; }
-        .qs-card  { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:14px; }
-        .qs-section-title { font-size:.75rem; font-weight:800; text-transform:uppercase; letter-spacing:.07em; color:var(--text-muted,#6b7280); margin:0 0 14px; }
-        .qs-field { margin-bottom:14px; }
-        .qs-field label { font-weight:600; font-size:.86rem; display:block; margin-bottom:4px; }
-        .qs-field input, .qs-field select, .qs-field textarea { width:100%; box-sizing:border-box; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:.9rem; }
-        .qs-field textarea { resize:vertical; min-height:70px; }
-        .qs-pricing { background:#f0fdf4; border:1px solid #86efac; border-radius:10px; padding:14px 16px; margin-bottom:16px; }
-        .qs-pricing-row { display:flex; justify-content:space-between; font-size:.86rem; color:#166534; padding:3px 0; }
-        .qs-pricing-row.total { font-weight:800; font-size:1.05rem; color:#15803d; border-top:1px dashed #86efac; margin-top:6px; padding-top:8px; }
-        .qs-other-grid  { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; margin-bottom:14px; }
-        .qs-other-card  { background:var(--bg,#f9fafb); border:1px solid var(--border,#e5e7eb); border-radius:14px; padding:16px 12px; text-align:center; text-decoration:none; color:inherit; transition:box-shadow .15s,transform .15s; }
-        .qs-other-card:hover { box-shadow:0 6px 24px rgba(0,0,0,.1); transform:translateY(-3px); }
-        .qs-other-icon  { font-size:1.7rem; margin-bottom:6px; }
-        .qs-other-icon img { width:34px; height:34px; border-radius:50%; object-fit:cover; }
-        .qs-other-title { font-weight:700; font-size:.82rem; }
+        .qsd-shell { max-width:560px; margin:0 auto; padding:16px 16px 80px; }
+        .qsd-hero { display:flex; align-items:center; gap:12px; background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:var(--radius-lg,20px); padding:16px; margin-bottom:16px; }
+        .qsd-hero .icon { font-size:2rem; }
+        .qsd-hero h1 { font-size:1.1rem; font-weight:800; margin:0; }
+        .qsd-hero p { font-size:.8rem; color:var(--muted,#6b7280); margin:2px 0 0; }
+        .qsd-panel { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:var(--radius-lg,20px); padding:18px; margin-bottom:16px; }
+        .qsd-section-title { font-size:.78rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; color:var(--muted,#6b7280); margin:0 0 12px; }
+        .qsd-net-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+        .qsd-net-tab { padding:8px 16px; border-radius:20px; border:1px solid var(--border,#e5e7eb); background:var(--surface-muted,#f1f7f3); font-size:.85rem; font-weight:700; cursor:pointer; }
+        .qsd-net-tab.active { background:var(--primary,#2f8f5b); color:#fff; border-color:var(--primary,#2f8f5b); }
+        .qsd-bundle-group { display:none; }
+        .qsd-bundle-group.active { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+        .qsd-option { position:relative; }
+        .qsd-option input { position:absolute; opacity:0; }
+        .qsd-option label { display:block; border:2px solid var(--border,#e5e7eb); border-radius:14px; padding:12px 10px; text-align:center; cursor:pointer; font-size:.86rem; font-weight:700; }
+        .qsd-option input:checked + label { border-color:var(--primary,#2f8f5b); background:var(--primary-soft,#e4f4ea); color:var(--primary-dark,#246b45); }
+        .qsd-option .price { display:block; font-size:.76rem; font-weight:900; margin-top:3px; }
+        .qsd-result-options { display:flex; flex-direction:column; gap:10px; margin-bottom:4px; }
+        .qsd-result-options label { display:flex; justify-content:space-between; align-items:center; border:2px solid var(--border,#e5e7eb); border-radius:14px; padding:12px 14px; cursor:pointer; font-size:.88rem; font-weight:600; }
+        .qsd-result-options input { margin-right:10px; }
+        .qsd-result-options input:checked ~ span.price,
+        .qsd-result-options label:has(input:checked) { border-color:var(--primary,#2f8f5b); background:var(--primary-soft,#e4f4ea); }
+        .qsd-field { margin-bottom:14px; }
+        .qsd-field label { display:block; font-weight:600; font-size:.86rem; margin-bottom:4px; }
+        .qsd-field input, .qsd-field select { width:100%; box-sizing:border-box; }
+        .qsd-summary { background:var(--surface-muted,#f1f7f3); border-radius:14px; padding:14px; margin-bottom:16px; }
+        .qsd-summary-row { display:flex; justify-content:space-between; font-size:.86rem; padding:4px 0; }
+        .qsd-summary-row.total { font-weight:800; font-size:1rem; border-top:1px solid var(--border,#e5e7eb); margin-top:6px; padding-top:10px; }
     </style>
 </head>
-<body class="has-bottom-nav">
+<body class="<?php echo $user ? 'has-bottom-nav' : ''; ?>">
 
 <header class="app-topbar">
-    <a href="quick_services.php" class="button button-secondary button-small">← Services</a>
+    <a href="quick_services.php" class="button button-secondary button-small">‹ Quick Services</a>
     <span class="brand"><?php echo sanitize($service['name']); ?></span>
 </header>
 
-<main class="qs-shell">
-    <?php if ($error): ?><div class="alert alert-error"><?php echo sanitize($error); ?></div><?php endif; ?>
-
-    <div class="qs-hero">
-        <div class="qs-hero-icon"><?php if (!empty($service['image_path'])): ?><img src="<?php echo sanitize($service['image_path']); ?>" alt=""><?php else: ?><?php echo sanitize($service['icon']) ?: '⚡'; ?><?php endif; ?></div>
-        <h2 style="margin:0 0 6px;"><?php echo sanitize($service['name']); ?></h2>
-        <?php if ($service['instructions']): ?>
-        <div class="rich-content" style="text-align:left;color:var(--text-muted,#6b7280);font-size:.88rem;"><?php echo render_rich($service['instructions']); ?></div>
-        <?php endif; ?>
+<main class="qsd-shell">
+    <div class="qsd-hero">
+        <span class="icon"><?php echo sanitize($service['icon']) ?: '⚡'; ?></span>
+        <div>
+            <h1><?php echo sanitize($service['name']); ?></h1>
+            <?php if ($service['description']): ?><p><?php echo sanitize($service['description']); ?></p><?php endif; ?>
+        </div>
     </div>
 
-    <form method="post" id="qs-form"
-          data-pricing-mode="<?php echo sanitize($service['pricing_mode']); ?>"
-          data-base-cost="<?php echo (float)$service['base_cost']; ?>"
-          data-fee-type="<?php echo sanitize($service['service_fee_type']); ?>"
-          data-fee-value="<?php echo (float)$service['service_fee_value']; ?>"
-          data-amount-field="<?php echo sanitize($service['amount_field_key'] ?? ''); ?>">
+    <?php foreach ($errors as $e): ?><div class="alert alert-error" style="margin-bottom:12px;"><?php echo sanitize($e); ?></div><?php endforeach; ?>
+
+    <form method="post" id="qsd-form">
         <?php echo csrf_field(); ?>
 
-        <div class="qs-card">
-            <p class="qs-section-title">📝 Request Details</p>
-            <?php $fieldLabelsByKey = array_column($formFields, 'label', 'key'); ?>
-            <?php foreach ($formFields as $f):
-                $key      = sanitize($f['key']);
-                $type     = $f['type'] ?? 'text';
-                $label    = sanitize($f['label'] ?? $f['key']);
-                $required = !empty($f['required']);
-                $isAmount = ($f['key'] ?? '') === ($service['amount_field_key'] ?? '');
-                $inputId  = $isAmount ? 'qs-amount-field' : 'qs-' . $key;
-            ?>
-            <div class="qs-field"
-                 <?php if (!empty($f['show_if']['field'])): ?>
-                 data-show-if-field="<?php echo sanitize($f['show_if']['field']); ?>"
-                 data-show-if-values='<?php echo htmlspecialchars(json_encode($f['show_if']['values'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8'); ?>'
-                 <?php endif; ?>>
-                <label for="<?php echo $inputId; ?>"><?php echo $label; ?><?php echo $required ? ' *' : ''; ?></label>
-                <?php if ($type === 'select' && !empty($f['depends_on']) && is_array($f['options'] ?? null)): ?>
-                <select id="<?php echo $inputId; ?>" name="field[<?php echo $key; ?>]"
-                        <?php echo $required ? 'required' : ''; ?>
-                        <?php echo $isAmount ? 'onchange="qsRecalc()"' : ''; ?>
-                        data-depends-on="<?php echo sanitize($f['depends_on']); ?>"
-                        data-options-map='<?php echo htmlspecialchars(json_encode($f['options'], JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8'); ?>'>
-                    <option value="">Select <?php echo sanitize($fieldLabelsByKey[$f['depends_on']] ?? 'an option'); ?> first…</option>
-                </select>
-                <?php elseif ($type === 'select' && qs_field_is_priced_select($f)): ?>
-                <select id="<?php echo $inputId; ?>" name="field[<?php echo $key; ?>]"
-                        <?php echo $required ? 'required' : ''; ?>
-                        <?php echo $isAmount ? 'onchange="qsRecalc()"' : ''; ?>>
-                    <option value="">Select…</option>
-                    <?php foreach ($f['options'] as $opt): ?>
-                    <option value="<?php echo sanitize($opt['label']); ?>" data-price="<?php echo (float)($opt['price'] ?? 0); ?>"><?php echo sanitize($opt['label']); ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php elseif ($type === 'select'): ?>
-                <select id="<?php echo $inputId; ?>" name="field[<?php echo $key; ?>]" <?php echo $required ? 'required' : ''; ?>>
-                    <option value="">Select…</option>
-                    <?php foreach (($f['options'] ?? []) as $opt): ?>
-                    <option value="<?php echo sanitize($opt); ?>"><?php echo sanitize($opt); ?></option>
-                    <?php endforeach; ?>
-                </select>
-                <?php elseif ($type === 'textarea'): ?>
-                <textarea id="qs-<?php echo $key; ?>" name="field[<?php echo $key; ?>]" <?php echo $required ? 'required' : ''; ?> placeholder="<?php echo sanitize($f['placeholder'] ?? ''); ?>"></textarea>
-                <?php else: ?>
-                <input type="<?php echo in_array($type, ['text','number','tel','password'], true) ? $type : 'text'; ?>"
-                       id="<?php echo $isAmount ? 'qs-amount-field' : 'qs-' . $key; ?>" name="field[<?php echo $key; ?>]"
-                       <?php echo $type === 'number' ? 'min="0" step="0.01"' : ''; ?>
-                       <?php echo $isAmount ? 'oninput="qsRecalc()"' : ''; ?>
-                       <?php echo $required ? 'required' : ''; ?>
-                       placeholder="<?php echo sanitize($f['placeholder'] ?? ''); ?>">
-                <?php endif; ?>
+        <?php if ($service['service_type'] === 'data_bundle'): ?>
+        <div class="qsd-panel">
+            <p class="qsd-section-title">📶 Network</p>
+            <div class="qsd-net-tabs" id="qsd-net-tabs">
+                <?php foreach ($networks as $i => $n): ?>
+                <button type="button" class="qsd-net-tab<?php echo $i===0 ? ' active' : ''; ?>" data-network="<?php echo $n['id']; ?>" onclick="qsdShowNetwork(<?php echo $n['id']; ?>)"><?php echo sanitize($n['name']); ?></button>
+                <?php endforeach; ?>
+            </div>
+            <p class="qsd-section-title">Select Bundle</p>
+            <?php foreach ($networks as $i => $n): ?>
+            <div class="qsd-bundle-group<?php echo $i===0 ? ' active' : ''; ?>" id="qsd-bundles-<?php echo $n['id']; ?>">
+                <?php foreach ($n['bundles'] as $b): ?>
+                <div class="qsd-option">
+                    <input type="radio" name="bundle_id" value="<?php echo $b['id']; ?>" id="bundle-<?php echo $b['id']; ?>" data-price="<?php echo $b['price']; ?>" data-label="<?php echo sanitize($n['name'] . ' ' . $b['label']); ?>" onchange="qsdUpdateSummary()" required>
+                    <label for="bundle-<?php echo $b['id']; ?>"><?php echo sanitize($b['label']); ?><span class="price">GH₵<?php echo number_format($b['price'],2); ?></span></label>
+                </div>
+                <?php endforeach; ?>
             </div>
             <?php endforeach; ?>
         </div>
-
-        <div class="qs-pricing">
-            <div class="qs-pricing-row"><span>Service Cost</span><span id="qs-amount-out">GH₵ <?php echo number_format((float)$service['base_cost'], 2); ?></span></div>
-            <div class="qs-pricing-row"><span>AkuapemConnect Service Fee</span><span id="qs-fee-out">GH₵ 0.00</span></div>
-            <div class="qs-pricing-row total"><span>Total</span><span id="qs-total-out">GH₵ 0.00</span></div>
+        <div class="qsd-panel">
+            <div class="qsd-field">
+                <label>Recipient Phone Number *</label>
+                <input type="tel" name="recipient" placeholder="024XXXXXXX" required value="<?php echo sanitize($_POST['recipient'] ?? ''); ?>">
+            </div>
         </div>
 
-        <button type="submit" class="button button-primary" style="width:100%;padding:14px;font-size:1rem;">Continue to Payment →</button>
+        <?php else: ?>
+        <div class="qsd-panel">
+            <p class="qsd-section-title">Choose an Option</p>
+            <div class="qsd-result-options">
+                <?php foreach ($options as $o): ?>
+                <label>
+                    <span><input type="radio" name="option_id" value="<?php echo $o['id']; ?>" data-price="<?php echo $o['price']; ?>" data-label="<?php echo sanitize($o['label']); ?>" onchange="qsdUpdateSummary()" required><?php echo sanitize($o['label']); ?></span>
+                    <span class="price">GH₵<?php echo number_format($o['price'],2); ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <div class="qsd-panel">
+            <p class="qsd-section-title">Candidate Information</p>
+            <div class="qsd-field"><label>Candidate Name *</label><input type="text" name="candidate_name" required value="<?php echo sanitize($_POST['candidate_name'] ?? ''); ?>"></div>
+            <div class="qsd-field"><label>Index Number *</label><input type="text" name="index_number" required value="<?php echo sanitize($_POST['index_number'] ?? ''); ?>"></div>
+            <div class="qsd-field"><label>Examination Year *</label><input type="number" name="exam_year" min="2000" max="2100" required value="<?php echo sanitize($_POST['exam_year'] ?? date('Y')); ?>"></div>
+            <div class="qsd-field"><label>WhatsApp Number *</label><input type="tel" name="whatsapp_number" placeholder="024XXXXXXX" required value="<?php echo sanitize($_POST['whatsapp_number'] ?? ''); ?>">
+                <p class="meta" style="margin-top:4px;">Your result (or checker code) will be prepared for delivery to this number.</p>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <div class="qsd-summary" id="qsd-summary" style="display:none;">
+            <div class="qsd-summary-row"><span id="qsd-summary-label"></span><span id="qsd-summary-price"></span></div>
+            <div class="qsd-summary-row" id="qsd-summary-charge-row" style="display:none;"><span>Service Charge</span><span id="qsd-summary-charge"></span></div>
+            <div class="qsd-summary-row total"><span>Total</span><span id="qsd-summary-total"></span></div>
+        </div>
+
+        <button type="submit" class="button button-primary" style="width:100%;padding:14px;">Pay Now</button>
     </form>
-
-    <?php if ($otherServices): ?>
-    <div class="qs-card" style="margin-top:28px;">
-        <p class="qs-section-title">⚡ Other Quick Services</p>
-        <div class="qs-other-grid">
-            <?php foreach ($otherServices as $os): ?>
-            <a href="quick_service.php?slug=<?php echo urlencode($os['slug']); ?>" class="qs-other-card">
-                <div class="qs-other-icon"><?php if (!empty($os['image_path'])): ?><img src="<?php echo sanitize($os['image_path']); ?>" alt=""><?php else: ?><?php echo sanitize($os['icon']) ?: '⚡'; ?><?php endif; ?></div>
-                <div class="qs-other-title"><?php echo sanitize($os['name']); ?></div>
-            </a>
-            <?php endforeach; ?>
-        </div>
-        <a href="quick_services.php" class="button button-secondary" style="width:100%;text-align:center;display:block;">View All Services →</a>
-    </div>
-    <?php endif; ?>
 </main>
 
 <script>
-function qsAmountFromSelect(selectEl) {
-    if (selectEl.dataset.dependsOn) {
-        // Dependent (cascading): resolve via the embedded parent-keyed map.
-        var map = {};
-        try { map = JSON.parse(selectEl.dataset.optionsMap || '{}'); } catch (e) {}
-        var parentEl = document.getElementById('qs-' + selectEl.dataset.dependsOn);
-        var bucket = (parentEl && map[parentEl.value]) ? map[parentEl.value] : [];
-        var match = bucket.filter(function (o) { return o.label === selectEl.value; })[0];
-        return match ? (parseFloat(match.price) || 0) : 0;
+function qsdShowNetwork(id) {
+    document.querySelectorAll('.qsd-bundle-group').forEach(function (el) { el.classList.remove('active'); });
+    document.querySelectorAll('.qsd-net-tab').forEach(function (el) { el.classList.remove('active'); });
+    document.getElementById('qsd-bundles-' + id).classList.add('active');
+    document.querySelector('.qsd-net-tab[data-network="' + id + '"]').classList.add('active');
+}
+var qsdChargeType  = <?php echo json_encode($qsChargeType); ?>;
+var qsdChargeValue = <?php echo json_encode($qsChargeValue); ?>;
+var qsdChargeCap   = <?php echo json_encode($qsChargeCap); ?>;
+function qsdComputeCharge(price) {
+    var charge = qsdChargeType === 'percent' ? (price * qsdChargeValue / 100) : qsdChargeValue;
+    if (qsdChargeCap > 0 && charge > qsdChargeCap) charge = qsdChargeCap;
+    return Math.round(charge * 100) / 100;
+}
+function qsdUpdateSummary() {
+    var checked = document.querySelector('input[name="bundle_id"]:checked, input[name="option_id"]:checked');
+    if (!checked) return;
+    var price = parseFloat(checked.dataset.price);
+    var charge = qsdComputeCharge(price);
+    document.getElementById('qsd-summary-label').textContent = checked.dataset.label;
+    document.getElementById('qsd-summary-price').textContent = 'GH₵' + price.toFixed(2);
+    var chargeRow = document.getElementById('qsd-summary-charge-row');
+    if (charge > 0) {
+        document.getElementById('qsd-summary-charge').textContent = 'GH₵' + charge.toFixed(2);
+        chargeRow.style.display = 'flex';
+    } else {
+        chargeRow.style.display = 'none';
     }
-    // Standalone priced: the price lives directly on the selected <option>.
-    var opt = selectEl.selectedOptions && selectEl.selectedOptions[0];
-    return opt ? (parseFloat(opt.dataset.price) || 0) : 0;
+    document.getElementById('qsd-summary-total').textContent = 'GH₵' + (price + charge).toFixed(2);
+    document.getElementById('qsd-summary').style.display = 'block';
 }
-function qsRecalc() {
-    var form = document.getElementById('qs-form');
-    var mode = form.dataset.pricingMode;
-    var baseCost = parseFloat(form.dataset.baseCost) || 0;
-    var feeType = form.dataset.feeType;
-    var feeValue = parseFloat(form.dataset.feeValue) || 0;
-    var amountField = document.getElementById('qs-amount-field');
-
-    var amount = baseCost;
-    if (mode === 'user_entered' && amountField) {
-        amount = (amountField.tagName === 'SELECT')
-            ? qsAmountFromSelect(amountField)
-            : (parseFloat(amountField.value) || 0);
-    }
-    if (amount < 0) amount = 0;
-    var fee = feeType === 'percent' ? (amount * feeValue / 100) : feeValue;
-    var total = amount + fee;
-
-    document.getElementById('qs-amount-out').textContent = 'GH₵ ' + amount.toFixed(2);
-    document.getElementById('qs-fee-out').textContent = 'GH₵ ' + fee.toFixed(2);
-    document.getElementById('qs-total-out').textContent = 'GH₵ ' + total.toFixed(2);
-}
-function qsEsc(s) {
-    var d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-}
-/** Wires every "depends on" select (e.g. Data Package, depending on
- *  Network) to repopulate its own options whenever its parent changes. */
-function qsWireDependentSelects() {
-    document.querySelectorAll('#qs-form select[data-depends-on]').forEach(function (childSel) {
-        var parentSel = document.getElementById('qs-' + childSel.dataset.dependsOn);
-        if (!parentSel) return;
-        var map = {};
-        try { map = JSON.parse(childSel.dataset.optionsMap || '{}'); } catch (e) {}
-
-        function repopulate() {
-            var bucket = map[parentSel.value] || [];
-            var html = '<option value="">Select…</option>';
-            bucket.forEach(function (o) {
-                html += '<option value="' + qsEsc(o.label) + '">' + qsEsc(o.label) + '</option>';
-            });
-            childSel.innerHTML = html;
-            childSel.disabled = bucket.length === 0;
-            if (childSel.id === 'qs-amount-field') qsRecalc();
-        }
-        parentSel.addEventListener('change', repopulate);
-        repopulate();
-    });
-}
-/** Shows/hides every field with a "Show only if" condition, based on
- *  whichever select field it's gated on — independent of the "Depends on"
- *  cascading-options mechanism, and works for any field type (text,
- *  number, select, textarea…). A hidden field's control is disabled so
- *  the browser excludes it from submission entirely (matching the
- *  server-side skip in the POST handler) and so it's exempt from the
- *  "required" constraint while hidden. */
-function qsEvaluateShowIf() {
-    document.querySelectorAll('#qs-form .qs-field[data-show-if-field]').forEach(function (wrapper) {
-        var parentEl = document.getElementById('qs-' + wrapper.dataset.showIfField);
-        var values = [];
-        try { values = JSON.parse(wrapper.dataset.showIfValues || '[]'); } catch (e) {}
-        var show = !!parentEl && values.indexOf(parentEl.value) !== -1;
-        wrapper.style.display = show ? '' : 'none';
-        var control = wrapper.querySelector('input, select, textarea');
-        if (control) {
-            control.disabled = !show;
-            if (control.id === 'qs-amount-field') qsRecalc();
-        }
-    });
-}
-qsWireDependentSelects();
-document.querySelectorAll('#qs-form select').forEach(function (sel) {
-    sel.addEventListener('change', qsEvaluateShowIf);
-});
-qsEvaluateShowIf();
-qsRecalc();
 </script>
 
 <?php require __DIR__ . '/partials/site_footer.php'; ?>
-<?php require_once __DIR__ . '/partials/bottom_nav.php'; ?>
+<?php if ($user): require_once __DIR__ . '/partials/bottom_nav.php'; endif; ?>
 </body>
 </html>

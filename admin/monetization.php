@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'require_verified_email_funeral_post', 'require_verified_email_shop_create',
             'require_verified_email_product_post', 'require_verified_email_delivery_request',
             'require_verified_email_delivery_agent',
-            'require_verified_email_quick_service', 'require_verified_email_accommodation_post',
+            'require_verified_email_accommodation_post',
         ] as $key) {
             set_platform_setting($key, ($_POST[$key] ?? '0') === '1' ? '1' : '0');
         }
@@ -96,11 +96,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $tab = 'settings';
 
     } elseif ($action === 'save_module_toggles') {
-        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'quick_services', 'promotions', 'accommodation', 'workers'] as $modKey) {
+        foreach (['mp', 'jobs', 'events', 'news', 'funerals', 'delivery', 'markets', 'promotions', 'accommodation', 'workers', 'fm', 'quick_services'] as $modKey) {
             set_platform_setting("{$modKey}_enabled", isset($_POST["{$modKey}_enabled"]) ? '1' : '0');
         }
         log_audit_action($user['id'], 'module_toggles_updated', 'Updated platform module availability');
         $success = 'Module availability saved.';
+        $tab = 'settings';
+
+    } elseif ($action === 'save_sms_toggles') {
+        foreach (array_keys(sms_trigger_types()) as $triggerKey) {
+            set_platform_setting("sms_enabled_{$triggerKey}", isset($_POST["sms_enabled_{$triggerKey}"]) ? '1' : '0');
+        }
+        log_audit_action($user['id'], 'sms_toggles_updated', 'Updated SMS notification triggers');
+        $success = 'SMS notification settings saved.';
         $tab = 'settings';
 
     } elseif ($action === 'save_job_listing_settings') {
@@ -647,7 +655,6 @@ $verifyReqs = [
     'product_post'      => get_platform_setting('require_verified_email_product_post', '0') === '1',
     'delivery_request'  => get_platform_setting('require_verified_email_delivery_request', '0') === '1',
     'delivery_agent'    => get_platform_setting('require_verified_email_delivery_agent', '0') === '1',
-    'quick_service'     => get_platform_setting('require_verified_email_quick_service', '0') === '1',
     'accommodation_post'=> get_platform_setting('require_verified_email_accommodation_post', '0') === '1',
 ];
 
@@ -659,15 +666,23 @@ $moduleToggles = [
     'funerals' => ['label' => 'Funeral Announcements', 'desc' => 'Memorial notices'],
     'delivery' => ['label' => 'Delivery Services',      'desc' => 'Send & receive parcels'],
     'markets'  => ['label' => 'Nearby Markets',        'desc' => 'Ofie Market, Nkurakan Market & other scheduled markets'],
-    'quick_services' => ['label' => 'Quick Services',    'desc' => 'Airtime, ECG, exam results & other paid service requests'],
     'promotions'      => ['label' => 'Promotions',        'desc' => 'Time-limited free-access & discount offers'],
     'accommodation'   => ['label' => 'Accommodation',      'desc' => 'Rooms, houses, hotels & guest houses'],
     'workers'  => ['label' => 'Workers (Homepage)',    'desc' => 'Show the Workers module card & Featured/Top Rated worker strips on the homepage'],
+    'fm'       => ['label' => 'FM Stations',            'desc' => 'Show the FM Stations module card & station strip on the homepage'],
+    'quick_services' => ['label' => 'Quick Services',  'desc' => 'Buy Data, BECE/WASSCE Results & other quick digital services'],
 ];
 foreach ($moduleToggles as $modKey => &$modInfo) {
     $modInfo['enabled'] = module_enabled($modKey);
 }
 unset($modInfo);
+
+$smsToggles = sms_trigger_types();
+foreach ($smsToggles as $triggerKey => &$triggerInfo) {
+    $triggerInfo['enabled'] = get_platform_setting("sms_enabled_{$triggerKey}", '0') === '1';
+}
+unset($triggerInfo);
+$smsConfigured = get_platform_setting('arkesel_api_key', '') !== '' || (defined('ARKESEL_API_KEY') && trim(ARKESEL_API_KEY) !== '');
 
 $jobsListStaffedCompleted = get_platform_setting('jobs_list_staffed_completed', '0') === '1';
 
@@ -1003,6 +1018,32 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
             </section>
 
             <section class="panel">
+                <h2 style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+                    <span>📱 SMS Notifications</span>
+                    <a href="sms_templates.php" class="button button-small button-secondary">✏️ Edit Message Templates</a>
+                </h2>
+                <p class="meta">Send an SMS (via Arkesel) for these specific actions — off by default since SMS costs money per message, unlike the free in-app notification bell. Switch on only the ones worth the cost. Sent/failed messages are logged in <a href="business_messages.php">SMS / WhatsApp Messages</a>.</p>
+                <?php if (!$smsConfigured): ?>
+                <p style="background:#fffbeb;border:1px solid #f59e0b;color:#92400e;border-radius:8px;padding:8px 12px;font-size:.82rem;margin:0 0 12px;">⚠️ No Arkesel API key is configured yet — set one up in <a href="sms_settings.php" style="color:#92400e;font-weight:700;">SMS Settings</a> first. Toggling these on won't send anything until it's set (messages are logged instead).</p>
+                <?php endif; ?>
+                <form method="post" action="monetization.php">
+                    <input type="hidden" name="action" value="save_sms_toggles" />
+                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-top:10px;">
+                        <?php foreach ($smsToggles as $triggerKey => $triggerInfo): ?>
+                        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+                            <input type="checkbox" name="sms_enabled_<?php echo $triggerKey; ?>" value="1" <?php echo $triggerInfo['enabled'] ? 'checked' : ''; ?> style="margin-top:3px;" />
+                            <span>
+                                <strong style="display:block;font-size:.88rem;"><?php echo sanitize($triggerInfo['label']); ?></strong>
+                                <span class="meta" style="font-size:.76rem;"><?php echo sanitize($triggerInfo['desc']); ?></span>
+                            </span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
+                    <button type="submit" class="button button-primary" style="margin-top:14px;">Save SMS Settings</button>
+                </form>
+            </section>
+
+            <section class="panel">
                 <h2>Global monetization mode</h2>
                 <form method="post" action="monetization.php">
                     <input type="hidden" name="action" value="save_settings" />
@@ -1313,12 +1354,6 @@ $mpSettings['mp_verified_seller_fee'] = get_platform_setting('mp_verified_seller
                                 <td><strong>Register as Delivery Agent</strong><br><span class="meta">Rider must verify email before registering</span></td>
                                 <td style="width:80px;text-align:center;">
                                     <input type="checkbox" name="require_verified_email_delivery_agent" value="1" <?php echo $verifyReqs['delivery_agent'] ? 'checked' : ''; ?> />
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><strong>Submit a Quick Service Request</strong><br><span class="meta">Customer must verify email before requesting airtime, ECG, exam results &amp; other quick services</span></td>
-                                <td style="width:80px;text-align:center;">
-                                    <input type="checkbox" name="require_verified_email_quick_service" value="1" <?php echo $verifyReqs['quick_service'] ? 'checked' : ''; ?> />
                                 </td>
                             </tr>
                             <tr>

@@ -179,7 +179,7 @@ if (!isset($activeNav)) {
         <?php endif; ?>
         <?php if (module_enabled('quick_services')): ?>
         <a href="my_quick_services.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
-            <span>⚡</span> My Services
+            <span>⚡</span> My Quick Services
         </a>
         <?php endif; ?>
         <a href="orders.php" role="menuitem" style="display:flex;align-items:center;gap:10px;padding:10px 14px;color:var(--text);text-decoration:none;font-size:.88rem;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background=''">
@@ -369,3 +369,5 @@ var NOTIF_TYPE_ICON = { info: 'ℹ️', success: '✅', warning: '⚠️', error
     });
 })();
 </script>
+<script>window.__CSRF_TOKEN__ = <?php echo json_encode(csrf_token()); ?>;</script>
+<script src="assets/js/push-bridge.js" defer></script>

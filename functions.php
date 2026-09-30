@@ -161,6 +161,130 @@ function notify_user($userId, $title, $body, $type = 'info', $link = null, $admi
 }
 
 /**
+ * Curated "major action" SMS triggers — each independently admin-toggleable
+ * (Admin → Monetize → Settings → SMS Notifications, platform_settings key
+ * "sms_enabled_{key}", default off since SMS costs money per message unlike
+ * the free in-app notify_user() bell). Deliberately NOT wired to every
+ * notify_user() call site (there are 250+) — only genuinely money/job/
+ * parcel-status moments where reaching someone who isn't in the app matters.
+ */
+function sms_trigger_types(): array {
+    return [
+        'job_application_approved' => [
+            'label' => 'Worker Hired', 'desc' => 'SMS a worker when their job application is approved.',
+            'placeholders' => ['job_title'], 'default' => 'You\'ve been hired for "{job_title}"! Open the app for details.',
+        ],
+        'new_job_application' => [
+            'label' => 'New Job Application', 'desc' => 'SMS a job owner when a worker applies to their job.',
+            'placeholders' => ['worker_name', 'job_title'], 'default' => '{worker_name} applied for your job "{job_title}". Open the app to review.',
+        ],
+        'job_completed' => [
+            'label' => 'Job Completed', 'desc' => 'SMS the customer when their job is marked complete.',
+            'placeholders' => ['job_title'], 'default' => 'Your request "{job_title}" has been marked complete. Please review and confirm payment.',
+        ],
+        'job_post_approved' => [
+            'label' => 'Job Post Approved', 'desc' => 'SMS a customer when their job post is approved and live.',
+            'placeholders' => ['job_title'], 'default' => 'Your job post "{job_title}" is now live and visible to workers.',
+        ],
+        'payment_confirmed' => [
+            'label' => 'Payment Confirmed', 'desc' => 'SMS when a payment or escrow release is confirmed.',
+            'placeholders' => ['amount', 'job_title'], 'default' => 'Payment of GHS {amount} for "{job_title}" has been released to you.',
+        ],
+        'order_received' => [
+            'label' => 'New Order Received', 'desc' => 'SMS a seller when a marketplace order is paid for.',
+            'placeholders' => ['order_id', 'amount'], 'default' => 'New order #{order_id} paid (GHS {amount}). Check your seller dashboard.',
+        ],
+        'product_approved' => [
+            'label' => 'Product Approved', 'desc' => 'SMS a seller when their marketplace listing is approved.',
+            'placeholders' => ['product_name'], 'default' => 'Your listing "{product_name}" is now live on the marketplace.',
+        ],
+        'delivery_confirmed' => [
+            'label' => 'Delivery Confirmed', 'desc' => 'SMS when a delivery rider confirms a parcel pickup/drop-off.',
+            'placeholders' => [], 'default' => 'Your delivery agent has been confirmed and will pick up your item soon. Track it in the app.',
+        ],
+        'delivery_request_approved' => [
+            'label' => 'Delivery Request Approved', 'desc' => 'SMS a customer when their delivery request is approved and live.',
+            'placeholders' => ['delivery_id'], 'default' => 'Your delivery request #{delivery_id} is now live. Riders can now apply.',
+        ],
+        'delivery_agent_approved' => [
+            'label' => 'Delivery Agent Approved', 'desc' => 'SMS a rider when their delivery agent profile is approved.',
+            'placeholders' => [], 'default' => 'Your delivery agent profile has been approved. Start applying for delivery jobs!',
+        ],
+        'accommodation_approved' => [
+            'label' => 'Listing Approved', 'desc' => 'SMS a host when their accommodation listing is approved.',
+            'placeholders' => ['listing_title'], 'default' => 'Your listing "{listing_title}" is now live on Accommodation.',
+        ],
+        'dispute_filed' => [
+            'label' => 'Dispute Filed', 'desc' => 'SMS the other party when a dispute is filed against a job.',
+            'placeholders' => ['job_title'], 'default' => 'A dispute has been filed against you for "{job_title}". Open the app to respond.',
+        ],
+        'dispute_resolved' => [
+            'label' => 'Dispute Resolved', 'desc' => 'SMS both parties when an admin resolves a dispute.',
+            'placeholders' => [], 'default' => 'A dispute involving you has been resolved by admin. Open the app for details.',
+        ],
+        'payout_processed' => [
+            'label' => 'Seller Payout Sent', 'desc' => 'SMS a seller/rider when their payout has been processed.',
+            'placeholders' => ['amount'], 'default' => 'Your withdrawal of GHS {amount} has been paid.',
+        ],
+        'funeral_announcement_live' => [
+            'label' => 'Announcement Live', 'desc' => 'SMS the submitter when their funeral announcement is approved.',
+            'placeholders' => ['deceased_name'], 'default' => 'The announcement for {deceased_name} has been approved and is now live.',
+        ],
+        'event_approved' => [
+            'label' => 'Event Approved', 'desc' => 'SMS the organizer when their event submission is approved.',
+            'placeholders' => ['event_title'], 'default' => 'Your event "{event_title}" has been approved and is now live.',
+        ],
+        'quick_service_completed' => [
+            'label' => 'Quick Service Completed', 'desc' => 'SMS a customer when their Quick Services request is completed.',
+            'placeholders' => ['reference', 'service_name'], 'default' => 'Your {service_name} request ({reference}) has been completed. Open the app for details.',
+        ],
+    ];
+}
+
+/**
+ * Sends an SMS to $userId for $triggerKey, built from that trigger's
+ * admin-editable template (Admin → Monetize → Settings → Edit Message
+ * Templates) with {placeholder} values substituted from $vars. Falls back
+ * to the trigger's built-in default template if the admin hasn't customized
+ * it. APP_NAME is prepended automatically so templates don't need to repeat
+ * it. No-ops if the trigger is off, unrecognized, or the user has no phone —
+ * never blocks the caller's own flow.
+ */
+function sms_user(int $userId, string $triggerKey, array $vars = []): void {
+    $types = sms_trigger_types();
+    if (!array_key_exists($triggerKey, $types)) return;
+    if (get_platform_setting("sms_enabled_{$triggerKey}", '0') !== '1') return;
+
+    global $pdo;
+    $stmt = $pdo->prepare('SELECT phone FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $phone = trim((string)$stmt->fetchColumn());
+    if (!$phone) return;
+
+    $template = get_platform_setting("sms_template_{$triggerKey}", '');
+    if ($template === '') $template = $types[$triggerKey]['default'];
+
+    $replacements = [];
+    foreach ($vars as $k => $v) $replacements['{' . $k . '}'] = (string)$v;
+    $message = APP_NAME . ': ' . strtr($template, $replacements);
+
+    if (!class_exists('WhatsAppService', false)) require_once __DIR__ . '/services/WhatsAppService.php';
+    if (!class_exists('SmsService', false))      require_once __DIR__ . '/services/SmsService.php';
+    $ok = SmsService::send($phone, $message);
+
+    // Logged to the same table admin/business_messages.php already shows —
+    // one dedicated "sent messages" page for every outbound SMS/WhatsApp,
+    // whether admin-composed or triggered by a major action.
+    $pdo->prepare(
+        'INSERT INTO business_messages (user_id, phone, channel, message, status, response_excerpt, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())'
+    )->execute([
+        $userId, $phone, 'sms', $message,
+        $ok ? 'sent' : 'failed',
+        $ok ? 'Delivered via Arkesel' : 'Delivery failed — see server error log',
+    ]);
+}
+
+/**
  * Broadcast target categories for admin-composed notifications/emails.
  * Key => display label; broadcast_recipient_ids() resolves a key to user IDs.
  */
@@ -582,10 +706,10 @@ function save_uploaded_image(array $file, $relativeDir, int $maxWidth = 0, int $
 }
 
 /**
- * Save a manager's Quick Service result attachment (PDF or image) — a
- * generic sibling to the image-only save_uploaded_image(), generalized
- * from the ad-hoc PDF handling already in chat_api.php's 'send' action.
- * Stores the file as-is (no resizing) under a random filename.
+ * Save a document/video attachment (PDF, image, or video) — a generic
+ * sibling to the image-only save_uploaded_image(), generalized from the
+ * ad-hoc PDF handling already in chat_api.php's 'send' action. Stores the
+ * file as-is (no resizing) under a random filename.
  */
 function save_uploaded_document(array $file, string $relativeDir, array $allowedMimes = ['application/pdf', 'image/jpeg', 'image/png'], int $maxBytes = 10485760): ?string {
     if (empty($file['name']) || $file['error'] !== UPLOAD_ERR_OK) {
@@ -659,7 +783,7 @@ function render_not_found(string $backUrl, string $backLabel, string $message = 
 // Every page that shows ads goes through get_ads_for_placement() +
 // render_ad_unit() instead of its own ad-hoc query — see install.sql v080
 // for why. Valid placement keys: homepage, jobs, marketplace, accommodation,
-// delivery, markets, quick_services, events, funerals, news.
+// delivery, markets, events, funerals, news.
 
 /**
  * Selects up to $limit eligible, active ads of $adType for $placement, using
@@ -745,114 +869,6 @@ function render_ad_unit(array $ad): void {
            . sanitize($ad['title']) . '</a>';
     }
     echo '</div>';
-}
-
-/** Human-readable Quick Service request reference, e.g. QS-000123. */
-function qs_reference(int $id): string {
-    return 'QS-' . str_pad((string)$id, 6, '0', STR_PAD_LEFT);
-}
-
-/**
- * Computes the Service Amount / Service Fee / Total for a Quick Service
- * request given its configured pricing and the submitted form data.
- * - pricing_mode='fixed': service_amount = $service['base_cost']
- * - pricing_mode='user_entered': service_amount = the numeric value of the
- *   form field named $service['amount_field_key'] — UNLESS that field is a
- *   priced select (see qs_field_is_priced_select()), in which case the
- *   amount is looked up from the chosen option's price rather than trusted
- *   as a raw typed number. A priced select can be standalone (e.g. a "TV
- *   Package" dropdown where each package has its own price) or dependent
- *   on another field (e.g. Network → Data Package, where the package list
- *   itself changes per network) — both resolve through the same lookup.
- * The AkuapemConnect service fee is always computed on top, separately,
- * as either a flat GHS amount or a percentage of the service amount.
- */
-function qs_compute_pricing(array $service, array $submittedData): array {
-    if ($service['pricing_mode'] === 'user_entered') {
-        $key = $service['amount_field_key'] ?? '';
-        $field = null;
-        if ($key !== '') {
-            foreach (json_decode($service['form_fields'] ?? '[]', true) ?: [] as $f) {
-                if (($f['key'] ?? null) === $key) { $field = $f; break; }
-            }
-        }
-        if ($field && qs_field_is_priced_select($field)) {
-            $serviceAmount = qs_priced_option_price($field, $submittedData);
-        } else {
-            $serviceAmount = $key !== '' ? (float)($submittedData[$key] ?? 0) : 0;
-        }
-    } else {
-        $serviceAmount = (float)$service['base_cost'];
-    }
-    $serviceAmount = max(0, round($serviceAmount, 2));
-
-    $feeType  = $service['service_fee_type'];
-    $feeValue = (float)$service['service_fee_value'];
-    $serviceFee = $feeType === 'percent' ? round($serviceAmount * $feeValue / 100, 2) : round($feeValue, 2);
-
-    return [
-        'service_amount' => $serviceAmount,
-        'service_fee'    => $serviceFee,
-        'total'          => round($serviceAmount + $serviceFee, 2),
-    ];
-}
-
-/**
- * Whether $field is a select field whose options each carry their own
- * price — either standalone ('options' => flat [{label,price}, ...], no
- * parent) or dependent ('options' => {parentValue: [{label,price}, ...]}).
- * A plain select (flat array of strings) or any non-select field is not.
- */
-function qs_field_is_priced_select(array $field): bool {
-    if (($field['type'] ?? '') !== 'select') return false;
-    $options = $field['options'] ?? null;
-    if (!is_array($options) || !$options) return false;
-    if (!empty($field['depends_on'])) return true; // nested-by-parent shape, always priced
-    $first = reset($options);
-    return is_array($first) && array_key_exists('price', $first);
-}
-
-/**
- * Resolves the price for a priced-select field from the submitted form
- * data — standalone (options is the flat priced list itself) or dependent
- * on another field (options is keyed by that field's submitted value).
- * Never trusts a raw submitted price, so a buyer can't manipulate the
- * amount by tampering with the POST body; an unmatched selection simply
- * resolves to 0 (caught by the caller's total>0 validation).
- */
-function qs_priced_option_price(array $field, array $submittedData): float {
-    $submittedLabel = $submittedData[$field['key']] ?? '';
-    if (!empty($field['depends_on'])) {
-        $parentVal = $submittedData[$field['depends_on']] ?? '';
-        $bucket = $field['options'][$parentVal] ?? [];
-    } else {
-        $bucket = $field['options'] ?? [];
-    }
-    foreach ($bucket as $opt) {
-        if (($opt['label'] ?? null) === $submittedLabel) {
-            return (float)($opt['price'] ?? 0);
-        }
-    }
-    return 0.0;
-}
-
-/**
- * Pairs a Quick Service request's raw submitted data (request_data) with
- * each field's real admin-configured label, for display on the payment
- * review page, My Services, and the manager dashboard. Iterates the
- * submitted data itself (not the service's current form_fields) so a
- * request still shows everything the buyer submitted even if the admin
- * later renamed/removed a field — the label just falls back to a
- * key-derived guess for anything that no longer matches.
- */
-function qs_request_data_rows(array $service, array $requestData): array {
-    $fields = json_decode($service['form_fields'] ?? '[]', true) ?: [];
-    $labelsByKey = array_column($fields, 'label', 'key');
-    $rows = [];
-    foreach ($requestData as $key => $val) {
-        $rows[] = ['label' => $labelsByKey[$key] ?? ucwords(str_replace('_', ' ', $key)), 'value' => $val];
-    }
-    return $rows;
 }
 
 /**
@@ -1023,12 +1039,18 @@ function send_business_message($userId, $phone, $message, $channel = 'whatsapp')
     return $status === 'sent';
 }
 
-function get_business_message_log($limit = 50) {
+function get_business_message_log($limit = 50, $offset = 0) {
     global $pdo;
-    $stmt = $pdo->prepare('SELECT bm.*, u.name AS user_name FROM business_messages bm LEFT JOIN users u ON bm.user_id = u.id ORDER BY bm.created_at DESC LIMIT ?');
+    $stmt = $pdo->prepare('SELECT bm.*, u.name AS user_name FROM business_messages bm LEFT JOIN users u ON bm.user_id = u.id ORDER BY bm.created_at DESC LIMIT ? OFFSET ?');
     $stmt->bindValue(1, $limit, PDO::PARAM_INT);
+    $stmt->bindValue(2, $offset, PDO::PARAM_INT);
     $stmt->execute();
     return $stmt->fetchAll();
+}
+
+function get_business_message_count() {
+    global $pdo;
+    return (int)$pdo->query('SELECT COUNT(*) FROM business_messages')->fetchColumn();
 }
 
 function distance_km($lat1, $lon1, $lat2, $lon2) {
@@ -2782,18 +2804,41 @@ function login_rate_limit_clear(string $ip): void {
 function all_mod_permissions(): array {
     return [
         'Content Approvals' => [
-            'approve_jobs'              => 'Approve / reject job posts',
             'approve_products'          => 'Approve / reject marketplace products',
             'approve_shops'             => 'Verify / suspend marketplace shops',
-            'approve_events'            => 'Approve / reject community events',
-            'approve_funerals'          => 'Approve / reject funeral announcements',
-            'approve_news'              => 'Approve / reject news articles',
             'approve_sponsors'          => 'Approve / reject sponsor submissions',
             'approve_delivery_requests' => 'Approve / reject delivery requests',
             'approve_delivery_agents'   => 'Approve / reject delivery agent applications',
             'approve_verifications'     => 'Review rider & worker verification badges',
             'approve_boosts'            => 'Activate sponsored & featured listings',
             'manage_quote_requests'     => 'View marketplace quote requests platform-wide',
+        ],
+        'Jobs & Services' => [
+            'approve_jobs' => 'Approve / reject job posts',
+            'edit_jobs'    => 'Edit any job post and toggle its featured status',
+            'delete_jobs'  => 'Remove job posts',
+        ],
+        'Events' => [
+            'approve_events'       => 'Approve / reject / cancel community events',
+            'edit_events'          => 'Edit any community event and toggle its featured status',
+            'delete_events'        => 'Delete community events',
+            'manage_event_pricing' => 'Set the event submission fee and manage featured event packages',
+        ],
+        'News' => [
+            'approve_news'       => 'Approve / reject news articles',
+            'edit_news'          => 'Edit any news article',
+            'delete_news'        => 'Delete news articles',
+            'manage_news_pricing' => 'Set the news submission fee and manage featured news packages',
+        ],
+        'Funeral Announcements' => [
+            'approve_funerals'          => 'Approve / reject funeral announcements, and confirm payment',
+            'edit_funerals'             => 'Edit any funeral announcement and toggle its featured status',
+            'delete_funerals'           => 'Delete funeral announcements',
+            'manage_funeral_pricing'    => 'Set the funeral submission fee and manage featured funeral packages',
+        ],
+        'FM Stations' => [
+            'manage_fm_stations'   => 'Add, edit, delete FM stations and manage their programme schedules',
+            'manage_fm_programmes' => 'Manage programme schedules only (cannot create/edit/delete stations themselves)',
         ],
         'User & Community' => [
             'manage_users'     => 'View, ban, and manage user accounts',
@@ -2814,8 +2859,8 @@ function all_mod_permissions(): array {
             'manage_market_deliveries'  => 'Manage storehouse handoffs for assigned markets',
         ],
         'Quick Services' => [
-            'manage_quick_services'          => 'Create/edit services, set fees, and assign managers',
-            'manage_quick_service_requests'  => 'Process requests for assigned services',
+            'manage_quick_services'          => 'Create/edit services, data bundles, and assign managers',
+            'manage_quick_service_requests'  => 'Process transactions for assigned services',
         ],
         'Promotions' => [
             'manage_promotions' => 'Create, edit, and manage promotional offers',
@@ -2956,34 +3001,6 @@ function get_managed_market_ids(int $userId): array {
     return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
 }
 
-/**
- * Whether $userId may process requests for a specific Quick Service —
- * admins always can; managers need both the global
- * 'manage_quick_service_requests' permission AND an explicit
- * quick_service_managers assignment to that service (mirrors
- * user_can_manage_market()).
- */
-function user_can_manage_quick_service(int $userId, int $serviceId): bool {
-    global $pdo;
-    $roleSt = $pdo->prepare('SELECT role FROM users WHERE id=?');
-    $roleSt->execute([$userId]);
-    if ($roleSt->fetchColumn() === 'admin') return true;
-
-    if (!in_array('manage_quick_service_requests', get_user_mod_permissions($userId), true)) return false;
-    $st = $pdo->prepare('SELECT 1 FROM quick_service_managers WHERE service_id=? AND user_id=?');
-    $st->execute([$serviceId, $userId]);
-    return (bool)$st->fetchColumn();
-}
-
-/**
- * Quick Service IDs a given manager is assigned to (empty for admins, who see all).
- */
-function get_managed_quick_service_ids(int $userId): array {
-    global $pdo;
-    $st = $pdo->prepare('SELECT service_id FROM quick_service_managers WHERE user_id=?');
-    $st->execute([$userId]);
-    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
-}
 
 /** Next date >= $from whose ISO weekday (1=Mon..7=Sun) is in $weekdays. */
 function next_weekday_occurrence(DateTimeImmutable $from, array $weekdays): ?DateTimeImmutable {
@@ -3167,6 +3184,23 @@ function get_mp_customer_charge(float $itemTotal): float {
     $value = (float)get_platform_setting('mp_customer_charge_value', '0');
     if ($value <= 0) return 0.0;
     return $type === 'percent' ? round($itemTotal * $value / 100, 2) : round($value, 2);
+}
+
+/**
+ * Quick Services checkout charge, added on top of a bundle/option's base
+ * price — same flat/percent shape as get_market_system_charge() and
+ * get_mp_customer_charge(), plus an optional cap (0 = uncapped) so a
+ * percentage charge can never exceed a fixed ceiling on a large order.
+ * Configured in admin/quick_services.php.
+ */
+function get_quick_service_charge(float $baseAmount): float {
+    $type  = get_platform_setting('qs_service_charge_type', 'flat');
+    $value = (float)get_platform_setting('qs_service_charge_value', '0');
+    $cap   = (float)get_platform_setting('qs_service_charge_cap', '0');
+    if ($value <= 0) return 0.0;
+    $charge = $type === 'percent' ? round($baseAmount * $value / 100, 2) : round($value, 2);
+    if ($cap > 0 && $charge > $cap) $charge = $cap;
+    return $charge;
 }
 
 /**

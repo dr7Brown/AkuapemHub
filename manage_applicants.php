@@ -135,6 +135,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     notify_user((int)$app['worker_id'], 'Application approved',
                         "Your application for '{$app['job_title']}' was approved by the job owner.", 'success');
+                    sms_user((int)$app['worker_id'], 'job_application_approved', ['job_title' => $app['job_title']]);
 
                     if ($newJobStatus === 'fully_staffed') {
                         notify_user($user['id'], 'Job fully staffed',

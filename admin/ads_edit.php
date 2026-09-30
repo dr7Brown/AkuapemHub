@@ -28,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $endDate   = trim($_POST['end_date']   ?? '') ?: null;
     $weight    = max(1, min(10, (int)($_POST['weight'] ?? 1)));
 
-    $validPlacements = ['homepage','jobs','marketplace','accommodation','delivery','markets','quick_services','events','funerals','news'];
+    $validPlacements = ['homepage','jobs','marketplace','accommodation','delivery','markets','events','funerals','news'];
     $chosenPlacements = array_values(array_intersect((array)($_POST['placements'] ?? []), $validPlacements));
     $placements = $chosenPlacements ? implode(',', $chosenPlacements) : null;
 
@@ -90,7 +90,7 @@ $adPlacementsSelected = array_filter(explode(',', $ad['placements'] ?? ''));
 $placementLabels = [
     'homepage' => 'Homepage', 'jobs' => 'Jobs Dashboard', 'marketplace' => 'Marketplace',
     'accommodation' => 'Accommodation', 'delivery' => 'Delivery Services', 'markets' => 'Nearby Markets',
-    'quick_services' => 'Quick Services', 'events' => 'Events', 'funerals' => 'Funeral Announcements', 'news' => 'News',
+    'events' => 'Events', 'funerals' => 'Funeral Announcements', 'news' => 'News',
 ];
 ?>
 <!DOCTYPE html>

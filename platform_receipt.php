@@ -117,6 +117,7 @@ $typeLabels = [
     'delivery_verification' => 'Rider Verification Badge',
     'worker_premium'        => 'Worker Premium Subscription',
     'sponsor'                => 'Sponsorship',
+    'quick_service'          => 'Quick Service',
 ];
 $typeLabel = $typeLabels[$type] ?? ucwords(str_replace('_', ' ', $type));
 
@@ -142,6 +143,7 @@ $continueUrls = [
     'delivery_verification' => 'delivery_agent_jobs.php',
     'worker_premium'        => 'worker_profile.php',
     'sponsor'                => 'index.php',
+    'quick_service'          => 'my_quick_services.php',
 ];
 $continueUrl = $continueUrls[$type] ?? 'jobs.php';
 
@@ -430,6 +432,25 @@ if ($type === 'escrow_with_posting' && $escrow) {
                             </td>
                             <td><?php echo number_format((float)$p['amount'], 2); ?></td>
                         </tr>
+
+                    <?php elseif ($type === 'quick_service'):
+                        $qsRow = $pdo->prepare("SELECT qt.reference, qt.amount, qt.service_charge, qs.name AS service_name FROM quick_transactions qt JOIN quick_services qs ON qs.id=qt.service_id WHERE qt.id=?");
+                        $qsRow->execute([$p['reference_id']]);
+                        $qsRow = $qsRow->fetch();
+                    ?>
+                        <tr>
+                            <td>
+                                <?php echo sanitize($qsRow['service_name'] ?? 'Quick Service'); ?>
+                                <?php if ($qsRow): ?><span class="sub">Ref <?php echo sanitize($qsRow['reference']); ?></span><?php endif; ?>
+                            </td>
+                            <td><?php echo number_format($qsRow ? (float)$qsRow['amount'] : (float)$p['amount'], 2); ?></td>
+                        </tr>
+                        <?php if ($qsRow && (float)$qsRow['service_charge'] > 0): ?>
+                        <tr>
+                            <td>Service Charge</td>
+                            <td><?php echo number_format((float)$qsRow['service_charge'], 2); ?></td>
+                        </tr>
+                        <?php endif; ?>
 
                     <?php else: ?>
                         <tr>

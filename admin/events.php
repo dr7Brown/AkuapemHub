@@ -5,11 +5,30 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 $user = current_user();
-require_mod_permission('approve_events');
+
+// Page-level gate: any one of the four event permissions grants viewing
+// access; each individual action below is then re-checked against its own
+// specific permission, so a moderator only sees/can-use what they were
+// actually granted (e.g. "approve_events" alone no longer implies the
+// ability to edit, delete, or price events).
+if (!is_admin()
+    && !has_mod_permission('approve_events')
+    && !has_mod_permission('edit_events')
+    && !has_mod_permission('delete_events')
+    && !has_mod_permission('manage_event_pricing')
+) {
+    require_mod_permission('approve_events');
+}
+
+$canApprove = has_mod_permission('approve_events');
+$canEdit    = has_mod_permission('edit_events');
+$canDelete  = has_mod_permission('delete_events');
+$canPrice   = has_mod_permission('manage_event_pricing');
 
 // Event fee settings update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
     csrf_check();
+    require_mod_permission('manage_event_pricing');
     set_platform_setting('event_fee_enabled', (int)isset($_POST['fee_enabled']));
     set_platform_setting('event_fee_amount', max(0, (float)($_POST['fee_amount'] ?? 0)));
     log_audit_action($user['id'], 'event_fee_update', 'Updated event submission fee settings');
@@ -19,6 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_fee'])) {
 // Featured settings
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_featured'])) {
     csrf_check();
+    require_mod_permission('manage_event_pricing');
     set_platform_setting('enable_paid_featured_events', isset($_POST['feat_paid']) ? '1' : '0');
     log_audit_action($user['id'], 'event_feat_update', 'Updated event featuring settings');
     header('Location: events.php?saved=1'); exit;
@@ -27,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_featured'])) {
 // Package CRUD
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['pkg_action'])) {
     csrf_check();
+    require_mod_permission('manage_event_pricing');
     $pa = $_POST['pkg_action'];
     if ($pa === 'add_pkg') {
         $pName = trim($_POST['pkg_name'] ?? '');
@@ -61,6 +82,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
     if ($ev) {
         switch ($_POST['action']) {
             case 'publish':
+                require_mod_permission('approve_events');
                 if (check_mod_coi('event', $tid, $user['id'])) {
                     log_coi_violation($user['id'], 'event', $tid, 'publish');
                     header('Location: events.php'); exit;
@@ -73,9 +95,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
                     award_points((int)$ev['user_id'], 'event_approved', $tid);
                     notify_user($ev['user_id'], 'Your event is now live!',
                         '"' . $ev['title'] . '" has been approved and published on the events page.', 'success');
+                    sms_user((int)$ev['user_id'], 'event_approved', ['event_title' => $ev['title']]);
                 }
                 break;
             case 'cancel':
+                require_mod_permission('approve_events');
                 $pdo->prepare("UPDATE events SET status='cancelled', updated_at=NOW() WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_cancel', "Cancelled event #{$tid}: {$ev['title']}");
                 if ($ev['user_id']) {
@@ -84,6 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
                 }
                 break;
             case 'draft':
+                require_mod_permission('approve_events');
                 $pdo->prepare("UPDATE events SET status='draft', updated_at=NOW() WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_draft', "Set event #{$tid} back to draft");
                 if ($ev['user_id']) {
@@ -92,6 +117,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
                 }
                 break;
             case 'reject':
+                require_mod_permission('approve_events');
                 $reason = trim($_POST['rejection_reason'] ?? '');
                 $pdo->prepare("UPDATE events SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")
                     ->execute([$reason ?: null, $tid]);
@@ -106,10 +132,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
                 }
                 break;
             case 'feature':
+                require_mod_permission('edit_events');
                 $pdo->prepare("UPDATE events SET featured=1-featured WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_feature', "Toggled feature for event #{$tid}");
                 break;
             case 'delete':
+                require_mod_permission('delete_events');
                 $pdo->prepare("DELETE FROM events WHERE id=?")->execute([$tid]);
                 log_audit_action($user['id'], 'event_delete', "Deleted event #{$tid}: {$ev['title']}");
                 break;
@@ -194,12 +222,13 @@ $feePayingUsers = (int)$pdo->query("SELECT COUNT(DISTINCT user_id) FROM platform
     <header class="topbar">
         <a href="index.php" class="button button-secondary button-small">← Admin</a>
         <h1>Events</h1>
-        <a href="event_edit.php" class="button button-primary button-small">+ New Event</a>
+        <?php if ($canEdit): ?><a href="event_edit.php" class="button button-primary button-small">+ New Event</a><?php endif; ?>
     </header>
 
     <div class="ae-shell">
         <?php if (isset($_GET['saved'])): ?><div class="alert alert-success" style="margin-bottom:12px;">Saved.</div><?php endif; ?>
 
+        <?php if ($canPrice): ?>
         <!-- Monetization panel -->
         <div style="background:var(--surface,#fff);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:20px;">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
@@ -250,6 +279,7 @@ $feePayingUsers = (int)$pdo->query("SELECT COUNT(DISTINCT user_id) FROM platform
                 <button type="submit" name="save_fee" class="button button-primary button-small">Save Settings</button>
             </form>
         </div>
+        <?php endif; // $canPrice ?>
 
         <!-- Stats -->
         <div class="ae-stats">
@@ -265,6 +295,7 @@ $feePayingUsers = (int)$pdo->query("SELECT COUNT(DISTINCT user_id) FROM platform
             <div class="ae-stat"><strong><?php echo array_sum($counts); ?></strong><span>Total</span></div>
         </div>
 
+        <?php if ($canPrice): ?>
         <!-- Featuring panel -->
         <div style="background:var(--surface,#fff);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:20px;">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
@@ -344,6 +375,7 @@ $feePayingUsers = (int)$pdo->query("SELECT COUNT(DISTINCT user_id) FROM platform
                 <button type="submit" class="button button-primary button-small">+ Add Package</button>
             </form>
         </div>
+        <?php endif; // $canPrice ?>
 
         <!-- Toolbar -->
         <div class="ae-toolbar">
@@ -408,11 +440,12 @@ $feePayingUsers = (int)$pdo->query("SELECT COUNT(DISTINCT user_id) FROM platform
                         <td>
                             <?php $evCoi = !is_admin() && (int)($ev['user_id'] ?? 0) === (int)$user['id']; ?>
                             <div class="ae-actions">
-                                <a href="event_edit.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary">View</a>
-                                <a href="event_edit.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small">Edit</a>
+                                <?php if ($canApprove || $canEdit): ?>
+                                <a href="event_edit.php?id=<?php echo (int)$ev['id']; ?>" class="button button-small button-primary"><?php echo $canEdit ? 'Edit' : 'View'; ?></a>
+                                <?php endif; ?>
                                 <?php if ($evCoi && in_array($ev['status'],['draft','pending_payment'],true)): ?>
                                 <span style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:8px;">⚠️ Yours</span>
-                                <?php else: ?>
+                                <?php elseif ($canApprove): ?>
                                 <?php if (!in_array($ev['status'], ['published','rejected'], true)): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="publish"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Publish</button></form>
                                 <?php endif; ?>
@@ -420,14 +453,18 @@ $feePayingUsers = (int)$pdo->query("SELECT COUNT(DISTINCT user_id) FROM platform
                                 <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="openRejectModal(<?php echo (int)$ev['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <?php endif; ?>
-                                <?php if ($ev['status'] === 'published'): ?>
+                                <?php if ($canApprove && $ev['status'] === 'published'): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="cancel"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fef3c7;color:#92400e;border-color:#fcd34d;">Cancel</button></form>
                                 <?php endif; ?>
-                                <?php if (in_array($ev['status'], ['cancelled','rejected'], true)): ?>
+                                <?php if ($canApprove && in_array($ev['status'], ['cancelled','rejected'], true)): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="draft"><?php echo csrf_field(); ?><button class="button button-small">↩ Draft</button></form>
                                 <?php endif; ?>
+                                <?php if ($canEdit): ?>
                                 <form method="post" action="events.php"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $ev['featured'] ? 'Unfeature' : '⭐ Feature'; ?></button></form>
+                                <?php endif; ?>
+                                <?php if ($canDelete): ?>
                                 <form method="post" action="events.php" onsubmit="return confirm('Delete this event?')"><input type="hidden" name="id" value="<?php echo (int)$ev['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>

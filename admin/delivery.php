@@ -6,9 +6,40 @@ require_once __DIR__ . '/../delivery_functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: ../jobs.php'); exit; }
 
-require_mod_permission('approve_delivery_agents');
+// Entry is allowed via ANY of the four delivery-related permissions — which
+// tabs are actually visible/reachable is then gated per-permission below, so
+// e.g. a moderator granted only approve_verifications never sees agent
+// applications or monetization data, and vice versa. This matches the
+// existing "Delivery" nav-link visibility check in admin/index.php, which
+// already expected all four permissions to grant entry here.
+if (!is_admin()
+    && !has_mod_permission('approve_delivery_agents')
+    && !has_mod_permission('approve_delivery_requests')
+    && !has_mod_permission('approve_verifications')
+    && !has_mod_permission('approve_boosts')
+) {
+    require_mod_permission('approve_delivery_agents');
+}
+$hasAgentsPerm = is_admin() || has_mod_permission('approve_delivery_agents');
+$hasReqPerm    = is_admin() || has_mod_permission('approve_delivery_requests');
+$hasVerifyPerm = is_admin() || has_mod_permission('approve_verifications');
+$hasBoostPerm  = is_admin() || has_mod_permission('approve_boosts');
+
 $adminUser = current_user();
-$tab       = $_GET['tab'] ?? 'pending';
+$tab       = $_GET['tab'] ?? ($hasAgentsPerm ? 'pending' : ($hasReqPerm ? 'requests' : ($hasVerifyPerm ? 'verifications' : 'monetization')));
+$tabPerm   = [
+    'pending'       => $hasAgentsPerm,
+    'agents'        => $hasAgentsPerm,
+    'requests'      => $hasReqPerm,
+    'verifications' => $hasVerifyPerm,
+    'monetization'  => $hasBoostPerm,
+    'commission'    => is_admin(),
+    'settings'      => is_admin(),
+][$tab] ?? false;
+if (!$tabPerm) {
+    header('Location: delivery.php?tab=' . ($hasAgentsPerm ? 'pending' : ($hasReqPerm ? 'requests' : ($hasVerifyPerm ? 'verifications' : 'monetization'))));
+    exit;
+}
 
 // ── CSV exports ────────────────────────────────────────────────────────────
 if (isset($_GET['export']) && is_admin()) {
@@ -52,6 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Agent approve/reject/suspend
     if (in_array($postAction, ['approve_agent','reject_agent','suspend_agent'], true) && !empty($_POST['agent_id'])) {
+        require_mod_permission('approve_delivery_agents');
         $agentId  = (int)$_POST['agent_id'];
         $agentRow = $pdo->prepare('SELECT da.*,u.name,u.username,u.email,u.id AS user_id FROM delivery_agents da JOIN users u ON da.user_id=u.id WHERE da.id=?');
         $agentRow->execute([$agentId]);
@@ -86,6 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Activate subscription
     if ($postAction === 'activate_subscription' && !empty($_POST['sub_id'])) {
+        require_mod_permission('approve_boosts');
         $subId = (int)$_POST['sub_id'];
         $subRow = $pdo->prepare('SELECT ds.*,da.id AS da_id,u.id AS user_id,u.name FROM delivery_subscriptions ds JOIN delivery_agents da ON ds.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE ds.id=?');
         $subRow->execute([$subId]);
@@ -103,6 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Activate sponsored listing
     if ($postAction === 'activate_sponsored' && !empty($_POST['sp_id'])) {
+        require_mod_permission('approve_boosts');
         $spId = (int)$_POST['sp_id'];
         $spRow = $pdo->prepare('SELECT dsl.*,da.id AS da_id,u.id AS user_id,u.name FROM delivery_sponsored_listings dsl JOIN delivery_agents da ON dsl.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE dsl.id=?');
         $spRow->execute([$spId]);
@@ -120,6 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Approve verification badge
     if ($postAction === 'approve_verification' && !empty($_POST['vr_id'])) {
+        require_mod_permission('approve_verifications');
         $vrId = (int)$_POST['vr_id'];
         $vrRow = $pdo->prepare('SELECT dv.*,da.id AS da_id,u.id AS user_id,u.name FROM delivery_verifications dv JOIN delivery_agents da ON dv.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE dv.id=?');
         $vrRow->execute([$vrId]);
@@ -136,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Reject verification badge
     if ($postAction === 'reject_verification' && !empty($_POST['vr_id'])) {
+        require_mod_permission('approve_verifications');
         $vrId = (int)$_POST['vr_id'];
         $reason = trim($_POST['rejection_reason'] ?? '');
         $vrRow = $pdo->prepare('SELECT dv.*,u.id AS user_id,u.name FROM delivery_verifications dv JOIN delivery_agents da ON dv.agent_id=da.id JOIN users u ON da.user_id=u.id WHERE dv.id=?');
@@ -152,6 +188,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Admin cancel request
     if ($postAction === 'admin_cancel' && !empty($_POST['delivery_id'])) {
+        require_mod_permission('approve_delivery_requests');
         $dlId = (int)$_POST['delivery_id'];
         $dlRow = $pdo->prepare('SELECT customer_id,agent_id FROM delivery_requests WHERE id=?');
         $dlRow->execute([$dlId]);

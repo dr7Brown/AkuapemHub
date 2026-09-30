@@ -56,35 +56,7 @@ if ($town !== '') {
     $where[] = 'ms.region LIKE ?';
     $params[] = '%' . $town . '%';
 }
-// 'default' — the blended "smart" listing order: featured/sponsored pinned to
-// the top, then a daily-reshuffled mix of recently-posted and popular items,
-// then everything else. RAND() is seeded by the day number (not per-request)
-// so pagination stays stable within a day while the mix still varies day to
-// day, instead of the same items being permanently stuck in the same order.
-// The "popular" cutoff (average view count across all approved products) is
-// cached — it was previously a subquery re-run on every single request that
-// used this sort, which is the majority of traffic once 'default' is the
-// platform's own default.
-$avgViewCount = (float)apcu_remember('mp_avg_view_count_v1', 60, function () use ($pdo) {
-    return $pdo->query("SELECT AVG(view_count) FROM mp_products WHERE status='approved'")->fetchColumn();
-});
-$defaultOrderBy =
-    "(CASE
-        WHEN mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE() THEN 3
-        WHEN mp.is_featured=1 AND mp.featured_end>=CURDATE() THEN 2
-        WHEN mp.created_at >= NOW() - INTERVAL 14 DAY
-          OR mp.view_count >= $avgViewCount THEN 1
-        ELSE 0
-      END) DESC, RAND(TO_DAYS(CURDATE()))";
-
-$orderBy = match($sort) {
-    'price_asc'  => 'COALESCE(mp.discount_price,mp.price) ASC',
-    'price_desc' => 'COALESCE(mp.discount_price,mp.price) DESC',
-    'newest'     => 'mp.created_at DESC',
-    'popular'    => 'mp.view_count DESC',
-    'featured'   => '(CASE WHEN mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE() THEN 2 WHEN mp.is_featured=1 AND mp.featured_end>=CURDATE() THEN 1 ELSE 0 END) DESC, mp.created_at DESC',
-    default      => $defaultOrderBy, // covers 'default' and any unrecognized value
-};
+$orderBy = mp_sort_order_sql($sort);
 
 $whereClause = implode(' AND ', $where);
 

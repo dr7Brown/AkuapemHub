@@ -5,8 +5,21 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
-require_mod_permission('approve_news');
 $id = (int)($_GET['id'] ?? 0);
+
+// Viewing an existing article's full content is also needed by anyone with
+// "approve_news" (they must read it before approving/rejecting) — but only
+// "edit_news" may create a new article or save changes. The POST handler
+// below re-checks 'edit_news' strictly.
+if ($id > 0) {
+    if (!is_admin() && !has_mod_permission('approve_news') && !has_mod_permission('edit_news')) {
+        require_mod_permission('edit_news');
+    }
+} else {
+    require_mod_permission('edit_news');
+}
+$canEditNews = is_admin() || has_mod_permission('edit_news');
+
 $article = null;
 if ($id) {
     $stmt = $pdo->prepare("SELECT * FROM news WHERE id=? LIMIT 1");
@@ -20,6 +33,7 @@ $success = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
+    require_mod_permission('edit_news');
 
     $title       = trim($_POST['title']   ?? '');
     $slug        = trim($_POST['slug']    ?? '');
@@ -27,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $content     = $_POST['content']      ?? '';
     $status      = in_array($_POST['status'] ?? '', ['draft','published']) ? $_POST['status'] : 'draft';
     $publishedAt = trim($_POST['published_at'] ?? '');
+    $fmStationId = (int)($_POST['fm_station_id'] ?? 0) ?: null;
 
     if (!$title)   $errors[] = 'Title is required.';
     if (!$slug)    $errors[] = 'Slug is required.';
@@ -59,12 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$errors) {
         $wasNotified = (int)($article['notification_sent'] ?? 0);
         if ($id) {
-            $pdo->prepare("UPDATE news SET title=?, slug=?, summary=?, content=?, featured_image=?, status=?, published_at=?, updated_at=NOW() WHERE id=?")
-                ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt, $id]);
+            $pdo->prepare("UPDATE news SET title=?, slug=?, summary=?, content=?, featured_image=?, status=?, published_at=?, fm_station_id=?, updated_at=NOW() WHERE id=?")
+                ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt, $fmStationId, $id]);
             log_audit_action($user['id'], 'news_edit', "Edited article #$id: $title");
         } else {
-            $pdo->prepare("INSERT INTO news (title, slug, summary, content, featured_image, status, published_at) VALUES (?,?,?,?,?,?,?)")
-                ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt]);
+            $pdo->prepare("INSERT INTO news (title, slug, summary, content, featured_image, status, published_at, fm_station_id) VALUES (?,?,?,?,?,?,?,?)")
+                ->execute([$title, $slug, $summary, $content, $imagePath, $status, $pubAt, $fmStationId]);
             $id = (int)$pdo->lastInsertId();
             log_audit_action($user['id'], 'news_create', "Created article #$id: $title");
         }
@@ -81,11 +96,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // Re-populate on error
-    $article = array_merge($article ?? [], compact('title','slug','summary','content','status','published_at'));
+    $article = array_merge($article ?? [], compact('title','slug','summary','content','status','published_at'), ['fm_station_id' => $fmStationId]);
 }
 
 $isNew = !$id;
 $pageTitle = $isNew ? 'New Article' : 'Edit: ' . sanitize($article['title'] ?? '');
+
+// Optional "this article is about a specific FM station" link — reuses the
+// whole News module instead of a parallel "station news" table.
+$fmStations = module_enabled('fm') ? $pdo->query("SELECT id, name FROM fm_stations WHERE status='active' ORDER BY name")->fetchAll() : [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -169,6 +188,19 @@ $pageTitle = $isNew ? 'New Article' : 'Edit: ' . sanitize($article['title'] ?? '
                 <?php endif; ?>
             </div>
 
+            <?php if ($fmStations): ?>
+            <div class="ne-field">
+                <label for="ne-fm-station">Related FM Station</label>
+                <div class="desc">Optional — shows this article in that station's "Station News" panel.</div>
+                <select id="ne-fm-station" name="fm_station_id" class="form-control">
+                    <option value="">— None —</option>
+                    <?php foreach ($fmStations as $st): ?>
+                    <option value="<?php echo (int)$st['id']; ?>" <?php echo (int)($article['fm_station_id'] ?? 0)===(int)$st['id'] ? 'selected':''; ?>><?php echo sanitize($st['name']); ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <?php endif; ?>
+
             <div class="ne-row">
                 <div class="ne-field">
                     <label for="ne-status">Status</label>
@@ -186,9 +218,13 @@ $pageTitle = $isNew ? 'New Article' : 'Edit: ' . sanitize($article['title'] ?? '
             </div>
 
             <div style="display:flex;gap:10px;margin-top:8px;">
+                <?php if ($canEditNews): ?>
                 <button type="submit" class="button button-primary">
                     <?php echo $isNew ? 'Create Article' : 'Save Changes'; ?>
                 </button>
+                <?php else: ?>
+                <span class="meta" style="align-self:center;">👁️ Read-only — you can review this article here, but editing requires the "Edit News" permission. Use Publish / Reject on the News list.</span>
+                <?php endif; ?>
                 <a href="news.php" class="button button-secondary">Cancel</a>
             </div>
         </form>

@@ -293,6 +293,7 @@ function assign_delivery_application(int $deliveryId, array $app, ?float $reques
         notify_user((int)$custId, 'Rider Confirmed 🚚',
             'Your delivery agent has been confirmed and will pick up your item soon.',
             'success', 'delivery_detail.php?id=' . $deliveryId);
+        sms_user((int)$custId, 'delivery_confirmed');
     }
 
     return true;

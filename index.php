@@ -3,6 +3,8 @@ require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/functions.php';
 require_once __DIR__ . '/delivery_functions.php';
 require_once __DIR__ . '/accommodation_functions.php';
+require_once __DIR__ . '/marketplace_functions.php';
+require_once __DIR__ . '/fm_functions.php';
 
 $user  = current_user();
 $flash = get_flash();
@@ -65,6 +67,20 @@ if (module_enabled('workers')) {
     } catch (Exception $e) {}
 }
 
+// FM Stations — featured stations first, then the rest, one strip, mirroring
+// the Workers/Accommodation horizontally-scrolling strips below.
+$fmStations = [];
+if (module_enabled('fm')) {
+    try {
+        $fmStations = $pdo->query(
+            "SELECT fs.*, t.name AS town_name FROM fm_stations fs
+             LEFT JOIN towns t ON t.id = fs.town_id
+             WHERE fs.status='active'
+             ORDER BY fs.featured DESC, fs.display_order ASC, fs.name ASC LIMIT 10"
+        )->fetchAll();
+    } catch (Exception $e) {}
+}
+
 $homeAd = get_ads_for_placement('homepage', ['banner', 'video'], 1)[0] ?? null;
 
 $sponsors = $pdo->query(
@@ -74,15 +90,6 @@ $sponsors = $pdo->query(
      WHERE s.status='active' AND (s.end_date IS NULL OR s.end_date >= CURDATE())
      ORDER BY sp.price DESC, s.created_at DESC LIMIT 12"
 )->fetchAll();
-
-// Quick Services — every active service; the strip scrolls horizontally so
-// all of them are reachable straight from the home screen.
-$quickServices = [];
-try {
-    $quickServices = $pdo->query(
-        "SELECT id, slug, icon, image_path, name, description FROM quick_services WHERE status='active' ORDER BY display_order, name"
-    )->fetchAll();
-} catch (Exception $e) {}
 
 // Accommodation — latest approved listings per category, each its own
 // horizontally-scrolling strip. Capped at 10 so this stays a cheap, indexed
@@ -114,9 +121,13 @@ if (module_enabled('accommodation')) {
     } catch (Exception $e) {}
 }
 
-// Marketplace featured products
+// Marketplace featured products — ordered using the same admin-configured
+// "Default sort order on the public Marketplace page" setting (Admin →
+// Marketplace) that drives marketplace.php itself, so the homepage strip
+// always matches whatever order the admin picked there.
 $featuredProducts = [];
 try {
+    $mpOrderBy = mp_sort_order_sql();
     $featuredProducts = $pdo->query(
         "SELECT mp.id, mp.name, mp.price, mp.discount_price, mp.condition_type, mp.is_sponsored, mp.sponsored_end, mp.is_featured, mp.featured_end,
                 ms.shop_name, ms.id AS shop_id, ms.region AS shop_venue,
@@ -129,10 +140,8 @@ try {
          LEFT JOIN towns t ON ms.town_id = t.id
          LEFT JOIN mp_product_images mpi ON mpi.product_id = mp.id AND mpi.is_primary = 1
          WHERE mp.status = 'approved' AND ms.status = 'active'
-         ORDER BY (mp.is_sponsored=1 AND mp.sponsored_end>=CURDATE()) DESC,
-                  (mp.is_featured=1 AND mp.featured_end>=CURDATE()) DESC,
-                  mp.created_at DESC
-         LIMIT 12"
+         ORDER BY {$mpOrderBy}
+         LIMIT 20"
     )->fetchAll();
 } catch (Exception $e) {}
 
@@ -344,48 +353,8 @@ try {
         .cm-news-meta  { font-size:.72rem; color:var(--muted,#6b7280); }
         .cm-news-read  { font-size:.75rem; font-weight:700; color:var(--primary,#0f766e); }
 
-        /* ── Quick Services strip ── */
-        .cm-qs-section .cm-section-head a {
-            background:#fff; color:var(--text,#1f2937); padding:7px 16px; border-radius:20px; font-size:.78rem;
-            border:1px solid var(--border,#e5e7eb); box-shadow:0 4px 14px rgba(0,0,0,.06);
-        }
-        /* Small-screen "2 independent scrolling rows" variant is hidden on
-           wide screens, which use the single 4-per-screen row below instead. */
-        .cm-qs-rows-stacked { display:none; }
-        /* Wide screens: 4 cards per screen, single row, horizontal scroll —
-           so any number of services stay reachable without a "View all"
-           click. */
-        .cm-qs-row {
-            display:flex; flex-wrap:nowrap; overflow-x:auto; gap:16px;
-            scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch;
-            padding-bottom:4px;
-        }
-        .cm-qs-row::-webkit-scrollbar { display:none; }
-        .cm-qs-card { flex:0 0 calc(25% - 12px); scroll-snap-align:start; }
-        .cm-qs-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:20px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; box-shadow:0 2px 10px rgba(0,0,0,.05); transition:box-shadow .2s,transform .2s; }
-        .cm-qs-card:hover { box-shadow:0 12px 30px rgba(0,0,0,.12); transform:translateY(-4px); }
-        .cm-qs-visual {
-            display:flex; align-items:center; justify-content:center; position:relative;
-            padding:30px 10px;
-        }
-        .cm-qs-visual::before {
-            content:''; position:absolute; inset:0;
-            background:radial-gradient(circle at 28% 20%, rgba(255,255,255,.5), transparent 55%);
-        }
-        .cm-qs-icon-disc {
-            width:145px; height:145px; border-radius:50%; background:rgba(255,255,255,.9);
-            display:flex; align-items:center; justify-content:center; box-shadow:0 10px 24px rgba(0,0,0,.16);
-            position:relative; z-index:1; flex-shrink:0;
-        }
-        .cm-qs-icon-disc img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
-        .cm-qs-icon  { font-size:4.5rem; line-height:1; }
-        .cm-qs-body  { padding:12px 12px 15px; text-align:center; background:var(--surface,#fff); }
-        .cm-qs-title { font-weight:800; font-size:.86rem; margin-bottom:3px; }
-        .cm-qs-desc  { font-size:.72rem; color:var(--muted,#6b7280); line-height:1.4; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-
-        /* ── Accommodation strips — always horizontal scroll, same mechanics
-               as the Quick Services strip (.cm-qs-row), just card-shaped like
-               a marketplace product card instead of an icon disc. ── */
+        /* ── Accommodation strips — always horizontal scroll, card-shaped
+               like a marketplace product card. ── */
         .cm-ac-row {
             display:flex; flex-wrap:nowrap; overflow-x:auto; gap:14px;
             scroll-snap-type:x mandatory; scrollbar-width:none; -webkit-overflow-scrolling:touch;
@@ -450,6 +419,9 @@ try {
         @media(max-width:760px){ .cm-cta-row { grid-template-columns:1fr !important; } }
 
         /* ── Marketplace product row (desktop grid) ── */
+        /* Small-screen "2 independent scrolling rows" variant is hidden on
+           wide screens, which use the single auto-fill grid below instead. */
+        .cm-mp-rows-stacked { display:none; }
         .cm-mp-row { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:12px; }
         .cm-mp-card { background:var(--surface,#fff); border:1px solid var(--border,#e5e7eb); border-radius:14px; overflow:hidden; text-decoration:none; color:inherit; display:flex; flex-direction:column; transition:box-shadow .15s,transform .15s; }
         .cm-mp-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.1); transform:translateY(-2px); }
@@ -526,11 +498,11 @@ try {
             .cm-section > div[style*="margin-top:14px"],
             .cm-section > div[style*="margin-top: 14px"] { padding:0 16px; }
 
-            /* Common scroll row rules applied to all row types. Events and
-               Funerals moved out of this shared single-row group — they now
-               use their own 2-row-stacked treatment (same as News) below. */
-            .cm-job-row,
-            .cm-mp-row {
+            /* Common scroll row rules applied to all row types. Events,
+               Funerals, and Marketplace moved out of this shared single-row
+               group — they now use their own 2-row-stacked treatment
+               (same as News) below. */
+            .cm-job-row {
                 display:flex;
                 flex-wrap:nowrap;
                 overflow-x:auto;
@@ -540,42 +512,14 @@ try {
                 scrollbar-width:none;
                 -webkit-overflow-scrolling:touch;
             }
-            .cm-job-row::-webkit-scrollbar,
-            .cm-mp-row::-webkit-scrollbar { display:none; }
+            .cm-job-row::-webkit-scrollbar { display:none; }
 
             /* ── Card widths: exactly 3 per screen ── */
-            .cm-job-card,
-            .cm-mp-card {
+            .cm-job-card {
                 flex:0 0 calc(33.333vw - 14px);
                 min-width:96px;
                 scroll-snap-align:start;
             }
-
-            /* ── Quick Services: 2 cards per row, 2 rows per screen — each
-                   row is its own independent horizontally-scrolling strip
-                   (its own overflow-x container), so swiping one row never
-                   moves the other. The "wide" single-row variant (used on
-                   desktop) is swapped out for the "stacked" 2-row variant. ── */
-            .cm-qs-wide { display:none; }
-            .cm-qs-rows-stacked { display:flex; flex-direction:column; gap:10px; }
-            .cm-qs-rows-stacked .cm-qs-row {
-                display:flex;
-                flex-wrap:nowrap;
-                overflow-x:auto;
-                gap:10px;
-                padding:0 16px 4px;
-                scroll-snap-type:x mandatory;
-                scrollbar-width:none;
-                -webkit-overflow-scrolling:touch;
-            }
-            .cm-qs-rows-stacked .cm-qs-row::-webkit-scrollbar { display:none; }
-            .cm-qs-rows-stacked .cm-qs-card { flex:0 0 calc(50vw - 21px); scroll-snap-align:start; }
-            .cm-qs-visual { padding:14px 6px; }
-            .cm-qs-icon-disc { width:clamp(80px, 34vw, 130px); height:clamp(80px, 34vw, 130px); }
-            .cm-qs-icon  { font-size:clamp(2.1rem, 10vw, 3.4rem); }
-            .cm-qs-body  { padding:8px 8px 10px; }
-            .cm-qs-title { font-size:.76rem; line-height:1.25; }
-            .cm-qs-desc  { font-size:.66rem; line-height:1.3; -webkit-line-clamp:2; }
 
             /* ── Events / Funerals: same independent-2-row pattern (and same
                    card size) as News below — see the matching PHP wrapper
@@ -599,7 +543,7 @@ try {
             .cm-ev-rows-stacked .cm-ev-card,
             .cm-fa-rows-stacked .cm-fa-card { flex:0 0 calc(50vw - 21px); scroll-snap-align:start; }
 
-            /* ── News: same independent-2-row pattern as Quick Services —
+            /* ── News: same independent-2-row pattern as Events/Funerals above —
                    up to 10 latest articles reachable across the two rows,
                    each swiped through on its own. ── */
             .cm-news-wide { display:none; }
@@ -616,6 +560,24 @@ try {
             }
             .cm-news-rows-stacked .cm-news-row::-webkit-scrollbar { display:none; }
             .cm-news-rows-stacked .cm-news-card { flex:0 0 calc(50vw - 21px); scroll-snap-align:start; }
+
+            /* ── Marketplace: same independent-2-row pattern as News — up to
+                   12 featured products reachable across the two rows, each
+                   swiped through on its own. ── */
+            .cm-mp-wide { display:none; }
+            .cm-mp-rows-stacked { display:flex; flex-direction:column; gap:10px; }
+            .cm-mp-rows-stacked .cm-mp-row {
+                display:flex;
+                flex-wrap:nowrap;
+                overflow-x:auto;
+                gap:10px;
+                padding:0 16px 4px;
+                scroll-snap-type:x mandatory;
+                scrollbar-width:none;
+                -webkit-overflow-scrolling:touch;
+            }
+            .cm-mp-rows-stacked .cm-mp-row::-webkit-scrollbar { display:none; }
+            .cm-mp-rows-stacked .cm-mp-card { flex:0 0 calc(33.333vw - 14px); min-width:96px; scroll-snap-align:start; }
 
             /* ── Job card mobile tweaks (shared base — also used as-is by
                    "Open Delivery Requests") ── */
@@ -686,8 +648,7 @@ try {
                 max-width:120px;
             }
             .cm-mod-desc { display:block; font-size:.66rem; }
-            .cm-job-card,
-            .cm-mp-card {
+            .cm-job-card {
                 flex:0 0 calc(33.333vw - 12px);
                 min-width:140px;
             }
@@ -695,6 +656,8 @@ try {
     </style>
 </head>
 <body <?php echo $user ? 'class="has-bottom-nav"' : ''; ?>>
+
+<?php require __DIR__ . '/partials/app_download_banner.php'; ?>
 
 <?php if ($flash): ?>
 <div class="alert alert-<?php echo sanitize($flash['type']); ?>" style="margin:10px 16px 0;"><?php echo sanitize($flash['message']); ?></div>
@@ -739,47 +702,64 @@ try {
     <?php if (module_enabled('news')): ?><a href="news.php"         class="cm-mod"><div class="cm-mod-icon">📰</div><div class="cm-mod-title">News &amp; Updates</div><div class="cm-mod-desc">Latest articles &amp; platform news</div></a><?php endif; ?>
     <?php if (module_enabled('events')): ?><a href="events.php"       class="cm-mod"><div class="cm-mod-icon">📅</div><div class="cm-mod-title">Events</div><div class="cm-mod-desc">Community events &amp; programs</div></a><?php endif; ?>
     <?php if (module_enabled('funerals')): ?><a href="funerals.php"     class="cm-mod"><div class="cm-mod-icon">🕊️</div><div class="cm-mod-title">Funeral Announcements</div><div class="cm-mod-desc">Memorial notices</div></a><?php endif; ?>
-    <?php if (module_enabled('quick_services')): ?><a href="quick_services.php" class="cm-mod"><div class="cm-mod-icon">⚡</div><div class="cm-mod-title">Quick Services</div><div class="cm-mod-desc">Airtime, ECG, results &amp; more</div></a><?php endif; ?>
     <?php if (module_enabled('delivery')): ?><a href="delivery.php"    class="cm-mod"><div class="cm-mod-icon">🚚</div><div class="cm-mod-title">Delivery Services</div><div class="cm-mod-desc">Send &amp; receive parcels fast</div></a><?php endif; ?>
     <?php if (module_enabled('mp')): ?><a href="marketplace.php" class="cm-mod"><div class="cm-mod-icon">🛍️</div><div class="cm-mod-title">Marketplace</div><div class="cm-mod-desc">Buy &amp; sell products locally</div></a><?php endif; ?>
     <?php if (module_enabled('markets')): ?><a href="markets.php" class="cm-mod"><div class="cm-mod-icon">🏬</div><div class="cm-mod-title">Nearby Markets</div><div class="cm-mod-desc">Ofie Market, Nkurakan &amp; more</div></a><?php endif; ?>
     <?php if (module_enabled('accommodation')): ?><a href="accommodation.php" class="cm-mod"><div class="cm-mod-icon">🏠</div><div class="cm-mod-title">Accommodation</div><div class="cm-mod-desc">Rooms, houses, hotels &amp; guest houses</div></a><?php endif; ?>
+    <?php if (module_enabled('fm')): ?><a href="fm_stations.php" class="cm-mod"><div class="cm-mod-icon">📻</div><div class="cm-mod-title">FM Stations</div><div class="cm-mod-desc">Listen to local radio online</div></a><?php endif; ?>
+    <?php if (module_enabled('quick_services')): ?><a href="quick_services.php" class="cm-mod"><div class="cm-mod-icon">⚡</div><div class="cm-mod-title">Quick Services</div><div class="cm-mod-desc">Buy data, check results &amp; more</div></a><?php endif; ?>
 </div>
 
 <div class="cm-shell">
 
     <!-- Marketplace Featured Products -->
     <?php if ($featuredProducts && module_enabled('mp')): ?>
+    <?php
+    $mpCard = function ($fp) {
+        $effP = !empty($fp['discount_price']) ? (float)$fp['discount_price'] : (float)$fp['price'];
+        $disc = (!empty($fp['discount_price']) && $fp['price'] > 0) ? (int)round((1 - $fp['discount_price']/$fp['price'])*100) : 0;
+        $isSp = $fp['is_sponsored'] && !empty($fp['sponsored_end']) && $fp['sponsored_end'] >= date('Y-m-d');
+        ?>
+        <a href="product.php?id=<?php echo (int)$fp['id']; ?>" class="cm-mp-card<?php echo $isSp?' cm-mp-card--sponsored':''; ?>">
+            <div style="aspect-ratio:1/1;background:#f8fafc;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;">
+                <?php if ($fp['primary_image']): ?><img src="<?php echo sanitize($fp['primary_image']); ?>" style="width:100%;height:100%;object-fit:cover;" alt=""><?php else: ?><span style="font-size:2.5rem;opacity:.3;"><?php echo $fp['cat_icon']??'📦'; ?></span><?php endif; ?>
+                <?php if ($isSp): ?><span style="position:absolute;top:6px;left:6px;background:#f59e0b;color:#fff;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:10px;">SPONSORED</span><?php endif; ?>
+                <?php if ($disc>=10): ?><span style="position:absolute;top:<?php echo $isSp?'26px':'6px'; ?>;left:6px;background:#ef4444;color:#fff;font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:10px;">-<?php echo $disc; ?>%</span><?php endif; ?>
+            </div>
+            <div style="padding:10px 12px 12px;">
+                <div style="font-weight:700;font-size:.84rem;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:4px;"><?php echo sanitize($fp['name']); ?></div>
+                <div style="font-size:.72rem;color:var(--muted,#6b7280);">🏪 <?php echo sanitize(mb_substr($fp['shop_name'],0,28)); ?></div>
+                <?php if ($fp['shop_town']): ?>
+                <div style="font-size:.72rem;color:var(--muted,#6b7280);">📍 <?php echo sanitize($fp['shop_town']); ?></div>
+                <?php endif; ?>
+                <div style="font-weight:900;color:var(--primary,#0f766e);font-size:.92rem;margin-top:6px;white-space:nowrap;">
+                    GH&#8373; <?php echo number_format($effP, fmod($effP, 1) > 0 ? 2 : 0); ?>
+                </div>
+            </div>
+        </a>
+        <?php
+    };
+    ?>
     <div class="cm-section">
         <div class="cm-section-head">
             <h2>🛍️ Marketplace</h2>
             <a href="marketplace.php">View all →</a>
         </div>
-        <div class="cm-mp-row">
-            <?php foreach ($featuredProducts as $fp):
-                $effP = !empty($fp['discount_price']) ? (float)$fp['discount_price'] : (float)$fp['price'];
-                $disc = (!empty($fp['discount_price']) && $fp['price'] > 0) ? (int)round((1 - $fp['discount_price']/$fp['price'])*100) : 0;
-                $isSp = $fp['is_sponsored'] && !empty($fp['sponsored_end']) && $fp['sponsored_end'] >= date('Y-m-d');
-            ?>
-            <a href="product.php?id=<?php echo (int)$fp['id']; ?>" class="cm-mp-card<?php echo $isSp?' cm-mp-card--sponsored':''; ?>">
-                <div style="aspect-ratio:1/1;background:#f8fafc;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;">
-                    <?php if ($fp['primary_image']): ?><img src="<?php echo sanitize($fp['primary_image']); ?>" style="width:100%;height:100%;object-fit:cover;" alt=""><?php else: ?><span style="font-size:2.5rem;opacity:.3;"><?php echo $fp['cat_icon']??'📦'; ?></span><?php endif; ?>
-                    <?php if ($isSp): ?><span style="position:absolute;top:6px;left:6px;background:#f59e0b;color:#fff;font-size:.6rem;font-weight:800;padding:2px 7px;border-radius:10px;">SPONSORED</span><?php endif; ?>
-                    <?php if ($disc>=10): ?><span style="position:absolute;top:<?php echo $isSp?'26px':'6px'; ?>;left:6px;background:#ef4444;color:#fff;font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:10px;">-<?php echo $disc; ?>%</span><?php endif; ?>
-                </div>
-                <div style="padding:10px 12px 12px;">
-                    <div style="font-weight:700;font-size:.84rem;line-height:1.4;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;margin-bottom:4px;"><?php echo sanitize($fp['name']); ?></div>
-                    <div style="font-size:.72rem;color:var(--muted,#6b7280);">🏪 <?php echo sanitize(mb_substr($fp['shop_name'],0,28)); ?></div>
-                    <?php $fpShopLoc = combine_location_parts($fp['shop_venue'], $fp['shop_town']); if ($fpShopLoc): ?>
-                    <div style="font-size:.72rem;color:var(--muted,#6b7280);">📍 <?php echo sanitize($fpShopLoc); ?></div>
-                    <?php endif; ?>
-                    <div style="font-weight:900;color:var(--primary,#0f766e);font-size:.92rem;margin-top:6px;">
-                        GH&#8373; <?php echo number_format($effP,2); ?>
-                        <?php if ($disc>0): ?><span style="font-size:.76rem;color:var(--muted,#6b7280);font-weight:400;text-decoration:line-through;margin-left:4px;">GH&#8373; <?php echo number_format((float)$fp['price'],2); ?></span><?php endif; ?>
-                    </div>
-                </div>
-            </a>
-            <?php endforeach; ?>
+        <!-- Wide screens: every product in one horizontally-scrolling row -->
+        <div class="cm-mp-wide">
+            <div class="cm-mp-row">
+                <?php foreach ($featuredProducts as $fp) $mpCard($fp); ?>
+            </div>
+        </div>
+        <!-- Small screens: 2 independent horizontally-scrolling rows, each
+             swipeable on its own, same pattern as News/Events/Funerals. -->
+        <div class="cm-mp-rows-stacked">
+            <div class="cm-mp-row">
+                <?php foreach ($featuredProducts as $i => $fp) { if ($i % 2 === 0) $mpCard($fp); } ?>
+            </div>
+            <div class="cm-mp-row">
+                <?php foreach ($featuredProducts as $i => $fp) { if ($i % 2 === 1) $mpCard($fp); } ?>
+            </div>
         </div>
         <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
             <a href="marketplace.php" class="button button-secondary">🛍️ Browse All Products</a>
@@ -974,6 +954,37 @@ try {
     </div>
     <?php endif; ?>
 
+    <!-- FM Stations -->
+    <?php if ($fmStations && module_enabled('fm')): ?>
+    <div class="cm-section">
+        <div class="cm-section-head">
+            <h2>📻 FM Stations</h2>
+            <a href="fm_stations.php">View all →</a>
+        </div>
+        <div class="cm-wk-row">
+            <?php foreach ($fmStations as $fs): $fsLive = fm_station_is_live($fs); ?>
+            <a href="fm_station.php?slug=<?php echo urlencode($fs['slug']); ?>" class="cm-wk-card<?php echo $fs['featured']?' cm-wk-card--featured':''; ?>">
+                <div class="cm-wk-avatar-wrap">
+                    <?php if (!empty($fs['logo_path'])): ?>
+                    <img src="<?php echo sanitize($fs['logo_path']); ?>" alt="<?php echo sanitize($fs['name']); ?>" class="cm-wk-avatar">
+                    <?php else: ?>
+                    <span class="cm-wk-avatar cm-wk-avatar-fallback">📻</span>
+                    <?php endif; ?>
+                    <span class="cm-wk-status cm-wk-status--<?php echo $fsLive ? 'available' : 'offline'; ?>"></span>
+                    <?php if ($fs['featured']): ?><span class="cm-wk-feat-badge">⭐</span><?php endif; ?>
+                </div>
+                <div class="cm-wk-body">
+                    <div class="cm-wk-name"><?php echo sanitize($fs['name']); ?></div>
+                    <?php if (!empty($fs['frequency'])): ?><div class="cm-wk-skill"><?php echo sanitize($fs['frequency']); ?></div><?php endif; ?>
+                    <?php if (!empty($fs['town_name'])): ?><div class="cm-wk-loc">📍 <?php echo sanitize($fs['town_name']); ?></div><?php endif; ?>
+                    <div class="cm-wk-rating"><?php echo $fsLive ? '🔴 Live' : '⚪ Offline'; ?></div>
+                </div>
+            </a>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Upcoming Events -->
     <?php if (module_enabled('events')): ?>
     <?php
@@ -991,7 +1002,7 @@ try {
             <div class="cm-ev-body">
                 <div class="cm-ev-title"><?php echo sanitize($ev['title']); ?></div>
                 <?php if ($ev['venue']): ?><div class="cm-ev-meta">📍 <?php echo sanitize(mb_substr($ev['venue'],0,40)); ?></div><?php endif; ?>
-                <?php if ($ev['start_time']): ?><div class="cm-ev-meta">🕐 <?php echo date('g:i A', strtotime($ev['start_time'])); ?></div><?php endif; ?>
+                <div class="cm-ev-meta">🕐 <?php echo date('d M', strtotime($ev['start_date'])); ?><?php if ($ev['start_time']): ?>, <?php echo date('g:i A', strtotime($ev['start_time'])); ?><?php endif; ?></div>
             </div>
         </a>
         <?php
@@ -1113,7 +1124,7 @@ try {
             </div>
         </div>
         <!-- Small screens: 2 independent horizontally-scrolling rows, each
-             swipeable on its own, same pattern as Quick Services. -->
+             swipeable on its own. -->
         <div class="cm-news-rows-stacked">
             <div class="cm-news-row">
                 <?php foreach ($latestNews as $i => $n) { if ($i % 2 === 0) $newsCard($n); } ?>
@@ -1129,62 +1140,6 @@ try {
     <?php if ($homeAd): ?>
     <div class="cm-section" style="max-width:728px;margin-left:auto;margin-right:auto;">
         <?php render_ad_unit($homeAd); ?>
-    </div>
-    <?php endif; ?>
-
-    <!-- Quick Services -->
-    <?php if (module_enabled('quick_services') && $quickServices): ?>
-    <?php
-    $qsPalette = [
-        ['#eef1f5', '#d9dee6'],
-        ['#f6dcc4', '#e8a06a'],
-        ['#e4e8ee', '#c9d1dc'],
-        ['#e6e2f5', '#c9c0e8'],
-        ['#dfe6ea', '#b9c6cf'],
-    ];
-    $qsCard = function ($qs, $i) use ($qsPalette) {
-        $grad = $qsPalette[$i % count($qsPalette)];
-        ?>
-        <a href="quick_service.php?slug=<?php echo urlencode($qs['slug']); ?>" class="cm-qs-card">
-            <div class="cm-qs-visual" style="background:linear-gradient(160deg, <?php echo $grad[0]; ?>, <?php echo $grad[1]; ?>);">
-                <div class="cm-qs-icon-disc">
-                    <?php if (!empty($qs['image_path'])): ?>
-                    <img src="<?php echo sanitize($qs['image_path']); ?>" alt="">
-                    <?php else: ?>
-                    <span class="cm-qs-icon"><?php echo sanitize($qs['icon']) ?: '⚡'; ?></span>
-                    <?php endif; ?>
-                </div>
-            </div>
-            <div class="cm-qs-body">
-                <div class="cm-qs-title"><?php echo sanitize($qs['name']); ?></div>
-                <?php if ($qs['description']): ?><div class="cm-qs-desc"><?php echo sanitize($qs['description']); ?></div><?php endif; ?>
-            </div>
-        </a>
-        <?php
-    };
-    ?>
-    <div class="cm-section cm-qs-section">
-        <div class="cm-section-head">
-            <h2>⚡ Quick Services</h2>
-            <a href="quick_services.php">View all →</a>
-        </div>
-        <!-- Wide screens: every service in one horizontally-scrolling row -->
-        <div class="cm-qs-wide">
-            <div class="cm-qs-row">
-                <?php foreach ($quickServices as $i => $qs) $qsCard($qs, $i); ?>
-            </div>
-        </div>
-        <!-- Small screens: 2 independent horizontally-scrolling rows, so
-             each row can be swiped through on its own instead of both
-             rows moving together. -->
-        <div class="cm-qs-rows-stacked">
-            <div class="cm-qs-row">
-                <?php foreach ($quickServices as $i => $qs) { if ($i % 2 === 0) $qsCard($qs, $i); } ?>
-            </div>
-            <div class="cm-qs-row">
-                <?php foreach ($quickServices as $i => $qs) { if ($i % 2 === 1) $qsCard($qs, $i); } ?>
-            </div>
-        </div>
     </div>
     <?php endif; ?>
 

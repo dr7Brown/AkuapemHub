@@ -350,6 +350,18 @@ function user_cancel_reward_claim(int $userId, int $claimId): array {
 
         $pdo->commit();
         log_audit_action($userId, 'reward_claim_cancelled', "Cancelled claim {$c['reference_code']}");
+
+        $email = $pdo->prepare('SELECT email FROM users WHERE id=?');
+        $email->execute([$userId]);
+        if ($to = $email->fetchColumn()) {
+            send_email_notification(
+                $to,
+                'Your reward claim was cancelled',
+                'Your reward claim ' . $c['reference_code'] . ' has been cancelled and ' . number_format((int)$c['points_locked']) . ' points have been returned to your balance.',
+                $userId
+            );
+        }
+
         return ['ok' => true];
     } catch (Exception $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
@@ -414,9 +426,15 @@ function admin_mark_claim_fulfilled(int $claimId, int $adminId, ?string $note, ?
         $pdo->prepare("UPDATE reward_claims SET status='fulfilled', fulfilled_at=NOW(), fulfillment_note=?, fulfillment_reference=?, updated_at=NOW() WHERE id=?")
             ->execute([$note, $reference, $c['id']]);
     }, function ($c) {
-        notify_user((int)$c['user_id'], '🎁 Reward fulfilled',
-            'Your ' . $c['reward_description'] . ' reward (' . $c['reference_code'] . ') has been fulfilled. Thank you for being part of ' . APP_NAME . '!',
-            'success', 'my_reward_claims.php?ref=' . $c['reference_code']);
+        global $pdo;
+        $body = 'Your ' . $c['reward_description'] . ' reward (' . $c['reference_code'] . ') has been fulfilled. Thank you for being part of ' . APP_NAME . '!';
+        notify_user((int)$c['user_id'], '🎁 Reward fulfilled', $body, 'success', 'my_reward_claims.php?ref=' . $c['reference_code']);
+
+        $email = $pdo->prepare('SELECT email FROM users WHERE id=?');
+        $email->execute([(int)$c['user_id']]);
+        if ($to = $email->fetchColumn()) {
+            send_email_notification($to, 'Your reward has been fulfilled 🎁', $body, (int)$c['user_id']);
+        }
     });
 }
 
@@ -542,7 +560,7 @@ function rewards_check_new_milestones(int $userId): void {
 
         notify_user($userId, '🎉 Milestone Reached!',
             'Congratulations! You have reached ' . number_format((int)$m['required_points']) . ' points and unlocked "' . $m['reward_description'] . '".',
-            'success', 'my_rewards.php');
+            'success', 'referrals.php#rewards');
     }
 }
 

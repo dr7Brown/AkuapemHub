@@ -27,6 +27,7 @@ function _ref_event_meta(): array {
         'five_star_rating'        => [5,  false, 10],
         'news_approved'           => [10, false, 30],
         'event_approved'          => [10, false, 30],
+        'funeral_approved'        => [10, false, 20],
     ];
 }
 
@@ -139,6 +140,97 @@ function get_points_balance(int $userId): int {
     $stmt = $pdo->prepare("SELECT balance FROM points_wallets WHERE user_id=?");
     $stmt->execute([$userId]);
     return (int)($stmt->fetchColumn() ?: 0);
+}
+
+/**
+ * Admin manual points adjustment — add (positive) or remove (negative) an
+ * arbitrary number of points from a user's wallet, with a required
+ * description recorded on the transaction (points_transactions.note) for
+ * accountability. Unlike award_points(), this bypasses the event registry
+ * entirely (event is always logged as 'admin_adjustment') and is not gated
+ * by referrals_enabled(), since it's a corrective admin tool, not part of
+ * the automatic earning engine.
+ *
+ * Row-locks the wallet (mirrors the reward-claim locking pattern in
+ * modules/rewards/service.php) so a concurrent adjustment or claim can't
+ * race past a stale balance. Removing points never takes the balance below
+ * zero — the whole adjustment is rejected instead of partially applied.
+ *
+ * total_earned is only incremented on a positive adjustment; a deduction
+ * reduces the spendable balance without erasing the user's lifetime-earned
+ * stat (same convention as reward-claim locking/release).
+ *
+ * @return array{ok:bool, error:?string, new_balance:?int}
+ */
+function admin_adjust_points(int $userId, int $points, string $note, int $adminId): array {
+    global $pdo;
+
+    if ($points === 0) return ['ok' => false, 'error' => 'Enter a non-zero number of points.', 'new_balance' => null];
+    $note = trim($note);
+    if ($note === '') return ['ok' => false, 'error' => 'A description is required.', 'new_balance' => null];
+
+    $chkUser = $pdo->prepare("SELECT 1 FROM users WHERE id=?");
+    $chkUser->execute([$userId]);
+    if (!$chkUser->fetch()) return ['ok' => false, 'error' => 'User not found.', 'new_balance' => null];
+
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare("INSERT IGNORE INTO points_wallets (user_id,balance,total_earned,updated_at) VALUES (?,0,0,NOW())")
+            ->execute([$userId]);
+
+        $row = $pdo->prepare("SELECT balance FROM points_wallets WHERE user_id=? FOR UPDATE");
+        $row->execute([$userId]);
+        $balance = (int)$row->fetchColumn();
+
+        if ($points < 0 && $balance + $points < 0) {
+            $pdo->rollBack();
+            return ['ok' => false, 'error' => "This user only has {$balance} points — cannot remove " . abs($points) . '.', 'new_balance' => null];
+        }
+
+        $pdo->prepare("INSERT INTO points_transactions (user_id,event,points,note,created_at) VALUES (?,?,?,?,NOW())")
+            ->execute([$userId, 'admin_adjustment', $points, $note]);
+
+        if ($points > 0) {
+            $pdo->prepare("UPDATE points_wallets SET balance=balance+?, total_earned=total_earned+?, updated_at=NOW() WHERE user_id=?")
+                ->execute([$points, $points, $userId]);
+        } else {
+            $pdo->prepare("UPDATE points_wallets SET balance=balance+?, updated_at=NOW() WHERE user_id=?")
+                ->execute([$points, $userId]);
+        }
+
+        $pdo->commit();
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        return ['ok' => false, 'error' => 'Something went wrong applying the adjustment. Please try again.', 'new_balance' => null];
+    }
+
+    $newBalance = get_points_balance($userId);
+
+    notify_user(
+        $userId,
+        $points > 0 ? '🎁 Points Added' : '⚠️ Points Adjusted',
+        ($points > 0 ? 'You received +' . number_format($points) . ' points' : 'You had ' . number_format(abs($points)) . ' points removed')
+            . ' by an admin. Reason: ' . $note . '. New balance: ' . number_format($newBalance) . ' points.',
+        $points > 0 ? 'success' : 'warning',
+        'referrals.php',
+        $adminId
+    );
+
+    // Optional milestone hook — same as award_points(); guarded and
+    // exception-safe so this optional module can never fail a real adjustment.
+    if ($points > 0) {
+        try {
+            $rewardsService = __DIR__ . '/../rewards/service.php';
+            if (file_exists($rewardsService)) {
+                require_once $rewardsService;
+                if (function_exists('rewards_check_new_milestones')) rewards_check_new_milestones($userId);
+            }
+        } catch (Exception $e) {
+            // Swallow — the adjustment itself already succeeded and must not be undone.
+        }
+    }
+
+    return ['ok' => true, 'error' => null, 'new_balance' => $newBalance];
 }
 
 /**

@@ -57,6 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     notify_user((int)$uid, 'Withdrawal Paid 💵',
                         'Your withdrawal request of GH₵ ' . number_format($req['amount'], 2) . ' has been paid.',
                         'success', 'seller_dashboard.php?tab=wallet');
+                    sms_user((int)$uid, 'payout_processed', ['amount' => number_format($req['amount'], 2)]);
                 }
                 log_audit_action($adminUser['id'], 'mp_payout_mark_paid_manual', "Manually marked payout #$pid paid (GHS " . number_format($req['amount'],2) . ")");
                 flash('Payout marked as paid.', 'success');

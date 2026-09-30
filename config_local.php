@@ -52,6 +52,14 @@ define('WHATSAPP_PROVIDER_URL',       '');      // Legacy — unused by WhatsApp
 define('SMS_PROVIDER_URL',            '');
 define('SMS_PROVIDER_TOKEN',          '');
 
+// ── Arkesel SMS (major-action notifications) ────────────────────────────────
+// Used by SmsService for the admin-toggleable "SMS Notifications" (Admin →
+// Monetize → Settings) — distinct from SMS_PROVIDER_URL/TOKEN above, which
+// only feeds the unrelated admin/business_messages.php broadcast tool.
+// Leave ARKESEL_API_KEY blank to disable sending (logged to error_log instead).
+define('ARKESEL_API_KEY',   '');      // https://sms.arkesel.com dashboard → API Keys
+define('ARKESEL_SENDER_ID', 'AkuapemCn'); // Must be pre-approved in the Arkesel dashboard, max 11 chars
+
 define('ADMIN_ROLE', 'admin');
 
 define('DEFAULT_COMMISSION', 10);
@@ -98,7 +106,12 @@ header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: geolocation=(self), camera=(), microphone=()');
 // CSP: unsafe-inline required for this app's extensive inline JS/CSS blocks.
 // Remove 'unsafe-inline' from script-src and migrate to nonces in a future hardening pass.
-header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' js.paystack.co; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: *; connect-src 'self' api.paystack.co; frame-src js.paystack.co; font-src 'self' data:; object-src 'none'; base-uri 'self'");
+// media-src allows any https:// source — FM station stream URLs are admin-
+// entered external hosts (Icecast/Shoutcast boxes, CDNs, etc.), so this
+// can't be a fixed allowlist; fm_is_valid_stream_url() (fm_functions.php)
+// already rejects anything but http(s) at save time, and this additionally
+// blocks plain-http/mixed-content streams from a https:// page.
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' js.paystack.co cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: *; media-src 'self' https:; connect-src 'self' api.paystack.co https:; frame-src js.paystack.co; font-src 'self' data:; object-src 'none'; base-uri 'self'");
 if (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') {
     header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
 }

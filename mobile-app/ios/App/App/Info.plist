@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CAPACITOR_DEBUG</key>
+	<string>$(CAPACITOR_DEBUG)</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+        <string>AkuapemConnect</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<!-- Deep link used to hand off from the system browser back into the app
+	     after Google Sign-In (see assets/js/google-auth-bridge.js and
+	     google_callback.php) — Google blocks OAuth inside an embedded
+	     WebView, so that flow has to run in a real browser and then bounce
+	     back to the app this way. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.akuapemconnect.app</string>
+			</array>
+		</dict>
+	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+            <key>UISceneConfigurationName</key>
+            <string>Default Configuration</string>
+            <key>UISceneDelegateClassName</key>
+            <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+            <key>UISceneStoryboardFile</key>
+            <string>Main</string>
+        </dict>
+      </array>
+    </dict>
+	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+
+	<!-- Required by Apple whenever the app (including its WebView content) can
+	     trigger these system prompts — App Review rejects the build outright if
+	     any of these are missing while the corresponding API is used. The site
+	     uses file-upload inputs (profile photos, ID/verification documents,
+	     worker portfolio images, product photos, etc.) and a "use my current
+	     location" control on a few forms (shop / event pickup location). -->
+	<key>NSCameraUsageDescription</key>
+	<string>AkuapemConnect needs camera access so you can take a photo directly when uploading images (profile photo, ID verification, product or listing photos).</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>AkuapemConnect needs photo library access so you can choose an existing photo when uploading images (profile photo, ID verification, product or listing photos).</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>AkuapemConnect may save images you download (e.g. reward vouchers or receipts) to your photo library.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>AkuapemConnect uses your location only when you tap "Use my current location" on a shop, listing, or event location form — it is never tracked in the background.</string>
+
+	<!-- Lets a push notification with "content-available" wake the app briefly
+	     to refresh data before the user taps it. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>

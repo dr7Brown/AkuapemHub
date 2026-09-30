@@ -23,6 +23,13 @@ if ($google['client_id'] === '') {
 $state = bin2hex(random_bytes(32));
 $_SESSION['google_oauth_state'] = $state;
 
+// Set when the app shell opens this in the system browser (see
+// assets/js/google-auth-bridge.js) — Google blocks OAuth inside an embedded
+// WebView, so the app hands off here instead. google_callback.php reads
+// this back (same browser, same session cookie) to know whether to finish
+// with a normal same-site redirect or hand off to the app via a deep link.
+$_SESSION['google_oauth_mobile'] = !empty($_GET['mobile']);
+
 // Preserve the same "redirect back to where I was" behavior login.php uses.
 $redirectTarget = safe_redirect_target($_GET['redirect'] ?? null);
 if ($redirectTarget !== '') {

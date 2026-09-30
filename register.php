@@ -197,5 +197,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script>
         setupImageInput(document.querySelector('input[name="profile_photo"]'), 800, 800, 0.82);
     </script>
+    <script src="assets/js/google-auth-bridge.js"></script>
 </body>
 </html>

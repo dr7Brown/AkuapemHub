@@ -8,19 +8,33 @@ if (!is_admin_or_manager()) { header('Location: ../jobs.php'); exit; }
 
 // This file also hosts Quote Requests oversight (folded in from its own former
 // page) alongside the original Products/Shops/Orders/Boosts/Settings tabs —
-// entry is allowed via EITHER permission, but which tabs are visible/reachable
-// is still gated per-permission below, so a moderator granted only
-// manage_quote_requests never sees product/shop/order data, and vice versa.
+// entry is allowed via ANY of the permissions below, but which tabs are
+// visible/reachable is still gated per-permission, so e.g. a moderator
+// granted only manage_quote_requests never sees product/shop/order data.
+// approve_products doubles as the general "marketplace moderation" grant for
+// products/orders (kept for backward compatibility with existing grants);
+// approve_shops and approve_boosts are their own independently-grantable
+// permissions for shops/boosts specifically, matching their dedicated POST
+// action checks below (a moderator can hold either one without the other).
 $hasProductsPerm = is_admin() || has_mod_permission('approve_products');
+$hasShopsPerm    = is_admin() || has_mod_permission('approve_shops') || $hasProductsPerm;
+$hasBoostsPerm   = is_admin() || has_mod_permission('approve_boosts') || $hasProductsPerm;
 $hasQuotesPerm   = is_admin() || has_mod_permission('manage_quote_requests');
-if (!$hasProductsPerm && !$hasQuotesPerm) {
-    require_mod_permission('approve_products'); // neither permission held — standard 403
+if (!$hasProductsPerm && !$hasShopsPerm && !$hasBoostsPerm && !$hasQuotesPerm) {
+    require_mod_permission('approve_products'); // none of the above held — standard 403
 }
 
 $adminUser = current_user();
-$tab       = $_GET['tab'] ?? ($hasProductsPerm ? 'products' : 'quotes');
-if (($tab === 'quotes' && !$hasQuotesPerm) || ($tab === 'categories' && !is_admin()) || (!in_array($tab, ['quotes','categories'], true) && !$hasProductsPerm)) {
-    header('Location: marketplace.php?tab=' . ($hasQuotesPerm ? 'quotes' : 'products'));
+$tab       = $_GET['tab'] ?? ($hasProductsPerm ? 'products' : ($hasShopsPerm ? 'shops' : ($hasBoostsPerm ? 'boosts' : 'quotes')));
+$tabPerm   = [
+    'quotes'     => $hasQuotesPerm,
+    'categories' => is_admin(),
+    'settings'   => is_admin(),
+    'shops'      => $hasShopsPerm,
+    'boosts'     => $hasBoostsPerm,
+][$tab] ?? $hasProductsPerm; // products, orders, and any other tab
+if (!$tabPerm) {
+    header('Location: marketplace.php?tab=' . ($hasProductsPerm ? 'products' : ($hasShopsPerm ? 'shops' : ($hasBoostsPerm ? 'boosts' : 'quotes'))));
     exit;
 }
 
@@ -32,6 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Product approve / reject
     if (in_array($postAction, ['approve_product','reject_product'], true) && !empty($_POST['product_id'])) {
+        require_mod_permission('approve_products');
         $pid    = (int)$_POST['product_id'];
         $reason = trim($_POST['rejection_reason'] ?? '');
         $prodRow = $pdo->prepare('SELECT mp.*, ms.user_id AS owner_id, ms.shop_name FROM mp_products mp JOIN mp_shops ms ON mp.shop_id=ms.id WHERE mp.id=?');
@@ -65,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Shop verify / reject / suspend / unsuspend
     if (in_array($postAction, ['approve_shop','reject_shop','suspend_shop','unsuspend_shop'], true) && !empty($_POST['shop_id'])) {
+        if (!$hasShopsPerm) require_mod_permission('approve_shops');
         $sid     = (int)$_POST['shop_id'];
         $reason  = trim($_POST['rejection_reason'] ?? '');
         $shopRow = $pdo->prepare('SELECT ms.*, u.id AS user_id, u.name AS owner_name FROM mp_shops ms JOIN users u ON ms.user_id=u.id WHERE ms.id=?');
@@ -129,6 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // unpaid orders just restore stock, paid orders go through the real
     // refund path (restores stock + reverses the seller's wallet credit).
     if ($postAction === 'cancel_order' && !empty($_POST['order_id'])) {
+        require_mod_permission('approve_products');
         $oid = (int)$_POST['order_id'];
         $reason = trim($_POST['cancel_reason'] ?? '') ?: 'Cancelled by admin';
         $orderRow = $pdo->prepare('SELECT * FROM mp_orders WHERE id=?');
@@ -154,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Activate boost order
     if ($postAction === 'activate_boost' && !empty($_POST['boost_id'])) {
+        if (!$hasBoostsPerm) require_mod_permission('approve_boosts');
         $bid = (int)$_POST['boost_id'];
         $boostRow = $pdo->prepare('SELECT mb.*, ms.user_id, ms.shop_name FROM mp_boost_orders mb JOIN mp_shops ms ON mb.shop_id=ms.id WHERE mb.id=?');
         $boostRow->execute([$bid]);
@@ -689,12 +707,14 @@ if ($tab === 'settings') {
         <div style="font-size:.78rem;color:var(--text-muted,#6b7280);margin-bottom:8px;">
             Would run <?php echo date('d M Y',strtotime($b['start_date'])); ?> → <?php echo date('d M Y',strtotime($b['end_date'])); ?>
         </div>
+        <?php if ($hasBoostsPerm): ?>
         <form method="post" style="margin:0;">
             <?php echo csrf_field(); ?>
             <input type="hidden" name="action"   value="activate_boost">
             <input type="hidden" name="boost_id" value="<?php echo $b['id']; ?>">
             <button type="submit" class="button button-primary button-small">&#9889; Activate Boost</button>
         </form>
+        <?php endif; ?>
     </div>
     <?php endforeach; else: ?>
     <div class="empty-state">No pending boost orders.</div>

@@ -1,11 +1,28 @@
 <?php
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../functions.php';
+require_once __DIR__ . '/../modules/referrals/service.php';
 
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 $user = current_user();
-require_mod_permission('approve_funerals');
+
+// Page-level gate: any one of the four funeral permissions grants viewing
+// access; each individual action below is then re-checked against its own
+// specific permission (same split as Events — see admin/events.php).
+if (!is_admin()
+    && !has_mod_permission('approve_funerals')
+    && !has_mod_permission('edit_funerals')
+    && !has_mod_permission('delete_funerals')
+    && !has_mod_permission('manage_funeral_pricing')
+) {
+    require_mod_permission('approve_funerals');
+}
+
+$canApprove = has_mod_permission('approve_funerals');
+$canEdit    = has_mod_permission('edit_funerals');
+$canDelete  = has_mod_permission('delete_funerals');
+$canPrice   = has_mod_permission('manage_funeral_pricing');
 
 $feeEnabled = (bool)(int)get_platform_setting('funeral_fee_enabled', '0');
 $feeAmount  = (float)get_platform_setting('funeral_fee_amount', '20');
@@ -16,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Fee settings update
     if (isset($_POST['save_fee'])) {
+        require_mod_permission('manage_funeral_pricing');
         set_platform_setting('funeral_fee_enabled', (int)isset($_POST['fee_enabled']));
         set_platform_setting('funeral_fee_amount', max(0, (float)($_POST['fee_amount'] ?? 0)));
         log_audit_action($user['id'], 'funeral_fee_update', 'Updated funeral announcement fee settings');
@@ -24,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Featured settings
     if (isset($_POST['save_featured'])) {
+        require_mod_permission('manage_funeral_pricing');
         set_platform_setting('enable_paid_featured_funerals', isset($_POST['feat_paid']) ? '1' : '0');
         log_audit_action($user['id'], 'funeral_feat_update', 'Updated funeral featuring settings');
         header('Location: funerals.php?saved=1'); exit;
@@ -31,6 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Package CRUD
     if (isset($_POST['pkg_action'])) {
+        require_mod_permission('manage_funeral_pricing');
         $pa = $_POST['pkg_action'];
         if ($pa === 'add_pkg') {
             $pName = trim($_POST['pkg_name'] ?? '');
@@ -60,6 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($row) {
                 if ($action === 'approve') {
+                    require_mod_permission('approve_funerals');
                     if (check_mod_coi('funeral', $tid, $user['id'])) {
                         log_coi_violation($user['id'], 'funeral', $tid, 'approve');
                         header('Location: funerals.php'); exit;
@@ -68,10 +89,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     log_audit_action($user['id'], 'funeral_approve', "Approved funeral #{$tid}: {$row['deceased_name']}");
                     log_mod_activity($user['id'], 'funerals', 'approve_funeral', $tid);
                     if ($row['user_id']) {
+                        award_points((int)$row['user_id'], 'funeral_approved', $tid);
                         notify_user($row['user_id'], 'Funeral announcement published',
                             'Your announcement for "' . $row['deceased_name'] . '" has been approved and is now live.', 'success');
+                        sms_user((int)$row['user_id'], 'funeral_announcement_live', ['deceased_name' => $row['deceased_name']]);
                     }
                 } elseif ($action === 'reject') {
+                    require_mod_permission('approve_funerals');
                     $reason = trim($_POST['rejection_reason'] ?? '');
                     $pdo->prepare("UPDATE funeral_announcements SET status='rejected', rejection_reason=?, updated_at=NOW() WHERE id=?")
                         ->execute([$reason ?: null, $tid]);
@@ -85,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $body, 'error', 'my_funerals.php?edit=' . $tid);
                     }
                 } elseif ($action === 'mark_paid') {
+                    require_mod_permission('approve_funerals');
                     $pdo->prepare("UPDATE funeral_announcements SET status='pending', updated_at=NOW() WHERE id=?")->execute([$tid]);
                     log_audit_action($user['id'], 'funeral_paid', "Marked payment received for funeral #{$tid}");
                     if ($row['user_id']) {
@@ -92,10 +117,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'Payment for "' . $row['deceased_name'] . '" has been recorded. Your announcement is now under review.', 'info');
                     }
                 } elseif ($action === 'feature') {
+                    require_mod_permission('edit_funerals');
                     $newFeat = $row['featured'] ? 0 : 1;
                     $pdo->prepare("UPDATE funeral_announcements SET featured=? WHERE id=?")->execute([$newFeat, $tid]);
                     log_audit_action($user['id'], 'funeral_feature', "Toggled feature for funeral #{$tid}");
                 } elseif ($action === 'delete') {
+                    require_mod_permission('delete_funerals');
                     $pdo->prepare("DELETE FROM funeral_announcements WHERE id=?")->execute([$tid]);
                     log_audit_action($user['id'], 'funeral_delete', "Deleted funeral #{$tid}: {$row['deceased_name']}");
                 }
@@ -184,12 +211,13 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
     <header class="topbar">
         <a href="index.php" class="button button-secondary button-small">← Admin</a>
         <h1>Funeral Announcements</h1>
-        <a href="funeral_edit.php" class="button button-primary button-small">+ New</a>
+        <?php if ($canEdit): ?><a href="funeral_edit.php" class="button button-primary button-small">+ New</a><?php endif; ?>
     </header>
 
     <div class="af-shell">
         <?php if (isset($_GET['saved'])): ?><div class="alert alert-success" style="margin-bottom:14px;">Settings saved.</div><?php endif; ?>
 
+        <?php if ($canPrice): ?>
         <!-- Monetization panel -->
         <div class="af-fee-box">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
@@ -308,6 +336,7 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
                 <button type="submit" class="button button-primary button-small">+ Add Package</button>
             </form>
         </div>
+        <?php endif; // $canPrice ?>
 
         <!-- Stats -->
         <div class="af-stats">
@@ -371,14 +400,15 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
                         <td>
                             <?php $faCoi = !is_admin() && (int)($fa['user_id'] ?? 0) === (int)$user['id']; ?>
                             <div class="af-actions">
-                                <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary">View</a>
-                                <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small">Edit</a>
-                                <?php if ($fa['status'] === 'pending_payment'): ?>
+                                <?php if ($canApprove || $canEdit): ?>
+                                <a href="funeral_edit.php?id=<?php echo (int)$fa['id']; ?>" class="button button-small button-primary"><?php echo $canEdit ? 'Edit' : 'View'; ?></a>
+                                <?php endif; ?>
+                                <?php if ($canApprove && $fa['status'] === 'pending_payment'): ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="mark_paid"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fffbeb;color:#92400e;border-color:#f59e0b;">Mark Paid</button></form>
                                 <?php endif; ?>
                                 <?php if ($faCoi && in_array($fa['status'],['pending_payment','pending'],true)): ?>
                                 <span style="background:#fef3c7;border:1px solid #f59e0b;color:#92400e;font-size:.72rem;font-weight:700;padding:3px 8px;border-radius:8px;">⚠️ Yours</span>
-                                <?php else: ?>
+                                <?php elseif ($canApprove): ?>
                                 <?php if (in_array($fa['status'],['pending_payment','pending','rejected'])): ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="approve"><?php echo csrf_field(); ?><button class="button button-small" style="background:#ecfdf5;color:#065f46;border-color:#6ee7b7;">Approve</button></form>
                                 <?php endif; ?>
@@ -386,8 +416,12 @@ $statusLabels = ['pending_payment'=>'Awaiting Payment','pending'=>'Under Review'
                                 <button type="button" class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" onclick="openRejectModal(<?php echo (int)$fa['id']; ?>)">Reject</button>
                                 <?php endif; ?>
                                 <?php endif; ?>
+                                <?php if ($canEdit): ?>
                                 <form method="post" action="funerals.php"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="feature"><?php echo csrf_field(); ?><button class="button button-small"><?php echo $fa['featured'] ? 'Unfeature' : 'Feature'; ?></button></form>
+                                <?php endif; ?>
+                                <?php if ($canDelete): ?>
                                 <form method="post" action="funerals.php" onsubmit="return confirm('Delete this announcement?')"><input type="hidden" name="id" value="<?php echo (int)$fa['id']; ?>"><input type="hidden" name="action" value="delete"><?php echo csrf_field(); ?><button class="button button-small" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Delete</button></form>
+                                <?php endif; ?>
                             </div>
                         </td>
                     </tr>

@@ -1,0 +1,1005 @@
+# AkuapemConnect — Quick Services Module
+
+Build a new **Quick Services** module inside the existing AkuapemConnect web application.
+
+## CRITICAL DEVELOPMENT RULE
+
+**DO NOT build the module from scratch.**
+
+Before writing any code:
+
+1. Inspect the existing AkuapemConnect codebase thoroughly.
+2. Identify existing reusable components, database tables, models, controllers, services, routes, authentication, roles, permissions, admin dashboards, manager functionality, payment processing, Paystack integration, notifications, email/SMS functionality, file uploads, UI components, cards, forms, modals, tables, status badges and audit/logging systems.
+3. Reuse existing components wherever they already provide the required functionality.
+4. Extend existing components when practical instead of creating duplicates.
+5. Only create new components when the existing system genuinely does not provide the required functionality.
+6. Do not create a second authentication system, payment system, notification system, user system, manager system or admin system.
+7. Do not introduce another UI framework or unnecessary dependency.
+8. Do not modify unrelated AkuapemConnect modules unless absolutely necessary.
+
+The goal is to make Quick Services feel like a **native part of AkuapemConnect**, not a separate application.
+
+---
+
+# 1. QUICK SERVICES PURPOSE
+
+Create a customer-facing module called:
+
+**Quick Services**
+
+It will allow AkuapemConnect users to conveniently purchase/request commonly needed digital services.
+
+The initial services are:
+
+1. **Buy Data**
+2. **BECE/WASSCE Result Services**
+
+More services will be added later.
+
+The architecture must therefore be **extensible and database-driven**.
+
+Future services may include:
+
+* Airtime
+* ECG Prepaid
+* TV subscriptions
+* School application forms
+* Admission forms
+* Other digital services
+
+Do not hard-code the system around only the initial services.
+
+---
+
+# 2. REUSE EXISTING AKUAPEMCONNECT STRUCTURE
+
+First inspect and identify:
+
+### Existing user system
+
+Reuse:
+
+* Users
+* User profiles
+* Authentication
+* Login/session handling
+* User IDs
+* Customer contact information
+
+### Existing administration
+
+Reuse:
+
+* Admin dashboard
+* Admin navigation
+* Existing admin layout
+* Existing dashboard cards
+* Existing tables
+* Existing filters
+* Existing forms
+
+### Existing roles and permissions
+
+Reuse the existing:
+
+* Roles
+* Permissions
+* Role middleware
+* Access-control logic
+
+Add Quick Services permissions only where necessary.
+
+### Existing payment system
+
+Inspect the existing Paystack integration.
+
+If AkuapemConnect already has:
+
+* payment initialization
+* Paystack callback
+* payment verification
+* transaction references
+* payment records
+* payment status handling
+
+reuse them.
+
+**Do not create another Paystack integration.**
+
+### Existing notifications
+
+Inspect existing:
+
+* in-app notifications
+* email notifications
+* SMS integration
+* notification templates
+* notification settings
+
+Reuse them.
+
+Only create missing functionality.
+
+### Existing file upload system
+
+If AkuapemConnect already has secure file upload/storage functionality, reuse it for result PDFs.
+
+### Existing audit/logging
+
+If the application already records:
+
+* user actions
+* admin actions
+* transaction changes
+* status changes
+
+reuse the existing system.
+
+---
+
+# 3. CUSTOMER QUICK SERVICES PAGE
+
+Add **Quick Services** to the existing customer navigation/menu.
+
+Use the existing AkuapemConnect UI design.
+
+Display attractive service cards.
+
+Example:
+
+**Quick Services**
+
+> Access essential digital services quickly and conveniently.
+
+Cards:
+
+### Buy Data
+
+Purchase mobile data bundles for MTN, Telecel and other supported networks.
+
+### BECE/WASSCE Results
+
+Buy result checkers or request AkuapemConnect to check and send your result.
+
+Future services should appear automatically when activated by Admin.
+
+---
+
+# 4. SERVICE CATALOGUE
+
+Do not hard-code services directly into the frontend.
+
+Create/reuse a database-driven service structure.
+
+Each service should support:
+
+* Name
+* Slug
+* Description
+* Icon
+* Category
+* Active/inactive
+* Display order
+* Price/settings where applicable
+* Requires manager
+* Requires payment
+* Processing type
+
+Admin should eventually be able to activate/deactivate services without changing application code.
+
+---
+
+# 5. BUY DATA
+
+Create the customer flow:
+
+**Quick Services → Buy Data**
+
+User selects:
+
+### Network
+
+Initially support:
+
+* MTN
+* Telecel
+* AirtelTigo
+
+However, do not hard-code these permanently.
+
+Networks should be configurable.
+
+### Bundle
+
+Examples:
+
+* 500MB
+* 1GB
+* 2GB
+* 5GB
+* 10GB
+* 20GB
+
+The actual bundles and prices should come from the database.
+
+Admin should be able to:
+
+* Add bundle
+* Edit bundle
+* Change price
+* Activate/deactivate bundle
+* Change display order
+* Change network
+
+### Recipient Number
+
+User enters the number receiving the data.
+
+Validate the phone number appropriately.
+
+---
+
+# 6. BUY DATA PAYMENT
+
+After the customer selects the bundle:
+
+Show an order summary:
+
+* Network
+* Bundle
+* Recipient number
+* Price
+* Total
+
+Button:
+
+**Pay Now**
+
+Use the **existing AkuapemConnect Paystack integration**.
+
+Do not create a new payment implementation if one already exists.
+
+Payment must be verified server-side.
+
+Do not consider a transaction successfully paid merely because the customer returns from Paystack.
+
+---
+
+# 7. QUICK SERVICE TRANSACTION
+
+Create a reusable Quick Services transaction structure, but reuse the existing transaction/payment table if it can safely support the functionality.
+
+Do not create duplicate transaction records unnecessarily.
+
+The transaction should contain or reference:
+
+* Unique transaction reference
+* User
+* Service
+* Amount
+* Payment status
+* Processing status
+* Assigned manager
+* Customer information
+* Service-specific information
+* Notes
+* Created date
+* Updated date
+* Completed date
+
+Keep **payment status** separate from **processing status**.
+
+### Payment status
+
+* Pending
+* Paid
+* Failed
+* Refunded
+
+### Processing status
+
+* Awaiting Assignment
+* Assigned
+* Processing
+* Completed
+* Failed
+* Cancelled
+
+---
+
+# 8. SERVICE-SPECIFIC DATA
+
+The transaction architecture must allow different services to store different information.
+
+For example, Buy Data needs:
+
+* Network
+* Bundle
+* Recipient number
+
+BECE/WASSCE needs:
+
+* Examination type
+* Examination year
+* Index number
+* Candidate information
+* WhatsApp number
+* Service option
+
+Use the existing database conventions where possible.
+
+If the current application uses structured tables for service-specific information, follow that pattern.
+
+If no suitable pattern exists, use a clean flexible approach without overengineering the system.
+
+---
+
+# 9. MANAGER ASSIGNMENT
+
+Quick Services transactions must be processed by authorized managers.
+
+Reuse the existing manager/user/role structure.
+
+Create a relationship between:
+
+**Manager ↔ Quick Service**
+
+Example:
+
+Manager A:
+
+* Buy Data
+* BECE Checker
+
+Manager B:
+
+* WASSCE Checker
+* Result Checking
+
+Admin should be able to assign services to managers.
+
+A manager must only see transactions for services they are authorized to process.
+
+Do not expose unrelated customer transactions.
+
+---
+
+# 10. MANAGER QUICK SERVICES DASHBOARD
+
+Create a Quick Services section inside the existing manager dashboard if one exists.
+
+Do not create a completely separate manager application.
+
+Dashboard should show:
+
+* Pending
+* Assigned
+* Processing
+* Completed
+* Failed
+
+Also show recent transactions.
+
+Example:
+
+```text
+Quick Services
+
+Pending        12
+Processing      4
+Completed     128
+
+Recent Transactions
+
+QS10234   Buy Data          Pending
+QS10235   WASSCE Result     Processing
+QS10236   BECE Checker      Completed
+```
+
+Use existing dashboard cards/components.
+
+---
+
+# 11. MANAGER TRANSACTION PROCESSING
+
+When a manager opens a transaction, show:
+
+* Transaction reference
+* Customer
+* Phone
+* Service
+* Amount
+* Payment status
+* Processing status
+* Service-specific information
+* Transaction history
+* Notes
+
+Manager actions should depend on the service.
+
+For Buy Data:
+
+**Mark Processing**
+
+then manually process the data top-up.
+
+After successful top-up:
+
+**Mark Completed**
+
+For Result Checker:
+
+Allow the manager to enter the checker details securely.
+
+For Result Checking:
+
+Allow the manager to:
+
+* Process the request
+* Upload the result PDF
+* Confirm WhatsApp number
+* Mark the request completed
+
+---
+
+# 12. BECE/WASSCE RESULT SERVICES
+
+Create one result service interface with two options:
+
+### Option 1
+
+**Buy Result Checker Only**
+
+### Option 2
+
+**Check My Result and Send PDF to WhatsApp**
+
+Then user selects:
+
+* BECE
+* WASSCE
+
+Display the appropriate information fields.
+
+Do not duplicate the entire service interface unnecessarily.
+
+---
+
+# 13. RESULT CHECKER ONLY
+
+Flow:
+
+```text
+Select BECE/WASSCE
+        ↓
+Select Buy Checker
+        ↓
+Enter required information
+        ↓
+Review
+        ↓
+Pay with Paystack
+        ↓
+Transaction created
+        ↓
+Manager notified
+        ↓
+Manager processes request
+        ↓
+Manager enters checker information
+        ↓
+Manager marks completed
+        ↓
+User notified
+```
+
+---
+
+# 14. RESULT CHECKING + PDF
+
+Flow:
+
+```text
+Select BECE/WASSCE
+        ↓
+Select "Check My Result"
+        ↓
+Enter required information
+        ↓
+Enter WhatsApp number
+        ↓
+Pay
+        ↓
+Manager receives request
+        ↓
+Manager checks result
+        ↓
+Manager uploads result PDF
+        ↓
+Manager confirms WhatsApp number
+        ↓
+Manager marks completed
+        ↓
+User receives completion notification
+```
+
+The system should be prepared for future WhatsApp integration.
+
+For the initial version, if automated WhatsApp delivery is not already available, provide a clear completion workflow and record the WhatsApp number.
+
+Do not invent a WhatsApp API integration if none exists.
+
+---
+
+# 15. RESULT PDF SECURITY
+
+Result PDFs may contain sensitive student information.
+
+Do not place them in a publicly accessible uploads directory.
+
+Reuse the existing secure file storage system if available.
+
+Only authorized:
+
+* Customer
+* Assigned Manager
+* Authorized Admin
+
+should be able to access the document.
+
+Do not expose predictable public file paths.
+
+---
+
+# 16. NOTIFICATIONS
+
+Reuse AkuapemConnect's existing notification infrastructure.
+
+Each transaction should trigger appropriate notifications.
+
+### After transaction/payment
+
+Customer:
+
+> Your Quick Services request has been received and is awaiting processing.
+
+Manager:
+
+> New Quick Services transaction assigned to you.
+
+Manager should receive:
+
+* Dashboard/in-app notification
+* Email if enabled
+* SMS if enabled
+
+Do not force every channel if the existing application does not support it.
+
+---
+
+# 17. COMPLETION NOTIFICATION
+
+When manager marks the transaction Completed:
+
+Notify the customer.
+
+Example:
+
+> Your Quick Services request QS10235 has been completed successfully.
+
+If it is a result-checking request:
+
+> Your result request has been completed. Your result document is now available.
+
+If WhatsApp delivery is supported by the existing system, send through WhatsApp.
+
+Otherwise keep the workflow ready for future WhatsApp integration.
+
+---
+
+# 18. USER QUICK SERVICES HISTORY
+
+Add:
+
+**My Quick Services**
+
+to the existing customer account/dashboard.
+
+Display:
+
+* Transaction reference
+* Service
+* Amount
+* Date
+* Payment status
+* Processing status
+
+Example:
+
+```text
+QS10235
+WASSCE Result
+GH₵XX
+Processing
+
+QS10221
+Buy Data
+GH₵XX
+Completed
+```
+
+Clicking a transaction should open its details.
+
+---
+
+# 19. RECEIPTS
+
+Reuse the existing AkuapemConnect receipt system if available.
+
+If no suitable receipt system exists, create a lightweight Quick Services receipt.
+
+Receipt should contain:
+
+* AkuapemConnect
+* Transaction reference
+* Service
+* Amount
+* Payment status
+* Processing status
+* Date
+* Customer
+
+Do not duplicate an existing receipt generator.
+
+---
+
+# 20. AUDIT TRAIL
+
+Reuse the existing audit/log system if available.
+
+Important Quick Services events should be logged:
+
+* Transaction created
+* Payment initiated
+* Payment verified
+* Payment failed
+* Manager assigned
+* Manager started processing
+* Status changed
+* PDF uploaded
+* Transaction completed
+* Transaction failed
+* Transaction cancelled
+
+Each record should identify:
+
+* Actor
+* Action
+* Date/time
+* Previous status
+* New status
+* Description
+
+---
+
+# 21. ADMIN QUICK SERVICES MANAGEMENT
+
+Add Quick Services management to the existing Admin Dashboard.
+
+Admin should be able to:
+
+### Services
+
+* View services
+* Add service
+* Edit service
+* Activate/deactivate service
+* Set display order
+
+### Data Bundles
+
+* Add telco
+* Add bundle
+* Edit bundle
+* Set selling price
+* Activate/deactivate bundle
+
+### Managers
+
+* Assign services to managers
+* Remove service permission
+* View manager workload
+
+### Transactions
+
+* Search
+* Filter
+* View
+* Assign/reassign
+* Monitor
+* Cancel where appropriate
+
+---
+
+# 22. ADMIN DASHBOARD
+
+Use existing dashboard components.
+
+Show:
+
+```text
+Quick Services
+
+Today's Transactions
+Today's Revenue
+Pending
+Processing
+Completed
+Failed
+```
+
+Also show service statistics:
+
+```text
+Buy Data
+Transactions
+Revenue
+
+BECE/WASSCE
+Transactions
+Revenue
+```
+
+Do not build an unnecessarily complex analytics system for the first version.
+
+---
+
+# 23. FUTURE SERVICE SUPPORT
+
+The architecture must allow future services to be added without rebuilding the Quick Services engine.
+
+Examples:
+
+```text
+Buy Airtime
+ECG Prepaid
+TV Subscription
+School Application
+Admission Forms
+BECE Checker
+WASSCE Checker
+Other Digital Services
+```
+
+The core transaction/payment/manager/notification system should remain reusable.
+
+Only service-specific processing logic should change.
+
+---
+
+# 24. DATABASE APPROACH
+
+Before creating tables, inspect the existing database.
+
+Determine whether existing tables can safely be extended.
+
+Prefer:
+
+**reuse existing table → extend existing table → create new table only when necessary.**
+
+Potential new tables, only if needed:
+
+```text
+quick_services
+quick_service_categories
+quick_data_bundles
+quick_service_managers
+quick_transactions
+quick_transaction_logs
+quick_notifications
+```
+
+Do not blindly create all of these if equivalent existing tables already exist.
+
+---
+
+# 25. SECURITY
+
+Follow existing AkuapemConnect security conventions.
+
+Ensure:
+
+* Authentication required
+* Proper authorization
+* CSRF protection where applicable
+* Server-side validation
+* Payment verification
+* Secure file handling
+* No sensitive information in URLs
+* No unauthorized manager access
+* No customer access to another user's transaction
+* No direct manipulation of transaction status
+* Proper database queries/prepared statements
+* Proper escaping/output handling
+
+---
+
+# 26. MOBILE-FIRST DESIGN
+
+Quick Services will primarily be used from phones.
+
+Customer screens should therefore be:
+
+* Simple
+* Fast
+* Mobile-first
+* Touch-friendly
+* Minimal form fields
+* Clear status indicators
+* Easy Paystack checkout
+
+Reuse AkuapemConnect's existing responsive components.
+
+Do not redesign the entire application.
+
+---
+
+# 27. PERFORMANCE
+
+Keep the module lightweight.
+
+Do not introduce unnecessary libraries.
+
+Reuse existing:
+
+* CSS
+* JavaScript
+* components
+* database helpers
+* APIs
+* notification infrastructure
+
+Avoid unnecessary database queries.
+
+Use pagination for transaction lists.
+
+Do not load thousands of transactions into the browser at once.
+
+---
+
+# 28. IMPLEMENTATION PROCESS
+
+Follow this sequence:
+
+### Phase 1 — Inspect
+
+Before coding, inspect:
+
+* project structure
+* database
+* authentication
+* users
+* roles
+* permissions
+* managers
+* Paystack
+* notifications
+* email/SMS
+* file uploads
+* existing admin pages
+* existing dashboard components
+
+Then provide a concise report of what can be reused.
+
+### Phase 2 — Design
+
+Create the Quick Services architecture based on what already exists.
+
+Clearly identify:
+
+**REUSE**
+
+and
+
+**NEW**
+
+components.
+
+### Phase 3 — Database
+
+Only create or modify the tables actually required.
+
+### Phase 4 — Customer interface
+
+Build:
+
+* Quick Services page
+* Buy Data
+* Result Services
+* My Quick Services
+* Transaction details
+
+### Phase 5 — Payment
+
+Integrate with the existing Paystack implementation.
+
+### Phase 6 — Manager interface
+
+Build:
+
+* Quick Services dashboard
+* Transaction queue
+* Transaction details
+* Processing actions
+* Result PDF upload
+
+### Phase 7 — Admin
+
+Build:
+
+* Service management
+* Data bundle management
+* Manager assignment
+* Transaction monitoring
+* Notification settings
+
+### Phase 8 — Notifications
+
+Connect to the existing notification infrastructure.
+
+### Phase 9 — Testing
+
+Test:
+
+* successful payment
+* failed payment
+* duplicate payment/callback
+* transaction creation
+* manager assignment
+* unauthorized manager access
+* transaction completion
+* PDF upload/security
+* customer notifications
+* mobile responsiveness
+
+---
+
+# FINAL DEVELOPMENT INSTRUCTION
+
+**The most important requirement is reuse.**
+
+Do not assume that every feature needs a new implementation.
+
+Before creating any:
+
+* table
+* model
+* controller
+* route
+* service
+* component
+* notification system
+* payment function
+* dashboard
+* manager system
+* file upload system
+
+first search the existing AkuapemConnect codebase for equivalent functionality.
+
+If an existing component can perform 70–80% of the required task, extend/reuse it instead of creating another parallel implementation.
+
+Keep Quick Services modular, lightweight, secure and easy to extend.
+
+**Do not break existing AkuapemConnect functionality.**
+
+At the end of implementation, provide a summary of:
+
+1. Existing components reused
+2. Existing components modified
+3. New files created
+4. Database changes
+5. New routes
+6. New permissions
+7. New environment/configuration requirements
+8. Testing performed
+9. Any remaining TODOs

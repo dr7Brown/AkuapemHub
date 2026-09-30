@@ -187,6 +187,7 @@ if ($action === 'approve_product') {
     if ($prod) {
         $pdo->prepare("UPDATE mp_products SET status='approved', updated_at=NOW() WHERE id=?")->execute([$pid]);
         notify_user((int)$prod['owner_id'], 'Product Approved ✅', '"' . $prod['name'] . '" is now live on the marketplace!', 'success');
+        sms_user((int)$prod['owner_id'], 'product_approved', ['product_name' => $prod['name']]);
         log_audit_action($user['id'], 'mp_product_approve', 'Approved product #' . $pid . ': ' . $prod['name']);
         flash('Product approved and now live.', 'success');
     }

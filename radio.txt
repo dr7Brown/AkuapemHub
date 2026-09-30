@@ -1,0 +1,916 @@
+# AkuapemConnect FM Stations Module
+
+## Objective
+
+Add an **FM Stations / Online Radio** module to the existing AkuapemConnect platform.
+
+The goal is to allow users to discover FM stations, open a dedicated station page, view the station's programmes and information, and listen to the station's live stream directly from AkuapemConnect.
+
+## VERY IMPORTANT — REUSE THE EXISTING SYSTEM
+
+This is an enhancement to the existing AkuapemConnect application.
+
+**DO NOT rebuild existing functionality from scratch.**
+
+Before writing code:
+
+1. Inspect the existing project structure.
+2. Identify the current authentication/user system.
+3. Identify the existing admin dashboard.
+4. Identify the existing database connection and database conventions.
+5. Identify existing reusable components for:
+
+   * cards
+   * image/logo uploads
+   * file/image storage
+   * navigation
+   * buttons
+   * modals
+   * forms
+   * alerts/toasts
+   * authentication
+   * admin permissions
+   * search
+   * notifications
+   * social links
+   * advertisements/promotions
+   * featured content
+   * pagination
+   * status/activation controls
+6. Reuse those components wherever possible.
+7. Follow the existing coding style, naming conventions, folder structure and database conventions.
+8. Do not introduce a new framework, authentication system, CSS framework or database architecture unless the existing project genuinely requires it.
+9. Do not duplicate existing tables or functionality.
+10. Keep the implementation lightweight and mobile-first.
+
+The final module should look and feel like a natural part of AkuapemConnect, not a separate application.
+
+---
+
+# 1. FM SECTION
+
+Add an **FM Stations** section to the existing AkuapemConnect navigation/homepage.
+
+Use the platform's existing card component if one exists.
+
+Example:
+
+FM STATIONS
+
+[Station Logo]
+
+BENKUM FM
+95.7 FM
+Akuapem
+
+🟢 LIVE NOW
+
+[ Listen Live ]
+
+Station cards should support:
+
+* station logo
+* station name
+* frequency
+* location
+* short description
+* live/offline status
+* featured status
+* Listen button
+
+Do not hard-code stations.
+
+Load stations dynamically from the database.
+
+---
+
+# 2. STATION DETAILS PAGE
+
+When a user clicks a station card, open a dedicated station page.
+
+Example URL:
+
+/fm/benkum-fm
+
+Use the application's existing routing structure.
+
+Do not create a separate routing system.
+
+The station page should be visually attractive and mobile-first.
+
+## Station Header
+
+Display:
+
+* station logo
+* station name
+* frequency
+* location
+* short description
+* live status
+* social links where available
+
+Use existing UI components where available.
+
+---
+
+# 3. LIVE RADIO PLAYER
+
+The most important feature is live streaming.
+
+Display a prominent player near the top of the station page.
+
+Example:
+
+LIVE NOW
+
+🔴 BENKUM FM
+
+[ ▶ PLAY ]
+
+[ 🔊 Volume ]
+
+When the user clicks Play, the station's configured stream should play directly in the browser.
+
+Use the HTML5 audio player where supported.
+
+Example concept:
+
+<audio controls preload="none">
+    <source src="STREAM_URL">
+</audio>
+
+However, do not assume every station uses the same streaming technology.
+
+The database should store the stream URL and stream type.
+
+Possible stream types include:
+
+* mp3
+* aac
+* m3u
+* m3u8/hls
+* icecast
+* shoutcast
+* other supported browser-compatible streams
+
+If HLS requires a JavaScript player/library, check whether the existing project already contains a suitable library before adding a new dependency.
+
+Do not unnecessarily install large libraries.
+
+---
+
+# 4. STREAM RESOURCE REQUIREMENTS
+
+The AkuapemConnect server should NOT proxy, download, record or continuously relay the audio stream.
+
+The browser should connect directly to the configured station stream whenever possible.
+
+This is important because AkuapemConnect should not consume unnecessary server bandwidth.
+
+The stream URL must therefore be treated as external media.
+
+Use:
+
+* `preload="none"`
+* no automatic audio playback
+* no continuous server-side audio processing
+
+The stream should only begin when the user intentionally presses Play.
+
+---
+
+# 5. CURRENT PROGRAMME
+
+Create an "On Air Now" section.
+
+Example:
+
+ON AIR NOW
+
+Morning Show
+
+6:00 AM – 10:00 AM
+
+Host: Kwame Mensah
+
+The system should determine the current programme from the station's programme schedule based on:
+
+* day of week
+* current time
+* programme start time
+* programme end time
+
+If no programme is currently scheduled, display something such as:
+
+"Programme information unavailable."
+
+Do not display false information.
+
+---
+
+# 6. PROGRAMME SCHEDULE
+
+Each station should have a programme schedule.
+
+Display:
+
+TODAY'S PROGRAMMES
+
+6:00 AM
+Morning Show
+Kwame Mensah
+
+10:00 AM
+Mid-Morning
+Ama Serwaa
+
+12:00 PM
+News
+
+4:00 PM
+Drive Time
+Kojo Mensah
+
+Use the existing card/list components where appropriate.
+
+On desktop, the schedule can use a structured timetable.
+
+On mobile, use stacked programme cards.
+
+---
+
+# 7. WEEKLY SCHEDULE
+
+Allow programmes to be assigned to specific days.
+
+Supported days:
+
+* Monday
+* Tuesday
+* Wednesday
+* Thursday
+* Friday
+* Saturday
+* Sunday
+
+The station page should allow users to switch between days.
+
+Example:
+
+[MON] [TUE] [WED] [THU] [FRI] [SAT] [SUN]
+
+Then display the selected day's programmes.
+
+---
+
+# 8. DATABASE DESIGN
+
+Inspect the existing database before creating tables.
+
+Use existing conventions.
+
+Only create new tables if necessary.
+
+Suggested tables:
+
+## fm_stations
+
+Fields may include:
+
+* id
+* name
+* slug
+* frequency
+* location
+* description
+* logo
+* cover_image
+* stream_url
+* stream_type
+* website
+* phone
+* whatsapp
+* facebook
+* youtube
+* status
+* featured
+* display_order
+* created_at
+* updated_at
+
+Use the project's existing standard fields and conventions where applicable.
+
+Do not blindly create all of these columns if equivalent fields already exist elsewhere.
+
+---
+
+## fm_programmes
+
+Suggested fields:
+
+* id
+* station_id
+* name
+* description
+* host
+* image
+* start_time
+* end_time
+* day_of_week
+* status
+* display_order
+* created_at
+* updated_at
+
+Use a foreign key/reference to the station.
+
+Do not duplicate station information inside programme records.
+
+---
+
+# 9. ADMIN DASHBOARD
+
+Integrate FM management into the existing admin dashboard.
+
+Do not create a second admin panel.
+
+Add:
+
+FM STATIONS
+
+with:
+
+* Add Station
+* Edit Station
+* Delete/Deactivate Station
+* View Station
+* Manage Programmes
+* Feature/Unfeature Station
+* Activate/Deactivate Station
+* Change display order
+
+---
+
+# 10. ADD STATION FORM
+
+The administrator should be able to enter:
+
+Station Name
+Frequency
+Location
+Description
+Logo
+Cover Image
+Stream URL
+Stream Type
+Website
+Phone
+WhatsApp
+Facebook
+YouTube
+Status
+Featured
+
+Use the existing image upload component.
+
+Use the existing validation system.
+
+Use the existing authentication and admin permission system.
+
+---
+
+# 11. PROGRAMME MANAGEMENT
+
+From the station administration page:
+
+Station
+→ Programmes
+→ Add Programme
+
+Programme fields:
+
+* Programme name
+* Description
+* Host
+* Image
+* Day
+* Start time
+* End time
+* Status
+* Display order
+
+Allow editing and deleting programmes.
+
+---
+
+# 12. SCHEDULE VALIDATION
+
+Prevent obvious scheduling problems.
+
+For example, warn the administrator if:
+
+Programme A:
+8:00 AM – 10:00 AM
+
+Programme B:
+9:00 AM – 11:00 AM
+
+overlap on the same station and day.
+
+Do not necessarily prevent saving unless the existing system normally uses strict validation.
+
+Prefer a warning that allows the administrator to correct the schedule.
+
+Handle programmes crossing midnight carefully.
+
+---
+
+# 13. STATION STATUS
+
+Stations should have statuses such as:
+
+ACTIVE
+INACTIVE
+
+Only active stations should normally appear publicly.
+
+If a station is inactive, its public page should either:
+
+* show that the station is currently unavailable, or
+* return the application's existing not-found/inactive behavior.
+
+Follow existing platform conventions.
+
+---
+
+# 14. LIVE STATUS
+
+Do not pretend to know that a station is broadcasting unless the system can verify it.
+
+There should be a distinction between:
+
+"Station is active on AkuapemConnect"
+
+and
+
+"Station is currently broadcasting."
+
+If reliable stream-status checking is not available, do not automatically display "LIVE" simply because the station record is active.
+
+The administrator may optionally configure a station as:
+
+* Live
+* Offline
+* Auto/Unknown
+
+If possible, use a lightweight stream-status check without repeatedly consuming the stream.
+
+---
+
+# 15. SOCIAL LINKS
+
+If the station provides:
+
+* Facebook
+* YouTube
+* WhatsApp
+* Website
+* Phone
+
+display them using the existing AkuapemConnect social/contact components.
+
+Do not create duplicate social-link components.
+
+---
+
+# 16. SHARING
+
+Use the existing AkuapemConnect sharing component if available.
+
+Users should be able to share a station page.
+
+Example shared content:
+
+"Listen to Benkum FM on AkuapemConnect."
+
+The shared URL should point to the station's public page.
+
+---
+
+# 17. SEARCH
+
+Integrate FM stations into the existing search system if AkuapemConnect already has global search.
+
+Users should be able to search:
+
+"Benkum FM"
+
+and find the station.
+
+Do not create a separate search engine.
+
+---
+
+# 18. FEATURED STATIONS
+
+If AkuapemConnect already has a Featured Content/Featured Listings system, reuse it.
+
+Featured FM stations can appear higher in the FM section.
+
+Do not build another independent featured system.
+
+If the existing system does not support this type of content, implement the smallest possible station-specific solution.
+
+---
+
+# 19. ADVERTISING/PROMOTION
+
+If AkuapemConnect already has advertising/promotional functionality, allow FM stations to eventually use the same system.
+
+Do not build the advertising system as part of this initial FM implementation unless the existing architecture makes it trivial.
+
+Prepare the station model so it can work with existing promotional functionality later.
+
+---
+
+# 20. MOBILE-FIRST DESIGN
+
+Most AkuapemConnect users will access the platform using phones/tablets.
+
+The station page must therefore be designed mobile-first.
+
+Recommended order:
+
+1. Station identity
+2. Live player
+3. On Air Now
+4. Today's programmes
+5. Weekly schedule
+6. About station
+7. Contact/social links
+
+The player should remain easy to find.
+
+Avoid unnecessarily large images or heavy animations.
+
+---
+
+# 21. VISUAL DESIGN
+
+The FM station page should look modern and polished.
+
+Use:
+
+* station logo
+* cover image
+* rounded cards
+* subtle shadows
+* clear typography
+* live indicator
+* attractive play button
+* responsive programme cards
+* existing AkuapemConnect colors/components
+
+Do not introduce a completely different visual identity.
+
+If a station has a brand color, the page may use that color subtly for accents, but maintain AkuapemConnect's overall design language.
+
+---
+
+# 22. PERFORMANCE
+
+This feature must have minimal impact on the existing platform.
+
+Important:
+
+* Lazy-load station cover images.
+* Use existing image optimization functionality.
+* Do not autoplay audio.
+* Do not continuously poll radio streams.
+* Do not proxy streams through the PHP server.
+* Do not load heavy JavaScript unnecessarily.
+* Load programme data efficiently.
+* Use database indexes where appropriate.
+* Reuse existing caching mechanisms if available.
+
+---
+
+# 23. SECURITY
+
+Treat all administrator-entered fields as untrusted input.
+
+Use the existing:
+
+* authentication
+* authorization
+* CSRF protection
+* validation
+* escaping
+* SQL parameterization
+* upload security
+
+Do not introduce insecure raw SQL queries.
+
+For stream URLs, validate allowed URL formats/protocols and prevent dangerous schemes such as:
+
+javascript:
+
+data:
+
+or other inappropriate protocols.
+
+Do not allow arbitrary executable content to be uploaded as station logos/images.
+
+---
+
+# 24. EMPTY STATES
+
+Handle cases where a station has:
+
+* no logo
+* no programme schedule
+* no current programme
+* no stream
+* no social links
+* no description
+
+The page should still look professional.
+
+For example:
+
+"No programme schedule available."
+
+"No live stream has been configured for this station."
+
+Do not show broken images or empty UI elements.
+
+---
+
+# 25. ERROR HANDLING
+
+If the stream cannot be played:
+
+Display a friendly message such as:
+
+"Unable to play this station right now. Please try again later."
+
+Do not expose technical errors to normal users.
+
+The administrator should be able to see useful diagnostic information where appropriate.
+
+---
+
+# 26. STATION PAGE URL
+
+Use SEO-friendly URLs.
+
+Preferred:
+
+/fm/benkum-fm
+
+Avoid:
+
+/fm?id=17
+
+unless the existing application architecture requires query parameters.
+
+Use the existing slug/routing mechanism if one already exists.
+
+---
+
+# 27. SEO
+
+For each public station page, dynamically generate:
+
+* page title
+* meta description
+* station name
+* frequency
+* location
+
+Example:
+
+"Benkum FM 95.7 — Listen Live | AkuapemConnect"
+
+Do not add a separate SEO system if one already exists.
+
+---
+
+# 28. DO NOT BUILD THESE YET
+
+Do NOT implement the following in this phase unless the existing application already supports them:
+
+* listener accounts specifically for radio
+* chat rooms
+* song requests
+* online voting
+* radio recording
+* podcast hosting
+* audio uploads
+* audio transcoding
+* server-side stream relay
+* advanced analytics
+* DJ accounts
+* presenter login
+* advertising billing
+
+Keep the first version focused.
+
+---
+
+# 29. FUTURE-READY STRUCTURE
+
+Although the MVP should remain simple, design the database and code so that future features can be added without major restructuring.
+
+Possible future features:
+
+* presenter profiles
+* station news
+* station announcements
+* programme-specific pages
+* listener reactions
+* station followers
+* notifications
+* recently played songs
+* "Now Playing" metadata
+* podcast/replay content
+* station advertising
+* sponsored programmes
+* listener statistics
+
+Do not implement these now unless already supported by existing AkuapemConnect functionality.
+
+---
+
+# 30. IMPLEMENTATION PROCESS
+
+Before modifying anything:
+
+### STEP 1 — Inspect
+
+Inspect:
+
+* project structure
+* routes
+* controllers
+* models
+* database schema
+* admin dashboard
+* existing components
+* CSS/design system
+* authentication
+* file uploads
+* search
+* notifications
+* sharing
+* featured content
+
+### STEP 2 — Identify Reusable Components
+
+Create a short internal implementation map such as:
+
+Existing component → Reuse for FM
+
+Example:
+
+Existing Listing Card → FM Station Card
+
+Existing Image Upload → Station Logo
+
+Existing Admin CRUD → Station Management
+
+Existing Schedule/Time Component → Programme Schedule
+
+Existing Share Component → Station Sharing
+
+### STEP 3 — Database
+
+Only add the minimum required database structures.
+
+Check for existing tables that can be extended rather than duplicated.
+
+### STEP 4 — Backend
+
+Implement:
+
+* station CRUD
+* programme CRUD
+* station retrieval
+* programme retrieval
+* current programme calculation
+* station status handling
+
+### STEP 5 — Frontend
+
+Implement:
+
+* FM station listing
+* station card
+* station page
+* radio player
+* current programme
+* schedule
+* station information
+
+### STEP 6 — Admin
+
+Integrate the management interface into the existing admin panel.
+
+### STEP 7 — Test
+
+Test:
+
+* mobile
+* desktop
+* station with stream
+* station without stream
+* station without programmes
+* inactive station
+* invalid stream
+* missing logo
+* multiple stations
+* overlapping programmes
+* station sharing
+* search
+* admin permissions
+
+---
+
+# 31. IMPORTANT DEVELOPMENT RULE
+
+Before creating ANY new component, helper, table, route, middleware, upload system, authentication mechanism or UI element, check whether AkuapemConnect already has an equivalent.
+
+**Reuse first. Extend second. Create new only when necessary.**
+
+Do not refactor unrelated parts of the application.
+
+Do not modify existing functionality unnecessarily.
+
+Do not replace working components simply because a new component would be easier to write.
+
+Keep changes isolated to the FM module.
+
+---
+
+# FINAL DELIVERABLE
+
+At the end, provide:
+
+1. Files created
+2. Files modified
+3. Database changes
+4. Routes added
+5. Existing components reused
+6. Any dependencies added
+7. Admin features added
+8. Public user features added
+9. Configuration/environment variables required
+10. Testing performed
+11. Any limitations, especially stream compatibility
+
+Most importantly, **do not start coding until you have inspected the existing AkuapemConnect architecture and identified the components that can be reused.**
+
+
+next:
+add beauty to these sections:
+1.  On Air Now
+2. Programme Schedule
+3.  About
+current ones not visually appealing, 
+and true enhancement. 
+
+
+next:
+1. seed each day with 10 programs. 
+2. admin can assign role of someone to manage fm programs
+
+next:
+0. allow admin to set/config sms api keys from the dashboard
+1. past radio programs too much faded. 
+2. loggin users can comment on radio programs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

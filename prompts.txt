@@ -1142,16 +1142,29 @@ when user sign up with google, they dont skip that field. make it an optional fi
 I beleive you know the gab that field will cover, 
 when user sign up without the referral link, referrals still benefits 
 
+next:
+1. all these changes at marketplace on the index page: i want the product card on the index page though should have the same height, some 
+should not have plenty empty spaces at the bottom. they should 
+all be uniformly filled. show only the town, maintain the location icon, dont add location itself to it.
+2. product card at "marketplace.php" is fine, leave it as such 
+3. Add location-town name on "product.php" right after the price, before social media section 
 
 
+google-services.json is located at: "C:\Users\USER\Downloads\google-services.json"
 
+service-account is located at: "C:\Users\USER\Downloads\akuapemconnect-e248c-firebase-adminsdk-fbsvc-cc7cca4426.json"
 
+next:
+1. some users complain that when they try to register an account with:
+a. google: Sorry, something went wrong there, Try again.
+b. security check failed. Please go back and try again. 
+so they are unable to create an account on the platform. what do you think is the problem
 
-
-
-
-
-
+next:
+1. point of correction. homepage is index.php not jobs.php
+2. admin to set Module Availability for Quick services under monitization.
+Switch a module off to take it offline for everyone — its pages redirect to the community home, and it disappears from navigation there.
+3. admin to be able to sort data bundle packages. bundle or by price, whiles maintaing the grouping by network  
 
 
 

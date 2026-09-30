@@ -5,8 +5,21 @@ require_once __DIR__ . '/../functions.php';
 require_login();
 if (!is_admin_or_manager()) { header('Location: index.php'); exit; }
 
-require_mod_permission('approve_funerals');
 $id = (int)($_GET['id'] ?? 0);
+
+// Viewing an existing announcement's full details is also needed by anyone
+// with "approve_funerals" (they must read it before approving/rejecting) —
+// but only "edit_funerals" may create a new announcement or save changes.
+// The POST handler below re-checks 'edit_funerals' strictly.
+if ($id > 0) {
+    if (!is_admin() && !has_mod_permission('approve_funerals') && !has_mod_permission('edit_funerals')) {
+        require_mod_permission('edit_funerals');
+    }
+} else {
+    require_mod_permission('edit_funerals');
+}
+$canEditFuneral = is_admin() || has_mod_permission('edit_funerals');
+
 $fa = null;
 if ($id) {
     $stmt = $pdo->prepare("SELECT * FROM funeral_announcements WHERE id=? LIMIT 1");
@@ -29,6 +42,7 @@ function fa_unique_slug($pdo, $base, $excludeId = 0) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     csrf_check();
+    require_mod_permission('edit_funerals');
 
     $locLat = ($_POST['loc_lat'] ?? '') !== '' ? (float)$_POST['loc_lat'] : null;
     $locLng = ($_POST['loc_lng'] ?? '') !== '' ? (float)$_POST['loc_lng'] : null;
@@ -236,7 +250,11 @@ $dt = fn($k,$fmt='Y-m-d') => !empty($fa[$k]) ? date($fmt, strtotime($fa[$k])) : 
             </div>
 
             <div style="display:flex;gap:10px;margin-top:10px;">
+                <?php if ($canEditFuneral): ?>
                 <button type="submit" class="button button-primary"><?php echo $isNew ? 'Create' : 'Save Changes'; ?></button>
+                <?php else: ?>
+                <span class="meta" style="align-self:center;">👁️ Read-only — you can review this announcement here, but editing requires the "Edit Funerals" permission. Use Approve / Reject on the Funerals list.</span>
+                <?php endif; ?>
                 <a href="funerals.php" class="button button-secondary">Cancel</a>
             </div>
         </form>

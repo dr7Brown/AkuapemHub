@@ -70,6 +70,7 @@ if ($action === 'approve_job') {
     notify_user((int)$job['customer_id'], 'Job Approved ✅',
         '"' . $job['title'] . '" is now live and visible to workers.',
         'success', 'request_detail.php?id=' . $itemId);
+    sms_user((int)$job['customer_id'], 'job_post_approved', ['job_title' => $job['title']]);
     send_email_notification($job['email'], 'Your job post is live — ' . APP_NAME,
         'Hi ' . $job['customer_name'] . ",\n\nYour job post \"" . $job['title'] . "\" has been approved and is now live.\n\n" . BASE_URL . '/request_detail.php?id=' . $itemId,
         (int)$job['customer_id']);
@@ -109,6 +110,7 @@ if ($action === 'approve_product') {
     notify_user((int)$prod['owner_id'], 'Product Approved ✅',
         '"' . $prod['name'] . '" is now live on the marketplace.',
         'success', 'product.php?id=' . $itemId);
+    sms_user((int)$prod['owner_id'], 'product_approved', ['product_name' => $prod['name']]);
     log_audit_action($mod['id'], 'mp_product_approve_quick', 'Approved product #' . $itemId . ': ' . $prod['name']);
     log_mod_activity($mod['id'], 'marketplace', 'approve_product', $itemId, $prod['name']);
     mod_flash_redirect('"' . $prod['name'] . '" approved.', 'success', $back);
@@ -146,6 +148,7 @@ if ($action === 'approve_event') {
     notify_user((int)$ev['owner_id'], 'Event Published ✅',
         '"' . $ev['title'] . '" is now live. Share it with your community!',
         'success', 'event.php?slug=' . urlencode($ev['slug']));
+    sms_user((int)$ev['owner_id'], 'event_approved', ['event_title' => $ev['title']]);
     log_audit_action($mod['id'], 'event_approve_quick', 'Approved event #' . $itemId . ': ' . $ev['title']);
     log_mod_activity($mod['id'], 'events', 'approve_event', $itemId, $ev['title']);
     mod_flash_redirect('"' . $ev['title'] . '" published.', 'success', $back);
@@ -178,9 +181,12 @@ if ($action === 'approve_funeral') {
     if (!$fa) mod_flash_redirect('Announcement not found.', 'error', $back);
 
     $pdo->prepare("UPDATE funeral_announcements SET status='approved', approved_by=? WHERE id=?")->execute([$mod['id'], $itemId]);
+    require_once __DIR__ . '/../modules/referrals/service.php';
+    award_points((int)$fa['owner_id'], 'funeral_approved', $itemId);
     notify_user((int)$fa['owner_id'], 'Funeral Announcement Approved ✅',
         'The announcement for ' . $fa['deceased_name'] . ' is now published.',
         'success', 'funeral.php?slug=' . urlencode($fa['slug']));
+    sms_user((int)$fa['owner_id'], 'funeral_announcement_live', ['deceased_name' => $fa['deceased_name']]);
     log_audit_action($mod['id'], 'funeral_approve_quick', 'Approved funeral #' . $itemId);
     log_mod_activity($mod['id'], 'funerals', 'approve_funeral', $itemId, $fa['deceased_name']);
     mod_flash_redirect('Funeral announcement approved.', 'success', $back);
@@ -243,7 +249,7 @@ if ($action === 'reject_news') {
 
 // ── approve_delete_event: honours a user's deletion request ───────────────────
 if ($action === 'approve_delete_event') {
-    require_mod_permission('approve_events', $back);
+    require_mod_permission('delete_events', $back);
     $row = $pdo->prepare('SELECT e.*, u.id AS owner_id FROM events e JOIN users u ON e.user_id=u.id WHERE e.id=? AND e.deletion_requested=1');
     $row->execute([$itemId]);
     $ev = $row->fetch();
@@ -258,7 +264,7 @@ if ($action === 'approve_delete_event') {
 
 // ── reject_delete_event: declines the deletion request, restores the event ────
 if ($action === 'reject_delete_event') {
-    require_mod_permission('approve_events', $back);
+    require_mod_permission('delete_events', $back);
     if (!$reason) mod_flash_redirect('A reason is required.', 'error', $back);
     $row = $pdo->prepare('SELECT e.*, u.id AS owner_id FROM events e JOIN users u ON e.user_id=u.id WHERE e.id=? AND e.deletion_requested=1');
     $row->execute([$itemId]);
@@ -276,7 +282,7 @@ if ($action === 'reject_delete_event') {
 
 // ── approve_delete_news: honours a user's deletion request ────────────────────
 if ($action === 'approve_delete_news') {
-    require_mod_permission('approve_news', $back);
+    require_mod_permission('delete_news', $back);
     $row = $pdo->prepare('SELECT n.*, u.id AS owner_id FROM news n JOIN users u ON n.user_id=u.id WHERE n.id=? AND n.deletion_requested=1');
     $row->execute([$itemId]);
     $ns = $row->fetch();
@@ -294,7 +300,7 @@ if ($action === 'approve_delete_news') {
 
 // ── reject_delete_news: declines the deletion request, restores the article ───
 if ($action === 'reject_delete_news') {
-    require_mod_permission('approve_news', $back);
+    require_mod_permission('delete_news', $back);
     if (!$reason) mod_flash_redirect('A reason is required.', 'error', $back);
     $row = $pdo->prepare('SELECT n.*, u.id AS owner_id FROM news n JOIN users u ON n.user_id=u.id WHERE n.id=? AND n.deletion_requested=1');
     $row->execute([$itemId]);
@@ -322,6 +328,7 @@ if ($action === 'approve_delivery_request') {
     notify_user((int)$dr['customer_id'], 'Delivery Request Approved ✅',
         'Your delivery request #' . $itemId . ' is now live. Riders can now apply.',
         'success', 'delivery_detail.php?id=' . $itemId);
+    sms_user((int)$dr['customer_id'], 'delivery_request_approved', ['delivery_id' => $itemId]);
     try {
         $riders = $pdo->query("SELECT user_id FROM delivery_agents WHERE verification_status='approved' AND availability_status IN('available','busy')")->fetchAll();
         foreach ($riders as $r) {
@@ -365,6 +372,7 @@ if ($action === 'approve_delivery_agent') {
     notify_user((int)$ag['user_id'], 'Agent Profile Approved ✅',
         'Your delivery agent profile has been approved. Start browsing and applying for delivery jobs!',
         'success', 'delivery_agent_jobs.php');
+    sms_user((int)$ag['user_id'], 'delivery_agent_approved');
     send_email_notification($ag['email'], 'Delivery Agent Approved — ' . APP_NAME,
         "Hi {$ag['agent_name']},\n\nYour agent profile has been approved. Log in to start accepting jobs.\n\n" . BASE_URL . '/delivery_agent_jobs.php',
         (int)$ag['user_id']);
@@ -402,6 +410,7 @@ if ($action === 'approve_listing') {
     $pdo->prepare("UPDATE accommodation_listings SET status='approved', rejection_reason=NULL, updated_at=NOW() WHERE id=?")->execute([$itemId]);
     notify_user((int)$listing['owner_id'], '✅ Listing Approved', '"' . $listing['title'] . '" is now live on Accommodation.',
         'success', '../accommodation_detail.php?id=' . $itemId);
+    sms_user((int)$listing['owner_id'], 'accommodation_approved', ['listing_title' => $listing['title']]);
     log_audit_action($mod['id'], 'accommodation_approve_quick', 'Approved listing #' . $itemId . ': ' . $listing['title']);
     log_mod_activity($mod['id'], 'accommodation', 'approve_listing', $itemId, $listing['title']);
     mod_flash_redirect('"' . $listing['title'] . '" approved.', 'success', $back);

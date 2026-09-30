@@ -75,6 +75,7 @@ if ($row['worker_id']) {
     notify_user((int)$row['worker_id'], '💸 Payment released',
         "The client has released your escrow payment of GH₵ " . number_format($row['net_amount'], 2) . " for \"{$row['title']}\". Thank you for your great work!",
         'success');
+    sms_user((int)$row['worker_id'], 'payment_confirmed', ['amount' => number_format($row['net_amount'], 2), 'job_title' => $row['title']]);
 }
 
 notify_user((int)$row['customer_id'], '✅ Escrow payment released',

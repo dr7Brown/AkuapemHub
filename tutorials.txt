@@ -1,0 +1,25 @@
+AKUAPEMCONNECT — REWARDS TUTORIAL: AI VOICEOVER SCRIPT
+
+INSTRUCTIONS FOR AI AGENT:
+Generate voiceover audio for each scene below, one file per scene.
+Each scene's audio duration MUST fit within the time given in
+parentheses — do not exceed it. Tone: upbeat, friendly, advertiser-style,
+energetic pacing. Total video length: 21 seconds across 3 scenes.
+
+--------------------------------------------------------
+SCENE 1 — Duration: 2.5s
+"Tap Jobs to get started!"
+
+--------------------------------------------------------
+SCENE 2 — Duration: 2.5s
+"One tap — Rewards await!"
+
+--------------------------------------------------------
+SCENE 3 — Duration: 16s
+"Watch your points come to life! Track your balance, unlock
+exciting milestone rewards, discover easy ways to earn even more,
+follow your recent activity, and celebrate every friend you've
+brought to AkuapemConnect — all in one place!"
+
+--------------------------------------------------------
+END OF SCRIPT

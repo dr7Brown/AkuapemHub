@@ -98,12 +98,25 @@ if (!$result['ok']) {
 
 login_user($result['user']);
 
-if ($result['is_new']) {
-    header('Location: complete_profile.php');
+$redirectTarget = $_SESSION['google_oauth_redirect'] ?? '';
+unset($_SESSION['google_oauth_redirect']);
+$destination = $result['is_new'] ? 'complete_profile.php' : ($redirectTarget !== '' ? $redirectTarget : 'community.php');
+
+$isMobile = !empty($_SESSION['google_oauth_mobile']);
+unset($_SESSION['google_oauth_mobile']);
+
+if ($isMobile) {
+    // This request is running inside the system browser the app opened
+    // (assets/js/google-auth-bridge.js) — its session cookie is invisible
+    // to the app's own WebView, so hand off via a deep link + one-time
+    // token instead of redirecting here directly. mobile_login_exchange.php
+    // is what actually logs the app itself in.
+    $token = bin2hex(random_bytes(32));
+    $pdo->prepare('INSERT INTO mobile_login_tokens (user_id, token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 5 MINUTE))')
+        ->execute([$result['user']['id'], $token]);
+    header('Location: com.akuapemconnect.app://oauth-callback?token=' . urlencode($token) . '&dest=' . urlencode($destination));
     exit;
 }
 
-$redirectTarget = $_SESSION['google_oauth_redirect'] ?? '';
-unset($_SESSION['google_oauth_redirect']);
-header('Location: ' . ($redirectTarget !== '' ? $redirectTarget : 'community.php'));
+header('Location: ' . $destination);
 exit;

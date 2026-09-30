@@ -1,0 +1,47 @@
+{
+  "appId": "com.akuapemconnect.app",
+  "appName": "AkuapemConnect",
+  "webDir": "www",
+  "backgroundColor": "#ffffff",
+  "server": {
+    "url": "https://akuapemconnect.com",
+    "androidScheme": "https",
+    "iosScheme": "https",
+    "allowNavigation": [
+      "akuapemconnect.com",
+      "*.akuapemconnect.com",
+      "checkout.paystack.com",
+      "js.paystack.co",
+      "standard.paystack.co",
+      "*.paystack.com",
+      "*.paystack.co",
+      "accounts.google.com",
+      "*.googleusercontent.com",
+      "*.google.com"
+    ]
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "launchAutoHide": true,
+      "backgroundColor": "#ffffff",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    },
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#ffffff"
+    }
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "automatic"
+  }
+}

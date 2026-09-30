@@ -694,10 +694,14 @@ CREATE TABLE IF NOT EXISTS escrow_payments (
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Extends platform_payments.payment_type to include escrow_payment.
 -- Adds admin_notes and flagged columns.
-
-ALTER TABLE platform_payments MODIFY COLUMN payment_type
-    ENUM('featured_job','featured_worker','verification','job_post','worker_service',
-         'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post') NOT NULL;
+--
+-- The payment_type MODIFY that used to be here (and its counterparts in v008
+-- and v015 below) was removed and folded into the single consolidated
+-- MODIFY further down this file (the "FINAL" block) — see its comment:
+-- these intermediate statements, each with a shorter enum list than later
+-- ones, were what actually caused rows to get silently truncated to ''
+-- whenever this file was replayed in full against a database that already
+-- had rows using a value introduced by a later statement.
 
 ALTER TABLE platform_payments ADD COLUMN IF NOT EXISTS admin_notes TEXT NULL;
 ALTER TABLE platform_payments ADD COLUMN IF NOT EXISTS flagged     TINYINT(1) NOT NULL DEFAULT 0;
@@ -918,9 +922,8 @@ INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) V
 -- (Already in the v007 CREATE TABLE statements above; ALTER TABLE below
 --  handles existing databases that have the old ENUMs.)
 
-ALTER TABLE platform_payments MODIFY COLUMN payment_type
-    ENUM('featured_job','featured_worker','verification','job_post','worker_service',
-         'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post') NOT NULL;
+-- payment_type ENUM's values are now consolidated into the single "FINAL"
+-- MODIFY further down this file — see v005's comment above.
 
 ALTER TABLE news MODIFY COLUMN status
     ENUM('pending_payment','draft','published','rejected') NOT NULL DEFAULT 'draft';
@@ -1525,11 +1528,8 @@ ALTER TABLE delivery_requests ADD COLUMN IF NOT EXISTS dropoff_maps_link VARCHAR
 ALTER TABLE mp_orders         ADD COLUMN IF NOT EXISTS delivery_maps_link VARCHAR(512) DEFAULT NULL;
 
 -- v015  Extend platform_payments.payment_type to cover marketplace boosts + delivery subscriptions
-ALTER TABLE platform_payments MODIFY COLUMN payment_type
-    ENUM('featured_job','featured_worker','verification','job_post','worker_service',
-         'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
-         'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification')
-    NOT NULL;
+-- payment_type ENUM's values are now consolidated into the single "FINAL"
+-- MODIFY further down this file — see v005's comment above.
 
 -- ==========================================================================
 -- v016  Moderator Permission System
@@ -1792,6 +1792,19 @@ INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES
 -- running it again does not change existing data since all values are
 -- already present. Do NOT add intermediate MODIFY statements above;
 -- always extend THIS list when new payment types are introduced.
+--
+-- That last rule was violated several times as the app grew (see v043, v052,
+-- v058, v069, and the "v101 rebuild" block, which each added their own
+-- separate MODIFY instead of extending this one) — each intermediate ALTER's
+-- shorter enum list, rebuilding the table in file order on top of a database
+-- that already had rows using a value introduced later in this same file
+-- (e.g. 'quick_service', 'mp_subscription'), silently truncated those rows'
+-- payment_type to '' (MySQL's non-strict-mode behaviour for an out-of-range
+-- ENUM value) — real production rows were repeatedly corrupted this way by
+-- simply replaying this file, and had to be manually repaired. Consolidated
+-- back into ONE list (now containing every value ever added) to restore the
+-- rule above and remove the corruption path entirely; the later MODIFY
+-- statements those other versions used to have were removed as redundant.
 -- ==========================================================================
 ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
     'featured_job',
@@ -1812,7 +1825,13 @@ ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
     'featured_funeral',
     'featured_news',
     'mp_subscription',
-    'mp_order'
+    'mp_order',
+    'delivery_commission',
+    'worker_premium',
+    'sponsor',
+    'quick_service',
+    'accommodation_subscription',
+    'featured_accommodation'
 ) NOT NULL;
 
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -2309,13 +2328,10 @@ ALTER TABLE delivery_agents ADD COLUMN IF NOT EXISTS commission_owed_since DATET
 INSERT IGNORE INTO platform_settings (setting_key, setting_value, description) VALUES
     ('delivery_commission_grace_days', '0', 'Days a rider may owe commission before being blocked from new jobs (0 = no day-based limit, amount threshold still applies)');
 
-ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
-    'featured_job','featured_worker','verification','job_post','worker_service',
-    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
-    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
-    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
-    'delivery_commission'
-) NOT NULL;
+-- payment_type ENUM's 'delivery_commission' value now lives in the single
+-- consolidated MODIFY near the top of this file (see the "FINAL" block) —
+-- the separate MODIFY that used to be here was removed; see that block's
+-- comment for why.
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- v044  Master Product Catalog (Provision Shops, extensible to future
@@ -2546,13 +2562,8 @@ CREATE TABLE IF NOT EXISTS worker_premium_packages (
 --     ('Monthly Premium', 30,  0.00, 'active'),
 --     ('Annual Premium',  365, 0.00, 'active');
 
-ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
-    'featured_job','featured_worker','verification','job_post','worker_service',
-    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
-    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
-    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
-    'delivery_commission','worker_premium'
-) NOT NULL;
+-- payment_type ENUM's 'worker_premium' value now lives in the single
+-- consolidated MODIFY near the top of this file — see that block's comment.
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- v052  View-count analytics for jobs & worker profiles — extends the existing
@@ -2640,13 +2651,8 @@ CREATE TABLE IF NOT EXISTS sponsors (
   KEY idx_sponsors_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
-    'featured_job','featured_worker','verification','job_post','worker_service',
-    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
-    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
-    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
-    'delivery_commission','worker_premium','sponsor'
-) NOT NULL;
+-- payment_type ENUM's 'sponsor' value now lives in the single consolidated
+-- MODIFY near the top of this file — see that block's comment.
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- v056  Let an admin add a sponsor directly (comp'd/partner sponsors that
@@ -2875,119 +2881,29 @@ ALTER TABLE markets ADD COLUMN IF NOT EXISTS color VARCHAR(7) NULL AFTER pickup_
 ALTER TABLE mp_orders ADD COLUMN IF NOT EXISTS system_charge DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER delivery_fee;
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- v069  Quick Services — a lightweight, reusable "digital service desk"
--- module, separate from the Jobs & Services (worker-hiring) module, which
--- already owns the `service_requests`/`service_categories` table names —
--- hence the `quick_service*` prefix here to avoid any collision. A user
--- picks a service (Airtime, ECG, BECE results, etc.), fills a short form
--- whose fields are fully admin-configurable (quick_services.form_fields,
--- JSON — no developer involvement needed to add a new service), pays, and
--- a delegated manager (quick_service_managers, same per-record assignment
--- pattern as market_managers/user_can_manage_market()) manually processes
--- it and replies with a result. Pricing separates the underlying service
--- cost (fixed, e.g. BECE = GHS 20, or user-entered, e.g. an ECG top-up
--- amount) from AkuapemConnect's own service fee (flat or %), so both are
--- always shown to the buyer as distinct line items. Seeded services start
--- 'inactive' — an admin must review the fee and assign a manager before
--- switching each one on.
+-- v069  Quick Services — original design (a lightweight, reusable "digital
+-- service desk" module). SUPERSEDED — see v100 (removal) and v101 (rebuild
+-- with a different, database-driven schema) below. The CREATE TABLE/INSERT
+-- statements that used to live here were deleted outright (not just
+-- guarded): they only ever built a scratch table+seed that v100 immediately
+-- dropped again, so they had zero lasting effect even on a fresh install,
+-- and on a database that has already been through the v100/v101 rebuild
+-- they used to hard-error (INSERT referenced columns, e.g. `instructions`,
+-- that don't exist on the rebuilt quick_services table) and halt this
+-- entire script before reaching any later migration. This block also used
+-- to add 'quick_service' to platform_payments.payment_type here — that's
+-- now folded into the single consolidated MODIFY near the top of this file
+-- (see its comment for why: this exact statement was part of the ENUM
+-- corruption chain).
 -- ═══════════════════════════════════════════════════════════════════════════
-CREATE TABLE IF NOT EXISTS quick_services (
-    id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    name              VARCHAR(120) NOT NULL,
-    slug              VARCHAR(120) NOT NULL UNIQUE,
-    icon              VARCHAR(20) DEFAULT NULL,
-    description       VARCHAR(255) DEFAULT NULL,
-    instructions      TEXT,
-    form_fields       JSON NOT NULL,
-    pricing_mode      ENUM('fixed','user_entered') NOT NULL DEFAULT 'fixed',
-    base_cost         DECIMAL(10,2) NOT NULL DEFAULT 0,
-    amount_field_key  VARCHAR(60) NULL,
-    service_fee_type  ENUM('flat','percent') NOT NULL DEFAULT 'flat',
-    service_fee_value DECIMAL(10,2) NOT NULL DEFAULT 0,
-    status            ENUM('active','inactive') NOT NULL DEFAULT 'inactive',
-    display_order     INT NOT NULL DEFAULT 0,
-    created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-CREATE TABLE IF NOT EXISTS quick_service_managers (
-    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    service_id  INT UNSIGNED NOT NULL,
-    user_id     INT UNSIGNED NOT NULL,
-    granted_by  INT UNSIGNED NOT NULL,
-    granted_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_qsm (service_id, user_id),
-    FOREIGN KEY (service_id) REFERENCES quick_services(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
-    'featured_job','featured_worker','verification','job_post','worker_service',
-    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
-    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
-    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
-    'delivery_commission','worker_premium','sponsor','quick_service'
-) NOT NULL;
-
-CREATE TABLE IF NOT EXISTS quick_service_requests (
-    id                   INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-    user_id              INT UNSIGNED NOT NULL,
-    service_id           INT UNSIGNED NOT NULL,
-    request_data         JSON NOT NULL,
-    service_amount       DECIMAL(10,2) NOT NULL DEFAULT 0,
-    service_fee          DECIMAL(10,2) NOT NULL DEFAULT 0,
-    total_amount         DECIMAL(10,2) NOT NULL DEFAULT 0,
-    payment_status       ENUM('unpaid','paid') NOT NULL DEFAULT 'unpaid',
-    platform_payment_id  INT UNSIGNED NULL,
-    status               ENUM('pending_payment','paid','processing','completed','unable_to_process','cancelled') NOT NULL DEFAULT 'pending_payment',
-    manager_response     TEXT NULL,
-    response_file_path   VARCHAR(255) NULL,
-    processed_by         INT UNSIGNED NULL,
-    processed_at         DATETIME NULL,
-    created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (service_id) REFERENCES quick_services(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-INSERT IGNORE INTO quick_services (name, slug, icon, description, instructions, form_fields, pricing_mode, base_cost, amount_field_key, service_fee_type, service_fee_value, status, display_order) VALUES
-('Airtime & Data', 'airtime-data', '📱', 'Top up airtime or data on any network', 'Tell us the network, the phone number to top up, and the amount — we will process it and confirm once done.',
- '[{"key":"network","label":"Network","type":"select","required":true,"options":["MTN","Vodafone","AirtelTigo","Telecel"]},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"amount","label":"Amount (GHS)","type":"number","required":true,"placeholder":"e.g. 20"}]',
- 'user_entered', 0, 'amount', 'flat', 2.00, 'inactive', 1),
-('ECG Prepaid', 'ecg-prepaid', '⚡', 'Buy ECG prepaid electricity units', 'Enter your meter number, the phone number for the token, and the amount to top up.',
- '[{"key":"meter_number","label":"Meter Number","type":"text","required":true,"placeholder":"e.g. 0300XXXXXXXX"},{"key":"amount","label":"Amount (GHS)","type":"number","required":true,"placeholder":"e.g. 50"},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
- 'user_entered', 0, 'amount', 'flat', 2.00, 'inactive', 2),
-('BECE Results Checker', 'bece-results', '📄', 'Check BECE results with a checker PIN', 'Provide your candidate number and exam year — we will get your results checker PIN sorted.',
- '[{"key":"candidate_number","label":"Candidate Number","type":"text","required":true},{"key":"exam_year","label":"Exam Year","type":"select","required":true,"options":["2023","2024","2025","2026"]},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
- 'fixed', 20.00, NULL, 'flat', 5.00, 'inactive', 3),
-('WASSCE Results Checker', 'wassce-results', '📄', 'Check WASSCE results with a checker PIN', 'Provide your candidate/index number and exam year — we will get your results checker PIN sorted.',
- '[{"key":"candidate_number","label":"Candidate/Index Number","type":"text","required":true},{"key":"exam_year","label":"Exam Year","type":"select","required":true,"options":["2023","2024","2025","2026"]},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
- 'fixed', 20.00, NULL, 'flat', 5.00, 'inactive', 4),
-('TV Subscription', 'tv-subscription', '📺', 'Renew DStv, GOtv or StarTimes subscriptions', 'Tell us your provider, smartcard/IUC number, and the amount to load.',
- '[{"key":"provider","label":"Provider","type":"select","required":true,"options":["DStv","GOtv","StarTimes"]},{"key":"smartcard_number","label":"Smartcard/IUC Number","type":"text","required":true},{"key":"amount","label":"Amount (GHS)","type":"number","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"}]',
- 'user_entered', 0, 'amount', 'flat', 2.00, 'inactive', 5),
-('Passport Assistance', 'passport-assistance', '🛂', 'Help with Ghana passport applications', 'Share your details and our team will guide you through the passport application process.',
- '[{"key":"full_name","label":"Full Name","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"ghana_card_number","label":"Ghana Card Number","type":"text","required":true},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
- 'fixed', 0, NULL, 'flat', 10.00, 'inactive', 6),
-('Ghana Card Assistance', 'ghana-card-assistance', '🪪', 'Help with Ghana Card registration or update', 'Share your details and our team will guide you through the process.',
- '[{"key":"full_name","label":"Full Name","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
- 'fixed', 0, NULL, 'flat', 10.00, 'inactive', 7),
-('Printing & Documents', 'printing-documents', '🖨️', 'Printing, scanning & document assistance', 'Tell us what you need printed or prepared and how many copies.',
- '[{"key":"document_type","label":"Document Type","type":"text","required":true},{"key":"copies","label":"Number of Copies","type":"number","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
- 'fixed', 0, NULL, 'flat', 5.00, 'inactive', 8),
-('School Application Assistance', 'school-application', '🎓', 'Help applying to schools', 'Share the student and school details and our team will assist with the application.',
- '[{"key":"student_name","label":"Student Name","type":"text","required":true},{"key":"school_level","label":"School/Level","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
- 'fixed', 0, NULL, 'flat', 10.00, 'inactive', 9),
-('Business Registration Assistance', 'business-registration', '🏢', 'Help registering a business with the RGD', 'Share your business details and our team will guide you through registration.',
- '[{"key":"business_name","label":"Business Name","type":"text","required":true},{"key":"business_type","label":"Business Type","type":"text","required":true},{"key":"phone_number","label":"Phone Number","type":"tel","required":true,"placeholder":"024XXXXXXX"},{"key":"notes","label":"Additional Notes","type":"textarea","required":false}]',
- 'fixed', 0, NULL, 'flat', 15.00, 'inactive', 10);
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- v070  Quick Services — optional admin-uploaded custom image per service,
--- shown instead of the emoji icon on service cards when set (falls back to
--- the emoji icon everywhere it's still NULL).
+-- v070  Quick Services (original design) — optional admin-uploaded custom
+-- image per service. SUPERSEDED along with v069; deleted for the same
+-- reason — it used to silently re-add an `image_path` column the rebuilt
+-- (v101) schema never wanted, onto the live quick_services table, on every
+-- replay against an already-rebuilt database.
 -- ═══════════════════════════════════════════════════════════════════════════
-ALTER TABLE quick_services ADD COLUMN IF NOT EXISTS image_path VARCHAR(255) NULL AFTER icon;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- v071  Sponsor Packages — optional rich-text "Benefits" field, edited via
@@ -3482,15 +3398,17 @@ ALTER TABLE accommodation_listings ADD COLUMN IF NOT EXISTS room_class VARCHAR(6
 -- ever recording a matching payment_type, meaning
 -- activatePurchasedFeature()'s switch (paystack.php) could never match and
 -- activate the subscription/feature the user just paid for.
+--
+-- The separate MODIFY that used to sit here (adding 'accommodation_subscription'
+-- and 'featured_accommodation') is now folded into the single consolidated
+-- MODIFY near the top of this file. Ironically, having a separate MODIFY
+-- here at all was an instance of the exact same bug class this fix was
+-- written to describe: it, and every other intermediate MODIFY like it,
+-- would truncate to '' any row already holding a value introduced by a
+-- MODIFY further down the file whenever this script was replayed in full
+-- against a database that already had such rows. See the top block's
+-- comment for the consolidation.
 -- ═══════════════════════════════════════════════════════════════════════════
-ALTER TABLE platform_payments MODIFY COLUMN payment_type ENUM(
-    'featured_job','featured_worker','verification','job_post','worker_service',
-    'escrow_payment','escrow_with_posting','news_post','event_post','funeral_post',
-    'mp_boost','delivery_subscription','delivery_sponsored','delivery_verification',
-    'featured_event','featured_funeral','featured_news','mp_subscription','mp_order',
-    'delivery_commission','worker_premium','sponsor','quick_service',
-    'accommodation_subscription','featured_accommodation'
-) NOT NULL;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- v085: Marketplace — per-category toggle for the Condition (New/Used/
@@ -3637,5 +3555,541 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS deletion_requested_at DATETIME NULL;
 ALTER TABLE news   ADD COLUMN IF NOT EXISTS deletion_requested TINYINT(1) NOT NULL DEFAULT 0;
 ALTER TABLE news   ADD COLUMN IF NOT EXISTS deletion_requested_at DATETIME NULL;
 
--- last updated ends here
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v091  Quick Services (original design) — user-initiated cancellation
+-- requests on the old quick_service_requests table. SUPERSEDED along with
+-- v069/v070 — that table name no longer exists at all post-rebuild (the
+-- v101 rebuild uses quick_transactions instead), so these ALTERs used to
+-- hard-error ("table doesn't exist") on any database that had already
+-- reached v100. Deleted for the same reason as v069/v070.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v092  Push notification device tokens — registered by the Android/iOS app
+-- shell (mobile-app/, Capacitor) via assets/js/push-bridge.js →
+-- register_push_token.php. One row per (user, device); the same user can
+-- have several devices (phone + tablet, Android + iOS, re-installs), and
+-- the same physical device re-registering (token rotation, reinstall) just
+-- updates its existing row rather than piling up dead duplicates.
+-- See functions.php: push_notify_user_devices(), push_send_fcm_v1(),
+-- push_send_apns().
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS push_tokens (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT UNSIGNED NOT NULL,
+    platform   ENUM('android','ios') NOT NULL,
+    token      VARCHAR(255) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_push_token (token),
+    KEY idx_push_user (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v093  Mobile-app Google Sign-In handoff. Google actively detects and
+-- blocks OAuth inside an embedded WebView (the Android/iOS app's own
+-- browser), so the app opens google_auth.php in the *system* browser
+-- instead (assets/js/google-auth-bridge.js, via @capacitor/browser) — but
+-- that browser has its own separate cookie jar from the app's WebView, so
+-- finishing login there doesn't log the app in. This table is the bridge:
+-- google_callback.php mints a single-use, 5-minute token and hands it back
+-- to the app via a com.akuapemconnect.app:// deep link; the app then loads
+-- mobile_login_exchange.php?token=... in its OWN WebView, which is what
+-- actually sets the session cookie the app can see.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS mobile_login_tokens (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT UNSIGNED NOT NULL,
+    token      VARCHAR(64) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used_at    DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_mobile_login_token (token),
+    KEY idx_mobile_login_user (user_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v094  FM Stations / Online Radio module. Admin-managed station directory
+-- with a per-day programme schedule and a direct-to-browser live player
+-- (the server never proxies/relays the audio stream — see fm_functions.php).
+-- location reuses the existing towns table (town_id) rather than a new
+-- free-text field; day_of_week/start_time/end_time mirrors the existing
+-- worker_availability_slots shape (0=Sunday..6=Saturday) so get_weekday_
+-- names()/format_time_range() work unchanged. "featured" is a plain admin
+-- toggle for now (no paid packages) — the promotions/ads system can be
+-- wired in later without restructuring this table.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS fm_stations (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(150) NOT NULL,
+    slug          VARCHAR(160) NOT NULL,
+    frequency     VARCHAR(40)  NULL,
+    town_id       INT UNSIGNED NULL,
+    description   TEXT NULL,
+    logo_path     VARCHAR(255) NULL,
+    cover_path    VARCHAR(255) NULL,
+    stream_url    VARCHAR(500) NULL,
+    stream_type   ENUM('mp3','aac','hls','icecast','shoutcast','other') NOT NULL DEFAULT 'mp3',
+    live_mode     ENUM('auto','live','offline') NOT NULL DEFAULT 'auto',
+    website_url   VARCHAR(255) NULL,
+    phone         VARCHAR(30)  NULL,
+    whatsapp      VARCHAR(30)  NULL,
+    facebook_url  VARCHAR(255) NULL,
+    youtube_url   VARCHAR(255) NULL,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    featured      TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
+    display_order INT NOT NULL DEFAULT 0,
+    view_count    INT UNSIGNED NOT NULL DEFAULT 0,
+    created_by    INT UNSIGNED NULL,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_fm_station_slug (slug),
+    KEY idx_fm_station_status (status),
+    KEY idx_fm_station_town (town_id),
+    FOREIGN KEY (town_id) REFERENCES towns(id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fm_programmes (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    station_id    INT UNSIGNED NOT NULL,
+    name          VARCHAR(150) NOT NULL,
+    description   TEXT NULL,
+    host          VARCHAR(150) NULL,
+    image_path    VARCHAR(255) NULL,
+    day_of_week   TINYINT UNSIGNED NOT NULL COMMENT '0=Sunday..6=Saturday, matches worker_availability_slots/get_weekday_names()',
+    start_time    TIME NOT NULL,
+    end_time      TIME NOT NULL,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_fm_prog_station_day (station_id, day_of_week),
+    FOREIGN KEY (station_id) REFERENCES fm_stations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES ('fm_enabled', '1');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v095  FM Stations — per-station brand colour. Mirrors v067's per-market
+-- colour exactly (same VARCHAR(7) hex column, same NULL-falls-back-to-
+-- default-green convention) — fm_color_shades() (fm_functions.php) is a
+-- thin wrapper around the existing adjust_hex_brightness() used by
+-- mkt_color_shades(), so the station's public page can tint its whole
+-- hero/player/chips to whatever colour the admin picks per station.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE fm_stations ADD COLUMN IF NOT EXISTS theme_color VARCHAR(7) NULL AFTER featured;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v096  FM Stations — presenter profiles, station news (reuses the existing
+-- `news` module via an optional fm_station_id link rather than a parallel
+-- article table), station announcements (lightweight banner, shaped like
+-- `promotions`' start/end/status columns), programme-specific pages (a slug
+-- shared across a programme's multiple weekly time-slots — "Morning Drive"
+-- airing Mon-Fri stays ONE page, not five), and listener reactions
+-- (session-deduped emoji taps, no accounts — matches this module's existing
+-- view-count dedup pattern and the spec's explicit "no listener accounts yet").
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS fm_presenters (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    station_id    INT UNSIGNED NOT NULL,
+    name          VARCHAR(150) NOT NULL,
+    slug          VARCHAR(160) NOT NULL,
+    bio           TEXT NULL,
+    photo_path    VARCHAR(255) NULL,
+    facebook_url  VARCHAR(255) NULL,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_fm_presenter_station_slug (station_id, slug),
+    FOREIGN KEY (station_id) REFERENCES fm_stations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE fm_programmes ADD COLUMN IF NOT EXISTS presenter_id INT UNSIGNED NULL AFTER host;
+ALTER TABLE fm_programmes ADD COLUMN IF NOT EXISTS slug VARCHAR(160) NULL AFTER presenter_id;
+
+-- information_schema-guarded FK/index adds — bare "ADD ... IF NOT EXISTS" for
+-- constraints/indexes isn't reliably portable on real MySQL 8 the way it is
+-- on MariaDB (see the v050/v073 notes earlier in this file for the same
+-- reasoning) — ADD COLUMN IF NOT EXISTS above is fine, that part IS portable.
+SET @fkp_exists := (
+    SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'fm_programmes' AND CONSTRAINT_NAME = 'fk_fm_programmes_presenter'
+);
+SET @add_fkp_sql := IF(@fkp_exists = 0,
+    'ALTER TABLE fm_programmes ADD CONSTRAINT fk_fm_programmes_presenter FOREIGN KEY (presenter_id) REFERENCES fm_presenters(id) ON DELETE SET NULL',
+    'DO 0'
+);
+PREPARE stmt FROM @add_fkp_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @uqp_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fm_programmes' AND INDEX_NAME = 'uq_fm_programme_station_slug'
+);
+SET @add_uqp_sql := IF(@uqp_exists = 0,
+    'ALTER TABLE fm_programmes ADD UNIQUE KEY uq_fm_programme_station_slug (station_id, slug)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_uqp_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS fm_station_announcements (
+    id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    station_id  INT UNSIGNED NOT NULL,
+    message     VARCHAR(500) NOT NULL,
+    starts_at   DATE NULL,
+    ends_at     DATE NULL,
+    status      ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    created_by  INT UNSIGNED NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_fm_announce_station (station_id, status),
+    FOREIGN KEY (station_id) REFERENCES fm_stations(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fm_programme_reactions (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    station_id     INT UNSIGNED NOT NULL,
+    programme_slug VARCHAR(160) NOT NULL,
+    reaction_type  VARCHAR(20) NOT NULL,
+    session_key    VARCHAR(64) NOT NULL,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_fm_reaction_once (station_id, programme_slug, session_key, reaction_type),
+    KEY idx_fm_reaction_lookup (station_id, programme_slug),
+    FOREIGN KEY (station_id) REFERENCES fm_stations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE news ADD COLUMN IF NOT EXISTS fm_station_id INT UNSIGNED NULL AFTER user_id;
+
+SET @fkn_exists := (
+    SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'news' AND CONSTRAINT_NAME = 'fk_news_fm_station'
+);
+SET @add_fkn_sql := IF(@fkn_exists = 0,
+    'ALTER TABLE news ADD CONSTRAINT fk_news_fm_station FOREIGN KEY (fm_station_id) REFERENCES fm_stations(id) ON DELETE SET NULL',
+    'DO 0'
+);
+PREPARE stmt FROM @add_fkn_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @idxn_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'news' AND INDEX_NAME = 'idx_news_fm_station'
+);
+SET @add_idxn_sql := IF(@idxn_exists = 0,
+    'ALTER TABLE news ADD INDEX idx_news_fm_station (fm_station_id)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_idxn_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v097  Fix: v096's uq_fm_programme_station_slug UNIQUE key was wrong — the
+-- whole point of fm_programme_slug_for() is that MULTIPLE fm_programmes rows
+-- (one per weekly day/time slot) deliberately SHARE one slug, so a real
+-- programme airing more than one day per week could never insert its second
+-- row. Drop the unique key and replace it with a plain (non-unique) index for
+-- the same lookup performance, with no uniqueness constraint.
+-- ═══════════════════════════════════════════════════════════════════════════
+SET @uqp_still_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fm_programmes' AND INDEX_NAME = 'uq_fm_programme_station_slug'
+);
+SET @drop_uqp_sql := IF(@uqp_still_exists > 0,
+    'ALTER TABLE fm_programmes DROP INDEX uq_fm_programme_station_slug',
+    'DO 0'
+);
+PREPARE stmt FROM @drop_uqp_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+SET @idxp_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'fm_programmes' AND INDEX_NAME = 'idx_fm_programme_station_slug'
+);
+SET @add_idxp_sql := IF(@idxp_exists = 0,
+    'ALTER TABLE fm_programmes ADD INDEX idx_fm_programme_station_slug (station_id, slug)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_idxp_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v098  Announcement message becomes rich text (like the station description/
+-- presenter bio/programme description fields already are) — widen from
+-- VARCHAR(500) to TEXT since formatted HTML outgrows 500 chars fast.
+-- render_rich() (functions.php) already handles old plain-text rows fine
+-- (auto-wraps them as paragraphs), so no data backfill is needed.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE fm_station_announcements MODIFY COLUMN message TEXT NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v099  FM Stations — logged-in listener comments on a programme page.
+-- Mirrors news_comments exactly (same columns/shape), except it keys off
+-- (station_id, programme_slug) rather than a single row id, since one
+-- programme page already aggregates several fm_programmes rows (its weekly
+-- time-slots) under one shared slug — same reasoning as fm_programme_reactions.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS fm_programme_comments (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    station_id     INT UNSIGNED NOT NULL,
+    programme_slug VARCHAR(160) NOT NULL,
+    user_id        INT UNSIGNED NOT NULL,
+    comment        TEXT NOT NULL,
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_fm_prog_comments_lookup (station_id, programme_slug),
+    FOREIGN KEY (station_id) REFERENCES fm_stations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v100  Quick Services module removed entirely — feature discontinued.
+-- Drops all three tables (dependency order: requests/managers reference
+-- quick_services, so they go first). platform_payments.payment_type
+-- deliberately KEEPS its 'quick_service' ENUM value untouched — 4 historical
+-- payment rows still use it, and it's earmarked for reuse on a future
+-- similar feature rather than being cleaned up now.
+--
+-- SAFETY GUARD: v101 below rebuilds the module and, deliberately, reuses two
+-- of these exact table names (quick_services, quick_service_managers) for a
+-- different schema. Without a guard, replaying this file against a database
+-- that has ALREADY been through this remove+rebuild would run these three
+-- DROPs again and destroy the live rebuilt data (real manager assignments,
+-- real service catalog) before v101's CREATE TABLE IF NOT EXISTS silently
+-- recreates them empty. @qs_rebuilt detects the rebuild via a column
+-- (service_type) that only exists on the new quick_services schema.
+-- ═══════════════════════════════════════════════════════════════════════════
+SET @qs_rebuilt := (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'quick_services' AND COLUMN_NAME = 'service_type'
+) > 0;
+SET @qs_drop_requests := IF(@qs_rebuilt, 'DO 0', 'DROP TABLE IF EXISTS quick_service_requests');
+PREPARE stmt FROM @qs_drop_requests; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @qs_drop_managers := IF(@qs_rebuilt, 'DO 0', 'DROP TABLE IF EXISTS quick_service_managers');
+PREPARE stmt FROM @qs_drop_managers; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+SET @qs_drop_services := IF(@qs_rebuilt, 'DO 0', 'DROP TABLE IF EXISTS quick_services');
+PREPARE stmt FROM @qs_drop_services; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v101  Quick Services module — rebuilt with a database-driven, extensible
+-- service catalog (starts with Buy Data + BECE/WASSCE Results, more later
+-- without schema changes) and payment/processing status kept deliberately
+-- separate. Reuses existing infrastructure rather than duplicating it:
+--   - Payment: platform_payments + initializePayment()/verifyPayment() —
+--     the 'quick_service' ENUM value was kept from the old module for
+--     exactly this reuse (see the v100 comment above).
+--   - Manager assignment: quick_service_managers mirrors market_managers'
+--     exact shape (see user_can_manage_market() in functions.php).
+--   - request_data is a flexible JSON blob (like the old module) rather than
+--     a rigid per-service-type table — Buy Data stores {network,bundle,
+--     recipient}, Result Services stores {exam_type,option,...}; only the
+--     view/processing code branches per service_type, not the schema.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS quick_services (
+    id               INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name             VARCHAR(150) NOT NULL,
+    slug             VARCHAR(160) NOT NULL,
+    description      VARCHAR(500) NULL,
+    icon             VARCHAR(10) NULL,
+    service_type     VARCHAR(30) NOT NULL COMMENT 'dispatch key, e.g. data_bundle|result_service — VARCHAR not ENUM so new types never need an ALTER',
+    requires_manager TINYINT(1) UNSIGNED NOT NULL DEFAULT 1,
+    status           ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    display_order    INT NOT NULL DEFAULT 0,
+    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_quick_service_slug (slug),
+    KEY idx_quick_service_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS quick_service_managers (
+    id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    service_id INT UNSIGNED NOT NULL,
+    user_id    INT UNSIGNED NOT NULL,
+    granted_by INT UNSIGNED NOT NULL,
+    granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_quick_service_manager (service_id, user_id),
+    FOREIGN KEY (service_id) REFERENCES quick_services(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id)    REFERENCES users(id)           ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS quick_data_networks (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    name          VARCHAR(60) NOT NULL,
+    slug          VARCHAR(60) NOT NULL,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    display_order INT NOT NULL DEFAULT 0,
+    UNIQUE KEY uq_quick_data_network_slug (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS quick_data_bundles (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    network_id    INT UNSIGNED NOT NULL,
+    label         VARCHAR(60) NOT NULL,
+    price         DECIMAL(10,2) NOT NULL,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_quick_bundle_network (network_id, status),
+    FOREIGN KEY (network_id) REFERENCES quick_data_networks(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS quick_transactions (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    reference           VARCHAR(20) NOT NULL,
+    user_id             INT UNSIGNED NOT NULL,
+    service_id          INT UNSIGNED NOT NULL,
+    platform_payment_id INT UNSIGNED NULL,
+    amount              DECIMAL(10,2) NOT NULL,
+    payment_status      ENUM('pending','paid','failed','refunded') NOT NULL DEFAULT 'pending',
+    processing_status   ENUM('awaiting_assignment','assigned','processing','completed','failed','cancelled') NOT NULL DEFAULT 'awaiting_assignment',
+    assigned_manager_id INT UNSIGNED NULL,
+    customer_name       VARCHAR(150) NULL,
+    customer_phone      VARCHAR(30) NULL,
+    request_data        TEXT NULL COMMENT 'JSON — service-specific submitted fields',
+    manager_notes       TEXT NULL,
+    result_file_path    VARCHAR(255) NULL COMMENT 'relative path under the .htaccess-denied private uploads dir — never served directly',
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    assigned_at         DATETIME NULL,
+    completed_at        DATETIME NULL,
+    UNIQUE KEY uq_quick_transaction_reference (reference),
+    KEY idx_quick_transaction_user (user_id),
+    KEY idx_quick_transaction_service (service_id, processing_status),
+    KEY idx_quick_transaction_manager (assigned_manager_id),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (service_id) REFERENCES quick_services(id) ON DELETE RESTRICT,
+    FOREIGN KEY (assigned_manager_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO quick_services (name, slug, description, icon, service_type, requires_manager, status, display_order) VALUES
+    ('Buy Data', 'buy-data', 'Purchase mobile data bundles for MTN, Telecel and AirtelTigo.', '📶', 'data_bundle', 1, 'active', 1),
+    ('BECE/WASSCE Results', 'bece-wassce-results', 'Buy a result checker, or have our team check and send your result.', '📄', 'result_service', 1, 'active', 2);
+
+INSERT IGNORE INTO quick_data_networks (name, slug, status, display_order) VALUES
+    ('MTN', 'mtn', 'active', 1),
+    ('Telecel', 'telecel', 'active', 2),
+    ('AirtelTigo', 'airteltigo', 'active', 3);
+
+INSERT IGNORE INTO quick_data_bundles (network_id, label, price, status, display_order)
+SELECT n.id, b.label, b.price, 'active', b.ord
+FROM quick_data_networks n
+JOIN (
+    SELECT 'mtn' AS slug, '500MB' AS label, 4.00 AS price, 1 AS ord UNION ALL
+    SELECT 'mtn', '1GB',  8.00, 2 UNION ALL
+    SELECT 'mtn', '2GB', 15.00, 3 UNION ALL
+    SELECT 'mtn', '5GB', 30.00, 4 UNION ALL
+    SELECT 'mtn', '10GB', 55.00, 5 UNION ALL
+    SELECT 'telecel', '1GB',  8.00, 1 UNION ALL
+    SELECT 'telecel', '2GB', 15.00, 2 UNION ALL
+    SELECT 'telecel', '5GB', 29.00, 3 UNION ALL
+    SELECT 'airteltigo', '1GB',  7.50, 1 UNION ALL
+    SELECT 'airteltigo', '2GB', 14.00, 2 UNION ALL
+    SELECT 'airteltigo', '5GB', 28.00, 3
+) b ON b.slug = n.slug;
+
+INSERT IGNORE INTO platform_settings (setting_key, setting_value) VALUES ('quick_services_enabled', '1');
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v102  Quick Services — flat-priced named options for non-bundle services
+-- (Result Services: "BECE Checker Only", "WASSCE Result Check + PDF", etc.).
+-- Kept separate from quick_data_bundles rather than unifying them — a data
+-- bundle is genuinely two-dimensional (network × size), while this is a
+-- simple named/priced choice list any future flat-priced service can reuse.
+-- ═══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS quick_service_options (
+    id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    service_id    INT UNSIGNED NOT NULL,
+    label         VARCHAR(100) NOT NULL,
+    price         DECIMAL(10,2) NOT NULL,
+    status        ENUM('active','inactive') NOT NULL DEFAULT 'active',
+    display_order INT NOT NULL DEFAULT 0,
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_quick_option_service (service_id, status),
+    FOREIGN KEY (service_id) REFERENCES quick_services(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO quick_service_options (service_id, label, price, display_order)
+SELECT id, o.label, o.price, o.ord FROM quick_services,
+(
+    SELECT 'BECE Checker Only' AS label, 15.00 AS price, 1 AS ord UNION ALL
+    SELECT 'BECE Result Check + PDF', 25.00, 2 UNION ALL
+    SELECT 'WASSCE Checker Only', 20.00, 3 UNION ALL
+    SELECT 'WASSCE Result Check + PDF', 35.00, 4
+) o
+WHERE quick_services.slug = 'bece-wassce-results';
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v103  Fix: v101's quick_data_bundles seed had no uniqueness guard, so
+-- INSERT IGNORE couldn't actually dedupe on re-run — running install.sql
+-- twice silently doubled every bundle row (caught in testing before this
+-- ever reached production). Adds the missing UNIQUE KEY so INSERT IGNORE
+-- works as intended; run once against a DB that already has duplicates from
+-- a double-run, dedupe manually first (keep the lowest id per network+label)
+-- before this ALTER, since a UNIQUE KEY can't be added over existing dupes.
+-- ═══════════════════════════════════════════════════════════════════════════
+SET @qdb_uq_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'quick_data_bundles' AND INDEX_NAME = 'uq_quick_data_bundle'
+);
+SET @add_qdb_uq_sql := IF(@qdb_uq_exists = 0,
+    'ALTER TABLE quick_data_bundles ADD UNIQUE KEY uq_quick_data_bundle (network_id, label)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_qdb_uq_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v104  Fix: v102's quick_service_options seed had the exact same missing-
+-- uniqueness bug as v101's bundles (fixed in v103) — INSERT IGNORE had
+-- nothing to dedupe against, so repeat runs of this file kept duplicating
+-- every option row. Dedupe first (keep the lowest id per service+label),
+-- then add the missing UNIQUE KEY.
+-- ═══════════════════════════════════════════════════════════════════════════
+DELETE o1 FROM quick_service_options o1
+INNER JOIN quick_service_options o2
+    ON o1.id > o2.id AND o1.service_id = o2.service_id AND o1.label = o2.label;
+
+SET @qso_uq_exists := (
+    SELECT COUNT(*) FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'quick_service_options' AND INDEX_NAME = 'uq_quick_service_option'
+);
+SET @add_qso_uq_sql := IF(@qso_uq_exists = 0,
+    'ALTER TABLE quick_service_options ADD UNIQUE KEY uq_quick_service_option (service_id, label)',
+    'DO 0'
+);
+PREPARE stmt FROM @add_qso_uq_sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- v105  Quick Services — admin-configurable service charge (flat or percent
+-- of the base price, with an optional cap), added on top of the bundle/
+-- option price at checkout. Mirrors the existing market_system_charge_type/
+-- value (get_market_system_charge()) and mp_customer_charge_type/value
+-- (get_mp_customer_charge()) pattern in functions.php, plus a cap on top —
+-- settings live in platform_settings, defaulting to 0/no-charge so existing
+-- installs are unaffected until an admin opts in. The computed amount is
+-- stored per-transaction (service_charge) alongside the base amount, the
+-- same way mp_orders.system_charge records the marketplace equivalent, so
+-- receipts and admin views can always show the exact breakdown that was
+-- actually charged even if the settings change later.
+-- ═══════════════════════════════════════════════════════════════════════════
+ALTER TABLE quick_transactions ADD COLUMN IF NOT EXISTS service_charge DECIMAL(10,2) NOT NULL DEFAULT 0 AFTER amount;
+
+-- ended on line 4075 as last update
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Reference file only — Xcode does not read this automatically. In Xcode,
+	  select the App target → "Signing & Capabilities" → "+ Capability" →
+	  "Push Notifications". Xcode will generate/link the real entitlements file
+	  itself (with the correct CODE_SIGN_ENTITLEMENTS build setting) and it
+	  will look like this. Do this once you have an active Apple Developer
+	  Program membership, since push notification entitlements require it.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
